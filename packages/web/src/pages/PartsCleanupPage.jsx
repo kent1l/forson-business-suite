@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import api from '../api';
 import toast from 'react-hot-toast';
 import Icon from '../components/ui/Icon';
@@ -64,6 +64,39 @@ const PartsCleanupPage = ({ user: _user, onNavigate }) => {
     const [manualLoading, setManualLoading] = useState(false);
     const [manualHasSearched, setManualHasSearched] = useState(false);
     const [manualError, setManualError] = useState('');
+    const [revertableOperations, setRevertableOperations] = useState([]);
+    const [revertingOperationId, setRevertingOperationId] = useState(null);
+
+    const loadRevertableOperations = useCallback(async () => {
+        if (!hasPermission('parts:merge_revert')) return;
+        try {
+            const response = await api.get('/parts/merge/revertable');
+            setRevertableOperations(response.data.operations || []);
+        } catch (error) {
+            console.error('Failed to load revertable merges:', error);
+        }
+    }, [hasPermission]);
+
+    useEffect(() => {
+        loadRevertableOperations();
+    }, [loadRevertableOperations]);
+
+    const revertMerge = async (operation) => {
+        const reason = window.prompt('Why is this merge being reverted? This is recorded in the audit log.');
+        if (!reason?.trim()) return;
+        if (!window.confirm('Revert this merge? It will restore the original part records and relationships.')) return;
+        try {
+            setRevertingOperationId(operation.operation_id);
+            await api.post(`/parts/merge/${operation.operation_id}/revert`, { reason });
+            toast.success('Merge reverted successfully');
+            await loadRevertableOperations();
+            onNavigate('parts');
+        } catch (error) {
+            toast.error(error.response?.data?.message || 'Unable to revert this merge');
+        } finally {
+            setRevertingOperationId(null);
+        }
+    };
 
     // Step navigation helpers
     const stepOrder = [
@@ -528,7 +561,7 @@ const PartsCleanupPage = ({ user: _user, onNavigate }) => {
                     <div>
                         <h1 className="text-2xl font-bold text-gray-900 dark:text-slate-100">Parts Cleanup</h1>
                         <p className="text-gray-600 dark:text-slate-400 mt-1">
-                            Merge duplicate parts to clean up your database. This operation cannot be easily undone.
+                            Merge duplicate parts into one canonical record. Eligible merges can be reverted for 24 hours.
                         </p>
                     </div>
                     <button
@@ -540,6 +573,30 @@ const PartsCleanupPage = ({ user: _user, onNavigate }) => {
                     </button>
                 </div>
             </div>
+
+            {revertableOperations.length > 0 && (
+                <section className="bg-amber-50 dark:bg-amber-950/30 rounded-xl border border-amber-200 dark:border-amber-800 p-5">
+                    <h2 className="font-semibold text-amber-950 dark:text-amber-100">Recent merges eligible for revert</h2>
+                    <p className="mt-1 text-sm text-amber-900 dark:text-amber-200">A reason is required. Revert is blocked if subsequent catalog or inventory activity makes restoration unsafe.</p>
+                    <div className="mt-4 space-y-3">
+                        {revertableOperations.map((operation) => (
+                            <div key={operation.operation_id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-white/70 dark:bg-slate-900/40 p-3">
+                                <span className="text-sm text-gray-800 dark:text-slate-100">
+                                    Keep part #{operation.keep_part_id}; restore {operation.merged_part_ids.length} merged part{operation.merged_part_ids.length === 1 ? '' : 's'} · expires {new Date(operation.undo_expires_at).toLocaleString()}
+                                </span>
+                                <button
+                                    type="button"
+                                    onClick={() => revertMerge(operation)}
+                                    disabled={revertingOperationId === operation.operation_id}
+                                    className="rounded-md bg-amber-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-amber-800 disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                    {revertingOperationId === operation.operation_id ? 'Reverting…' : 'Revert merge'}
+                                </button>
+                            </div>
+                        ))}
+                    </div>
+                </section>
+            )}
 
             {/* Step Indicator */}
             <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 p-6 shadow-card">

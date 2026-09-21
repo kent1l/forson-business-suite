@@ -1,4 +1,21 @@
 const DuplicateFinder = require('./duplicateFinder');
+const { enqueuePartUpsert, enqueuePartDelete } = require('./meiliOutboxService');
+
+const REVERTABLE_TABLES = Object.freeze([
+    { name: 'part', key: "part_id::text", where: 'part_id = ANY($1::bigint[])' },
+    { name: 'part_number', key: "part_number_id::text", where: 'part_id = ANY($1::bigint[])' },
+    { name: 'part_application', key: "part_app_id::text", where: 'part_id = ANY($1::bigint[])' },
+    { name: 'part_barcode', key: "barcode_id::text", where: 'part_id = ANY($1::bigint[])' },
+    { name: 'part_tag', key: "concat(part_id, ':', tag_id)", where: 'part_id = ANY($1::bigint[])' },
+    { name: 'part_inventory_stats', key: "part_id::text", where: 'part_id = ANY($1::bigint[])' },
+    { name: 'part_aliases', key: "id::text", where: 'part_id = ANY($1::bigint[]) OR source_part_id = ANY($1::bigint[])' },
+    { name: 'staged_sale_line', key: "staged_line_id::text", where: 'part_id = ANY($1::bigint[])' },
+    { name: 'dedupe_scan_queue', key: "part_id::text", where: 'part_id = ANY($1::bigint[])' },
+    { name: 'ai_match_cache', key: "concat(part_id_1, ':', part_id_2)", where: 'part_id_1 = ANY($1::bigint[]) OR part_id_2 = ANY($1::bigint[])' },
+    { name: 'ai_verification_queue', key: "concat(part_id_1, ':', part_id_2)", where: 'part_id_1 = ANY($1::bigint[]) OR part_id_2 = ANY($1::bigint[])' },
+    { name: 'part_exclusion', key: "concat(part_id_1, ':', part_id_2)", where: 'part_id_1 = ANY($1::bigint[]) OR part_id_2 = ANY($1::bigint[])' },
+    { name: 'inventory_transaction', key: "inv_trans_id::text", where: 'part_id = ANY($1::bigint[])' }
+]);
 
 /**
  * Service for merging parts and managing the merge process
@@ -57,15 +74,19 @@ class PartMergeService {
     async executeMerge(mergeRequest, actorEmployeeId) {
         const { keepPartId, mergePartIds, rules } = mergeRequest;
         
-        // Validate again before execution
+        // Validate input before allocating a client. A second, authoritative
+        // validation occurs after the transaction-scoped advisory locks.
         await this.validateMergeRequest(keepPartId, mergePartIds);
         
         const client = await this.db.getClient();
         try {
             await client.query('BEGIN');
-            
-            // Lock the parts to prevent concurrent modifications
-            await this.lockParts(client, [keepPartId, ...mergePartIds]);
+
+            const allPartIds = [keepPartId, ...mergePartIds];
+            await this.lockParts(client, allPartIds);
+            await this.validateMergeRequest(keepPartId, mergePartIds, client);
+            const operation = await this.createMergeOperation(client, actorEmployeeId, keepPartId, mergePartIds);
+            await this.captureMergeSnapshots(client, operation.operation_id, allPartIds);
             
             // Get current part data
             const keepPart = await this.getPartDetails(keepPartId, client);
@@ -79,11 +100,13 @@ class PartMergeService {
             // Merge child records (part_numbers, applications, etc.)
             const childUpdateCounts = await this.mergeChildRecords(client, keepPartId, mergePartIds, rules);
             
-            // Reassign all foreign key references
-            const fkUpdateCounts = await this.reassignForeignKeys(client, keepPartId, mergePartIds);
-            
-            // Handle inventory consolidation if applicable
+            // Snapshot stock by its original part before reassignment. Moving
+            // transactions first would make every source quantity zero and
+            // silently omit its WAC from the weighted calculation.
             const inventoryUpdateCounts = await this.consolidateInventory(client, keepPartId, mergePartIds);
+
+            // Reassign all foreign key references after WAC is consolidated.
+            const fkUpdateCounts = await this.reassignForeignKeys(client, keepPartId, mergePartIds);
             
             // Create aliases for old SKUs/part numbers
             if (rules.preserveAliases !== false) {
@@ -99,15 +122,19 @@ class PartMergeService {
                 ...fkUpdateCounts,
                 ...inventoryUpdateCounts
             });
+
+            await this.completeMergeOperation(client, operation.operation_id);
+            await enqueuePartUpsert(keepPartId, { source: 'partMergeService.merge', version_ts: new Date().toISOString() }, client);
+            for (const mergedPartId of mergePartIds) {
+                await enqueuePartDelete(mergedPartId, { source: 'partMergeService.merge', version_ts: new Date().toISOString() }, client);
+            }
             
             await client.query('COMMIT');
-            
-            // Sync with Meilisearch (outside transaction)
-            await this.syncMeilisearch(keepPartId, mergePartIds);
             
             return {
                 keepPartId,
                 mergedPartIds: mergePartIds,
+                operationId: operation.operation_id,
                 updatedCounts: {
                     ...childUpdateCounts,
                     ...fkUpdateCounts,
@@ -124,14 +151,14 @@ class PartMergeService {
         }
     }
 
-    async validateMergeRequest(keepPartId, mergePartIds) {
+    async validateMergeRequest(keepPartId, mergePartIds, executor = this.db) {
         if (!Array.isArray(mergePartIds) || mergePartIds.length === 0) {
             throw new Error('mergePartIds array is required and must not be empty');
         }
         
         // Check that all part IDs are valid
         const allPartIds = [keepPartId, ...mergePartIds];
-        const result = await this.db.query(
+        const result = await executor.query(
             'SELECT part_id, merged_into_part_id FROM part WHERE part_id = ANY($1)',
             [allPartIds]
         );
@@ -350,10 +377,189 @@ class PartMergeService {
     }
 
     async lockParts(client, partIds) {
+        // Every merge takes these locks in the same deterministic order. Other
+        // workflows can adopt this key convention to serialize their writes
+        // against a merge without retaining any lock after the transaction.
+        for (const partId of [...partIds].sort((a, b) => Number(a) - Number(b))) {
+            await client.query('SELECT pg_advisory_xact_lock($1::bigint)', [partId]);
+        }
         await client.query(
             'SELECT part_id FROM part WHERE part_id = ANY($1) ORDER BY part_id FOR UPDATE',
             [partIds]
         );
+    }
+
+    async createMergeOperation(client, actorEmployeeId, keepPartId, mergePartIds) {
+        const { rows } = await client.query(`
+            INSERT INTO part_merge_operation
+                (actor_employee_id, keep_part_id, merged_part_ids, undo_expires_at)
+            VALUES ($1, $2, $3::bigint[], NOW() + INTERVAL '24 hours')
+            RETURNING operation_id, undo_expires_at
+        `, [actorEmployeeId, keepPartId, mergePartIds]);
+        return rows[0];
+    }
+
+    async captureMergeSnapshots(client, operationId, partIds) {
+        for (const table of REVERTABLE_TABLES) {
+            await client.query(`
+                INSERT INTO part_merge_snapshot (operation_id, table_name, record_id, before_image)
+                SELECT $1, $2, ${table.key}, to_jsonb(source)
+                FROM ${table.name} source
+                WHERE ${table.where}
+                ON CONFLICT (operation_id, table_name, record_id) DO NOTHING
+            `, [operationId, table.name, partIds]);
+        }
+    }
+
+    async completeMergeOperation(client, operationId) {
+        await client.query(`
+            UPDATE part_merge_operation
+            SET completed_at = NOW(), status = 'active'
+            WHERE operation_id = $1 AND status = 'pending'
+        `, [operationId]);
+    }
+
+    async getRevertableOperations(partId = null) {
+        const { rows } = await this.db.query(`
+            SELECT operation_id, keep_part_id, merged_part_ids, completed_at,
+                   undo_expires_at, status
+            FROM part_merge_operation
+            WHERE status = 'active'
+              AND undo_expires_at > NOW()
+              AND ($1::bigint IS NULL OR keep_part_id = $1 OR $1 = ANY(merged_part_ids))
+            ORDER BY completed_at DESC
+        `, [partId]);
+        return rows;
+    }
+
+    async revertMerge(operationId, actorEmployeeId, reason) {
+        if (!reason || !reason.trim()) throw new Error('A revert reason is required');
+        const client = await this.db.getClient();
+        try {
+            await client.query('BEGIN');
+            const { rows } = await client.query(`
+                SELECT * FROM part_merge_operation
+                WHERE operation_id = $1
+                FOR UPDATE
+            `, [operationId]);
+            const operation = rows[0];
+            if (!operation) throw new Error('Merge operation not found');
+            if (operation.status !== 'active' || new Date(operation.undo_expires_at) <= new Date()) {
+                await client.query(`UPDATE part_merge_operation SET status = 'expired'
+                                    WHERE operation_id = $1 AND status = 'active'`, [operationId]);
+                throw new Error('This merge is no longer eligible for revert');
+            }
+
+            const partIds = [operation.keep_part_id, ...operation.merged_part_ids];
+            await this.lockParts(client, partIds);
+            await this.assertRevertIsSafe(client, operation, partIds);
+            await this.restoreMergeSnapshots(client, operationId, partIds);
+            await client.query(`
+                UPDATE part_merge_operation
+                SET status = 'reverted', reverted_at = NOW(),
+                    reverted_by_employee_id = $2, revert_reason = $3
+                WHERE operation_id = $1
+            `, [operationId, actorEmployeeId, reason.trim()]);
+            for (const partId of partIds) {
+                await enqueuePartUpsert(partId, { source: 'partMergeService.revert', version_ts: new Date().toISOString() }, client);
+            }
+            await client.query('COMMIT');
+            return { operationId, restoredPartIds: partIds };
+        } catch (error) {
+            await client.query('ROLLBACK');
+            throw error;
+        } finally {
+            client.release();
+        }
+    }
+
+    async assertRevertIsSafe(client, operation, partIds) {
+        const partChanges = await client.query(`
+            SELECT part_id FROM part
+            WHERE part_id = ANY($1::bigint[])
+              AND date_modified > $2
+        `, [partIds, operation.completed_at]);
+        if (partChanges.rows.length) {
+            throw new Error('Cannot revert: a merged part was edited after the merge');
+        }
+
+        const inventoryChanges = await client.query(`
+            SELECT it.inv_trans_id
+            FROM inventory_transaction it
+            WHERE it.part_id = ANY($1::bigint[])
+              AND it.transaction_date > $2
+              AND NOT EXISTS (
+                  SELECT 1 FROM part_merge_snapshot s
+                  WHERE s.operation_id = $3
+                    AND s.table_name = 'inventory_transaction'
+                    AND s.record_id = it.inv_trans_id::text
+              )
+            LIMIT 1
+        `, [partIds, operation.completed_at, operation.operation_id]);
+        if (inventoryChanges.rows.length) {
+            throw new Error('Cannot revert: inventory activity occurred after the merge');
+        }
+    }
+
+    async restoreMergeSnapshots(client, operationId, partIds) {
+        // Remove the merge-era representation first. Rows with the original
+        // primary keys are then restored from immutable before-images.
+        for (const table of REVERTABLE_TABLES.filter(t => t.name !== 'part')) {
+            await client.query(`DELETE FROM ${table.name} WHERE ${table.where}`, [partIds]);
+        }
+
+        const { rows: columns } = await client.query(`
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_schema = 'public' AND table_name = 'part'
+            ORDER BY ordinal_position
+        `);
+        const writable = columns.map(r => r.column_name).filter(column => column !== 'part_id');
+        const assignments = writable.map(column => `"${column}" = restored."${column}"`).join(', ');
+        await client.query(`
+            UPDATE part current
+            SET ${assignments}
+            FROM part_merge_snapshot snapshot
+            CROSS JOIN LATERAL jsonb_populate_record(NULL::part, snapshot.before_image) restored
+            WHERE snapshot.operation_id = $1
+              AND snapshot.table_name = 'part'
+              AND current.part_id = restored.part_id
+        `, [operationId]);
+
+        for (const table of REVERTABLE_TABLES.filter(t => t.name !== 'part')) {
+            await client.query(`
+                INSERT INTO ${table.name}
+                SELECT (jsonb_populate_record(NULL::${table.name}, before_image)).*
+                FROM part_merge_snapshot
+                WHERE operation_id = $1 AND table_name = $2
+            `, [operationId, table.name]);
+        }
+    }
+
+    async purgeExpiredMergeSnapshots() {
+        const client = await this.db.getClient();
+        try {
+            await client.query('BEGIN');
+            await client.query(`
+                UPDATE part_merge_operation
+                SET status = 'expired'
+                WHERE status = 'active' AND undo_expires_at <= NOW()
+            `);
+            const result = await client.query(`
+                DELETE FROM part_merge_snapshot snapshot
+                USING part_merge_operation operation
+                WHERE snapshot.operation_id = operation.operation_id
+                  AND operation.undo_expires_at < NOW() - INTERVAL '90 days'
+                RETURNING snapshot.operation_id
+            `);
+            await client.query('COMMIT');
+            return result.rowCount;
+        } catch (error) {
+            await client.query('ROLLBACK');
+            throw error;
+        } finally {
+            client.release();
+        }
     }
 
     async updateKeepPart(client, keepPartId, keepPart, mergeParts, rules) {
@@ -676,8 +882,8 @@ class PartMergeService {
     }
 
     async reassignForeignKeys(client, keepPartId, mergePartIds) {
-        // inventory_transaction must follow the survivor so that consolidateInventory()
-        // sees the correct combined stock when it recalculates WAC.
+        // inventory_transaction follows the survivor after consolidateInventory()
+        // has taken its original-owner stock snapshot.
         //
         // goods_receipt_line, invoice_line, purchase_order_line, credit_note_line are
         // intentionally NOT reassigned here (P1 decision — see §4-C comment in
@@ -695,10 +901,8 @@ class PartMergeService {
         const allPartIds = [keepPartId, ...mergePartIds];
 
         // Calculate combined weighted average cost across all parts being merged.
-        // inventory_transaction rows have already been reassigned to the survivor
-        // by reassignForeignKeys(), so we query the combined pool by survivor id.
-        // We read wac_cost from the part rows (pre-reassignment snapshot) because
-        // per-part WAC captures how each part's stock was valued independently.
+        // We read quantities before reassignForeignKeys() changes their owner.
+        // Per-part WAC captures how each part's stock was valued independently.
         const wacResult = await client.query(`
             WITH stock_qty AS (
                 SELECT part_id, COALESCE(SUM(quantity), 0) AS stock_on_hand

@@ -133,7 +133,9 @@ router.post('/parts/merge/merge', protect, hasPermission('parts:merge'), async (
 
         // Convert IDs to integers to ensure proper database parameter types
         const targetPartIdInt = parseInt(targetPartId);
-        const sourcePartIdsInt = sourcePartIds.map(id => parseInt(id));
+        const sourcePartIdsInt = Array.isArray(sourcePartIds)
+            ? sourcePartIds.map(id => parseInt(id))
+            : [];
 
         if (!sourcePartIdsInt || !Array.isArray(sourcePartIdsInt) || sourcePartIdsInt.length === 0) {
             console.log('DEBUG: sourcePartIds validation failed:', sourcePartIdsInt);
@@ -173,11 +175,42 @@ router.post('/parts/merge/merge', protect, hasPermission('parts:merge'), async (
         });
     } catch (error) {
         console.error('Error executing merge:', error);
-        res.status(500).json({
+        const isConflict = /already merged|Cannot revert|no longer eligible/i.test(error.message || '');
+        res.status(isConflict ? 409 : 500).json({
             success: false,
             message: 'Failed to execute merge',
             error: process.env.NODE_ENV === 'development' ? error.message : undefined
         });
+    }
+});
+
+// Route: GET /api/parts/merge/revertable
+// Lists only still-revertible operations. This powers the cleanup UI and avoids
+// exposing expired before-images.
+router.get('/parts/merge/revertable', protect, hasPermission('parts:merge_revert'), async (req, res) => {
+    try {
+        const partId = req.query.partId ? Number(req.query.partId) : null;
+        if (req.query.partId && !Number.isInteger(partId)) {
+            return res.status(400).json({ success: false, message: 'Invalid partId' });
+        }
+        res.json({ success: true, operations: await partMergeService.getRevertableOperations(partId) });
+    } catch (error) {
+        console.error('Error loading revertable merges:', error);
+        res.status(500).json({ success: false, message: 'Failed to load revertable merges' });
+    }
+});
+
+// Route: POST /api/parts/merge/:operationId/revert
+router.post('/parts/merge/:operationId/revert', protect, hasPermission('parts:merge_revert'), async (req, res) => {
+    try {
+        const result = await partMergeService.revertMerge(req.params.operationId, req.user.employee_id, req.body?.reason);
+        res.json({ success: true, result });
+    } catch (error) {
+        console.error('Error reverting part merge:', error);
+        const status = /not found/i.test(error.message || '') ? 404
+            : /required|eligible|Cannot revert/i.test(error.message || '') ? 409
+                : 500;
+        res.status(status).json({ success: false, message: error.message || 'Failed to revert merge' });
     }
 });
 

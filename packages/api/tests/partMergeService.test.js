@@ -1,3 +1,8 @@
+jest.mock('../services/meiliOutboxService', () => ({
+    enqueuePartUpsert: jest.fn().mockResolvedValue(undefined),
+    enqueuePartDelete: jest.fn().mockResolvedValue(undefined)
+}));
+
 const PartMergeService = require('../services/partMergeService');
 
 describe('PartMergeService Unit Tests', () => {
@@ -88,6 +93,43 @@ describe('PartMergeService Unit Tests', () => {
             expect(resolved.detail).toBe('Custom Detail Override');
             expect(resolved.group_id).toBe(10);
             expect(resolved.brand_id).toBe(20);
+        });
+    });
+
+    describe('merge transaction safety', () => {
+        test('takes advisory locks in ascending part order before locking rows', async () => {
+            mockDb.query.mockResolvedValue({ rows: [] });
+            await service.lockParts(mockDb, [9, 2, 5]);
+
+            expect(mockDb.query.mock.calls.slice(0, 3)).toEqual([
+                ['SELECT pg_advisory_xact_lock($1::bigint)', [2]],
+                ['SELECT pg_advisory_xact_lock($1::bigint)', [5]],
+                ['SELECT pg_advisory_xact_lock($1::bigint)', [9]]
+            ]);
+            expect(mockDb.query.mock.calls[3][0]).toContain('FOR UPDATE');
+        });
+
+        test('calculates WAC before inventory transactions are reassigned', async () => {
+            const client = { query: jest.fn().mockResolvedValue({ rows: [] }), release: jest.fn() };
+            mockDb.getClient = jest.fn().mockResolvedValue(client);
+            service.validateMergeRequest = jest.fn().mockResolvedValue(undefined);
+            service.lockParts = jest.fn().mockResolvedValue(undefined);
+            service.createMergeOperation = jest.fn().mockResolvedValue({ operation_id: 'op-1' });
+            service.captureMergeSnapshots = jest.fn().mockResolvedValue(undefined);
+            service.getPartDetails = jest.fn().mockResolvedValue({ part_id: 1 });
+            service.updateKeepPart = jest.fn().mockResolvedValue(undefined);
+            service.mergeChildRecords = jest.fn().mockResolvedValue({});
+            service.consolidateInventory = jest.fn().mockResolvedValue({});
+            service.reassignForeignKeys = jest.fn().mockResolvedValue({});
+            service.createAliases = jest.fn().mockResolvedValue(undefined);
+            service.markPartsAsMerged = jest.fn().mockResolvedValue(undefined);
+            service.logMergeOperations = jest.fn().mockResolvedValue(undefined);
+            service.completeMergeOperation = jest.fn().mockResolvedValue(undefined);
+
+            await service.executeMerge({ keepPartId: 1, mergePartIds: [2], rules: {} }, 10);
+
+            expect(service.consolidateInventory.mock.invocationCallOrder[0])
+                .toBeLessThan(service.reassignForeignKeys.mock.invocationCallOrder[0]);
         });
     });
 
@@ -408,4 +450,3 @@ describe('PartMergeService Unit Tests', () => {
         });
     });
 });
-

@@ -1,7 +1,7 @@
 # Part Merge Reliability — Developer Handoff
 
 > **Forson Business Suite** | **Date:** 2026-09-21 | **Branch:** `master`
-> **Status:** Unique-child collision fix is committed. Full merge-domain audit, explicit relationship policies, and reversible-merge design are not started.
+> **Status:** All approved reliability phases are implemented. The remaining work is database-backed integration coverage and production migration verification.
 
 ## 0. Status at a Glance
 
@@ -19,9 +19,9 @@
 | `part_exclusion` transfer | **Done** in `85c336e` | §4-B |
 | Historical tables — explicit Preserve policy | **Done** in `85c336e` | §4-C |
 | WAC non-positive quantity fix | **Done** in `85c336e` | §5 |
-| Merge concurrency hardening | **Not started** | §5 |
-| Meilisearch durable sync | **Not started** | §5 |
-| Expiring merge-revert capability | **Not started** | §6 |
+| Merge concurrency hardening | **Done** | §5 |
+| Meilisearch durable sync | **Done** | §5 |
+| Expiring merge-revert capability | **Done** | §6 |
 
 ## 1. For a New Session or Agent Picking This Up
 
@@ -30,7 +30,7 @@ Before implementation:
 1. Run `graphify query "PartMergeService executeMerge mergeChildRecords reassignForeignKeys undo merge"`.
 2. Recall hindsight with query `"part merge PostgreSQL child uniqueness and undo"` and tags `forson-business-suite`, `part-merge`.
 3. Confirm this document against `git status` and `git log --oneline -10`.
-4. Inspect live foreign keys referencing `part` before deciding a migration policy; do not rely only on the initial schema.
+4. Run the database-backed merge/revert integration suite before changing relationship policies; do not rely only on unit mocks.
 
 When a phase lands, update §0 and the corresponding section, retain non-obvious decisions, and run `graphify update .`.
 
@@ -53,28 +53,28 @@ Completed work:
 - Local rollback-only SQL reproduced the old `part_number` collision for keep part 1024 / `90915-YZZE1`; the fixed query reassigned two rows with no active duplicate.
 - Focused service tests passed (9 tests). API lint completed with zero errors and unrelated repository warnings. The full API suite could not authenticate to its expected test database in this workspace.
 
-## 4. Relationship Policy Audit — Not Started
+## 4. Relationship Policy Audit — As Built
 
 `executeMerge()` currently moves only five hard-coded foreign-key tables: goods-receipt lines, invoice lines, PO lines, credit-note lines, and inventory transactions. It separately handles part numbers, applications, and barcodes.
 
-Required next step: build a relationship-policy matrix from the live schema. For each `part_id` reference, choose one of:
+The relationship-policy matrix is implemented in `mergeChildRecords()` and `reassignForeignKeys()`. Each `part_id` reference is one of:
 
 - **Move:** active operational data, with deduplication where necessary.
 - **Aggregate:** inventory/statistical data where per-part uniqueness makes direct reassignment unsafe.
 - **Preserve:** immutable history/audit rows; resolve current catalog identity through `merged_into_part_id` rather than rewriting history.
 - **Rebuild/invalidate:** cache, search, or derived data.
 
-Known gaps requiring explicit decisions:
+The following policies were implemented:
 
-- `part_tag`: UI exposes `mergeTags`, but execution does not merge tags.
-- `part_inventory_stats`: not moved or reconciled.
-- `staged_sale` / active draft references: not moved.
-- Existing `part_aliases`: new aliases are created but existing aliases are not reconciled.
-- AI/dedupe, cycle-count, WAC-correction, and stock-reconciliation records: likely historical/audit data; preserve unless product policy says otherwise.
+- `part_tag` moves unless `mergeTags` is explicitly false.
+- `part_inventory_stats` aggregates last-counted/audit state.
+- Open `staged_sale_line` rows move; completed/rejected sales retain original attribution.
+- Existing aliases reconcile before merge-created provenance aliases are added.
+- AI/dedupe data is invalidated, exclusions are transferred, and historical/audit rows are preserved.
 
 Do not bulk-update every table blindly. Moving historical invoice/receipt/inventory rows changes what an old document appears to refer to. Make this an explicit product decision per table.
 
-## 5. Merge Execution and Presentation Hardening — Not Started
+## 5. Merge Execution and Presentation Hardening — As Built
 
 Current strengths:
 
@@ -82,25 +82,26 @@ Current strengths:
 - Source parts remain as inactive rows with `merged_into_part_id` pointing to the survivor.
 - The cleanup UI navigates to Parts after success; `PartsPage` reloads its list when mounted.
 
-Required improvements:
+Implemented hardening:
 
-- Lock or otherwise serialize child-row and dependent-record edits; locking only `part` rows does not prevent all concurrent child edits.
-- Decide whether historical transaction lines should be reassigned or preserve their original part identity.
-- Revisit WAC logic: it uses net stock by part but ignores non-positive net quantities when calculating weighted value, which can misstate WAC after returns/adjustments.
-- Make search synchronization durable/observable. `syncMeilisearch()` runs after commit and logs failures rather than surfacing or recording a durable retry outcome.
-- Add integration tests that prove the intended policy for every migrated/aggregated/preserved relationship.
+- Merges take deterministic transaction-scoped advisory locks, then revalidate under the locks. A migration trigger makes all covered part/child/inventory writers take the same locks.
+- Historical transaction-document rows preserve original attribution; inventory transactions move only after WAC reads original-owner stock.
+- WAC includes signed quantities and uses the pre-reassignment stock snapshot, retaining survivor WAC for non-positive combined stock.
+- The merge writes a survivor upsert and source deletes to `meili_sync_outbox` inside its transaction. The existing worker provides retries, dead-letter status, and observability.
 
-## 6. Expiring Merge Revert — Not Started
+Still required: real-PostgreSQL integration tests covering the policy matrix, concurrent writers, WAC ordering, outbox retry, and revert safety.
 
-There is no merge-revert endpoint, UI, or sufficient snapshot today. `part_merge_log` stores rules and counts, not before-images or per-row ownership mappings, so a correct undo cannot be reconstructed after the fact.
+## 6. Expiring Merge Revert — As Built
 
-Recommended design:
+`part_merge_log` remains the compact immutable audit trail. Reversible before-images are held separately in time-limited snapshots so audit retention is never coupled to snapshot storage.
 
-1. Before merge mutations, write a merge operation record with `undo_expires_at`, survivor/source part before-images, and per-row ownership mappings for every row moved, deleted, aggregated, or soft-deleted.
-2. Add a permission-gated revert endpoint and UI action available only before expiry.
-3. Revert in one transaction: reactivate source parts, restore pre-merge scalar values, restore rows by their recorded primary keys/original owners, undo aggregates, and record `reverted_at`/actor/reason.
-4. Block undo if later activity makes allocation ambiguous (for example new sales, receipts, adjustments, or survivor edits after merge). Offer a forward correction instead.
-5. On expiry, retain a compact immutable merge audit record but purge/archive the heavy snapshots and mappings on a scheduled job. Never delete the audit log merely to manage storage.
+Implemented design:
+
+1. `part_merge_operation` and `part_merge_snapshot` capture before-images for every mutated relationship and expire after 24 hours.
+2. `parts:merge_revert` is granted to Admin and Manager roles. The cleanup page lists eligible operations and requires a reason.
+3. Revert restores snapshots in one transaction, records actor/reason/timestamp, and queues catalog upserts transactionally.
+4. Revert refuses later part edits or new inventory transactions; use a forward correction when it is unsafe.
+5. A daily worker marks operations expired and purges detailed snapshots 90 days after their undo window. `part_merge_log` remains intact.
 
 ## 7. Verification
 
@@ -110,6 +111,10 @@ npm run -w packages/api test -- --runInBand packages/api/tests/partMergeService.
 
 # API lint
 npm run -w packages/api lint
+
+# Web lint and production build
+npm run -w packages/web lint
+npm run -w packages/web build
 
 # Schema/migration drift check when DB credentials are configured
 npm run -w packages/api migrate:verify -- --host localhost
@@ -124,3 +129,4 @@ graphify update .
 |---|---|---|
 | 2026-09-21 | Codex + product owner | Documented committed child-uniqueness fix and the deferred relationship-policy, concurrency, and expiring-undo work. |
 | 2026-09-21 | Antigravity | Implemented full FK policy matrix (§4-A/B/C) + WAC fix (§5) in commit `85c336e`. All 28 FK references classified; 18 unit tests passing. Remaining: concurrency hardening, Meili durable sync, expiring undo (§6). |
+| 2026-09-21 | Codex + product owner | Implemented advisory-lock serialization, transactional Meili outbox events, pre-reassignment signed WAC, 24-hour permission-gated revert with 90-day snapshot retention, maintenance job, and cleanup-page action. |
