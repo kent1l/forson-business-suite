@@ -13,7 +13,10 @@ const enrichMetadata = (metadata = null) => {
   return base;
 };
 
-const enqueueEvent = async (action, entityId, metadata = null) => {
+// `executor` is normally the pool, but merge workflows pass their open
+// transaction client so the catalog mutation and its search event commit (or
+// roll back) together.
+const enqueueEvent = async (action, entityId, metadata = null, executor = db) => {
   if (!Object.values(ACTIONS).includes(action)) {
     throw new Error(`Invalid meili outbox action: ${action}`);
   }
@@ -25,18 +28,18 @@ const enqueueEvent = async (action, entityId, metadata = null) => {
   `;
 
   const payload = JSON.stringify(enrichMetadata(metadata));
-  const { rows } = await db.query(sql, [action, entityId, payload]);
+  const { rows } = await executor.query(sql, [action, entityId, payload]);
   return rows[0]?.outbox_id;
 };
 
-const enqueuePartUpsert = async (partId, metadata = null) => {
+const enqueuePartUpsert = async (partId, metadata = null, executor = db) => {
   if (!partId) return null;
-  return enqueueEvent(ACTIONS.UPSERT_PART, partId, metadata);
+  return enqueueEvent(ACTIONS.UPSERT_PART, partId, metadata, executor);
 };
 
-const enqueuePartDelete = async (partId, metadata = null) => {
+const enqueuePartDelete = async (partId, metadata = null, executor = db) => {
   if (!partId) return null;
-  return enqueueEvent(ACTIONS.DELETE_PART, partId, metadata);
+  return enqueueEvent(ACTIONS.DELETE_PART, partId, metadata, executor);
 };
 
 module.exports = {

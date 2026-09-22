@@ -16,6 +16,7 @@ const { startArDueDateReminderEngine } = require('./services/arDueDateReminderSe
 const { startLedgerReconciliationEngine } = require('./services/ledgerReconciliationService');
 const { startNotificationGroomer } = require('./services/notificationGroomer');
 const { startAnalyticsAlertEngine } = require('./services/analyticsAlertService');
+const { startPartMergeSnapshotCleanup } = require('./services/partMergeMaintenanceService');
 
 // Set default timezone to Philippine Time
 process.env.TZ = 'Asia/Manila';
@@ -180,6 +181,8 @@ app.listen(PORT, async () => {
   } else {
     console.log('Meili outbox worker disabled by DISABLE_MEILI_OUTBOX_WORKER=true');
   }
+
+  startPartMergeSnapshotCleanup();
 
 
   if (process.env.DISABLE_SEARCH_REPAIR_WORKER !== 'true') {

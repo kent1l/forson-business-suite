@@ -13,7 +13,7 @@ const express = require('express');
 
 jest.setTimeout(10000);
 
-jest.mock('../db', () => ({ query: jest.fn(), getClient: jest.fn() }));
+jest.mock('../db', () => ({ query: jest.fn().mockResolvedValue({ rows: [] }), getClient: jest.fn() }));
 
 const testUser = { employee_id: 7, username: 'cashier', permission_level_id: 4, permissions: ['pos:use'] };
 

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import api from '../api';
 import toast from 'react-hot-toast';
 import Icon from '../components/ui/Icon';
@@ -14,6 +14,11 @@ import SearchBar from '../components/SearchBar';
 const SELECTION_MODES = {
     AUTOMATIC: 'automatic',
     MANUAL: 'manual'
+};
+
+const CLEANUP_VIEWS = {
+    DEDUPLICATION: 'deduplication',
+    HISTORY: 'history'
 };
 
 const STEPS = {
@@ -64,6 +69,113 @@ const PartsCleanupPage = ({ user: _user, onNavigate }) => {
     const [manualLoading, setManualLoading] = useState(false);
     const [manualHasSearched, setManualHasSearched] = useState(false);
     const [manualError, setManualError] = useState('');
+    const [activeView, setActiveView] = useState(CLEANUP_VIEWS.DEDUPLICATION);
+    const [mergeHistory, setMergeHistory] = useState([]);
+    const [historyLoading, setHistoryLoading] = useState(false);
+    const [historyError, setHistoryError] = useState('');
+    const [revertingOperationId, setRevertingOperationId] = useState(null);
+
+    const loadMergeHistory = useCallback(async () => {
+        try {
+            setHistoryLoading(true);
+            setHistoryError('');
+            const response = await api.get('/parts/merge/history');
+            setMergeHistory(response.data.operations || []);
+        } catch (error) {
+            console.error('Failed to load merge history:', error);
+            setHistoryError('Unable to load merge history. Please try again.');
+        } finally {
+            setHistoryLoading(false);
+        }
+    }, []);
+
+    useEffect(() => {
+        if (activeView === CLEANUP_VIEWS.HISTORY) loadMergeHistory();
+    }, [activeView, loadMergeHistory]);
+
+    const revertMerge = async (operation) => {
+        const reason = window.prompt('Why is this merge being reverted? This is recorded in the audit log.');
+        if (!reason?.trim()) return;
+        if (!window.confirm('Revert this merge? It will restore the original part records and relationships.')) return;
+        try {
+            setRevertingOperationId(operation.operation_id);
+            await api.post(`/parts/merge/${operation.operation_id}/revert`, { reason });
+            toast.success('Merge reverted successfully');
+            await loadMergeHistory();
+        } catch (error) {
+            toast.error(error.response?.data?.message || 'Unable to revert this merge');
+        } finally {
+            setRevertingOperationId(null);
+        }
+    };
+
+    const renderMergeHistory = () => {
+        const isRevertible = (operation) => operation.status === 'active'
+            && new Date(operation.undo_expires_at) > new Date();
+        const statusDetails = (operation) => {
+            if (isRevertible(operation)) return { label: 'Revertible', className: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200' };
+            if (operation.status === 'reverted') return { label: 'Reverted', className: 'bg-success-100 text-success-800 dark:bg-success-900/40 dark:text-success-200' };
+            return { label: 'Revert window closed', className: 'bg-gray-100 text-gray-700 dark:bg-slate-700 dark:text-slate-200' };
+        };
+
+        return (
+            <section className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 shadow-card overflow-hidden">
+                <div className="p-6 border-b border-gray-200 dark:border-slate-700 flex flex-wrap items-start justify-between gap-4">
+                    <div>
+                        <h2 className="text-lg font-semibold text-gray-900 dark:text-slate-100">Merge history</h2>
+                        <p className="mt-1 text-sm text-gray-600 dark:text-slate-400">Review recent part merges and safely restore eligible records. A revert requires a reason and is blocked after later catalog or inventory activity.</p>
+                    </div>
+                    <button type="button" onClick={loadMergeHistory} disabled={historyLoading} className="px-3 py-2 text-sm font-medium text-primary-700 dark:text-primary-300 border border-primary-200 dark:border-primary-800 rounded-lg hover:bg-primary-50 dark:hover:bg-primary-950/30 disabled:opacity-60">
+                        {historyLoading ? 'Refreshing…' : 'Refresh'}
+                    </button>
+                </div>
+
+                {historyError ? (
+                    <div className="m-6 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">{historyError}</div>
+                ) : historyLoading && mergeHistory.length === 0 ? (
+                    <div className="p-10 text-center text-sm text-gray-500 dark:text-slate-400">Loading merge history…</div>
+                ) : mergeHistory.length === 0 ? (
+                    <div className="p-10 text-center">
+                        <p className="font-medium text-gray-900 dark:text-slate-100">No recent merges</p>
+                        <p className="mt-1 text-sm text-gray-500 dark:text-slate-400">Completed merges will appear here, together with their recovery status.</p>
+                    </div>
+                ) : (
+                    <div className="divide-y divide-gray-200 dark:divide-slate-700">
+                        {mergeHistory.map((operation) => {
+                            const status = statusDetails(operation);
+                            const mergedIds = operation.merged_part_ids || [];
+                            return (
+                                <article key={operation.operation_id} className="p-5 sm:p-6">
+                                    <div className="flex flex-wrap items-start justify-between gap-4">
+                                        <div className="min-w-0">
+                                            <div className="flex flex-wrap items-center gap-2">
+                                                <h3 className="font-semibold text-gray-900 dark:text-slate-100">{operation.keep_part_display_name || 'Unnamed part'}</h3>
+                                                <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${status.className}`}>{status.label}</span>
+                                            </div>
+                                            <p className="mt-1 text-sm text-gray-600 dark:text-slate-400">SKU: {operation.keep_part_sku || 'Not assigned'}</p>
+                                            <p className="mt-2 text-sm text-gray-700 dark:text-slate-300">Merged #{mergedIds.join(', #') || '—'} into this part</p>
+                                            <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-xs text-gray-500 dark:text-slate-400">
+                                                <span>Merged {operation.completed_at ? new Date(operation.completed_at).toLocaleString() : 'in progress'}</span>
+                                                {operation.actor_name && <span>By {operation.actor_name}</span>}
+                                                {isRevertible(operation) && <span>Revert by {new Date(operation.undo_expires_at).toLocaleString()}</span>}
+                                                {operation.reverted_at && <span>Reverted {new Date(operation.reverted_at).toLocaleString()}{operation.reverted_by_name ? ` by ${operation.reverted_by_name}` : ''}</span>}
+                                            </div>
+                                            {operation.revert_reason && <p className="mt-3 text-sm text-gray-600 dark:text-slate-300"><span className="font-medium">Revert reason:</span> {operation.revert_reason}</p>}
+                                        </div>
+                                        {isRevertible(operation) && hasPermission('parts:merge_revert') && (
+                                            <button type="button" onClick={() => revertMerge(operation)} disabled={revertingOperationId === operation.operation_id} className="shrink-0 rounded-lg bg-amber-700 px-3 py-2 text-sm font-semibold text-white hover:bg-amber-800 disabled:cursor-not-allowed disabled:opacity-60">
+                                                {revertingOperationId === operation.operation_id ? 'Reverting…' : 'Revert merge'}
+                                            </button>
+                                        )}
+                                    </div>
+                                </article>
+                            );
+                        })}
+                    </div>
+                )}
+            </section>
+        );
+    };
 
     // Step navigation helpers
     const stepOrder = [
@@ -528,7 +640,7 @@ const PartsCleanupPage = ({ user: _user, onNavigate }) => {
                     <div>
                         <h1 className="text-2xl font-bold text-gray-900 dark:text-slate-100">Parts Cleanup</h1>
                         <p className="text-gray-600 dark:text-slate-400 mt-1">
-                            Merge duplicate parts to clean up your database. This operation cannot be easily undone.
+                            Merge duplicate parts into one canonical record. Eligible merges can be reverted for 24 hours.
                         </p>
                     </div>
                     <button
@@ -540,6 +652,27 @@ const PartsCleanupPage = ({ user: _user, onNavigate }) => {
                     </button>
                 </div>
             </div>
+
+            <div className="border-b border-gray-200 dark:border-slate-700">
+                <nav className="flex gap-5" aria-label="Parts cleanup sections">
+                    <button
+                        type="button"
+                        onClick={() => setActiveView(CLEANUP_VIEWS.DEDUPLICATION)}
+                        className={`border-b-2 px-1 pb-3 text-sm font-semibold transition-colors ${activeView === CLEANUP_VIEWS.DEDUPLICATION ? 'border-primary-600 text-primary-700 dark:border-primary-400 dark:text-primary-300' : 'border-transparent text-gray-500 hover:text-gray-900 dark:text-slate-400 dark:hover:text-slate-100'}`}
+                    >
+                        Deduplicate parts
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setActiveView(CLEANUP_VIEWS.HISTORY)}
+                        className={`border-b-2 px-1 pb-3 text-sm font-semibold transition-colors ${activeView === CLEANUP_VIEWS.HISTORY ? 'border-primary-600 text-primary-700 dark:border-primary-400 dark:text-primary-300' : 'border-transparent text-gray-500 hover:text-gray-900 dark:text-slate-400 dark:hover:text-slate-100'}`}
+                    >
+                        Merge history
+                    </button>
+                </nav>
+            </div>
+
+            {activeView === CLEANUP_VIEWS.HISTORY ? renderMergeHistory() : <>
 
             {/* Step Indicator */}
             <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 p-6 shadow-card">
@@ -657,6 +790,7 @@ const PartsCleanupPage = ({ user: _user, onNavigate }) => {
                     )}
                 </div>
             </div>
+            </>}
         </div>
     );
 };

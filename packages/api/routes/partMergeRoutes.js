@@ -101,7 +101,8 @@ router.post('/parts/merge/merge-preview', protect, hasPermission('parts:merge'),
         });
     } catch (error) {
         console.error('Error generating merge preview:', error);
-        res.status(500).json({
+        const isConflict = error.statusCode === 409 || /already merged|invalid|cannot be in the list/i.test(error.message || '');
+        res.status(isConflict ? 409 : 500).json({
             success: false,
             message: 'Failed to generate merge preview',
             error: process.env.NODE_ENV === 'development' ? error.message : undefined
@@ -133,7 +134,9 @@ router.post('/parts/merge/merge', protect, hasPermission('parts:merge'), async (
 
         // Convert IDs to integers to ensure proper database parameter types
         const targetPartIdInt = parseInt(targetPartId);
-        const sourcePartIdsInt = sourcePartIds.map(id => parseInt(id));
+        const sourcePartIdsInt = Array.isArray(sourcePartIds)
+            ? sourcePartIds.map(id => parseInt(id))
+            : [];
 
         if (!sourcePartIdsInt || !Array.isArray(sourcePartIdsInt) || sourcePartIdsInt.length === 0) {
             console.log('DEBUG: sourcePartIds validation failed:', sourcePartIdsInt);
@@ -173,11 +176,58 @@ router.post('/parts/merge/merge', protect, hasPermission('parts:merge'), async (
         });
     } catch (error) {
         console.error('Error executing merge:', error);
-        res.status(500).json({
+        const isConflict = error.statusCode === 409 || /already merged|Cannot revert|no longer eligible/i.test(error.message || '');
+        res.status(isConflict ? 409 : 500).json({
             success: false,
             message: 'Failed to execute merge',
             error: process.env.NODE_ENV === 'development' ? error.message : undefined
         });
+    }
+});
+
+// Route: GET /api/parts/merge/revertable
+// Lists only still-revertible operations. This powers the cleanup UI and avoids
+// exposing expired before-images.
+router.get('/parts/merge/revertable', protect, hasPermission('parts:merge_revert'), async (req, res) => {
+    try {
+        const partId = req.query.partId ? Number(req.query.partId) : null;
+        if (req.query.partId && !Number.isInteger(partId)) {
+            return res.status(400).json({ success: false, message: 'Invalid partId' });
+        }
+        res.json({ success: true, operations: await partMergeService.getRevertableOperations(partId) });
+    } catch (error) {
+        console.error('Error loading revertable merges:', error);
+        res.status(500).json({ success: false, message: 'Failed to load revertable merges' });
+    }
+});
+
+// Route: GET /api/parts/merge/history
+// Provides the cleanup page with an auditable merge timeline. Before-images
+// remain private to the service; this exposes only operation metadata.
+router.get('/parts/merge/history', protect, hasPermission('parts:merge'), async (req, res) => {
+    try {
+        const limit = req.query.limit ? Number(req.query.limit) : 100;
+        if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+            return res.status(400).json({ success: false, message: 'limit must be an integer between 1 and 100' });
+        }
+        res.json({ success: true, operations: await partMergeService.getMergeOperations(limit) });
+    } catch (error) {
+        console.error('Error loading part merge history:', error);
+        res.status(500).json({ success: false, message: 'Failed to load part merge history' });
+    }
+});
+
+// Route: POST /api/parts/merge/:operationId/revert
+router.post('/parts/merge/:operationId/revert', protect, hasPermission('parts:merge_revert'), async (req, res) => {
+    try {
+        const result = await partMergeService.revertMerge(req.params.operationId, req.user.employee_id, req.body?.reason);
+        res.json({ success: true, result });
+    } catch (error) {
+        console.error('Error reverting part merge:', error);
+        const status = /not found/i.test(error.message || '') ? 404
+            : /required|eligible|Cannot revert/i.test(error.message || '') ? 409
+                : 500;
+        res.status(status).json({ success: false, message: error.message || 'Failed to revert merge' });
     }
 });
 
@@ -353,7 +403,15 @@ router.get('/parts/merge/suggestions', protect, hasPermission('parts:merge'), as
         const { confidence, limit = 100, offset = 0 } = req.query;
 
         // Build WHERE clause based on optional confidence filter
-        const conditions = [`status = 'pending'`];
+        const conditions = [
+            `status = 'pending'`,
+            `NOT EXISTS (
+                SELECT 1
+                FROM unnest(part_ids) AS suggestion_part_id
+                LEFT JOIN part p ON p.part_id = suggestion_part_id
+                WHERE p.part_id IS NULL OR p.merged_into_part_id IS NOT NULL OR p.is_active = FALSE
+            )`
+        ];
         const params = [];
         if (confidence && ['exact', 'high', 'medium', 'low'].includes(confidence)) {
             params.push(confidence);
@@ -388,6 +446,12 @@ router.get('/parts/merge/suggestions', protect, hasPermission('parts:merge'), as
             SELECT confidence, COUNT(*) as count
             FROM public.duplicate_suggestion_group
             WHERE status = 'pending'
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM unnest(part_ids) AS suggestion_part_id
+                  LEFT JOIN part p ON p.part_id = suggestion_part_id
+                  WHERE p.part_id IS NULL OR p.merged_into_part_id IS NOT NULL OR p.is_active = FALSE
+              )
             GROUP BY confidence
         `);
         const counts = { exact: 0, high: 0, medium: 0, low: 0 };

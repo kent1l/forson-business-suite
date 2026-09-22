@@ -6,7 +6,8 @@ const ConfirmMerge = ({ mergePreview, onConfirm, loading }) => {
     const [confirmationText, setConfirmationText] = useState('');
     const [agreed, setAgreed] = useState(false);
 
-    const isConfirmationValid = confirmationText === 'MERGE' && agreed;
+    const isMergeBlocked = mergePreview?.some(item => item.isMergeBlocked);
+    const isConfirmationValid = confirmationText === 'MERGE' && agreed && !isMergeBlocked;
 
     const handleConfirm = () => {
         if (isConfirmationValid && !loading) {
@@ -70,6 +71,13 @@ const ConfirmMerge = ({ mergePreview, onConfirm, loading }) => {
             </div>
 
             {/* Final Warnings */}
+            {isMergeBlocked && (
+                <div className="bg-amber-50 border border-amber-300 rounded-lg p-6 text-amber-900">
+                    <h3 className="text-md font-semibold">Open cycle count blocks this merge</h3>
+                    <p className="mt-2 text-sm">Complete or cancel every pending, manager-review, or recount-requested count for these parts, then refresh the merge preview.</p>
+                </div>
+            )}
+
             <div className="bg-red-50 border border-red-200 rounded-lg p-6">
                 <div className="flex items-start">
                     <Icon path={ICONS.warning} className="h-6 w-6 text-red-600 mr-3 mt-0.5 flex-shrink-0" />
@@ -138,8 +146,9 @@ const ConfirmMerge = ({ mergePreview, onConfirm, loading }) => {
             <div className="bg-white rounded-lg border border-gray-200 p-6">
                 <div className="flex items-center justify-between">
                     <div className="text-sm text-gray-600">
-                        {!agreed && 'Please agree to the terms first'}
-                        {agreed && confirmationText !== 'MERGE' && 'Please type "MERGE" to continue'}
+                        {isMergeBlocked && 'Complete or cancel the open cycle counts, then refresh the preview'}
+                        {!isMergeBlocked && !agreed && 'Please agree to the terms first'}
+                        {!isMergeBlocked && agreed && confirmationText !== 'MERGE' && 'Please type "MERGE" to continue'}
                         {isConfirmationValid && !loading && 'Ready to execute merge operation'}
                         {loading && 'Executing merge operation...'}
                     </div>

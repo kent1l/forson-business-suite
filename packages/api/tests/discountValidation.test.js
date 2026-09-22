@@ -2,7 +2,7 @@ const request = require('supertest');
 const express = require('express');
 
 jest.mock('../db', () => {
-    const queryFn = jest.fn();
+    const queryFn = jest.fn().mockResolvedValue({ rows: [] });
     return {
         query: queryFn,
         getClient: jest.fn().mockResolvedValue({ query: queryFn, release: jest.fn() })
