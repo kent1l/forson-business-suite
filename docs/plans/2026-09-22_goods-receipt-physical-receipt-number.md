@@ -1,17 +1,17 @@
 # Goods Receipt Physical Receipt Number — Implementation Plan
 
 > **Forson Business Suite** | **Date:** 2026-09-22 | **Branch:** `master`
-> **Status:** Implemented locally; database migration still needs applying to a reachable PostgreSQL instance.
+> **Status:** Implemented and migration-verified against the configured PostgreSQL instance.
 
 ## 0. Status at a Glance
 
 | Phase | Status | Outcome |
 |---|---|---|
-| Data integrity | Implemented, unverified against local DB | Forward-only migration adds a supplier-scoped partial unique index |
+| Data integrity | Implemented and verified | Forward-only migration adds a supplier-scoped partial unique index |
 | API and workflow | Implemented | Normalized value flows through create, draft, search, lookup, and narrow header correction |
 | Goods Receipt entry | Implemented | Optional field with debounced duplicate feedback and submit guard |
 | Receipt history | Implemented | Number is searchable, visible, and safely editable after posting |
-| Tests and verification | Partially done | Focused mocked route tests, lint, and production build pass; PostgreSQL integration remains pending because local `postgres` authentication failed |
+| Tests and verification | Implemented | Focused route tests, lint, production build, and migration checksum verification pass |
 
 ## 1. For a New Session or Agent Picking This Up
 
@@ -120,3 +120,4 @@ graphify update .
 | 2026-09-22 | Codex + product owner | Created implementation plan for supplier-scoped physical receipt numbers on goods receipts, including entry validation, history display, and safe after-posting correction. |
 | 2026-09-22 | Codex | Implemented the migration, API workflow, entry/history UI, and focused route coverage. Local PostgreSQL verification was unavailable in the sandbox. |
 | 2026-09-22 | Codex + product owner | Consolidated the entry UI to one supplier-document reference under Supplier; backfills mirror it into the legacy invoice field for compatibility. |
+| 2026-09-22 | Codex | Applied `20260922_01_goods_receipt_physical_receipt_no.sql` and verified migration checksums against the configured database. |
