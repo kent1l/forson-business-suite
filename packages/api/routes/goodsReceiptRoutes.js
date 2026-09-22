@@ -1233,11 +1233,15 @@ router.get('/goods-receipts/drafts', protect, hasPermission('goods_receipt:creat
 // in the entry screen with its freight, discounts and price-sync choice intact. Declared
 // after /goods-receipts/drafts so that literal path is not captured by :id.
 router.get('/goods-receipts/:id', protect, hasPermission('goods_receipt:create'), async (req, res) => {
-  try {
+  const fetchHeader = async (includePhysicalReceipt) => {
     const { rows } = await db.query(
       `SELECT gr.grn_id, gr.grn_number, gr.receipt_date, gr.supplier_id, gr.received_by, gr.po_id,
               gr.bill_id, gr.freight_bill_id, gr.status, gr.workflow_status, gr.is_backfill,
-              gr.supplier_invoice_no, gr.physical_receipt_no, gr.freight_amount, gr.freight_allocation_method,
+              gr.supplier_invoice_no,
+              ${includePhysicalReceipt
+                ? 'COALESCE(gr.physical_receipt_no, gr.supplier_invoice_no) AS physical_receipt_no,'
+                : 'gr.supplier_invoice_no AS physical_receipt_no,'}
+              gr.freight_amount, gr.freight_allocation_method,
               gr.freight_supplier_id, gr.overall_discount_percent, gr.overall_discount_amount,
               gr.sync_retail_prices, gr.created_at, gr.submitted_at, gr.posted_at,
               s.supplier_name,
@@ -1250,8 +1254,18 @@ router.get('/goods-receipts/:id', protect, hasPermission('goods_receipt:create')
        WHERE gr.grn_id = $1`,
       [req.params.id],
     );
-    if (rows.length === 0) return res.status(404).json({ message: 'Goods receipt not found' });
-    const grn = rows[0];
+    return rows[0] || null;
+  };
+
+  try {
+    let grn;
+    try {
+      grn = await fetchHeader(true);
+    } catch (err) {
+      if (err.code !== '42703' || !/physical_receipt_no/i.test(err.message || '')) throw err;
+      grn = await fetchHeader(false);
+    }
+    if (!grn) return res.status(404).json({ message: 'Goods receipt not found' });
     const { rows: freightRows } = await db.query(
       `SELECT grf.grn_freight_id, grf.grn_id, grf.supplier_id, grf.amount,
               grf.receipt_number, grf.notes, grf.is_paid, grf.payment_method_id,
