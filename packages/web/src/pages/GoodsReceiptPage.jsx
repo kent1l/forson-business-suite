@@ -21,6 +21,7 @@ import PartForm from '../components/forms/PartForm';
 import { formatCurrency } from '../utils/currency';
 import { computeCosting, markupFromPrice, roundUpTo, DEFAULT_MARKUP_PERCENT, MIN_MARKUP_PERCENT, PRICE_ROUNDING_INCREMENT, METHOD_A } from '../utils/grnCosting';
 import { useAuth } from '../contexts/AuthContext';
+import { formatPhysicalReceiptNumber } from '../utils/receiptNumberFormatter';
 
 const upperCatalogText = (value) => String(value || '').replace(/\s+/g, ' ').trim().toUpperCase();
 
@@ -76,6 +77,8 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
     const [receiptDate, setReceiptDate] = useState('');
     const [isBackfill, setIsBackfill] = useState(false);
     const [supplierInvoiceNo, setSupplierInvoiceNo] = useState('');
+    const [physicalReceiptNo, setPhysicalReceiptNo] = useState('');
+    const [physicalReceiptConflict, setPhysicalReceiptConflict] = useState(null);
     const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' });
 
     const { hasPermission } = useAuth();
@@ -106,8 +109,8 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
     // Reusable draft hook
     const draftData = useMemo(() => (stagedGrn ? {} : {
         selectedSupplier, lines, selectedPO,
-        freightAmount, freightSupplierId, freightCosts, freightMethod, overallDiscount, syncRetailPrices,
-    }), [stagedGrn, selectedSupplier, lines, selectedPO, freightAmount, freightSupplierId, freightCosts, freightMethod, overallDiscount, syncRetailPrices]);
+        freightAmount, freightSupplierId, freightCosts, freightMethod, overallDiscount, syncRetailPrices, physicalReceiptNo,
+    }), [stagedGrn, selectedSupplier, lines, selectedPO, freightAmount, freightSupplierId, freightCosts, freightMethod, overallDiscount, syncRetailPrices, physicalReceiptNo]);
     const isEmpty = useMemo(() => (d) => (!d?.selectedSupplier && (!d?.lines || d.lines.length === 0) && !d?.selectedPO), []);
     const { status: draftStatus, lastSavedAt, draft, loaded: draftLoaded, clearDraft } = useDraft('goods-receipt', { data: draftData, isEmpty, debounceMs: 750 });
 
@@ -228,6 +231,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
             setSyncRetailPrices(header.sync_retail_prices !== false);
             setIsBackfill(!!header.is_backfill);
             setSupplierInvoiceNo(header.supplier_invoice_no || '');
+            setPhysicalReceiptNo(header.physical_receipt_no || '');
             if (header.receipt_date) setReceiptDate(String(header.receipt_date).slice(0, 10));
             setLines((linesRes.data || []).map(l => ({
                 ...l,
@@ -267,9 +271,31 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
             if (draft.freightMethod) setFreightMethod(draft.freightMethod);
             if (draft.overallDiscount) setOverallDiscount(draft.overallDiscount);
             if (draft.syncRetailPrices !== undefined) setSyncRetailPrices(draft.syncRetailPrices);
+            if (draft.physicalReceiptNo !== undefined) setPhysicalReceiptNo(draft.physicalReceiptNo);
             toast('Loaded your saved draft.', { icon: '📄' });
         }
     }, [draftLoaded, draft]);
+
+    useEffect(() => {
+        const normalized = formatPhysicalReceiptNumber(physicalReceiptNo);
+        if (!selectedSupplier || !normalized) {
+            setPhysicalReceiptConflict(null);
+            return undefined;
+        }
+        const timer = setTimeout(async () => {
+            try {
+                const { data } = await api.get('/goods-receipts/check-physical-receipt', { params: {
+                    supplier_id: selectedSupplier,
+                    physical_receipt_no: normalized,
+                    exclude_grn_id: stagedGrn?.grn_id,
+                }});
+                setPhysicalReceiptConflict(data.is_taken ? data : null);
+            } catch (err) {
+                setPhysicalReceiptConflict(null);
+            }
+        }, 350);
+        return () => clearTimeout(timer);
+    }, [selectedSupplier, physicalReceiptNo, stagedGrn?.grn_id]);
 
     const handleSelectPO = async (poId) => {
         if (!poId) {
@@ -608,6 +634,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
         receipt_date: receiptDate || null,
         is_backfill: isBackfill,
         supplier_invoice_no: isBackfill ? supplierInvoiceNo : (supplierInvoiceNo || null),
+        physical_receipt_no: formatPhysicalReceiptNumber(physicalReceiptNo),
         freight_amount: freightAmount || 0,
         freight_allocation_method: freightMethod,
         freight_supplier_id: freightSupplierId || null,
@@ -630,6 +657,8 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
         setSelectedPO('');
         setReceiptDate('');
         setSupplierInvoiceNo('');
+        setPhysicalReceiptNo('');
+        setPhysicalReceiptConflict(null);
         setFreightAmount(0);
         setFreightSupplierId('');
         setFreightCosts([]);
@@ -641,6 +670,10 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
 
     // Shared validation for every way out of this screen.
     const validateBeforeSend = () => {
+        if (physicalReceiptConflict) {
+            toast.error(`Physical receipt number is already used by ${physicalReceiptConflict.grn_number} (${physicalReceiptConflict.workflow_status}).`);
+            return false;
+        }
         if (!selectedSupplier || lines.length === 0) {
             toast.error('Please select a supplier and add at least one item.');
             return false;
@@ -883,6 +916,24 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                 <div className={`mb-4 rounded-xl border p-3 ${isBackfill
                     ? 'border-amber-300 dark:border-amber-700/60 bg-amber-50 dark:bg-amber-900/20'
                     : 'border-gray-200 dark:border-slate-700'}`}>
+                    <div className="mb-3">
+                        <label className={labelClass}>Physical Receipt No. (optional)</label>
+                        <input
+                            type="text"
+                            value={physicalReceiptNo}
+                            onChange={e => setPhysicalReceiptNo(e.target.value)}
+                            placeholder="Number printed on the delivery receipt"
+                            className={`${selectClass} ${physicalReceiptConflict ? 'border-danger-500' : ''}`}
+                        />
+                        <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">
+                            This is the delivery document number, separate from the supplier invoice / DR number.
+                        </p>
+                        {physicalReceiptConflict && (
+                            <p className="text-xs font-medium text-danger-600 dark:text-danger-400 mt-1">
+                                Already used by {physicalReceiptConflict.grn_number} ({physicalReceiptConflict.workflow_status}). Choose another number or open that receipt.
+                            </p>
+                        )}
+                    </div>
                     <label className="flex items-start gap-3 cursor-pointer">
                         <input
                             type="checkbox"

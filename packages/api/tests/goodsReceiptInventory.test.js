@@ -116,6 +116,24 @@ describe('Goods Receipt Inventory & Pricing Routes', () => {
         });
     });
 
+    describe('physical receipt number helpers', () => {
+        test('reports a normalized supplier-scoped physical receipt conflict', async () => {
+            db.query.mockResolvedValueOnce({ rows: [{ grn_id: 9, grn_number: 'GRN-9', workflow_status: 'Posted' }] });
+
+            const res = await request(app)
+                .get('/api/goods-receipts/check-physical-receipt?supplier_id=7&physical_receipt_no=dr%200012');
+
+            expect(res.status).toBe(200);
+            expect(res.body).toEqual({ is_taken: true, grn_id: 9, grn_number: 'GRN-9', workflow_status: 'Posted' });
+            expect(db.query).toHaveBeenCalledWith(expect.stringContaining('physical_receipt_no = $2'), [7, 'DR-12', null]);
+        });
+
+        test('rejects an availability lookup without supplier or receipt number', async () => {
+            const res = await request(app).get('/api/goods-receipts/check-physical-receipt?supplier_id=7');
+            expect(res.status).toBe(400);
+        });
+    });
+
     describe('POST /api/goods-receipts', () => {
         test('should return 400 when missing required body fields', async () => {
             const res = await request(app)

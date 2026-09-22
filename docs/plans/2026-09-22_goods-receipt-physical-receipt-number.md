@@ -1,17 +1,17 @@
 # Goods Receipt Physical Receipt Number — Implementation Plan
 
 > **Forson Business Suite** | **Date:** 2026-09-22 | **Branch:** `master`
-> **Status:** Planned; no application or schema implementation has started.
+> **Status:** Implemented locally; database migration still needs applying to a reachable PostgreSQL instance.
 
 ## 0. Status at a Glance
 
 | Phase | Status | Outcome |
 |---|---|---|
-| Data integrity | Not started | Supplier-scoped physical receipt number and database-enforced duplicate prevention |
-| API and workflow | Not started | Value persists through create, draft, submit, post, and post-posting edits |
-| Goods Receipt entry | Not started | Physical receipt input with a helpful pre-flight duplicate warning |
-| Receipt history | Not started | Number is searchable, visible, and editable after posting |
-| Tests and verification | Not started | Race-safe duplicate protection and lifecycle/UI regression coverage |
+| Data integrity | Implemented, unverified against local DB | Forward-only migration adds a supplier-scoped partial unique index |
+| API and workflow | Implemented | Normalized value flows through create, draft, search, lookup, and narrow header correction |
+| Goods Receipt entry | Implemented | Optional field with debounced duplicate feedback and submit guard |
+| Receipt history | Implemented | Number is searchable, visible, and safely editable after posting |
+| Tests and verification | Partially done | Focused mocked route tests, lint, and production build pass; PostgreSQL integration remains pending because local `postgres` authentication failed |
 
 ## 1. For a New Session or Agent Picking This Up
 
@@ -118,3 +118,4 @@ graphify update .
 | Date | Session | Change |
 |---|---|---|
 | 2026-09-22 | Codex + product owner | Created implementation plan for supplier-scoped physical receipt numbers on goods receipts, including entry validation, history display, and safe after-posting correction. |
+| 2026-09-22 | Codex | Implemented the migration, API workflow, entry/history UI, and focused route coverage. Local PostgreSQL verification was unavailable in the sandbox. |
