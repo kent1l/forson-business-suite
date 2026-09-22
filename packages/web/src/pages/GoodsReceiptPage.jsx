@@ -76,7 +76,6 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
     const [posting, setPosting] = useState(false);
     const [receiptDate, setReceiptDate] = useState('');
     const [isBackfill, setIsBackfill] = useState(false);
-    const [supplierInvoiceNo, setSupplierInvoiceNo] = useState('');
     const [physicalReceiptNo, setPhysicalReceiptNo] = useState('');
     const [physicalReceiptConflict, setPhysicalReceiptConflict] = useState(null);
     const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' });
@@ -230,8 +229,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
             });
             setSyncRetailPrices(header.sync_retail_prices !== false);
             setIsBackfill(!!header.is_backfill);
-            setSupplierInvoiceNo(header.supplier_invoice_no || '');
-            setPhysicalReceiptNo(header.physical_receipt_no || '');
+            setPhysicalReceiptNo(header.physical_receipt_no || header.supplier_invoice_no || '');
             if (header.receipt_date) setReceiptDate(String(header.receipt_date).slice(0, 10));
             setLines((linesRes.data || []).map(l => ({
                 ...l,
@@ -633,7 +631,9 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
         po_id: selectedPO ? selectedPO.po_id : null,
         receipt_date: receiptDate || null,
         is_backfill: isBackfill,
-        supplier_invoice_no: isBackfill ? supplierInvoiceNo : (supplierInvoiceNo || null),
+        // A backfill still supplies the legacy invoice field for AP compatibility, but
+        // it is intentionally the same one user-entered supplier document reference.
+        supplier_invoice_no: isBackfill ? formatPhysicalReceiptNumber(physicalReceiptNo) : null,
         physical_receipt_no: formatPhysicalReceiptNumber(physicalReceiptNo),
         freight_amount: freightAmount || 0,
         freight_allocation_method: freightMethod,
@@ -656,7 +656,6 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
         setSelectedSupplier('');
         setSelectedPO('');
         setReceiptDate('');
-        setSupplierInvoiceNo('');
         setPhysicalReceiptNo('');
         setPhysicalReceiptConflict(null);
         setFreightAmount(0);
@@ -682,8 +681,8 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
             toast.error('Catalog or remove every uncataloged PO line before saving this receipt.');
             return false;
         }
-        if (isBackfill && !supplierInvoiceNo.trim()) {
-            toast.error("Enter the supplier's invoice or DR number so this document can't be entered twice.");
+        if (isBackfill && !formatPhysicalReceiptNumber(physicalReceiptNo)) {
+            toast.error('Enter the supplier document number so this document cannot be entered twice.');
             return false;
         }
         if (isBackfill && !receiptDate) {
@@ -916,24 +915,6 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                 <div className={`mb-4 rounded-xl border p-3 ${isBackfill
                     ? 'border-amber-300 dark:border-amber-700/60 bg-amber-50 dark:bg-amber-900/20'
                     : 'border-gray-200 dark:border-slate-700'}`}>
-                    <div className="mb-3">
-                        <label className={labelClass}>Physical Receipt No. (optional)</label>
-                        <input
-                            type="text"
-                            value={physicalReceiptNo}
-                            onChange={e => setPhysicalReceiptNo(e.target.value)}
-                            placeholder="Number printed on the delivery receipt"
-                            className={`${selectClass} ${physicalReceiptConflict ? 'border-danger-500' : ''}`}
-                        />
-                        <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">
-                            This is the delivery document number, separate from the supplier invoice / DR number.
-                        </p>
-                        {physicalReceiptConflict && (
-                            <p className="text-xs font-medium text-danger-600 dark:text-danger-400 mt-1">
-                                Already used by {physicalReceiptConflict.grn_number} ({physicalReceiptConflict.workflow_status}). Choose another number or open that receipt.
-                            </p>
-                        )}
-                    </div>
                     <label className="flex items-start gap-3 cursor-pointer">
                         <input
                             type="checkbox"
@@ -959,19 +940,6 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
 
                     {isBackfill && (
                         <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
-                            <div>
-                                <label className={labelClass}>Supplier Invoice / DR No.</label>
-                                <input
-                                    type="text"
-                                    value={supplierInvoiceNo}
-                                    onChange={e => setSupplierInvoiceNo(e.target.value)}
-                                    placeholder="As printed on the document"
-                                    className={selectClass}
-                                />
-                                <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">
-                                    Required. Blocks the same document from being entered twice.
-                                </p>
-                            </div>
                             <div>
                                 <label className={labelClass}>Date Received</label>
                                 <input
@@ -1017,6 +985,24 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                                 />
                             </div>
                             <button onClick={() => setIsSupplierModalOpen(true)} className="px-3 py-2 bg-gray-200 dark:bg-slate-700 text-gray-800 dark:text-slate-100 rounded-lg hover:bg-gray-300 dark:hover:bg-slate-600 text-sm disabled:opacity-60 disabled:cursor-not-allowed" disabled={!!selectedPO}>New</button>
+                        </div>
+                        <div className="mt-3">
+                            <label className={labelClass}>Supplier Receipt / Invoice / DR No. {isBackfill ? '' : '(optional)'}</label>
+                            <input
+                                type="text"
+                                value={physicalReceiptNo}
+                                onChange={e => setPhysicalReceiptNo(e.target.value)}
+                                placeholder="As printed on the supplier document"
+                                className={`${selectClass} ${physicalReceiptConflict ? 'border-danger-500' : ''}`}
+                            />
+                            <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">
+                                {isBackfill ? 'Required for a backfill. ' : ''}Use the single supplier document reference to prevent duplicate receipts.
+                            </p>
+                            {physicalReceiptConflict && (
+                                <p className="text-xs font-medium text-danger-600 dark:text-danger-400 mt-1">
+                                    Already used by {physicalReceiptConflict.grn_number} ({physicalReceiptConflict.workflow_status}). Choose another number or open that receipt.
+                                </p>
+                            )}
                         </div>
                     </div>
                     {!isBackfill && (

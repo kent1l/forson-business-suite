@@ -291,8 +291,10 @@ router.post('/goods-receipts', protect, hasPermission('goods_receipt:create'), a
   }
 
   const isBackfill = !!is_backfill;
-  const invoiceNo = supplier_invoice_no ? String(supplier_invoice_no).trim() : null;
   const physicalReceiptNo = formatPhysicalReceiptNumber(req.body.physical_receipt_no);
+  // The entry screen deliberately has one supplier-document field. Keep the legacy
+  // invoice column populated for backfills because AP posting still reads it.
+  const invoiceNo = supplier_invoice_no ? String(supplier_invoice_no).trim() : physicalReceiptNo;
   const freightCosts = parseFreightCosts(req.body);
   const totalFreight = freightCosts.length > 0
     ? freightCosts.reduce((s, f) => s + (Number(f.amount) || 0), 0)
@@ -994,8 +996,12 @@ function parseHeaderPayload(body) {
     bill_id: body.bill_id || null,
     receipt_date: body.receipt_date || null,
     is_backfill: !!body.is_backfill,
-    supplier_invoice_no: body.supplier_invoice_no ? String(body.supplier_invoice_no).trim() : null,
     physical_receipt_no: formatPhysicalReceiptNumber(body.physical_receipt_no),
+    // Accept older callers that still send supplier_invoice_no, but treat the one
+    // supplier document reference as the source of truth for new requests.
+    supplier_invoice_no: body.supplier_invoice_no
+      ? String(body.supplier_invoice_no).trim()
+      : (body.is_backfill ? formatPhysicalReceiptNumber(body.physical_receipt_no) : null),
     freight_amount: totalFreight > 0 ? totalFreight : (Number(body.freight_amount) > 0 ? Number(body.freight_amount) : 0),
     freight_allocation_method: body.freight_allocation_method || grnCosting.METHOD_A,
     freight_supplier_id: primarySupplierId,

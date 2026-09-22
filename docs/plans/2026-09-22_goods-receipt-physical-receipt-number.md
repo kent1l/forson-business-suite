@@ -30,7 +30,7 @@ Prevent a supplier delivery document from being recorded more than once while al
 
 ## 3. Decisions Already Taken
 
-- Add a separate `goods_receipt.physical_receipt_no`; do **not** overload `supplier_invoice_no`. The latter is an existing backfill-oriented supplier invoice/DR field with its own meaning and uniqueness rule.
+- Present one **Supplier Receipt / Invoice / DR No.** field to receivers. It persists as `physical_receipt_no`; for backfills the same value also populates the legacy `supplier_invoice_no` field required by the existing AP workflow.
 - Store the physical value as an optional `VARCHAR(100)`, normalized with the existing receipt-number formatter (trimmed, uppercased, separator-normalized). Blank input becomes `NULL`.
 - Uniqueness is `(supplier_id, physical_receipt_no)`, case-insensitive/canonicalized, for every non-voided GRN—including Draft and Submitted documents—so a duplicate cannot be staged and later posted. A voided document releases the number, matching the current supplier-invoice behavior.
 - A physical receipt number remains optional. The feature prevents duplicates whenever a number is supplied; it does not make numbering mandatory for every supplier or workflow.
@@ -52,7 +52,7 @@ The database index owns the invariant. The API carries the same normalized heade
 ## 5. Phase 1 — Data Integrity
 
 1. Add a forward-only migration under `database/migrations/` that adds nullable `physical_receipt_no VARCHAR(100)` to `goods_receipt`, comments its supplier-document purpose, and creates a partial unique index on `(supplier_id, physical_receipt_no)` for non-null, nonblank, non-voided values. Use an expression/index strategy consistent with the canonical form produced by the API; do not edit `database/initial_schema.sql` without this matching migration.
-2. Make the migration idempotent (`IF NOT EXISTS` where PostgreSQL supports it). Existing data remains null; do not infer or copy values from `supplier_invoice_no`, since they represent distinct documents in this plan.
+2. Make the migration idempotent (`IF NOT EXISTS` where PostgreSQL supports it). Existing data remains null. New backfills mirror the one user-entered supplier-document reference into the legacy `supplier_invoice_no` column for AP compatibility.
 3. Choose a clear constraint/index name, e.g. `uq_goods_receipt_supplier_physical_receipt`, and map its `23505` error to a `409` that says the physical receipt number already exists for the selected supplier.
 4. Confirm the predicate permits reuse after a GRN is voided, but does not permit a second Draft, Submitted, or Posted GRN for the same active supplier/document pair.
 
@@ -119,3 +119,4 @@ graphify update .
 |---|---|---|
 | 2026-09-22 | Codex + product owner | Created implementation plan for supplier-scoped physical receipt numbers on goods receipts, including entry validation, history display, and safe after-posting correction. |
 | 2026-09-22 | Codex | Implemented the migration, API workflow, entry/history UI, and focused route coverage. Local PostgreSQL verification was unavailable in the sandbox. |
+| 2026-09-22 | Codex + product owner | Consolidated the entry UI to one supplier-document reference under Supplier; backfills mirror it into the legacy invoice field for compatibility. |

@@ -353,7 +353,7 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
                                 <SortableHeader column="supplier_name" sortConfig={sortConfig} onSort={handleSort}>
                                     Supplier
                                 </SortableHeader>
-                                <th className="p-3 text-sm font-semibold text-gray-600 dark:text-slate-300">Physical Receipt No.</th>
+                                <th className="p-3 text-sm font-semibold text-gray-600 dark:text-slate-300">Supplier Document No.</th>
                                 <th className="p-3 text-sm font-semibold text-gray-600 dark:text-slate-300">Received By</th>
                                 <th className="p-3 text-sm font-semibold text-gray-600 dark:text-slate-300">Status</th>
                             </tr>
@@ -480,7 +480,7 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
                                     <span className="text-gray-500 dark:text-slate-400">Received By:</span> <span className="font-semibold">{selectedGrn.employee_name}</span>
                                 </div>
                                 <div>
-                                    <span className="text-gray-500 dark:text-slate-400">Physical Receipt No.:</span>{' '}
+                                    <span className="text-gray-500 dark:text-slate-400">Supplier Document No.:</span>{' '}
                                     {editingPhysicalReceipt ? (
                                         <span className="inline-flex items-center gap-2">
                                             <input
