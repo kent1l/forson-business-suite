@@ -937,24 +937,6 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                             </span>
                         </span>
                     </label>
-
-                    {isBackfill && (
-                        <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
-                            <div>
-                                <label className={labelClass}>Date Received</label>
-                                <input
-                                    type="date"
-                                    value={receiptDate}
-                                    max={todayStr}
-                                    onChange={e => setReceiptDate(e.target.value)}
-                                    className={selectClass}
-                                />
-                                <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">
-                                    Required. The date on the supplier&apos;s document.
-                                </p>
-                            </div>
-                        </div>
-                    )}
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -986,33 +968,16 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                             </div>
                             <button onClick={() => setIsSupplierModalOpen(true)} className="px-3 py-2 bg-gray-200 dark:bg-slate-700 text-gray-800 dark:text-slate-100 rounded-lg hover:bg-gray-300 dark:hover:bg-slate-600 text-sm disabled:opacity-60 disabled:cursor-not-allowed" disabled={!!selectedPO}>New</button>
                         </div>
-                        <div className="mt-3">
-                            <label className={labelClass}>Supplier Receipt / Invoice / DR No. {isBackfill ? '' : '(optional)'}</label>
-                            <input
-                                type="text"
-                                value={physicalReceiptNo}
-                                onChange={e => setPhysicalReceiptNo(e.target.value)}
-                                placeholder="As printed on the supplier document"
-                                className={`${selectClass} ${physicalReceiptConflict ? 'border-danger-500' : ''}`}
-                            />
-                            <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">
-                                {isBackfill ? 'Required for a backfill. ' : ''}Use the single supplier document reference to prevent duplicate receipts.
-                            </p>
-                            {physicalReceiptConflict && (
-                                <p className="text-xs font-medium text-danger-600 dark:text-danger-400 mt-1">
-                                    Already used by {physicalReceiptConflict.grn_number} ({physicalReceiptConflict.workflow_status}). Choose another number or open that receipt.
-                                </p>
-                            )}
-                        </div>
                     </div>
-                    {!isBackfill && (
-                        <div>
+                    <div>
                             <label className={`${labelClass} flex items-center gap-1`}>
-                                Date Received (Optional)
+                                Date Received {isBackfill ? '' : '(Optional)'}
                                 <InfoTip label="Date Received">
-                                    Leave blank if the goods arrived today. If you are entering older paperwork, set the
+                                    {isBackfill ? 'Required. Use the date on the supplier document.' : 'Leave blank if the goods arrived today. If you are entering older paperwork, set the'}
+                                    {!isBackfill && <>
                                     date the goods actually arrived — otherwise the receipt is recorded after sales that
                                     already used the stock, which inflates the item&apos;s weighted average cost.
+                                    </>}
                                 </InfoTip>
                             </label>
                             <input
@@ -1022,8 +987,25 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                                 onChange={e => setReceiptDate(e.target.value)}
                                 className={selectClass}
                             />
-                        </div>
-                    )}
+                    </div>
+                    <div>
+                        <label className={labelClass}>Supplier Receipt / Invoice / DR No. {isBackfill ? '' : '(optional)'}</label>
+                        <input
+                            type="text"
+                            value={physicalReceiptNo}
+                            onChange={e => setPhysicalReceiptNo(e.target.value)}
+                            placeholder="As printed on the supplier document"
+                            className={`${selectClass} ${physicalReceiptConflict ? 'border-danger-500' : ''}`}
+                        />
+                        <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">
+                            {isBackfill ? 'Required for a backfill. ' : ''}Use the single supplier document reference to prevent duplicate receipts.
+                        </p>
+                        {physicalReceiptConflict && (
+                            <p className="text-xs font-medium text-danger-600 dark:text-danger-400 mt-1">
+                                Already used by {physicalReceiptConflict.grn_number} ({physicalReceiptConflict.workflow_status}). Choose another number or open that receipt.
+                            </p>
+                        )}
+                    </div>
                 </div>
 
                 <div>
