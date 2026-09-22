@@ -96,7 +96,7 @@ router.get('/goods-receipts', protect, hasPermission('goods_receipt:create'), as
     return res.status(400).json({ message: 'Invalid sortOrder parameter' });
   }
 
-  try {
+  const fetchReceipts = async (includePhysicalReceipt) => {
     let query = `
       SELECT
         gr.grn_id,
@@ -111,7 +111,9 @@ router.get('/goods-receipts', protect, hasPermission('goods_receipt:create'), as
         gr.void_reason,
         gr.is_backfill,
         gr.supplier_invoice_no,
-        gr.physical_receipt_no,
+        ${includePhysicalReceipt
+          ? 'COALESCE(gr.physical_receipt_no, gr.supplier_invoice_no) AS physical_receipt_no,'
+          : 'gr.supplier_invoice_no AS physical_receipt_no,'}
         s.supplier_name,
         CONCAT(e.first_name, ' ', e.last_name) AS employee_name,
         CASE WHEN gr.voided_by IS NOT NULL THEN CONCAT(ve.first_name, ' ', ve.last_name) END AS voided_by_name
@@ -135,7 +137,7 @@ router.get('/goods-receipts', protect, hasPermission('goods_receipt:create'), as
     if (search) {
       query += `
         AND (gr.grn_number ILIKE $${paramIndex}
-           OR gr.physical_receipt_no ILIKE $${paramIndex}
+           ${includePhysicalReceipt ? `OR COALESCE(gr.physical_receipt_no, gr.supplier_invoice_no) ILIKE $${paramIndex}` : 'OR gr.supplier_invoice_no ILIKE $' + paramIndex}
            OR s.supplier_name ILIKE $${paramIndex + 1}
            OR EXISTS (
              SELECT 1 FROM goods_receipt_line grl
@@ -159,7 +161,7 @@ router.get('/goods-receipts', protect, hasPermission('goods_receipt:create'), as
 
     if (!paginated) {
       const { rows } = await db.query(query, params);
-      return res.json(rows);
+      return rows;
     }
 
     const countQuery = `SELECT COUNT(*)::int AS total FROM (${query}) as grn_results`;
@@ -168,8 +170,23 @@ router.get('/goods-receipts', protect, hasPermission('goods_receipt:create'), as
     query += ` LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
     const paginatedParams = [...params, limit, offset];
     const { rows } = await db.query(query, paginatedParams);
-    res.json(paginatedResponse({ data: rows, page, pageSize, total }));
+    return paginatedResponse({ data: rows, page, pageSize, total });
+  };
+
+  try {
+    res.json(await fetchReceipts(true));
   } catch (err) {
+    // During a rolling deployment the API can be updated before the migration. Keep
+    // receipt history available until the schema catches up; the next request after
+    // migration automatically returns the physical receipt field again.
+    if (err.code === '42703' && /physical_receipt_no/i.test(err.message || '')) {
+      try {
+        return res.json(await fetchReceipts(false));
+      } catch (legacyErr) {
+        console.error('Error fetching goods receipts with compatibility query:', legacyErr.message);
+        return res.status(500).json({ message: 'Server error', error: legacyErr.message });
+      }
+    }
     console.error('Error fetching goods receipts:', err.message);
     res.status(500).json({ message: 'Server error', error: err.message });
   }

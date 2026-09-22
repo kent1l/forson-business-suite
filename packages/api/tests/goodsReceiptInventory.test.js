@@ -85,6 +85,20 @@ describe('Goods Receipt Inventory & Pricing Routes', () => {
             expect(res.body.data[0].grn_number).toBe('GRN-202607-0001');
         });
 
+        test('keeps history available while the physical-receipt migration is pending', async () => {
+            const mockRows = [{ grn_id: 1, grn_number: 'GRN-202607-0001' }];
+            db.query
+                .mockRejectedValueOnce({ code: '42703', message: 'column gr.physical_receipt_no does not exist' })
+                .mockResolvedValueOnce({ rows: [{ total: 1 }] })
+                .mockResolvedValueOnce({ rows: mockRows });
+
+            const res = await request(app).get('/api/goods-receipts?paginated=true&page=1&pageSize=10');
+
+            expect(res.status).toBe(200);
+            expect(res.body.data).toEqual(mockRows);
+            expect(db.query.mock.calls[1][0]).not.toContain('physical_receipt_no');
+        });
+
         test('should reject invalid sort parameters', async () => {
             const res = await request(app).get('/api/goods-receipts?sortBy=invalid_column');
             expect(res.status).toBe(400);
