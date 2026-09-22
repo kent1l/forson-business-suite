@@ -78,6 +78,9 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
     const [isBackfill, setIsBackfill] = useState(false);
     const [physicalReceiptNo, setPhysicalReceiptNo] = useState('');
     const [physicalReceiptConflict, setPhysicalReceiptConflict] = useState(null);
+    const [duplicateReview, setDuplicateReview] = useState(null);
+    const [duplicateReviewLoading, setDuplicateReviewLoading] = useState(false);
+    const supplierDocumentInputRef = useRef(null);
     const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' });
 
     const { hasPermission } = useAuth();
@@ -294,6 +297,49 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
         }, 350);
         return () => clearTimeout(timer);
     }, [selectedSupplier, physicalReceiptNo, stagedGrn?.grn_id]);
+
+    const openDuplicateReview = async (conflict = physicalReceiptConflict) => {
+        if (!conflict?.grn_id) return;
+        setDuplicateReview({ ...conflict, header: null, lines: [] });
+        setDuplicateReviewLoading(true);
+        try {
+            const [headerRes, linesRes] = await Promise.all([
+                api.get(`/goods-receipts/${conflict.grn_id}`),
+                api.get(`/goods-receipts/${conflict.grn_id}/lines`),
+            ]);
+            setDuplicateReview(prev => prev && {
+                ...prev,
+                ...headerRes.data,
+                header: headerRes.data,
+                lines: linesRes.data || [],
+            });
+        } catch (err) {
+            toast.error(err?.response?.data?.message || 'Could not load the existing goods receipt details.');
+        } finally {
+            setDuplicateReviewLoading(false);
+        }
+    };
+
+    const reviewDuplicateFromServer = async () => {
+        const normalized = formatPhysicalReceiptNumber(physicalReceiptNo);
+        if (!selectedSupplier || !normalized) return;
+        try {
+            const { data } = await api.get('/goods-receipts/check-physical-receipt', { params: {
+                supplier_id: selectedSupplier,
+                physical_receipt_no: normalized,
+                exclude_grn_id: stagedGrn?.grn_id,
+            }});
+            if (data.is_taken) {
+                setPhysicalReceiptConflict(data);
+                await openDuplicateReview(data);
+            }
+        } catch { /* the original backend conflict message remains visible */ }
+    };
+
+    const changeDuplicateDocumentNumber = () => {
+        setDuplicateReview(null);
+        requestAnimationFrame(() => supplierDocumentInputRef.current?.focus());
+    };
 
     const handleSelectPO = async (poId) => {
         if (!poId) {
@@ -670,7 +716,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
     // Shared validation for every way out of this screen.
     const validateBeforeSend = () => {
         if (physicalReceiptConflict) {
-            toast.error(`Physical receipt number is already used by ${physicalReceiptConflict.grn_number} (${physicalReceiptConflict.workflow_status}).`);
+            void openDuplicateReview(physicalReceiptConflict);
             return false;
         }
         if (!selectedSupplier || lines.length === 0) {
@@ -733,7 +779,8 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
             // The scratch buffer's job is done once the receipt is a real document.
             clearDraft();
             return res.data.grn_id;
-        } catch {
+        } catch (err) {
+            if (err?.response?.status === 409) void reviewDuplicateFromServer();
             return null;
         } finally {
             setSavingDraftRow(false);
@@ -822,6 +869,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
             },
             error: (err) => {
                 setPosting(false);
+                if (err?.response?.status === 409) void reviewDuplicateFromServer();
                 return err?.response?.data?.message || 'Failed to create goods receipt.';
             },
         });
@@ -992,6 +1040,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                         <label className={labelClass}>Supplier Receipt / Invoice / DR No. {isBackfill ? '' : '(optional)'}</label>
                         <input
                             type="text"
+                            ref={supplierDocumentInputRef}
                             value={physicalReceiptNo}
                             onChange={e => setPhysicalReceiptNo(e.target.value)}
                             placeholder="As printed on the supplier document"
@@ -1001,9 +1050,18 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                             {isBackfill ? 'Required for a backfill. ' : ''}Use the single supplier document reference to prevent duplicate receipts.
                         </p>
                         {physicalReceiptConflict && (
-                            <p className="text-xs font-medium text-danger-600 dark:text-danger-400 mt-1">
-                                Already used by {physicalReceiptConflict.grn_number} ({physicalReceiptConflict.workflow_status}). Choose another number or open that receipt.
-                            </p>
+                            <div className="mt-2 rounded-lg border border-danger-200 dark:border-danger-800 bg-danger-50 dark:bg-danger-950/30 p-3" role="status" aria-live="polite">
+                                <p className="text-xs font-semibold text-danger-700 dark:text-danger-300">
+                                    Already used by {physicalReceiptConflict.grn_number} ({physicalReceiptConflict.workflow_status}).
+                                </p>
+                                <button
+                                    type="button"
+                                    onClick={() => openDuplicateReview(physicalReceiptConflict)}
+                                    className="mt-2 text-xs font-semibold text-danger-700 dark:text-danger-300 underline underline-offset-2 hover:text-danger-900 dark:hover:text-danger-100"
+                                >
+                                    Review existing GRN
+                                </button>
+                            </div>
                         )}
                     </div>
                 </div>
@@ -1446,7 +1504,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                     <div className="flex flex-wrap items-center gap-2 justify-end">
                         <button
                             onClick={handleSaveAsDraft}
-                            disabled={savingDraftRow || posting || !selectedSupplier || lines.length === 0}
+                            disabled={savingDraftRow || posting || !!physicalReceiptConflict || !selectedSupplier || lines.length === 0}
                             className="px-4 py-2.5 rounded-lg border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-200 font-medium hover:bg-gray-50 dark:hover:bg-slate-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             {savingDraftRow ? 'Saving…' : stagedGrn ? 'Update draft' : 'Save as draft'}
@@ -1454,7 +1512,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                         {canSubmit && (
                             <button
                                 onClick={handleSubmitForReview}
-                                disabled={savingDraftRow || posting || !selectedSupplier || lines.length === 0}
+                                disabled={savingDraftRow || posting || !!physicalReceiptConflict || !selectedSupplier || lines.length === 0}
                                 className="px-4 py-2.5 rounded-lg bg-primary-600 text-white font-semibold hover:bg-primary-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                                 Submit for review
@@ -1462,7 +1520,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                         )}
                         <button
                             onClick={handlePostTransaction}
-                            disabled={posting || !selectedSupplier || lines.length === 0 || (!!stagedGrn && !canPost)}
+                            disabled={posting || !!physicalReceiptConflict || !selectedSupplier || lines.length === 0 || (!!stagedGrn && !canPost)}
                             title={stagedGrn && !canPost ? 'Someone with posting rights has to approve this receipt.' : ''}
                             className="bg-success-600 text-white px-6 py-2.5 rounded-lg font-semibold hover:bg-success-700 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                         >
@@ -1565,6 +1623,63 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                                     Price stays {formatCurrency(markupRounding.exact)}
                                 </span>
                             </button>
+                        </div>
+                    </div>
+                )}
+            </Modal>
+
+            <Modal
+                isOpen={!!duplicateReview}
+                onClose={() => setDuplicateReview(null)}
+                title="Supplier document already recorded"
+                maxWidth="max-w-xl"
+            >
+                {duplicateReview && (
+                    <div className="space-y-5">
+                        <div className="rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 p-4">
+                            <div className="flex items-start justify-between gap-3">
+                                <div>
+                                    <p className="font-mono text-base font-bold text-gray-900 dark:text-slate-100">{duplicateReview.grn_number}</p>
+                                    <p className="mt-1 text-sm text-gray-700 dark:text-slate-300">
+                                        This supplier document is already reserved by an existing goods receipt.
+                                    </p>
+                                </div>
+                                <span className="shrink-0 rounded-full bg-amber-200 dark:bg-amber-900/60 px-2.5 py-1 text-xs font-semibold text-amber-900 dark:text-amber-200">
+                                    {duplicateReview.workflow_status || 'Existing'}
+                                </span>
+                            </div>
+                        </div>
+
+                        {duplicateReviewLoading ? (
+                            <p className="py-6 text-center text-sm text-gray-500 dark:text-slate-400">Loading existing receipt details…</p>
+                        ) : (
+                            <>
+                                <dl className="grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-2 text-sm">
+                                    <div><dt className="text-gray-500 dark:text-slate-400">Supplier</dt><dd className="font-semibold text-gray-900 dark:text-slate-100">{duplicateReview.supplier_name || '—'}</dd></div>
+                                    <div><dt className="text-gray-500 dark:text-slate-400">Supplier document</dt><dd className="font-mono font-semibold text-gray-900 dark:text-slate-100">{duplicateReview.physical_receipt_no || formatPhysicalReceiptNumber(physicalReceiptNo) || '—'}</dd></div>
+                                    <div><dt className="text-gray-500 dark:text-slate-400">Received</dt><dd className="font-semibold text-gray-900 dark:text-slate-100">{duplicateReview.receipt_date ? new Date(duplicateReview.receipt_date).toLocaleDateString() : '—'}</dd></div>
+                                    <div><dt className="text-gray-500 dark:text-slate-400">Line items</dt><dd className="font-semibold text-gray-900 dark:text-slate-100">{duplicateReview.lines?.length ?? '—'}</dd></div>
+                                </dl>
+                                {duplicateReview.lines?.length > 0 && (
+                                    <div className="rounded-lg border border-gray-200 dark:border-slate-700">
+                                        <div className="border-b border-gray-200 dark:border-slate-700 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-slate-400">Receipt contents</div>
+                                        <ul className="divide-y divide-gray-100 dark:divide-slate-700/60">
+                                            {duplicateReview.lines.slice(0, 5).map((line) => (
+                                                <li key={line.grn_line_id} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
+                                                    <span className="min-w-0 truncate text-gray-900 dark:text-slate-100">{line.display_name || line.internal_sku || 'Part'}</span>
+                                                    <span className="shrink-0 font-mono text-gray-600 dark:text-slate-300">{line.quantity}</span>
+                                                </li>
+                                            ))}
+                                        </ul>
+                                        {duplicateReview.lines.length > 5 && <p className="px-3 py-2 text-xs text-gray-500 dark:text-slate-400">+{duplicateReview.lines.length - 5} more line items</p>}
+                                    </div>
+                                )}
+                            </>
+                        )}
+
+                        <div className="flex flex-wrap justify-end gap-2 border-t border-gray-200 dark:border-slate-700 pt-4">
+                            <button type="button" onClick={() => { setDuplicateReview(null); onNavigate('goods_receipt_history'); }} className="px-4 py-2 rounded-lg border border-gray-300 dark:border-slate-600 text-sm font-semibold text-gray-700 dark:text-slate-200 hover:bg-gray-50 dark:hover:bg-slate-700">Open receipt history</button>
+                            <button type="button" autoFocus onClick={changeDuplicateDocumentNumber} className="px-4 py-2 rounded-lg bg-primary-600 text-sm font-semibold text-white hover:bg-primary-700">Change entered number</button>
                         </div>
                     </div>
                 )}

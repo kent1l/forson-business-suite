@@ -69,7 +69,7 @@ The database index owns the invariant. The API carries the same normalized heade
 
 1. In `packages/web/src/pages/GoodsReceiptPage.jsx`, add `physicalReceiptNo` state; include it in local draft persistence, staged receipt load, `buildPayload`, and `resetForm`.
 2. Place an always-visible **Physical Receipt No. (optional)** field with the receipt/header fields—not inside the backfill-only block. Keep the existing **Supplier Invoice / DR No.** field unchanged and explain the distinction concisely in helper text.
-3. Debounce the availability request until both a supplier and a nonblank normalized number exist. Show a non-blocking but prominent message naming the existing GRN and its status when taken; clear stale results whenever supplier or value changes. Disable Save Draft, Submit/Post, and one-shot Post while the current lookup confirms a conflict, but still surface backend `409` as the definitive result.
+3. Debounce the availability request until both a supplier and a nonblank normalized number exist. Show a prominent duplicate card naming the existing GRN and status, with a **Review existing GRN** action. Its read-only modal loads the existing header and line summary without discarding the current entry; **Change entered number** returns focus to the field. Disable Save Draft, Submit/Post, and one-shot Post while the current lookup confirms a conflict. A backend `409` triggers the same review flow for race-safe recovery.
 4. Ensure reopening a Draft displays its stored physical number and validates against itself using `exclude_grn_id`; this prevents the edit flow from falsely treating its own number as a duplicate.
 5. Update any other visible Goods Receipt creation surface that sends `POST /goods-receipts` (notably A/P attach-items) only if it exposes receipt-header entry. It may continue sending no value when its compact flow intentionally has no physical document field.
 
@@ -121,3 +121,4 @@ graphify update .
 | 2026-09-22 | Codex | Implemented the migration, API workflow, entry/history UI, and focused route coverage. Local PostgreSQL verification was unavailable in the sandbox. |
 | 2026-09-22 | Codex + product owner | Consolidated the entry UI to one supplier-document reference under Supplier; backfills mirror it into the legacy invoice field for compatibility. |
 | 2026-09-22 | Codex | Applied `20260922_01_goods_receipt_physical_receipt_no.sql` and verified migration checksums against the configured database. |
+| 2026-09-22 | Codex + product owner | Added duplicate-GRN review UX: inline action, read-only existing-receipt modal, preserved entry state, and `409` recovery. |
