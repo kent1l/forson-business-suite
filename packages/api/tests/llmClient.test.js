@@ -8,9 +8,8 @@ describe('LLMClient & Model Tiering Optimization', () => {
         llmClient.rateLimitedUntil.clear();
     });
 
-    test('should have defined tier mappings for ROUTINE, REASONING, and MICRO', () => {
+    test('should retain legacy tier mappings for compatibility', () => {
         expect(llmClient.geminiTiers.ROUTINE).toContain('gemini-3.5-flash-lite');
-        expect(llmClient.geminiTiers.ROUTINE).toContain('gemini-3.1-flash-lite');
         expect(llmClient.geminiTiers.REASONING).toContain('gemini-3.6-flash');
         expect(llmClient.geminiTiers.MICRO).toContain('gemma-4-31b');
     });
@@ -50,13 +49,13 @@ describe('LLMClient & Model Tiering Optimization', () => {
     });
 
     test('should successfully execute prompt using active provider cascade', async () => {
-        const spy = jest.spyOn(llmClient.providerAdapters.gemini, 'generateContent')
+        const spy = jest.spyOn(llmClient.providerAdapters.openrouter, 'generateContent')
             .mockResolvedValueOnce({
                 data: { count: 1 },
                 content: '{"count": 1}',
                 tokens: { promptTokens: 5, completionTokens: 5, totalTokens: 10 },
-                modelUsed: 'gemini-3.5-flash-lite',
-                providerUsed: 'gemini'
+                modelUsed: 'google/gemma-4-26b-a4b-it',
+                providerUsed: 'openrouter'
             });
 
         const prompt = 'Return simple JSON object with count equal to 1';
@@ -68,4 +67,20 @@ describe('LLMClient & Model Tiering Optimization', () => {
 
         spy.mockRestore();
     }, 30000);
+
+    test('should not execute a paid candidate in a free-only pool', async () => {
+        const originalGetPoolConfig = require('../services/ai/core/modelLoader').getPoolConfig;
+        const modelLoader = require('../services/ai/core/modelLoader');
+        modelLoader.getPoolConfig = jest.fn(() => ({
+            cost_policy: 'free_only',
+            fallback_chain: [{ provider: 'openrouter', model: 'google/gemma-4-26b-a4b-it' }]
+        }));
+
+        await expect(llmClient.executeWithPool('test_free_pool', {
+            prompt: 'Return JSON',
+            useCache: false
+        })).rejects.toThrow(/No active candidates/);
+
+        modelLoader.getPoolConfig = originalGetPoolConfig;
+    });
 });

@@ -11,6 +11,7 @@ const schemaValidator = require('./schemaValidator');
 const geminiAdapter = require('../adapters/geminiAdapter');
 const groqAdapter = require('../adapters/groqAdapter');
 const openRouterAdapter = require('../adapters/openRouterAdapter');
+const deepseekAdapter = require('../adapters/deepseekAdapter');
 
 /**
  * Task-Specific Model Pool LLM Execution Engine
@@ -22,7 +23,8 @@ class LLMClient {
         this.providerAdapters = {
             gemini: geminiAdapter,
             groq: groqAdapter,
-            openrouter: openRouterAdapter
+            openrouter: openRouterAdapter,
+            deepseek: deepseekAdapter
         };
 
         // Expose circuitBreaker state for backwards compatibility
@@ -77,7 +79,7 @@ class LLMClient {
     /**
      * Executes prompt using a specified model pool configured in ai-models.yaml.
      * 
-     * @param {string} poolName Name of the pool defined in ai-models.yaml (e.g. 'expense_parser_pool')
+     * @param {string} poolName Name of the pool defined in ai-models.yaml (e.g. 'interactive_parser_pool')
      * @param {Object|string} optionsOrPrompt Prompt string or options object
      * @param {Object} [extraOptions] Options if prompt was passed as second argument
      */
@@ -132,6 +134,7 @@ class LLMClient {
         // 2. Load pool configuration
         const poolConfig = modelLoader.getPoolConfig(poolName);
         const fallbackChain = poolConfig.fallback_chain || [];
+        const generation = poolConfig.generation || {};
 
         let lastError = null;
 
@@ -141,6 +144,11 @@ class LLMClient {
             const model = candidate.model;
 
             if (!providerName || !model) continue;
+
+            if (poolConfig.cost_policy === 'free_only' && !model.endsWith(':free') && model !== 'openrouter/free') {
+                console.warn(`[llmClient] Skipping paid candidate ${providerName}:${model} in free-only pool '${poolName}'`);
+                continue;
+            }
 
             // Check Circuit Breaker status
             if (circuitBreaker.isDeprecated(providerName, model)) {
@@ -160,7 +168,7 @@ class LLMClient {
             }
 
             try {
-                const res = await adapter.generateContent({ model, prompt, timeoutMs });
+                const res = await adapter.generateContent({ model, prompt, timeoutMs, ...generation });
                 const validatedData = schemaValidator.validate(res.data, schema);
 
                 // Cache successful result
@@ -209,7 +217,7 @@ class LLMClient {
      * Maps legacy options/tier requests into task-specific pools.
      */
     async generateJSON(prompt, options = {}) {
-        let poolName = 'expense_parser_pool';
+        let poolName = 'interactive_parser_pool';
         let timeoutMs = 30000;
         let useCache = true;
         let schema = null;

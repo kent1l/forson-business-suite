@@ -2,43 +2,38 @@ const path = require('path');
 require('dotenv').config({ path: path.resolve(__dirname, '../../../../../.env') });
 require('dotenv').config({ path: path.resolve(process.cwd(), '../../.env') });
 require('dotenv').config({ path: path.resolve(process.cwd(), '.env') });
+
 const modelLoader = require('../core/modelLoader');
 const schemaValidator = require('../core/schemaValidator');
 
-class GroqAdapter {
-    _getApiKey() {
-        let keyEnv = 'GROQ_API_KEY';
+/**
+ * Direct DeepSeek adapter for controlled, low-cost paid batch work and the
+ * final interactive fallback. It intentionally uses the provider's current
+ * `deepseek-flash` model rather than OpenRouter's legacy deepseek-chat alias.
+ */
+class DeepSeekAdapter {
+    _getProviderConfig() {
         try {
-            const providerConfig = modelLoader.getProviderConfig('groq');
-            if (providerConfig.api_key_env) keyEnv = providerConfig.api_key_env;
+            return modelLoader.getProviderConfig('deepseek');
         } catch {
-            // fallback
+            return {};
         }
-        return process.env[keyEnv] || '';
     }
 
-    async generateContent({ model, prompt, timeoutMs = 30000, temperature, max_tokens }) {
-        const apiKey = this._getApiKey();
+    async generateContent({ model, prompt, timeoutMs = 30000, temperature, max_tokens, reasoning_effort }) {
+        const providerConfig = this._getProviderConfig();
+        const apiKey = process.env[providerConfig.api_key_env || 'DEEPSEEK_API_KEY'] || '';
         if (!apiKey) {
-            const err = new Error('No Groq API key configured (GROQ_API_KEY)');
+            const err = new Error('No DeepSeek API key configured (DEEPSEEK_API_KEY)');
             err.status = 401;
             throw err;
         }
 
-        let baseUrl = 'https://api.groq.com/openai/v1';
-        try {
-            const providerConfig = modelLoader.getProviderConfig('groq');
-            if (providerConfig.base_url) baseUrl = providerConfig.base_url;
-        } catch {
-            // use default
-        }
-
-        const url = `${baseUrl}/chat/completions`;
-
-        const response = await fetch(url, {
+        const baseUrl = providerConfig.base_url || 'https://api.deepseek.com';
+        const response = await fetch(`${baseUrl}/chat/completions`, {
             method: 'POST',
             headers: {
-                'Authorization': `Bearer ${apiKey}`,
+                Authorization: `Bearer ${apiKey}`,
                 'Content-Type': 'application/json'
             },
             signal: AbortSignal.timeout(timeoutMs),
@@ -46,15 +41,18 @@ class GroqAdapter {
                 model,
                 messages: [{ role: 'user', content: prompt }],
                 response_format: { type: 'json_object' },
-                ...(typeof temperature === 'number' ? { temperature } : {}),
+                // DeepSeek enables thinking by default. Routine JSON extraction
+                // should disable it to prevent hidden reasoning-token spend.
+                ...(reasoning_effort === 'none' ? { thinking: { type: 'disabled' } } : {}),
+                ...(reasoning_effort && reasoning_effort !== 'none' ? { reasoning_effort } : {}),
+                ...(typeof temperature === 'number' && reasoning_effort === 'none' ? { temperature } : {}),
                 ...(typeof max_tokens === 'number' ? { max_tokens } : {})
             })
         });
 
         const responseText = await response.text();
-
         if (!response.ok) {
-            const err = new Error(`Groq API error (HTTP ${response.status}): ${responseText.substring(0, 200)}`);
+            const err = new Error(`DeepSeek API error (HTTP ${response.status}): ${responseText.substring(0, 200)}`);
             err.status = response.status;
             err.responseText = responseText;
             throw err;
@@ -63,14 +61,13 @@ class GroqAdapter {
         const rawJson = JSON.parse(responseText);
         const textContent = rawJson.choices?.[0]?.message?.content || '';
         if (!textContent) {
-            const err = new Error(`Empty response content from Groq model ${model}`);
+            const err = new Error(`Empty response content from DeepSeek model ${model}`);
             err.status = 500;
             throw err;
         }
 
         const data = schemaValidator.parseJson(textContent);
         const usage = rawJson.usage || {};
-
         return {
             content: textContent,
             data,
@@ -80,10 +77,9 @@ class GroqAdapter {
                 totalTokens: usage.total_tokens || 0
             },
             modelUsed: model,
-            providerUsed: 'groq'
+            providerUsed: 'deepseek'
         };
     }
 }
 
-const groqAdapterInstance = new GroqAdapter();
-module.exports = groqAdapterInstance;
+module.exports = new DeepSeekAdapter();

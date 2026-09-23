@@ -7,6 +7,7 @@ const { modelLoader, llmClient, circuitBreaker, expenseParserAI, partDeduplicati
 const geminiAdapter = require('../services/ai/adapters/geminiAdapter');
 const groqAdapter = require('../services/ai/adapters/groqAdapter');
 const openRouterAdapter = require('../services/ai/adapters/openRouterAdapter');
+const deepseekAdapter = require('../services/ai/adapters/deepseekAdapter');
 
 async function runComprehensiveVerification() {
     console.log('================================================================');
@@ -23,7 +24,8 @@ async function runComprehensiveVerification() {
     const adapters = {
         gemini: geminiAdapter,
         groq: groqAdapter,
-        openrouter: openRouterAdapter
+        openrouter: openRouterAdapter,
+        deepseek: deepseekAdapter
     };
 
     const prompt = 'Respond strictly with valid JSON: {"model_status": "active", "timestamp": ' + Date.now() + '}';
@@ -53,7 +55,7 @@ async function runComprehensiveVerification() {
     console.log('>>> SECTION 2: Simulating Expected Actual Production Feature Usage...\n');
 
     // Scenario A: Expense Parser AI (Natural Language Expense Input)
-    console.log('[Scenario A] expenseParserAI.parseExpenseText (Target Pool: expense_parser_pool)');
+    console.log('[Scenario A] expenseParserAI.parseExpenseText (Target Pool: interactive_parser_pool)');
     const sampleText = 'Bought 5 liters of Petron Rev-X 15W-40 engine oil for 1850 pesos paid via GCash to Petron Express Store yesterday';
     console.log(`  Input Text: "${sampleText}"`);
 

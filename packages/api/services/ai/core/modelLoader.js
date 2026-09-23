@@ -20,6 +20,12 @@ const poolSchema = z.object({
     description: z.string().optional(),
     confidence_threshold: z.number().optional(),
     escalation_pool: z.string().optional(),
+    cost_policy: z.enum(['free_only', 'paid_allowed']).optional(),
+    generation: z.object({
+        temperature: z.number().min(0).max(2).optional(),
+        max_tokens: z.number().int().positive().optional(),
+        reasoning_effort: z.enum(['none', 'low', 'medium', 'high', 'max']).optional()
+    }).optional(),
     fallback_chain: z.array(fallbackCandidateSchema).nonempty('fallback_chain must not be empty')
 });
 

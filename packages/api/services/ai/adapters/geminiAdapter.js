@@ -35,7 +35,7 @@ class GeminiAdapter {
         return key;
     }
 
-    async generateContent({ model, prompt, timeoutMs = 30000 }) {
+    async generateContent({ model, prompt, timeoutMs = 30000, temperature, max_tokens }) {
         const key = this._getNextKey();
         let baseUrl = 'https://generativelanguage.googleapis.com/v1beta';
         try {
@@ -53,7 +53,11 @@ class GeminiAdapter {
             signal: AbortSignal.timeout(timeoutMs),
             body: JSON.stringify({
                 contents: [{ parts: [{ text: prompt }] }],
-                generationConfig: { responseMimeType: 'application/json' }
+                generationConfig: {
+                    responseMimeType: 'application/json',
+                    ...(typeof temperature === 'number' ? { temperature } : {}),
+                    ...(typeof max_tokens === 'number' ? { maxOutputTokens: max_tokens } : {})
+                }
             })
         });
 

@@ -177,7 +177,7 @@ Purchase-order line: "${safeText}"`;
 
         try {
             const prompt = wrapJsonInstruction(basePrompt, schema);
-            const response = await llmClient.executeWithPool('expense_parser_pool', { prompt, timeoutMs: 25000 });
+            const response = await llmClient.executeWithPool('interactive_parser_pool', { prompt, timeoutMs: 25000 });
             const raw = schemaValidator.parseAndValidate(response.data);
             return {
                 quantity: cleanNumber(raw?.quantity) ?? deterministic.quantity ?? null,

@@ -60,7 +60,7 @@ describe('purchaseOrderParserAI resolver', () => {
 
         await resolver.parseLine('1 gal Hypoid Gear Oil @ 480', {});
 
-        expect(llmClient.executeWithPool).toHaveBeenCalledWith('expense_parser_pool', expect.objectContaining({
+        expect(llmClient.executeWithPool).toHaveBeenCalledWith('interactive_parser_pool', expect.objectContaining({
             prompt: expect.stringMatching(/quantity field is the number of units being ordered[^]*never a product size/i),
         }));
     });

@@ -17,7 +17,7 @@ class OpenRouterAdapter {
         return process.env[keyEnv] || '';
     }
 
-    async generateContent({ model, prompt, timeoutMs = 30000 }) {
+    async generateContent({ model, prompt, timeoutMs = 30000, temperature, max_tokens, reasoning_effort }) {
         const apiKey = this._getApiKey();
         if (!apiKey) {
             const err = new Error('No OpenRouter API key configured (OPENROUTER_API_KEY)');
@@ -52,7 +52,10 @@ class OpenRouterAdapter {
             body: JSON.stringify({
                 model,
                 messages: [{ role: 'user', content: prompt }],
-                response_format: { type: 'json_object' }
+                response_format: { type: 'json_object' },
+                ...(typeof temperature === 'number' ? { temperature } : {}),
+                ...(typeof max_tokens === 'number' ? { max_tokens } : {}),
+                ...(reasoning_effort ? { reasoning: { effort: reasoning_effort } } : {})
             })
         });
 

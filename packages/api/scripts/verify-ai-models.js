@@ -48,7 +48,7 @@ async function verifyAIModels() {
 
     // 3. Test Circuit Breaker & Fallback Chain Escalation
     console.log('\n[3/4] Testing Circuit Breaker Cooldown & Fallback Cascade...');
-    const targetPool = 'expense_parser_pool';
+    const targetPool = 'interactive_parser_pool';
     const fallbackChain = config.pools[targetPool].fallback_chain;
 
     if (fallbackChain.length >= 2) {

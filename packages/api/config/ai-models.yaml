@@ -14,75 +14,85 @@ providers:
     enabled: true
     api_key_env: "OPENROUTER_API_KEY"
     base_url: "https://openrouter.ai/api/v1"
+  deepseek:
+    enabled: true
+    api_key_env: "DEEPSEEK_API_KEY"
+    base_url: "https://api.deepseek.com"
 
 pools:
-  expense_parser_pool:
-    description: "High-speed JSON parsing for natural language expenses"
+  interactive_parser_pool:
+    description: >-
+      Paid, user-facing structured extraction. This is intentionally separate
+      from free-only background pools so a user-facing request can have a
+      reliable paid fallback without background throughput consuming credits.
     confidence_threshold: 0.60
     escalation_pool: "expense_reasoning_pool"
+    generation:
+      temperature: 0
+      max_tokens: 512
+      reasoning_effort: none
     fallback_chain:
-      - provider: gemini
-        model: "gemini-3.5-flash-lite"
-      - provider: gemini
-        model: "gemini-3.1-flash-lite"
-      - provider: gemini
-        model: "gemini-2.5-flash-lite"
       - provider: openrouter
-        model: "google/gemini-2.5-flash-lite"
+        model: "google/gemma-4-26b-a4b-it"
       - provider: openrouter
-        model: "deepseek/deepseek-chat"
-      - provider: openrouter
-        model: "openai/gpt-4o-mini"
-      - provider: openrouter
-        model: "qwen/qwen-2.5-7b-instruct"
+        model: "qwen/qwen3.8-flash"
+      - provider: deepseek
+        model: "deepseek-flash"
 
   expense_reasoning_pool:
     description: >-
-      Escalation pool for ambiguous or low-confidence expense strings. Re-runs the
-      SAME strict-JSON classification prompt as expense_parser_pool (not a distinct
-      reasoning task), just against a stronger model -- so this favors cheap, strong,
-      non-chain-of-thought instruction models over expensive "reasoning" models,
-      since escalations happen often enough at scale that per-call cost compounds.
+      Capped, paid escalation pool for genuinely ambiguous interactive requests.
+      It must not be used by high-volume background work.
+    generation:
+      temperature: 0
+      max_tokens: 512
+      reasoning_effort: low
     fallback_chain:
-      - provider: gemini
-        model: "gemini-3.8-flash"          # free/quota direct AI Studio call, tried first
       - provider: openrouter
-        model: "qwen/qwen-2.5-72b-instruct" # cheapest strong non-CoT fallback (~$0.64/1000 @ this prompt's real size)
-      - provider: openrouter
-        model: "google/gemini-3.8-flash"   # same model, different billing/quota path -- covers direct-API rate limits
-      - provider: openrouter
-        model: "openai/gpt-4o"             # premium last resort for genuinely hard cases only
+        model: "z-ai/glm-5.3-flash"
 
   part_deduplication_pool:
     description: >-
-      Complex semantic clustering and cross-reference verification for auto parts.
-      Strict-JSON grouping/verification output (verifyDuplicate: one pair; analyzeGroup:
-      a cluster of 2-50 parts in one prompt) -- a classification task, not open-ended
-      reasoning, so cheap non-chain-of-thought instruction models are favored here too.
+      Free-only, retryable background deduplication. Do not add paid candidates
+      here: when all free models are unavailable, the worker must leave work for
+      a later retry instead of consuming paid credits.
+    cost_policy: free_only
+    generation:
+      temperature: 0
+      max_tokens: 256
+      reasoning_effort: none
     fallback_chain:
-      - provider: gemini
-        model: "gemini-3.8-flash"          # free/quota direct AI Studio call, tried first
       - provider: openrouter
-        model: "qwen/qwen-2.5-72b-instruct" # cheapest strong non-CoT fallback
+        model: "google/gemma-4-31b-it:free"
       - provider: openrouter
-        model: "google/gemini-3.8-flash"   # same model, different billing/quota path
+        model: "google/gemma-4-26b-a4b-it:free"
       - provider: openrouter
-        model: "openai/gpt-4o"             # premium last resort for genuinely hard cases only
+        model: "openrouter/free"
+
+  scheduled_bulk_pool:
+    description: >-
+      Paid catch-up work for an explicitly scheduled queue only. It is not a
+      fallback for the free-only dedupe worker.
+    generation:
+      temperature: 0
+      max_tokens: 256
+      reasoning_effort: low
+    fallback_chain:
+      - provider: deepseek
+        model: "deepseek-flash"
+      - provider: openrouter
+        model: "z-ai/glm-5.3-flash:batch"
 
   vehicle_fitment_parser_pool:
-    description: "Structured extraction of vehicle fitment rows (make/model/engine/year) from a free-text description, grounded against the existing taxonomy"
+    description: "Paid user-facing vehicle fitment extraction, with a larger JSON-output cap for multiple proposed rows."
+    generation:
+      temperature: 0
+      max_tokens: 1024
+      reasoning_effort: none
     fallback_chain:
-      - provider: gemini
-        model: "gemini-3.5-flash-lite"
-      - provider: gemini
-        model: "gemini-3.1-flash-lite"
-      - provider: gemini
-        model: "gemini-2.5-flash-lite"
       - provider: openrouter
-        model: "google/gemini-2.5-flash-lite"
+        model: "google/gemma-4-26b-a4b-it"
       - provider: openrouter
-        model: "deepseek/deepseek-chat"
-      - provider: openrouter
-        model: "openai/gpt-4o-mini"
-      - provider: openrouter
-        model: "qwen/qwen-2.5-7b-instruct"
+        model: "qwen/qwen3.8-flash"
+      - provider: deepseek
+        model: "deepseek-flash"

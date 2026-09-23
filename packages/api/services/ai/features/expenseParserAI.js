@@ -336,7 +336,7 @@ User expense description: "${safeText}"${clarifyingAnswerBlock}`;
 
         let llmResult;
         try {
-            llmResult = await llmClient.executeWithPool('expense_parser_pool', { prompt, timeoutMs: 25000 });
+            llmResult = await llmClient.executeWithPool('interactive_parser_pool', { prompt, timeoutMs: 25000 });
         } catch (err) {
             console.error('[ExpenseParserAI] LLM parse call failed:', err.message);
             const error = new Error('AI parsing service unavailable');
