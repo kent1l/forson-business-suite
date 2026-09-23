@@ -12,6 +12,7 @@ import ChangeTransactionDateModal from '../components/common/ChangeTransactionDa
 import TransactionDateHistory from '../components/common/TransactionDateHistory';
 import ReturnLineModal from '../components/goods-receipt/ReturnLineModal';
 import { formatCurrency } from '../utils/currency';
+import { formatPhysicalReceiptNumber } from '../utils/receiptNumberFormatter';
 
 const num = (value) => parseFloat(value) || 0;
 const returnedQty = (line) => Math.max(0, num(line.return_quantity));
@@ -38,6 +39,8 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
     const [total, setTotal] = useState(0);
     const [showChangeDate, setShowChangeDate] = useState(false);
     const [returnTargetLine, setReturnTargetLine] = useState(null);
+    const [editingPhysicalReceipt, setEditingPhysicalReceipt] = useState(false);
+    const [physicalReceiptNo, setPhysicalReceiptNo] = useState('');
 
     const fetchGrns = useCallback(async () => {
         try {
@@ -89,6 +92,7 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
         setIsEditMode(false);
         setShowChangeDate(false);
         setReturnTargetLine(null);
+        setEditingPhysicalReceipt(false);
         try {
             console.log('Fetching GRN lines for:', grn.grn_id);
             const [linesResponse, grnResponse] = await Promise.all([
@@ -98,6 +102,7 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
             console.log('API Response:', linesResponse.data);
             if (grnResponse.data) {
                 setSelectedGrn(prev => ({ ...prev, ...grnResponse.data }));
+                setPhysicalReceiptNo(grnResponse.data.physical_receipt_no || '');
             }
             
             // Add more detailed logging about each line
@@ -128,11 +133,29 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
         setEditedLines([]);
         setShowChangeDate(false);
         setReturnTargetLine(null);
+        setEditingPhysicalReceipt(false);
     };
 
     const handleDateChanged = async (result) => {
         setSelectedGrn((prev) => (prev ? { ...prev, receipt_date: result.new_date } : prev));
         await fetchGrns();
+    };
+
+    const savePhysicalReceiptNo = async () => {
+        if (!selectedGrn) return;
+        try {
+            const { data } = await api.patch(`/goods-receipts/${selectedGrn.grn_id}/physical-receipt-no`, {
+                physical_receipt_no: formatPhysicalReceiptNumber(physicalReceiptNo),
+            });
+            setSelectedGrn(prev => ({ ...prev, physical_receipt_no: data.physical_receipt_no }));
+            setGrns(prev => prev.map(grn => grn.grn_id === selectedGrn.grn_id
+                ? { ...grn, physical_receipt_no: data.physical_receipt_no } : grn));
+            setPhysicalReceiptNo(data.physical_receipt_no || '');
+            setEditingPhysicalReceipt(false);
+            toast.success('Physical receipt number updated.');
+        } catch (error) {
+            toast.error(error?.response?.data?.message || 'Could not update physical receipt number.');
+        }
     };
 
     const handleVoid = async () => {
@@ -312,7 +335,7 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
                             value={query}
                             onChange={setQuery}
                             onClear={() => setQuery('')}
-                            placeholder="Search GRN #, supplier, or part details..."
+                            placeholder="Search GRN #, physical receipt, supplier, or part details..."
                         />
                     </div>
                 </div>
@@ -330,6 +353,7 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
                                 <SortableHeader column="supplier_name" sortConfig={sortConfig} onSort={handleSort}>
                                     Supplier
                                 </SortableHeader>
+                                <th className="p-3 text-sm font-semibold text-gray-600 dark:text-slate-300">Supplier Document No.</th>
                                 <th className="p-3 text-sm font-semibold text-gray-600 dark:text-slate-300">Received By</th>
                                 <th className="p-3 text-sm font-semibold text-gray-600 dark:text-slate-300">Status</th>
                             </tr>
@@ -337,13 +361,13 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
                         <tbody className="divide-y divide-gray-100 dark:divide-slate-700/60">
                             {loading ? (
                                 <tr>
-                                    <td colSpan="5" className="p-8 text-center text-gray-500 dark:text-slate-400">
+                                    <td colSpan="6" className="p-8 text-center text-gray-500 dark:text-slate-400">
                                         Loading...
                                     </td>
                                 </tr>
                             ) : grns.length === 0 ? (
                                 <tr>
-                                    <td colSpan="5" className="p-8 text-center text-gray-500 dark:text-slate-400">
+                                    <td colSpan="6" className="p-8 text-center text-gray-500 dark:text-slate-400">
                                         No goods receipts found
                                     </td>
                                 </tr>
@@ -363,6 +387,7 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
                                             {new Date(grn.receipt_date).toLocaleDateString()}
                                         </td>
                                         <td className={`p-3 text-sm font-medium ${grn.status === 'Voided' ? '' : 'text-gray-900 dark:text-slate-100'}`}>{grn.supplier_name}</td>
+                                        <td className="p-3 text-sm font-mono text-gray-600 dark:text-slate-300">{grn.physical_receipt_no || '—'}</td>
                                         <td className="p-3 text-sm text-gray-600 dark:text-slate-300">{grn.employee_name}</td>
                                         <td className="p-3 text-sm">
                                             <span className={`px-2 py-1 text-xs font-semibold rounded-full ${
@@ -453,6 +478,28 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
                                 </div>
                                 <div>
                                     <span className="text-gray-500 dark:text-slate-400">Received By:</span> <span className="font-semibold">{selectedGrn.employee_name}</span>
+                                </div>
+                                <div>
+                                    <span className="text-gray-500 dark:text-slate-400">Supplier Document No.:</span>{' '}
+                                    {editingPhysicalReceipt ? (
+                                        <span className="inline-flex items-center gap-2">
+                                            <input
+                                                value={physicalReceiptNo}
+                                                onChange={(e) => setPhysicalReceiptNo(e.target.value)}
+                                                className="h-8 px-2 border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 rounded-md font-mono"
+                                                autoFocus
+                                            />
+                                            <button onClick={savePhysicalReceiptNo} className="px-2 py-1 text-xs font-semibold rounded bg-success-600 text-white">Save</button>
+                                            <button onClick={() => { setPhysicalReceiptNo(selectedGrn.physical_receipt_no || ''); setEditingPhysicalReceipt(false); }} className="px-2 py-1 text-xs font-semibold rounded border">Cancel</button>
+                                        </span>
+                                    ) : (
+                                        <>
+                                            <span className="font-semibold font-mono">{selectedGrn.physical_receipt_no || '—'}</span>
+                                            {!isVoided && hasEditPermission && (
+                                                <button onClick={() => setEditingPhysicalReceipt(true)} className="ml-2 text-xs font-semibold text-primary-600 dark:text-primary-400">{selectedGrn.physical_receipt_no ? 'Edit' : 'Add'}</button>
+                                            )}
+                                        </>
+                                    )}
                                 </div>
                                 <div>
                                     <span className="text-gray-500 dark:text-slate-400">Total Amount:</span>{' '}

@@ -85,6 +85,20 @@ describe('Goods Receipt Inventory & Pricing Routes', () => {
             expect(res.body.data[0].grn_number).toBe('GRN-202607-0001');
         });
 
+        test('keeps history available while the physical-receipt migration is pending', async () => {
+            const mockRows = [{ grn_id: 1, grn_number: 'GRN-202607-0001' }];
+            db.query
+                .mockRejectedValueOnce({ code: '42703', message: 'column gr.physical_receipt_no does not exist' })
+                .mockResolvedValueOnce({ rows: [{ total: 1 }] })
+                .mockResolvedValueOnce({ rows: mockRows });
+
+            const res = await request(app).get('/api/goods-receipts?paginated=true&page=1&pageSize=10');
+
+            expect(res.status).toBe(200);
+            expect(res.body.data).toEqual(mockRows);
+            expect(db.query.mock.calls[1][0]).not.toContain('gr.physical_receipt_no');
+        });
+
         test('should reject invalid sort parameters', async () => {
             const res = await request(app).get('/api/goods-receipts?sortBy=invalid_column');
             expect(res.status).toBe(400);
@@ -113,6 +127,39 @@ describe('Goods Receipt Inventory & Pricing Routes', () => {
             expect(res.status).toBe(200);
             expect(res.body).toHaveLength(1);
             expect(res.body[0].quantity).toBe(5);
+        });
+    });
+
+    describe('GET /api/goods-receipts/:id', () => {
+        test('loads legacy backfill details when the physical-receipt migration is pending', async () => {
+            db.query
+                .mockRejectedValueOnce({ code: '42703', message: 'column gr.physical_receipt_no does not exist' })
+                .mockResolvedValueOnce({ rows: [{ grn_id: 386, supplier_invoice_no: 'DR-386', physical_receipt_no: 'DR-386' }] })
+                .mockResolvedValueOnce({ rows: [] });
+
+            const res = await request(app).get('/api/goods-receipts/386');
+
+            expect(res.status).toBe(200);
+            expect(res.body.physical_receipt_no).toBe('DR-386');
+            expect(db.query.mock.calls[1][0]).not.toContain('gr.physical_receipt_no');
+        });
+    });
+
+    describe('physical receipt number helpers', () => {
+        test('reports a normalized supplier-scoped physical receipt conflict', async () => {
+            db.query.mockResolvedValueOnce({ rows: [{ grn_id: 9, grn_number: 'GRN-9', workflow_status: 'Posted' }] });
+
+            const res = await request(app)
+                .get('/api/goods-receipts/check-physical-receipt?supplier_id=7&physical_receipt_no=dr%200012');
+
+            expect(res.status).toBe(200);
+            expect(res.body).toEqual({ is_taken: true, grn_id: 9, grn_number: 'GRN-9', workflow_status: 'Posted' });
+            expect(db.query).toHaveBeenCalledWith(expect.stringContaining('physical_receipt_no = $2'), [7, 'DR-12', null]);
+        });
+
+        test('rejects an availability lookup without supplier or receipt number', async () => {
+            const res = await request(app).get('/api/goods-receipts/check-physical-receipt?supplier_id=7');
+            expect(res.status).toBe(400);
         });
     });
 
