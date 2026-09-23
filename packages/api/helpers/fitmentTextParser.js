@@ -580,7 +580,17 @@ function parseFitmentText(text, index) {
         && deduped.length > 0
         && deduped.every(r => r.confidence === 'high');
 
-    return { fitments: deduped, residue, unresolvedClauses, fullyResolved };
+    // A clean gazetteer match is not by itself sufficient to skip AI. Local-only
+    // output is reserved for strongly structured evidence: a verified engine
+    // code, or a verified make/model paired with an explicit year range. Short
+    // names such as "Hilux" are useful local hints, but are too easy to apply
+    // incorrectly without the model/review path.
+    const safeForLocalOnly = fullyResolved && deduped.every(row => (
+        row.engine_id != null
+        || (row.make_id != null && row.model_id != null && row.year_start != null && row.year_end != null)
+    ));
+
+    return { fitments: deduped, residue, unresolvedClauses, fullyResolved, safeForLocalOnly };
 }
 
 function dedupeRows(rows) {

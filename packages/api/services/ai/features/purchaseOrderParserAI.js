@@ -18,6 +18,22 @@ const cleanNumber = (value) => value !== null && value !== undefined && value !=
     : null;
 const normalizeMatchText = (value) => String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 
+// Local extraction is allowed to bypass AI only for a deliberately narrow,
+// machine-like PO form: an explicit order quantity + unit and an explicit
+// trailing price marker. A bare leading number ("10 oil filters") may be a
+// product attribute, a reference number, or a quantity; it remains useful as
+// a hint to the model but must never be treated as a final local decision.
+const STRICT_ORDER_UNITS = '(?:pcs?|bxs?|boxes?|btls?|sets?|pairs?|rolls?|drums?|cans?|bags?|units?|ea|x)';
+const STRICT_PRICE_MARKER = /(?:^|\s)(?:@\s*₱?\s*|P\s*:\s*₱?\s*|SRP\s+₱?\s*|₱?\s*\d[\d,]*(?:\.\d+)?\s*\/\s*ea\s*$)\d?[\d,]*(?:\.\d+)?\s*$/i;
+const isStrictStructuredLine = (raw, parsed) => (
+    parsed.confidence === 'HIGH'
+    && parsed.quantity != null
+    && parsed.order_unit != null
+    && parsed.cost_price != null
+    && new RegExp(`(?:^|\\s)\\d+(?:\\.\\d+)?\\s*${STRICT_ORDER_UNITS}(?=\\s|$)`, 'i').test(raw)
+    && STRICT_PRICE_MARKER.test(raw)
+);
+
 /**
  * The quantity and purchase UOM are structured fields, not part of the item
  * name. AI occasionally echoes them in raw_description, so strip only an
@@ -89,21 +105,37 @@ class PurchaseOrderParserAI {
     async resolveLine(rawLine) {
         const raw = rawLine.trim();
         const tierOne = poLineParser.parse(raw);
+        const localParseIsTrusted = isStrictStructuredLine(raw, tierOne);
         let candidates = await this._findPartCandidates(tierOne.raw_description);
         let resolution = this._classifyCandidates(tierOne.raw_description, candidates);
         let finalParse = tierOne;
         let aiData = null;
-        const shouldUseAI = tierOne.confidence === 'LOW' || candidates.length === 0 || (candidates[0]?.score || 0) < MATCH_THRESHOLD;
+        const shouldUseAI = !localParseIsTrusted || candidates.length === 0 || (candidates[0]?.score || 0) < MATCH_THRESHOLD;
 
         if (shouldUseAI) {
             try {
-                aiData = await this.parseLine(raw, tierOne);
+                // Only explicit structured values are safe fallbacks when the
+                // model leaves a field blank. Everything else is merely context.
+                aiData = await this.parseLine(raw, localParseIsTrusted ? tierOne : {
+                    raw_description: tierOne.raw_description,
+                    pack_size: tierOne.pack_size,
+                });
                 finalParse = { ...tierOne, ...aiData };
                 candidates = await this._findPartCandidates(aiData.raw_description || tierOne.raw_description);
                 resolution = this._classifyCandidates(aiData.raw_description || tierOne.raw_description, candidates);
                 if (resolution.part) resolution.match_status = 'ai';
             } catch (error) {
                 console.warn('[SmartPO] AI fallback unavailable:', error.message);
+                // Do not expose a speculative local quantity/price as if it
+                // were parsed data when the model is unavailable.
+                if (!localParseIsTrusted) {
+                    finalParse = {
+                        ...tierOne,
+                        quantity: null,
+                        cost_price: null,
+                        order_unit: null,
+                    };
+                }
             }
         }
 

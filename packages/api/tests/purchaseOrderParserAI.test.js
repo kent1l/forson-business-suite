@@ -19,14 +19,27 @@ const candidate = (score = 0.9, detail = 'NGK CPR8EA-9') => ({
 describe('purchaseOrderParserAI resolver', () => {
     afterEach(() => jest.restoreAllMocks());
 
-    test('does not call AI for a confident catalog match', async () => {
+    test('does not call AI only for an explicit structured quantity, unit, and price', async () => {
         jest.spyOn(resolver, '_findPartCandidates').mockResolvedValue([candidate()]);
         const ai = jest.spyOn(resolver, 'parseLine');
 
-        const result = await resolver.resolveLine('10 NGK CPR8EA-9 @ 135');
+        const result = await resolver.resolveLine('10 pcs NGK CPR8EA-9 @ 135');
 
         expect(ai).not.toHaveBeenCalled();
         expect(result).toMatchObject({ match_status: 'exact', quantity: 10, cost_price: 135 });
+    });
+
+    test('sends a bare leading number to AI even when catalog lookup is exact', async () => {
+        jest.spyOn(resolver, '_findPartCandidates').mockResolvedValue([candidate()]);
+        const ai = jest.spyOn(resolver, 'parseLine').mockResolvedValue({
+            quantity: 10,
+            cost_price: 135,
+            raw_description: 'NGK CPR8EA-9',
+        });
+
+        await resolver.resolveLine('10 NGK CPR8EA-9 @ 135');
+
+        expect(ai).toHaveBeenCalledTimes(1);
     });
 
     test.each([

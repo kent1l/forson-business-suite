@@ -271,11 +271,10 @@ router.delete('/parts/:partId/applications/:appId', protect, hasPermission('appl
 // POST /applications/parse-fitment-text - natural-language fitment entry.
 //
 // Phase 8 (PRD-FBS-FIT-002 §8): deterministic-first. The local parser
-// (helpers/fitmentTextParser.js) handles the regular majority of input in
-// microseconds with no LLM call at all. Only genuine residue -- text the
-// grammar and gazetteer could not account for -- escalates to the AI, and then
-// with a SHORTLIST of plausible taxonomy rows rather than the entire taxonomy,
-// so the fallback prompt no longer grows with the catalog.
+// (helpers/fitmentTextParser.js) is used as a no-AI answer only for strongly
+// structured, fully verified evidence. Other locally recognised phrases are
+// still valuable grounding hints, but go through AI + review to avoid silently
+// treating an abbreviated or underspecified fitment as final.
 //
 // Unchanged from Phase 5: this endpoint only ever PROPOSES. Nothing is written
 // to the taxonomy or to part_application here; the frontend reviews each
@@ -299,7 +298,7 @@ router.post('/applications/parse-fitment-text', protect, hasPermission('applicat
         local = null;
     }
 
-    if (local && local.fullyResolved) {
+    if (local && local.safeForLocalOnly) {
         return res.json({
             fitments: local.fitments,
             notes: '',
