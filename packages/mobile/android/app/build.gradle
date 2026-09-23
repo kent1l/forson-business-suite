@@ -100,8 +100,8 @@ android {
         // versionCode must strictly increase or Android refuses the in-place
         // upgrade, which for a sideloaded fleet means every phone needs a manual
         // uninstall.
-        versionCode 3
-        versionName "2.1.0"
+        versionCode 4
+        versionName "2.1.2"
 
         buildConfigField "String", "REACT_NATIVE_RELEASE_LEVEL", "\"${findProperty('reactNativeReleaseLevel') ?: 'stable'}\""
     }
