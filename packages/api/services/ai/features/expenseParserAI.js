@@ -336,7 +336,7 @@ User expense description: "${safeText}"${clarifyingAnswerBlock}`;
 
         let llmResult;
         try {
-            llmResult = await llmClient.executeWithPool('expense_parser_pool', { prompt, timeoutMs: 25000 });
+            llmResult = await llmClient.executeWithPool('interactive_parser_pool', { prompt, timeoutMs: 25000 });
         } catch (err) {
             console.error('[ExpenseParserAI] LLM parse call failed:', err.message);
             const error = new Error('AI parsing service unavailable');
@@ -400,12 +400,12 @@ User expense description: "${safeText}"${clarifyingAnswerBlock}`;
             }
         }
 
-        // Nothing bound by name — fall back on meaning. This rescues a near miss
-        // ("Utility" for "Utilities"), a category the model paraphrased, and the case
-        // where every LLM pool was down and `raw` is empty, which would otherwise
-        // reach the user with no category at all.
+        // Nothing named by the model — fall back on meaning only when the model
+        // returned no category at all. An unrecognised model category (for example
+        // "Utility" instead of "Utilities") is not safe evidence to silently map
+        // to a ledger category; leave it for review rather than guessing.
         let semanticCategory = null;
-        if (!matchedCategory) {
+        if (!matchedCategory && !raw.category_name) {
             try {
                 // Matched on the user's own words, not the model's paraphrase: usage
                 // centroids are means of raw-input vectors, so this is like for like.
@@ -523,7 +523,10 @@ User expense description: "${safeText}"${clarifyingAnswerBlock}`;
             category_name: matchedCategory ? matchedCategory.category_name : (raw.category_name || null),
             payee: raw.payee ? String(raw.payee).trim().substring(0, 200) : null,
             payment_method_id: matchedPm ? matchedPm.method_id : null,
-            payment_method_text: matchedPm ? matchedPm.name : (raw.payment_method_name || 'Cash'),
+            // Never turn an unknown or omitted method into Cash. Payment method
+            // changes the reconciliation path, so an explicit user selection is
+            // safer than a convenient but false default.
+            payment_method_text: matchedPm ? matchedPm.name : null,
             expense_date: parsedDate,
             reference_no: raw.reference_no ? String(raw.reference_no).trim().substring(0, 100) : null,
             notes: raw.notes ? String(raw.notes).trim() : originalText,

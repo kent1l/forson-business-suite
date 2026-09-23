@@ -247,7 +247,14 @@ describe('parseFitmentText - escalation signalling', () => {
     test('a fully recognised description needs no AI fallback', () => {
         const r = parse('Hilux 2005-2015 4D56');
         expect(r.fullyResolved).toBe(true);
+        expect(r.safeForLocalOnly).toBe(true);
         expect(r.residue).toEqual([]);
+    });
+
+    test('an underspecified but recognised model remains an AI/review candidate', () => {
+        const r = parse('Hilux');
+        expect(r.fullyResolved).toBe(true);
+        expect(r.safeForLocalOnly).toBe(false);
     });
 
     test('unrecognised text is reported as residue rather than guessed at', () => {
