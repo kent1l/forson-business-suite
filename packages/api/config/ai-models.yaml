@@ -81,7 +81,10 @@ pools:
       - provider: deepseek
         model: "deepseek-flash"
       - provider: openrouter
-        model: "z-ai/glm-5.3-flash:batch"
+        # OpenRouter's :batch endpoint is asynchronous and cannot be called by
+        # this synchronous chat-completions adapter. Use the normal model until
+        # a dedicated batch-job client is introduced.
+        model: "z-ai/glm-5.3-flash"
 
   vehicle_fitment_parser_pool:
     description: "Paid user-facing vehicle fitment extraction, with a larger JSON-output cap for multiple proposed rows."
