@@ -41,13 +41,19 @@ CREATE TABLE IF NOT EXISTS public.employee (
 CREATE TABLE IF NOT EXISTS public.brand (
     brand_id serial PRIMARY KEY,
     brand_name character varying(100) NOT NULL UNIQUE,
-    brand_code character varying(10) NOT NULL UNIQUE
+    brand_code character varying(10) NOT NULL UNIQUE,
+    merged_into_brand_id integer REFERENCES public.brand(brand_id) ON DELETE RESTRICT,
+    is_merged boolean NOT NULL DEFAULT false,
+    CONSTRAINT chk_brand_merge_state CHECK ((is_merged AND merged_into_brand_id IS NOT NULL) OR (NOT is_merged AND merged_into_brand_id IS NULL))
 );
 
 CREATE TABLE IF NOT EXISTS public."group" (
     group_id serial PRIMARY KEY,
     group_name character varying(100) NOT NULL UNIQUE,
-    group_code character varying(10) NOT NULL UNIQUE
+    group_code character varying(10) NOT NULL UNIQUE,
+    merged_into_group_id integer REFERENCES public."group"(group_id) ON DELETE RESTRICT,
+    is_merged boolean NOT NULL DEFAULT false,
+    CONSTRAINT chk_group_merge_state CHECK ((is_merged AND merged_into_group_id IS NOT NULL) OR (NOT is_merged AND merged_into_group_id IS NULL))
 );
 
 CREATE TABLE IF NOT EXISTS public.tax_rate (
@@ -82,7 +88,10 @@ CREATE TABLE IF NOT EXISTS public.part (
     date_created timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     created_by integer REFERENCES public.employee(employee_id) ON DELETE SET NULL,
     date_modified timestamp with time zone,
-    modified_by integer REFERENCES public.employee(employee_id) ON DELETE SET NULL
+    modified_by integer REFERENCES public.employee(employee_id) ON DELETE SET NULL,
+    merged_into_supplier_id integer REFERENCES public.supplier(supplier_id) ON DELETE RESTRICT,
+    is_merged boolean NOT NULL DEFAULT false,
+    CONSTRAINT chk_supplier_merge_state CHECK ((is_merged AND merged_into_supplier_id IS NOT NULL) OR (NOT is_merged AND merged_into_supplier_id IS NULL))
 );
 
 -- New: normalized vehicle tables for make, model, engine
@@ -197,7 +206,61 @@ CREATE TABLE IF NOT EXISTS public.customer (
     email character varying(100) UNIQUE,
     address text,
     is_active boolean DEFAULT true,
-    date_created timestamp with time zone DEFAULT CURRENT_TIMESTAMP
+    date_created timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    merged_into_customer_id integer REFERENCES public.customer(customer_id) ON DELETE RESTRICT,
+    is_merged boolean NOT NULL DEFAULT false,
+    CONSTRAINT chk_customer_merge_state CHECK ((is_merged AND merged_into_customer_id IS NOT NULL) OR (NOT is_merged AND merged_into_customer_id IS NULL))
+);
+
+-- Candidate pairs produced by duplicate scans. They are advisory only; every
+-- merge is a separate human-confirmed action.
+CREATE TABLE IF NOT EXISTS public.customer_duplicate_suggestion (
+    suggestion_id bigserial PRIMARY KEY,
+    customer_id integer NOT NULL REFERENCES public.customer(customer_id) ON DELETE RESTRICT,
+    duplicate_customer_id integer NOT NULL REFERENCES public.customer(customer_id) ON DELETE RESTRICT,
+    confidence_score numeric(5,4) NOT NULL CHECK (confidence_score BETWEEN 0 AND 1),
+    detection_method text NOT NULL, ai_reason text,
+    status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'dismissed', 'merged')),
+    dismissed_at timestamptz, dismissed_by integer REFERENCES public.employee(employee_id) ON DELETE SET NULL,
+    merged_at timestamptz, merged_by integer REFERENCES public.employee(employee_id) ON DELETE SET NULL,
+    created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT chk_customer_duplicate_suggestion_distinct CHECK (customer_id <> duplicate_customer_id)
+);
+CREATE TABLE IF NOT EXISTS public.supplier_duplicate_suggestion (
+    suggestion_id bigserial PRIMARY KEY,
+    supplier_id integer NOT NULL REFERENCES public.supplier(supplier_id) ON DELETE RESTRICT,
+    duplicate_supplier_id integer NOT NULL REFERENCES public.supplier(supplier_id) ON DELETE RESTRICT,
+    confidence_score numeric(5,4) NOT NULL CHECK (confidence_score BETWEEN 0 AND 1),
+    detection_method text NOT NULL, ai_reason text,
+    status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'dismissed', 'merged')),
+    dismissed_at timestamptz, dismissed_by integer REFERENCES public.employee(employee_id) ON DELETE SET NULL,
+    merged_at timestamptz, merged_by integer REFERENCES public.employee(employee_id) ON DELETE SET NULL,
+    created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT chk_supplier_duplicate_suggestion_distinct CHECK (supplier_id <> duplicate_supplier_id)
+);
+CREATE TABLE IF NOT EXISTS public.brand_duplicate_suggestion (
+    suggestion_id bigserial PRIMARY KEY,
+    brand_id integer NOT NULL REFERENCES public.brand(brand_id) ON DELETE RESTRICT,
+    duplicate_brand_id integer NOT NULL REFERENCES public.brand(brand_id) ON DELETE RESTRICT,
+    confidence_score numeric(5,4) NOT NULL CHECK (confidence_score BETWEEN 0 AND 1),
+    detection_method text NOT NULL, ai_reason text,
+    status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'dismissed', 'merged')),
+    dismissed_at timestamptz, dismissed_by integer REFERENCES public.employee(employee_id) ON DELETE SET NULL,
+    merged_at timestamptz, merged_by integer REFERENCES public.employee(employee_id) ON DELETE SET NULL,
+    created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT chk_brand_duplicate_suggestion_distinct CHECK (brand_id <> duplicate_brand_id)
+);
+CREATE TABLE IF NOT EXISTS public.group_duplicate_suggestion (
+    suggestion_id bigserial PRIMARY KEY,
+    group_id integer NOT NULL REFERENCES public."group"(group_id) ON DELETE RESTRICT,
+    duplicate_group_id integer NOT NULL REFERENCES public."group"(group_id) ON DELETE RESTRICT,
+    confidence_score numeric(5,4) NOT NULL CHECK (confidence_score BETWEEN 0 AND 1),
+    detection_method text NOT NULL, ai_reason text,
+    status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'dismissed', 'merged')),
+    dismissed_at timestamptz, dismissed_by integer REFERENCES public.employee(employee_id) ON DELETE SET NULL,
+    merged_at timestamptz, merged_by integer REFERENCES public.employee(employee_id) ON DELETE SET NULL,
+    created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT chk_group_duplicate_suggestion_distinct CHECK (group_id <> duplicate_group_id)
 );
 
 CREATE TABLE IF NOT EXISTS public.invoice (
@@ -430,6 +493,8 @@ CREATE INDEX IF NOT EXISTS idx_documents_metadata ON public.documents USING GIN 
 CREATE INDEX IF NOT EXISTS idx_part_brand_id ON public.part (brand_id);
 CREATE INDEX IF NOT EXISTS idx_part_group_id ON public.part (group_id);
 CREATE INDEX IF NOT EXISTS idx_part_tax_rate_id ON public.part (tax_rate_id);
+CREATE INDEX IF NOT EXISTS idx_brand_merged_into_brand_id ON public.brand (merged_into_brand_id) WHERE merged_into_brand_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_group_merged_into_group_id ON public."group" (merged_into_group_id) WHERE merged_into_group_id IS NOT NULL;
 
 -- Vehicle hierarchy
 CREATE INDEX IF NOT EXISTS idx_vehicle_model_make_id ON public.vehicle_model (make_id);
@@ -448,6 +513,16 @@ CREATE INDEX IF NOT EXISTS idx_invoice_customer_id ON public.invoice (customer_i
 CREATE INDEX IF NOT EXISTS idx_invoice_employee_id ON public.invoice (employee_id);
 CREATE INDEX IF NOT EXISTS idx_invoice_line_invoice_id ON public.invoice_line (invoice_id);
 CREATE INDEX IF NOT EXISTS idx_invoice_line_part_id ON public.invoice_line (part_id);
+CREATE INDEX IF NOT EXISTS idx_customer_merged_into_customer_id ON public.customer (merged_into_customer_id) WHERE merged_into_customer_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_supplier_merged_into_supplier_id ON public.supplier (merged_into_supplier_id) WHERE merged_into_supplier_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_customer_duplicate_suggestion_pending ON public.customer_duplicate_suggestion (status, confidence_score DESC) WHERE status = 'pending';
+CREATE UNIQUE INDEX IF NOT EXISTS uq_customer_duplicate_suggestion_pair ON public.customer_duplicate_suggestion (LEAST(customer_id, duplicate_customer_id), GREATEST(customer_id, duplicate_customer_id));
+CREATE INDEX IF NOT EXISTS idx_supplier_duplicate_suggestion_pending ON public.supplier_duplicate_suggestion (status, confidence_score DESC) WHERE status = 'pending';
+CREATE UNIQUE INDEX IF NOT EXISTS uq_supplier_duplicate_suggestion_pair ON public.supplier_duplicate_suggestion (LEAST(supplier_id, duplicate_supplier_id), GREATEST(supplier_id, duplicate_supplier_id));
+CREATE INDEX IF NOT EXISTS idx_brand_duplicate_suggestion_pending ON public.brand_duplicate_suggestion (status, confidence_score DESC) WHERE status = 'pending';
+CREATE UNIQUE INDEX IF NOT EXISTS uq_brand_duplicate_suggestion_pair ON public.brand_duplicate_suggestion (LEAST(brand_id, duplicate_brand_id), GREATEST(brand_id, duplicate_brand_id));
+CREATE INDEX IF NOT EXISTS idx_group_duplicate_suggestion_pending ON public.group_duplicate_suggestion (status, confidence_score DESC) WHERE status = 'pending';
+CREATE UNIQUE INDEX IF NOT EXISTS uq_group_duplicate_suggestion_pair ON public.group_duplicate_suggestion (LEAST(group_id, duplicate_group_id), GREATEST(group_id, duplicate_group_id));
 
 -- Payments
 CREATE INDEX IF NOT EXISTS idx_inv_alloc_invoice_id ON public.invoice_payment_allocation (invoice_id);

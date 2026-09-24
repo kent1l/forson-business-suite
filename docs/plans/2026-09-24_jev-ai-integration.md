@@ -7,7 +7,7 @@
 
 | Phase | Status | Reference |
 |---|---|---|
-| 0: Schema Infrastructure (Migrations) | **Not Started** | §5-0 |
+| 0: Schema Infrastructure (Migrations) | **Complete** | §5-0 |
 | 1: Brand & Group Management Feature (UI + AI Scan) | **Not Started** | §5-1 |
 | 2: Customer & Supplier Merge Feature (UI + AI Scan) | **Not Started** | §5-2 |
 | 3: Local-First Features (Cross-ref, basic scoring) | **Not Started** | §5-3 |
@@ -52,12 +52,17 @@ Because Jev requires clean data choices to be accurate, this integration include
 
 ## 5. Per-Phase Detail
 
-### 5-0: Schema Infrastructure (Migrations) — Not Started
+### 5-0: Schema Infrastructure (Migrations) — Complete
 - Add `merged_into_customer_id` and `is_merged` to `customer` table.
 - Add `merged_into_supplier_id` and `is_merged` to `supplier` table.
 - Add `merged_into_brand_id` and `is_merged` to `brand` table.
 - Add `merged_into_group_id` and `is_merged` to `group` table.
 - Create suggestion tables: `customer_duplicate_suggestion`, `brand_duplicate_suggestion`, etc.
+
+Implemented in `database/migrations/20260924_01_jev_entity_merge_infrastructure.sql`:
+
+- Adds soft-merge pointers and `is_merged` flags for customers, suppliers, brands, and groups, with consistency checks and lookup indexes.
+- Adds pairwise duplicate-suggestion tables for those four entities. Each captures confidence, detection method, optional AI reasoning, review/merge audit fields, and prevents duplicate pairs regardless of ordering.
 
 ### 5-1: Brand & Group Management Feature — Not Started
 - **Backend:** Create `BrandMergeService` and `GroupMergeService` (mirroring `PartMergeService`). Add preview, execute, and validation endpoints. Add AI scan endpoints (`/api/brands/scan-duplicates`) powered by `pg_trgm` and Jev.
