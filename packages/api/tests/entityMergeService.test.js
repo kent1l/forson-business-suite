@@ -72,5 +72,6 @@ describe('EntityMergeService', () => {
         expect(jevClient.evaluateDuplicate).toHaveBeenCalledWith(expect.objectContaining({ entityType: 'brand' }));
         const insertCall = client.query.mock.calls[2];
         expect(insertCall[1]).toEqual([1, 2, 0.91, 'pg_trgm+jev', expect.stringContaining('91%')]);
+        expect(insertCall[0]).toContain('ON CONFLICT ((LEAST(brand_id, duplicate_brand_id)), (GREATEST(brand_id, duplicate_brand_id)))');
     });
 });

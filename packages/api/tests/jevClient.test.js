@@ -16,6 +16,14 @@ describe('JevClient', () => {
         expect(fetchImpl).not.toHaveBeenCalled();
     });
 
+    test('uses the documented OpenRouter Decisions endpoint and pinned Jev model by default', () => {
+        const client = new JevClient({ env: { OPENROUTER_API_KEY: 'test-key' }, fetchImpl: jest.fn() });
+
+        expect(client.config.apiUrl).toBe('https://openrouter.ai/api/alpha/decisions');
+        expect(client.config.model).toBe('typesafe/jev-1.13');
+        expect(client.isConfigured()).toBe(true);
+    });
+
     test('sends a typed Noul decision and validates its probability', async () => {
         const fetchImpl = jest.fn().mockResolvedValue({
             ok: true,

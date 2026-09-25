@@ -137,7 +137,8 @@ Implemented in `database/migrations/20260924_01_jev_entity_merge_infrastructure.
 - `docker compose exec -T backend node scripts/migrate.js verify`
 - `npm run -w packages/api test -- --runInBand tests/entityMergeService.test.js`
 - `npm run -w packages/api test -- --runInBand tests/jevClient.test.js tests/entityMergeService.test.js`
-- Live Jev smoke test (2026-09-25): a fictional duplicate-company payload sent through OpenRouter's Decisions API returned `typesafe/jev-1.13-20260917` with Noul probability `0.96`. No system master data was sent externally.
+- Live Jev smoke tests (2026-09-25): a fictional duplicate-company payload returned `typesafe/jev-1.13-20260917` with Noul probability `0.96`. OpenRouter's official tutorial payload also returned valid Noul (`0.96`), Choice (`payments`, confidence `0.64`), and Score (`1.99`) answers from TypeSafe. No system master data was sent externally.
+- Duplicate-scan upsert regression (2026-09-25): PostgreSQL `EXPLAIN` successfully compiled the explicit unordered-pair conflict targets for both brand and group suggestion tables; this fixes the prior `ON CONFLICT DO UPDATE requires inference specification` 500.
 - `docker compose exec -T backend npm test -- --runInBand` (full suite passed)
 - `npm run -w packages/api lint` (passes with pre-existing warnings only)
 - `npm run -w packages/web lint` (passes with pre-existing warnings only)

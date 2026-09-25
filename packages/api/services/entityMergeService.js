@@ -111,7 +111,8 @@ class EntityMergeService {
                 const { rows } = await client.query(`
                     INSERT INTO public.${e.suggestion} (${e.id}, duplicate_${e.id}, confidence_score, detection_method, ai_reason)
                     VALUES ($1, $2, $3, $4, $5)
-                    ON CONFLICT DO UPDATE SET confidence_score = EXCLUDED.confidence_score,
+                    ON CONFLICT ((LEAST(${e.id}, duplicate_${e.id})), (GREATEST(${e.id}, duplicate_${e.id})))
+                    DO UPDATE SET confidence_score = EXCLUDED.confidence_score,
                         detection_method = EXCLUDED.detection_method, ai_reason = EXCLUDED.ai_reason, updated_at = NOW()
                     WHERE ${e.suggestion}.status = 'pending'
                     RETURNING suggestion_id`, [suggestion.entity_id, suggestion.duplicate_entity_id, suggestion.confidence, suggestion.method, suggestion.reason]);
