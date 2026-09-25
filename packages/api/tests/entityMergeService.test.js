@@ -49,4 +49,28 @@ describe('EntityMergeService', () => {
         expect(sql).toContain('SET status = \'dismissed\'');
         expect(client.release).toHaveBeenCalledTimes(1);
     });
+
+    test('uses Jev to filter trigram candidates before persisting a suggestion', async () => {
+        const client = makeClient();
+        client.query
+            .mockResolvedValueOnce({ rows: [{ entity_id: 1, duplicate_entity_id: 2, score: 0.67, method: 'pg_trgm', entity_name: 'ACME', entity_code: 'AC', duplicate_entity_name: 'Acme Parts', duplicate_entity_code: 'ACP' }] })
+            .mockResolvedValueOnce({}) // BEGIN
+            .mockResolvedValueOnce({ rows: [{ suggestion_id: 3 }] })
+            .mockResolvedValueOnce({}); // COMMIT
+        const jevClient = {
+            isConfigured: jest.fn().mockReturnValue(true),
+            evaluateDuplicate: jest.fn().mockResolvedValue({ probability: 0.91, model: 'jev-test' }),
+            logger: { warn: jest.fn() },
+        };
+        const service = new EntityMergeService({ getClient: jest.fn().mockResolvedValue(client) }, 'brand', { jevClient });
+
+        await expect(service.scan({ threshold: 0.55, jevThreshold: 0.8 })).resolves.toMatchObject({
+            createdOrUpdated: 1,
+            localCandidates: 1,
+            jev: { enabled: true, evaluated: 1, rejected: 0, failures: 0 },
+        });
+        expect(jevClient.evaluateDuplicate).toHaveBeenCalledWith(expect.objectContaining({ entityType: 'brand' }));
+        const insertCall = client.query.mock.calls[2];
+        expect(insertCall[1]).toEqual([1, 2, 0.91, 'pg_trgm+jev', expect.stringContaining('91%')]);
+    });
 });

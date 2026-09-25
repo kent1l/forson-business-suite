@@ -63,7 +63,7 @@ router.post('/groups/scan-duplicates', protect, hasPermission('groups:manage'), 
 });
 router.get('/groups/duplicate-suggestions', protect, hasPermission('groups:manage'), async (_req, res) => {
   try { res.json({ success: true, suggestions: await mergeService.suggestions() }); }
-  catch (_err) { res.status(500).json({ message: 'Unable to load group suggestions.' }); }
+  catch { res.status(500).json({ message: 'Unable to load group suggestions.' }); }
 });
 router.post('/groups/merge-preview', protect, hasPermission('groups:manage'), async (req, res) => {
   try { res.json({ success: true, ...(await mergeService.preview(req.body || {})) }); }

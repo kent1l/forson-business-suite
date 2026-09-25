@@ -68,7 +68,7 @@ router.post('/brands/scan-duplicates', protect, hasPermission('brands:manage'), 
 });
 router.get('/brands/duplicate-suggestions', protect, hasPermission('brands:manage'), async (_req, res) => {
   try { res.json({ success: true, suggestions: await mergeService.suggestions() }); }
-  catch (_err) { res.status(500).json({ message: 'Unable to load brand suggestions.' }); }
+  catch { res.status(500).json({ message: 'Unable to load brand suggestions.' }); }
 });
 router.post('/brands/merge-preview', protect, hasPermission('brands:manage'), async (req, res) => {
   try { res.json({ success: true, ...(await mergeService.preview(req.body || {})) }); }

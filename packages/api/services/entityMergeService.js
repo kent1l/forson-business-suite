@@ -1,4 +1,5 @@
 const { normalizeText } = require('../helpers/normalizeEntity');
+const JevClient = require('./jevClient');
 
 const ENTITIES = {
     brand: {
@@ -14,9 +15,10 @@ const ENTITIES = {
 };
 
 class EntityMergeService {
-    constructor(db, entity) {
+    constructor(db, entity, { jevClient = new JevClient() } = {}) {
         this.db = db;
         this.entity = ENTITIES[entity];
+        this.jevClient = jevClient;
         if (!this.entity) throw new Error(`Unsupported merge entity: ${entity}`);
     }
 
@@ -50,36 +52,73 @@ class EntityMergeService {
         return rows[0];
     }
 
-    async scan({ threshold = 0.55 } = {}) {
+    async scan({ threshold = 0.55, jevThreshold = Number(process.env.JEV_DUPLICATE_THRESHOLD || 0.8) } = {}) {
         const e = this.entity;
         const minimum = Math.max(0.1, Math.min(0.99, Number(threshold) || 0.55));
+        const minimumJev = Math.max(0.5, Math.min(0.99, Number(jevThreshold) || 0.8));
         const client = await this.db.getClient();
         try {
-            await client.query('BEGIN');
-            const { rows } = await client.query(`
-                WITH pairs AS (
+            // Keep the network call outside a transaction so an unavailable AI
+            // provider cannot hold database locks during a directory scan.
+            const { rows: pairs } = await client.query(`
                     SELECT a.${e.id} AS entity_id, b.${e.id} AS duplicate_entity_id,
                            similarity(LOWER(a.${e.name}), LOWER(b.${e.name})) AS score,
                            CASE WHEN regexp_replace(LOWER(a.${e.name}), '[^a-z0-9]+', '', 'g') = regexp_replace(LOWER(b.${e.name}), '[^a-z0-9]+', '', 'g')
-                                THEN 'normalized_name' ELSE 'pg_trgm' END AS method
+                                THEN 'normalized_name' ELSE 'pg_trgm' END AS method,
+                           a.${e.name} AS entity_name, a.${e.code} AS entity_code,
+                           b.${e.name} AS duplicate_entity_name, b.${e.code} AS duplicate_entity_code
                     FROM ${e.table} a
                     JOIN ${e.table} b ON a.${e.id} < b.${e.id}
                     WHERE NOT a.is_merged AND NOT b.is_merged
-                      AND similarity(LOWER(a.${e.name}), LOWER(b.${e.name})) >= $1
-                )
-                INSERT INTO public.${e.suggestion} (${e.id}, duplicate_${e.id}, confidence_score, detection_method, ai_reason)
-                SELECT entity_id, duplicate_entity_id, score, method,
-                       'Local similarity match; AI enrichment is pending Jev integration.'
-                FROM pairs
-                ON CONFLICT DO UPDATE SET
-                    confidence_score = EXCLUDED.confidence_score,
-                    detection_method = EXCLUDED.detection_method,
-                    ai_reason = EXCLUDED.ai_reason,
-                    updated_at = NOW()
-                WHERE ${e.suggestion}.status = 'pending'
-                RETURNING suggestion_id` , [minimum]);
+                      AND similarity(LOWER(a.${e.name}), LOWER(b.${e.name})) >= $1`, [minimum]);
+
+            const jevEnabled = this.jevClient.isConfigured();
+            let jevEvaluated = 0;
+            let jevRejected = 0;
+            let jevFailures = 0;
+            const suggestions = [];
+            for (const pair of pairs) {
+                if (pair.method === 'normalized_name') {
+                    suggestions.push({ ...pair, confidence: 1, method: 'normalized_name', reason: 'Normalized names are identical.' });
+                    continue;
+                }
+                if (!jevEnabled) {
+                    suggestions.push({ ...pair, confidence: Number(pair.score), method: 'pg_trgm', reason: 'Local trigram similarity match; Jev is not configured.' });
+                    continue;
+                }
+                try {
+                    jevEvaluated++;
+                    const decision = await this.jevClient.evaluateDuplicate({
+                        entityType: e.table === 'brand' ? 'brand' : 'product group',
+                        left: { name: pair.entity_name, code: pair.entity_code },
+                        right: { name: pair.duplicate_entity_name, code: pair.duplicate_entity_code },
+                    });
+                    if (!decision || decision.probability < minimumJev) {
+                        jevRejected++;
+                        continue;
+                    }
+                    suggestions.push({ ...pair, confidence: decision.probability, method: 'pg_trgm+jev', reason: `Jev duplicate probability: ${Math.round(decision.probability * 100)}% (${decision.model}).` });
+                } catch (error) {
+                    jevFailures++;
+                    this.jevClient.logger?.warn?.(`Jev duplicate evaluation failed; retaining local candidate: ${error.message}`);
+                    suggestions.push({ ...pair, confidence: Number(pair.score), method: 'pg_trgm', reason: 'Local trigram similarity match; Jev evaluation was unavailable.' });
+                }
+            }
+
+            await client.query('BEGIN');
+            let createdOrUpdated = 0;
+            for (const suggestion of suggestions) {
+                const { rows } = await client.query(`
+                    INSERT INTO public.${e.suggestion} (${e.id}, duplicate_${e.id}, confidence_score, detection_method, ai_reason)
+                    VALUES ($1, $2, $3, $4, $5)
+                    ON CONFLICT DO UPDATE SET confidence_score = EXCLUDED.confidence_score,
+                        detection_method = EXCLUDED.detection_method, ai_reason = EXCLUDED.ai_reason, updated_at = NOW()
+                    WHERE ${e.suggestion}.status = 'pending'
+                    RETURNING suggestion_id`, [suggestion.entity_id, suggestion.duplicate_entity_id, suggestion.confidence, suggestion.method, suggestion.reason]);
+                createdOrUpdated += rows.length;
+            }
             await client.query('COMMIT');
-            return { createdOrUpdated: rows.length, threshold: minimum };
+            return { createdOrUpdated, localCandidates: pairs.length, threshold: minimum, jev: { enabled: jevEnabled, threshold: minimumJev, evaluated: jevEvaluated, rejected: jevRejected, failures: jevFailures } };
         } catch (error) {
             await client.query('ROLLBACK');
             throw error;

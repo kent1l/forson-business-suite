@@ -56,7 +56,10 @@ export default function EntityManagementPage({ entity = 'brand', onNavigate }) {
         setScanning(true);
         try {
             const { data } = await api.post(`/${entity}s/scan-duplicates`, { threshold: Number(threshold) });
-            toast.success(`Scan complete: ${data.createdOrUpdated} candidate pair${data.createdOrUpdated === 1 ? '' : 's'}`);
+            const jev = data.jev?.enabled
+                ? ` Jev reviewed ${data.jev.evaluated} local candidate${data.jev.evaluated === 1 ? '' : 's'}.`
+                : ' Jev is not configured; local matching was used.';
+            toast.success(`Scan complete: ${data.createdOrUpdated} candidate pair${data.createdOrUpdated === 1 ? '' : 's'}.${jev}`);
             await load();
         } catch (error) { toast.error(error.response?.data?.message || 'Duplicate scan failed'); }
         finally { setScanning(false); }
@@ -89,7 +92,7 @@ export default function EntityManagementPage({ entity = 'brand', onNavigate }) {
             </header>
 
             <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
-                <div className="flex flex-wrap items-end justify-between gap-3"><div><h2 className="font-semibold">Duplicate scan</h2><p className="mt-1 text-sm text-slate-500">Uses PostgreSQL trigram similarity. Jev enrichment will be added when the TypeSafe AI adapter is configured.</p></div><div className="flex items-end gap-2"><label className="text-sm">Threshold<input aria-label="Similarity threshold" type="number" min="0.1" max="0.99" step="0.01" value={threshold} onChange={e => setThreshold(e.target.value)} className="ml-2 w-20 rounded border border-slate-300 px-2 py-2 dark:border-slate-700 dark:bg-slate-800" /></label><button type="button" onClick={scan} disabled={scanning} className="rounded-lg bg-primary-600 px-3 py-2 text-sm font-semibold text-white hover:bg-primary-700 disabled:opacity-60">{scanning ? 'Scanning…' : 'Scan duplicates'}</button></div></div>
+                <div className="flex flex-wrap items-end justify-between gap-3"><div><h2 className="font-semibold">Duplicate scan</h2><p className="mt-1 text-sm text-slate-500">Uses PostgreSQL trigram similarity, then Jev duplicate scoring when TypeSafe AI credentials are configured. The scan remains advisory and never merges records automatically.</p></div><div className="flex items-end gap-2"><label className="text-sm">Threshold<input aria-label="Similarity threshold" type="number" min="0.1" max="0.99" step="0.01" value={threshold} onChange={e => setThreshold(e.target.value)} className="ml-2 w-20 rounded border border-slate-300 px-2 py-2 dark:border-slate-700 dark:bg-slate-800" /></label><button type="button" onClick={scan} disabled={scanning} className="rounded-lg bg-primary-600 px-3 py-2 text-sm font-semibold text-white hover:bg-primary-700 disabled:opacity-60">{scanning ? 'Scanning…' : 'Scan duplicates'}</button></div></div>
             </section>
 
             <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900">

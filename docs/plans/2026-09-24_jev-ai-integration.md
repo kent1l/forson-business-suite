@@ -8,7 +8,7 @@
 | Phase | Status | Reference |
 |---|---|---|
 | 0: Schema Infrastructure (Migrations) | **Complete** | §5-0 |
-| 1: Brand & Group Management Feature (UI + AI Scan) | **Partially Complete** | §5-1 — merge workflow is built; Jev enrichment and manual cleanup remain |
+| 1: Brand & Group Management Feature (UI + AI Scan) | **Implementation Complete; Cleanup Pending** | §5-1 — Jev is configuration-gated; an administrator still needs to review real data |
 | 2: Customer & Supplier Merge Feature (UI + AI Scan) | **Not Started** | §5-2 |
 | 3: Local-First Features (Cross-ref, basic scoring) | **Not Started** | §5-3 |
 | 4: Activate Jev Gates (Brand, Group, Cust, Supp, Part) | **Not Started** | §5-4 |
@@ -74,10 +74,12 @@ Implemented in `database/migrations/20260924_01_jev_entity_merge_infrastructure.
 - [x] Added the permission-gated Brands and Groups management views. They show active master data with part counts, support inline/bulk edits, run an advisory PostgreSQL trigram scan, require a merge-preview confirmation, and never rewrite historical SKU prefixes.
 - [x] Scan results are persisted to the phase-0 duplicate-suggestion tables. A completed merge marks the selected suggestion as merged and dismisses any stale pending suggestions involving the source entity.
 - [x] Added focused service tests in `packages/api/tests/entityMergeService.test.js`.
+- [x] Added `packages/api/services/jevClient.js`: a server-side, typed Jev Noul client through OpenRouter's Decisions API using `typesafe/jev-1.13`. Scans use Jev to discard lower-confidence trigram candidates when the existing `OPENROUTER_API_KEY` is configured; malformed/unavailable Jev responses safely preserve the local advisory candidate rather than blocking cleanup. The UI reports whether Jev participated in the scan.
+- [x] Documented the deployment-only Jev configuration in `.env.example` and added contract/fallback tests in `packages/api/tests/jevClient.test.js`.
 
-#### Remaining before Phase 1 can be called complete
+#### Remaining operational work
 
-- [ ] Add a Jev adapter/configuration and use it to enrich or filter the trigram candidates. There is currently no Jev package, client, credential configuration, or existing TypeSafe AI integration in this repository, so no external AI call was invented. The live scan deliberately reports `pg_trgm` / `normalized_name` matches only and labels Jev enrichment as pending.
+- [ ] Ensure `OPENROUTER_API_KEY` is present in the deployment environment, then enable `JEV_ENABLED=true`. The Decisions endpoint and pinned model are represented in `.env.example`; until the OpenRouter key is configured, scans continue to use their safe local `pg_trgm` fallback.
 - [ ] An administrator must run the scans and manually review/merge the real brand and group duplicates. This session intentionally did not change production-like master data.
 
 ### 5-2: Customer & Supplier Merge Feature — Not Started
@@ -119,7 +121,10 @@ Implemented in `database/migrations/20260924_01_jev_entity_merge_infrastructure.
 - `packages/api/routes/brandRoutes.js`
 - `packages/api/routes/groupRoutes.js`
 - `packages/api/services/entityMergeService.js`
+- `packages/api/services/jevClient.js`
 - `packages/api/tests/entityMergeService.test.js`
+- `packages/api/tests/jevClient.test.js`
+- `.env.example`
 - `packages/web/src/components/layout/MainLayout.jsx`
 - `packages/web/src/config/navigation.js`
 - `packages/web/src/pages/EntityManagementPage.jsx`
@@ -131,6 +136,8 @@ Implemented in `database/migrations/20260924_01_jev_entity_merge_infrastructure.
 - `docker compose exec -T backend node scripts/migrate.js up`
 - `docker compose exec -T backend node scripts/migrate.js verify`
 - `npm run -w packages/api test -- --runInBand tests/entityMergeService.test.js`
+- `npm run -w packages/api test -- --runInBand tests/jevClient.test.js tests/entityMergeService.test.js`
+- Live Jev smoke test (2026-09-25): a fictional duplicate-company payload sent through OpenRouter's Decisions API returned `typesafe/jev-1.13-20260917` with Noul probability `0.96`. No system master data was sent externally.
 - `docker compose exec -T backend npm test -- --runInBand` (full suite passed)
 - `npm run -w packages/api lint` (passes with pre-existing warnings only)
 - `npm run -w packages/web lint` (passes with pre-existing warnings only)
@@ -139,4 +146,4 @@ Implemented in `database/migrations/20260924_01_jev_entity_merge_infrastructure.
 ## 9. Change Log
 
 - **2026-09-24** (Antigravity): Created initial plan document based on interactive planning session. Consolidated dependencies and rollout strategy.
-- **2026-09-25** (Codex): Resumed the interrupted Phase 1 implementation, completed and verified the local merge-management workflow and migration, and documented the remaining Jev-adapter/manual-cleanup work.
+- **2026-09-25** (Codex): Resumed the interrupted Phase 1 implementation, completed and verified the local merge-management workflow and migration, added the OpenRouter Jev Noul duplicate-scoring adapter, and smoke-tested it successfully with a fictional payload.
