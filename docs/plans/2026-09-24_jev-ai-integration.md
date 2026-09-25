@@ -72,9 +72,11 @@ Implemented in `database/migrations/20260924_01_jev_entity_merge_infrastructure.
 - [x] Added preview, single/bulk edit, duplicate scan, pending-suggestion list, confirmed merge, and dismiss endpoints under both `/api/brands` and `/api/groups`.
 - [x] Added `brand_alias` and `group_alias` tables, lookup indexes, `brands:manage` / `groups:manage` permissions, and Admin/Manager grants in `20260924_02_brand_group_merge_management.sql`. The migration has been applied and checksum-verified on the local development database.
 - [x] Added the permission-gated Brands and Groups management views. They show active master data with part counts, support inline/bulk edits, run an advisory PostgreSQL trigram scan, require a merge-preview confirmation, and never rewrite historical SKU prefixes.
+- [x] Refreshed the management UX with name/code search across both the directory and review queue, filtered select-all, clear selection state, and a shared merge review that accepts two or more selected records. Administrators choose the canonical record, see linked-part impact, and explicitly confirm before execution.
 - [x] Scan results are persisted to the phase-0 duplicate-suggestion tables. A completed merge marks the selected suggestion as merged and dismisses any stale pending suggestions involving the source entity.
 - [x] Added focused service tests in `packages/api/tests/entityMergeService.test.js`.
 - [x] Added `packages/api/services/jevClient.js`: a server-side, typed Jev Noul client through OpenRouter's Decisions API using `typesafe/jev-1.13`. Scans use Jev to discard lower-confidence trigram candidates when the existing `OPENROUTER_API_KEY` is configured; malformed/unavailable Jev responses safely preserve the local advisory candidate rather than blocking cleanup. The UI reports whether Jev participated in the scan.
+- [x] Added a durable, shared Jev duplicate-decision cache. It retains positive and negative Noul probabilities separately from the human-review suggestion workflow, and only reuses a decision when the unordered pair, normalized names/codes, configured model, and versioned prompt all still match.
 - [x] Documented the deployment-only Jev configuration in `.env.example` and added contract/fallback tests in `packages/api/tests/jevClient.test.js`.
 
 #### Remaining operational work
@@ -148,3 +150,5 @@ Implemented in `database/migrations/20260924_01_jev_entity_merge_infrastructure.
 
 - **2026-09-24** (Antigravity): Created initial plan document based on interactive planning session. Consolidated dependencies and rollout strategy.
 - **2026-09-25** (Codex): Resumed the interrupted Phase 1 implementation, completed and verified the local merge-management workflow and migration, added the OpenRouter Jev Noul duplicate-scoring adapter, and smoke-tested it successfully with a fictional payload.
+- **2026-09-25** (Codex): Modernized the Brands and Groups manager with searchable records and suggestions plus a safeguarded multi-record merge review flow; production web build and focused merge/Jev tests passed.
+- **2026-09-25** (Codex): Added fingerprinted persistent Jev duplicate-decision caching to avoid repeat Decisions API calls on unchanged pairs while automatically invalidating on input, model, or prompt changes.

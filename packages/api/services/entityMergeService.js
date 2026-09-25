@@ -1,14 +1,15 @@
 const { normalizeText } = require('../helpers/normalizeEntity');
 const JevClient = require('./jevClient');
+const crypto = require('crypto');
 
 const ENTITIES = {
     brand: {
-        table: 'brand', id: 'brand_id', name: 'brand_name', code: 'brand_code',
+        type: 'brand', table: 'brand', id: 'brand_id', name: 'brand_name', code: 'brand_code',
         mergedInto: 'merged_into_brand_id', suggestion: 'brand_duplicate_suggestion',
         alias: 'brand_alias', partColumn: 'brand_id'
     },
     group: {
-        table: '"group"', id: 'group_id', name: 'group_name', code: 'group_code',
+        type: 'group', table: '"group"', id: 'group_id', name: 'group_name', code: 'group_code',
         mergedInto: 'merged_into_group_id', suggestion: 'group_duplicate_suggestion',
         alias: 'group_alias', partColumn: 'group_id'
     }
@@ -73,10 +74,17 @@ class EntityMergeService {
                       AND similarity(LOWER(a.${e.name}), LOWER(b.${e.name})) >= $1`, [minimum]);
 
             const jevEnabled = this.jevClient.isConfigured();
+            const cacheContext = this.jevClient.duplicateDecisionCacheKey || {
+                model: this.jevClient.config?.model || 'unknown',
+                promptVersion: 'duplicate-v1',
+            };
+            const cachedDecisions = jevEnabled ? await this.loadCachedJevDecisions(client, pairs) : new Map();
             let jevEvaluated = 0;
+            let jevCached = 0;
             let jevRejected = 0;
             let jevFailures = 0;
             const suggestions = [];
+            const decisionsToCache = [];
             for (const pair of pairs) {
                 if (pair.method === 'normalized_name') {
                     suggestions.push({ ...pair, confidence: 1, method: 'normalized_name', reason: 'Normalized names are identical.' });
@@ -86,6 +94,25 @@ class EntityMergeService {
                     suggestions.push({ ...pair, confidence: Number(pair.score), method: 'pg_trgm', reason: 'Local trigram similarity match; Jev is not configured.' });
                     continue;
                 }
+                const leftFingerprint = this.duplicateInputFingerprint(pair.entity_name, pair.entity_code);
+                const rightFingerprint = this.duplicateInputFingerprint(pair.duplicate_entity_name, pair.duplicate_entity_code);
+                const cached = cachedDecisions.get(this.duplicatePairKey(pair.entity_id, pair.duplicate_entity_id));
+                const probability = cached
+                    && cached.left_input_fingerprint === leftFingerprint
+                    && cached.right_input_fingerprint === rightFingerprint
+                    && cached.model === cacheContext.model
+                    && cached.prompt_version === cacheContext.promptVersion
+                    ? Number(cached.probability)
+                    : null;
+                if (probability !== null) {
+                    jevCached++;
+                    if (probability < minimumJev) {
+                        jevRejected++;
+                        continue;
+                    }
+                    suggestions.push({ ...pair, confidence: probability, method: 'pg_trgm+jev_cache', reason: `Cached Jev duplicate probability: ${Math.round(probability * 100)}% (${cacheContext.model}).` });
+                    continue;
+                }
                 try {
                     jevEvaluated++;
                     const decision = await this.jevClient.evaluateDuplicate({
@@ -93,7 +120,19 @@ class EntityMergeService {
                         left: { name: pair.entity_name, code: pair.entity_code },
                         right: { name: pair.duplicate_entity_name, code: pair.duplicate_entity_code },
                     });
-                    if (!decision || decision.probability < minimumJev) {
+                    if (!decision) {
+                        jevRejected++;
+                        continue;
+                    }
+                    decisionsToCache.push({
+                        ...pair,
+                        leftFingerprint,
+                        rightFingerprint,
+                        probability: decision.probability,
+                        model: cacheContext.model,
+                        promptVersion: cacheContext.promptVersion,
+                    });
+                    if (decision.probability < minimumJev) {
                         jevRejected++;
                         continue;
                     }
@@ -107,6 +146,19 @@ class EntityMergeService {
 
             await client.query('BEGIN');
             let createdOrUpdated = 0;
+            for (const decision of decisionsToCache) {
+                await client.query(`
+                    INSERT INTO public.entity_duplicate_decision_cache
+                        (entity_type, left_entity_id, right_entity_id, left_input_fingerprint, right_input_fingerprint, model, prompt_version, probability)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                    ON CONFLICT (entity_type, left_entity_id, right_entity_id) DO UPDATE
+                    SET left_input_fingerprint = EXCLUDED.left_input_fingerprint,
+                        right_input_fingerprint = EXCLUDED.right_input_fingerprint,
+                        model = EXCLUDED.model,
+                        prompt_version = EXCLUDED.prompt_version,
+                        probability = EXCLUDED.probability,
+                        evaluated_at = NOW()`, [e.type, decision.entity_id, decision.duplicate_entity_id, decision.leftFingerprint, decision.rightFingerprint, decision.model, decision.promptVersion, decision.probability]);
+            }
             for (const suggestion of suggestions) {
                 const { rows } = await client.query(`
                     INSERT INTO public.${e.suggestion} (${e.id}, duplicate_${e.id}, confidence_score, detection_method, ai_reason)
@@ -119,11 +171,37 @@ class EntityMergeService {
                 createdOrUpdated += rows.length;
             }
             await client.query('COMMIT');
-            return { createdOrUpdated, localCandidates: pairs.length, threshold: minimum, jev: { enabled: jevEnabled, threshold: minimumJev, evaluated: jevEvaluated, rejected: jevRejected, failures: jevFailures } };
+            return { createdOrUpdated, localCandidates: pairs.length, threshold: minimum, jev: { enabled: jevEnabled, threshold: minimumJev, evaluated: jevEvaluated, cached: jevCached, rejected: jevRejected, failures: jevFailures } };
         } catch (error) {
             await client.query('ROLLBACK');
             throw error;
         } finally { client.release(); }
+    }
+
+    async loadCachedJevDecisions(client, pairs) {
+        const candidates = pairs.filter(pair => pair.method !== 'normalized_name');
+        if (!candidates.length) return new Map();
+        const { rows } = await client.query(`
+            SELECT left_entity_id, right_entity_id, left_input_fingerprint, right_input_fingerprint,
+                   model, prompt_version, probability
+            FROM public.entity_duplicate_decision_cache
+            WHERE entity_type = $1
+              AND (left_entity_id, right_entity_id) IN (
+                  SELECT * FROM UNNEST($2::int[], $3::int[])
+              )`, [this.entity.type, candidates.map(pair => pair.entity_id), candidates.map(pair => pair.duplicate_entity_id)]);
+        return new Map(rows.map(row => [this.duplicatePairKey(row.left_entity_id, row.right_entity_id), row]));
+    }
+
+    duplicatePairKey(leftId, rightId) {
+        return `${Number(leftId)}:${Number(rightId)}`;
+    }
+
+    duplicateInputFingerprint(name, code) {
+        const normalizedName = String(normalizeText(typeof name === 'string' ? name : '') || '').toLocaleLowerCase();
+        const normalizedCode = String(code || '').trim().toLocaleUpperCase();
+        return crypto.createHash('sha256')
+            .update(JSON.stringify({ name: normalizedName, code: normalizedCode }))
+            .digest('hex');
     }
 
     async suggestions() {

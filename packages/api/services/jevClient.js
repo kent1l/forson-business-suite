@@ -30,6 +30,12 @@ class JevClient {
         return enabled && Boolean(apiUrl && apiKey && this.fetchImpl);
     }
 
+    // Bump this when the duplicate prompt/criteria below change. Entity scans
+    // use it to invalidate only decisions made under an older prompt.
+    get duplicateDecisionCacheKey() {
+        return { model: this.config.model, promptVersion: 'duplicate-v1' };
+    }
+
     async evaluateDuplicate({ entityType, left, right }) {
         if (!this.isConfigured()) return null;
         const config = this.config;

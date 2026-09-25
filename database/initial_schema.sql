@@ -283,6 +283,22 @@ CREATE TABLE IF NOT EXISTS public.group_duplicate_suggestion (
     CONSTRAINT chk_group_duplicate_suggestion_distinct CHECK (group_id <> duplicate_group_id)
 );
 
+-- Durable Jev decisions are separate from duplicate suggestions: suggestions
+-- track human review, while this cache also retains non-match probabilities.
+CREATE TABLE IF NOT EXISTS public.entity_duplicate_decision_cache (
+    entity_type text NOT NULL CHECK (entity_type IN ('brand', 'group')),
+    left_entity_id integer NOT NULL,
+    right_entity_id integer NOT NULL,
+    left_input_fingerprint char(64) NOT NULL,
+    right_input_fingerprint char(64) NOT NULL,
+    model text NOT NULL,
+    prompt_version text NOT NULL,
+    probability numeric(5,4) NOT NULL CHECK (probability BETWEEN 0 AND 1),
+    evaluated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (entity_type, left_entity_id, right_entity_id),
+    CONSTRAINT chk_entity_duplicate_decision_cache_pair_order CHECK (left_entity_id < right_entity_id)
+);
+
 CREATE TABLE IF NOT EXISTS public.invoice (
     invoice_id serial PRIMARY KEY,
     invoice_number character varying(50) NOT NULL UNIQUE,
