@@ -47,6 +47,7 @@ import PaperlessReceiptsPage from '../../pages/PaperlessReceiptsPage';
 import SoaGenPage from '../../pages/SoaGenPage';
 import WithholdingTaxPage from '../../pages/WithholdingTaxPage';
 import ARConcessionsPage from '../../pages/ARConcessionsPage';
+import EntityManagementPage from '../../pages/EntityManagementPage';
 
 const MainLayout = ({ user, onLogout, onNavigate, currentPage, pageState, posLines, setPosLines }) => {
     const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -62,6 +63,8 @@ const MainLayout = ({ user, onLogout, onNavigate, currentPage, pageState, posLin
             case 'suppliers': return <SuppliersPage user={user} />;
             case 'parts': return <PartsPage user={user} onNavigate={onNavigate} />;
             case 'parts_cleanup': return <PartsCleanupPage user={user} onNavigate={onNavigate} />;
+            case 'brand_management': return <EntityManagementPage entity="brand" onNavigate={onNavigate} />;
+            case 'group_management': return <EntityManagementPage entity="group" onNavigate={onNavigate} />;
             case 'applications': return <ApplicationsPage user={user} />;
             case 'customers': return <CustomersPage user={user} />;
             case 'goods_receipt': return <GoodsReceiptPage user={user} onNavigate={onNavigate} pageState={currentPage === 'goods_receipt' ? pageState : null} />;

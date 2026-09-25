@@ -39,6 +39,8 @@ export const CATEGORIES = [
         icon: ICONS.customers,
         items: [
             { name: 'Parts',        icon: ICONS.parts,        page: 'parts',        permission: 'parts:view', keywords: ['products', 'catalog', 'catalogue', 'sku'] },
+            { name: 'Brands',       icon: ICONS.tag,          page: 'brand_management', permission: 'brands:manage', keywords: ['manufacturers', 'brand cleanup', 'duplicate brands'] },
+            { name: 'Groups',       icon: ICONS.tag,          page: 'group_management', permission: 'groups:manage', keywords: ['product groups', 'categories', 'group cleanup', 'duplicate groups'] },
             { name: 'Applications', icon: ICONS.applications, page: 'applications', permission: 'applications:view', keywords: ['part fitment', 'vehicle applications'] },
             { name: 'Customers',    icon: ICONS.customers,    page: 'customers',    permission: 'customers:view', keywords: ['clients', 'buyers'] },
             { name: 'Suppliers',    icon: ICONS.suppliers,    page: 'suppliers',    permission: 'suppliers:view', keywords: ['vendors'] },

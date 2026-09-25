@@ -56,6 +56,26 @@ CREATE TABLE IF NOT EXISTS public."group" (
     CONSTRAINT chk_group_merge_state CHECK ((is_merged AND merged_into_group_id IS NOT NULL) OR (NOT is_merged AND merged_into_group_id IS NULL))
 );
 
+CREATE TABLE IF NOT EXISTS public.brand_alias (
+    brand_alias_id bigserial PRIMARY KEY,
+    brand_id integer NOT NULL REFERENCES public.brand(brand_id) ON DELETE RESTRICT,
+    alias_name character varying(100) NOT NULL,
+    alias_code character varying(10),
+    source_brand_id integer REFERENCES public.brand(brand_id) ON DELETE SET NULL,
+    created_at timestamp with time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (brand_id, alias_name)
+);
+
+CREATE TABLE IF NOT EXISTS public.group_alias (
+    group_alias_id bigserial PRIMARY KEY,
+    group_id integer NOT NULL REFERENCES public."group"(group_id) ON DELETE RESTRICT,
+    alias_name character varying(100) NOT NULL,
+    alias_code character varying(10),
+    source_group_id integer REFERENCES public."group"(group_id) ON DELETE SET NULL,
+    created_at timestamp with time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (group_id, alias_name)
+);
+
 CREATE TABLE IF NOT EXISTS public.tax_rate (
     tax_rate_id serial PRIMARY KEY,
     rate_name character varying(50) NOT NULL,
@@ -495,6 +515,8 @@ CREATE INDEX IF NOT EXISTS idx_part_group_id ON public.part (group_id);
 CREATE INDEX IF NOT EXISTS idx_part_tax_rate_id ON public.part (tax_rate_id);
 CREATE INDEX IF NOT EXISTS idx_brand_merged_into_brand_id ON public.brand (merged_into_brand_id) WHERE merged_into_brand_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_group_merged_into_group_id ON public."group" (merged_into_group_id) WHERE merged_into_group_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_brand_alias_name ON public.brand_alias (LOWER(alias_name));
+CREATE INDEX IF NOT EXISTS idx_group_alias_name ON public.group_alias (LOWER(alias_name));
 
 -- Vehicle hierarchy
 CREATE INDEX IF NOT EXISTS idx_vehicle_model_make_id ON public.vehicle_model (make_id);

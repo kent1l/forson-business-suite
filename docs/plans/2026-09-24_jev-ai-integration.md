@@ -8,7 +8,7 @@
 | Phase | Status | Reference |
 |---|---|---|
 | 0: Schema Infrastructure (Migrations) | **Complete** | §5-0 |
-| 1: Brand & Group Management Feature (UI + AI Scan) | **Not Started** | §5-1 |
+| 1: Brand & Group Management Feature (UI + AI Scan) | **Partially Complete** | §5-1 — merge workflow is built; Jev enrichment and manual cleanup remain |
 | 2: Customer & Supplier Merge Feature (UI + AI Scan) | **Not Started** | §5-2 |
 | 3: Local-First Features (Cross-ref, basic scoring) | **Not Started** | §5-3 |
 | 4: Activate Jev Gates (Brand, Group, Cust, Supp, Part) | **Not Started** | §5-4 |
@@ -64,10 +64,21 @@ Implemented in `database/migrations/20260924_01_jev_entity_merge_infrastructure.
 - Adds soft-merge pointers and `is_merged` flags for customers, suppliers, brands, and groups, with consistency checks and lookup indexes.
 - Adds pairwise duplicate-suggestion tables for those four entities. Each captures confidence, detection method, optional AI reasoning, review/merge audit fields, and prevents duplicate pairs regardless of ordering.
 
-### 5-1: Brand & Group Management Feature — Not Started
-- **Backend:** Create `BrandMergeService` and `GroupMergeService` (mirroring `PartMergeService`). Add preview, execute, and validation endpoints. Add AI scan endpoints (`/api/brands/scan-duplicates`) powered by `pg_trgm` and Jev.
-- **Frontend:** Build management pages for Brands and Groups (table view, edit names/codes, bulk edit, duplicate scan button, suggestions panel, merge UI).
-- **Execution:** Run the scan and manually merge all duplicate brands/groups.
+### 5-1: Brand & Group Management Feature — Partially Complete
+
+#### As built (2026-09-25)
+
+- [x] Added `EntityMergeService`, shared by Brands and Groups. It validates edit/merge requests, blocks already-merged records, takes transaction advisory locks, reassigns `part.brand_id` / `part.group_id`, preserves the retired values as aliases, and soft-merges the source records.
+- [x] Added preview, single/bulk edit, duplicate scan, pending-suggestion list, confirmed merge, and dismiss endpoints under both `/api/brands` and `/api/groups`.
+- [x] Added `brand_alias` and `group_alias` tables, lookup indexes, `brands:manage` / `groups:manage` permissions, and Admin/Manager grants in `20260924_02_brand_group_merge_management.sql`. The migration has been applied and checksum-verified on the local development database.
+- [x] Added the permission-gated Brands and Groups management views. They show active master data with part counts, support inline/bulk edits, run an advisory PostgreSQL trigram scan, require a merge-preview confirmation, and never rewrite historical SKU prefixes.
+- [x] Scan results are persisted to the phase-0 duplicate-suggestion tables. A completed merge marks the selected suggestion as merged and dismisses any stale pending suggestions involving the source entity.
+- [x] Added focused service tests in `packages/api/tests/entityMergeService.test.js`.
+
+#### Remaining before Phase 1 can be called complete
+
+- [ ] Add a Jev adapter/configuration and use it to enrich or filter the trigram candidates. There is currently no Jev package, client, credential configuration, or existing TypeSafe AI integration in this repository, so no external AI call was invented. The live scan deliberately reports `pg_trgm` / `normalized_name` matches only and labels Jev enrichment as pending.
+- [ ] An administrator must run the scans and manually review/merge the real brand and group duplicates. This session intentionally did not change production-like master data.
 
 ### 5-2: Customer & Supplier Merge Feature — Not Started
 - **Backend:** Create `CustomerMergeService` (reassigns `invoice`, `customer_payment`, `customer_tag`, `draft_transaction`) and `SupplierMergeService` (reassigns `goods_receipt`, `purchase_order`). Include robust conflict detection (e.g., open drafts).
@@ -102,13 +113,30 @@ Implemented in `database/migrations/20260924_01_jev_entity_merge_infrastructure.
 
 ## 7. Files Touched So Far
 
-- `docs/plans/2026-09-24_jev-ai-integration.md` (This document)
-- *No code has been touched yet.*
+- `database/initial_schema.sql`
+- `database/migrations/20260924_01_jev_entity_merge_infrastructure.sql`
+- `database/migrations/20260924_02_brand_group_merge_management.sql`
+- `packages/api/routes/brandRoutes.js`
+- `packages/api/routes/groupRoutes.js`
+- `packages/api/services/entityMergeService.js`
+- `packages/api/tests/entityMergeService.test.js`
+- `packages/web/src/components/layout/MainLayout.jsx`
+- `packages/web/src/config/navigation.js`
+- `packages/web/src/pages/EntityManagementPage.jsx`
+- `docs/plans/2026-09-24_jev-ai-integration.md`
 
 ## 8. Verification Commands
 
-*(To be populated as phases are built. Typical commands include `npm run -w packages/api test`, database integration tests, and docker-compose up for UI verification).*
+- `docker compose exec -T backend node scripts/migrate.js status`
+- `docker compose exec -T backend node scripts/migrate.js up`
+- `docker compose exec -T backend node scripts/migrate.js verify`
+- `npm run -w packages/api test -- --runInBand tests/entityMergeService.test.js`
+- `docker compose exec -T backend npm test -- --runInBand` (full suite passed)
+- `npm run -w packages/api lint` (passes with pre-existing warnings only)
+- `npm run -w packages/web lint` (passes with pre-existing warnings only)
+- `npm run -w packages/web build`
 
 ## 9. Change Log
 
 - **2026-09-24** (Antigravity): Created initial plan document based on interactive planning session. Consolidated dependencies and rollout strategy.
+- **2026-09-25** (Codex): Resumed the interrupted Phase 1 implementation, completed and verified the local merge-management workflow and migration, and documented the remaining Jev-adapter/manual-cleanup work.
