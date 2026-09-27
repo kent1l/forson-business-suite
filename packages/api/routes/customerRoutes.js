@@ -5,7 +5,9 @@ const { parsePaginationQuery, paginatedResponse } = require('../helpers/paginati
 const { getNextDocumentNumber } = require('../helpers/documentNumberGenerator');
 const { normalizeText, normalizeName, normalizeEmail, normalizePhone, normalizeTin } = require('../helpers/normalizeEntity');
 const partyMergeRoutes = require('./partyMergeRoutes');
+const JevGateService = require('../services/jevGateService');
 const router = express.Router();
+const jevGates = new JevGateService({ db });
 
 router.use(partyMergeRoutes(db, 'customer'));
 
@@ -267,6 +269,14 @@ router.post('/customers', protect, hasPermission('customers:edit'), async (req, 
     const emailOrNull = normalizeEmail(customerData.email);
     const withholding = resolveWithholdingFields(customerData);
     if (withholding.error) return res.status(400).json({ message: withholding.error });
+    const displayName = customerData.company_name || [customerData.first_name, customerData.last_name].filter(Boolean).join(' ');
+    const existing = await jevGates.findPartyDuplicate('customer', displayName);
+    if (existing) {
+        return res.status(409).json({
+            message: `A likely duplicate customer already exists: ${existing.record.entity_name}.`,
+            duplicate: { customer_id: existing.record.entity_id, display_name: existing.record.entity_name, confidence: existing.confidence, model: existing.model },
+        });
+    }
     const client = await db.getClient();
     try {
         await client.query('BEGIN');

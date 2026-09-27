@@ -1,7 +1,7 @@
 # Jev AI Integration & Data Cleanup — Developer Handoff
 
 > **Forson Business Suite** | **Date:** 2026-09-24 | **Branch:** `master`
-> **Status:** Phases 0–3 implemented; operational master-data cleanup remains before Jev gates can be activated.
+> **Status:** Phases 0–4 implemented. Jev gates remain configuration-gated and fail open until a deployment supplies `OPENROUTER_API_KEY` and enables Jev.
 
 ## 0. Status at a Glance
 
@@ -11,7 +11,7 @@
 | 1: Brand & Group Management Feature (UI + AI Scan) | **Implementation Complete; Cleanup Pending** | §5-1 — Jev is configuration-gated; an administrator still needs to review real data |
 | 2: Customer & Supplier Merge Feature (UI + AI Scan) | **Implementation Complete; Cleanup Pending** | §5-2 |
 | 3: Local-First Features (Cross-ref, basic scoring) | **Implementation Complete** | §5-3 |
-| 4: Activate Jev Gates (Brand, Group, Cust, Supp, Part) | **Not Started** | §5-4 |
+| 4: Activate Jev Gates (Brand, Group, Cust, Supp, Part) | **Implementation Complete; Configuration Pending** | §5-4 |
 | 5: Inline Parsers (Expenses, Fitment, PO) | **Not Started** | §5-5 |
 | 6: Background & Batch (Dedup worker, nightly scoring) | **Not Started** | §5-6 |
 
@@ -114,12 +114,21 @@ Implemented in `database/migrations/20260924_01_jev_entity_merge_infrastructure.
 - `npm run -w packages/web build` — passes.
 - `docker compose exec -T backend node scripts/migrate.js up` and `verify` — migration applied locally and checksums verified.
 
-### 5-4: Activate Jev Gates — Not Started
-*Prerequisite: Stages 1 and 2 must be complete and data cleaned.*
-- **B1 (Brand Gate):** Before inserting a new brand, evaluate against existing brands via Jev `Choice`. High confidence = return existing ID.
-- **B2 (Group Predict):** New endpoint `GET /api/parts/predict-group?detail=<text>`. Auto-selects group in `PartForm.jsx` on blur.
-- **C3/C4 (Cust/Supp Gate):** Gate `POST /api/customers` and `POST /api/suppliers` with `pg_trgm` + Jev `Noul`.
-- **A4 (Part Gate):** `POST /api/parts` pre-checks Meilisearch candidates using Jev `Noul`. High confidence blocks insert (HTTP 409).
+### 5-4: Activate Jev Gates — Implementation Complete; Configuration Pending
+
+#### As built (2026-09-27)
+
+- [x] Added `JevGateService`, a shared fail-open real-time gate layer. It evaluates only bounded local candidate sets; provider errors, malformed answers, low confidence, and unavailable Meilisearch all preserve the existing workflow.
+- [x] **B1 (Brand Gate):** `POST /api/brands` presents active local brands as a Jev `Choice` set before insertion. A confidence at or above `JEV_BRAND_GATE_THRESHOLD` (default `0.90`) returns the canonical existing brand with `existing: true` instead of creating another record.
+- [x] **B2 (Group Predict):** Added permission-protected `GET /api/parts/predict-group?detail=<text>`. It makes a Jev `Choice` prediction from active groups. `PartForm.jsx` calls it on Part Detail blur only while Group is empty, displays the suggestion, and never overwrites an operator's explicit group choice.
+- [x] **C3/C4 (Customer/Supplier Gates):** `POST /api/customers` and `POST /api/suppliers` first apply a bounded local `pg_trgm` candidate query, then Jev `Noul`. A high-confidence duplicate returns HTTP `409` with the existing record's identity; the respective pages show the returned message.
+- [x] **A4 (Part Gate):** `POST /api/parts` first asks Meilisearch for at most eight active catalog candidates, then evaluates only those with Jev `Noul`. A high-confidence duplicate returns HTTP `409` with the candidate identity before any transaction or SKU sequence update.
+- [x] Added configurable thresholds to `.env.example`: brand `0.90`, group prediction `0.80`, party local blocking `0.55`, party gate `0.90`, and part gate `0.92`.
+- [x] Extended the Jev client contract for typed `Choice` requests and added focused client/gate tests.
+
+#### Remaining operational work
+
+- [ ] Set `OPENROUTER_API_KEY` and `JEV_ENABLED=true` in the deployment environment, then observe the thresholds against cleaned production master data. Without a configured Jev client, every Phase 4 gate is intentionally inactive and normal creation continues.
 
 ### 5-5: Inline Parsers — Not Started
 - **A2 (Expense):** Update `expenseParserAI.js` to use Jev `Score` for ambiguity pre-screening, `Choice` for standard categories, and `Noul` for supplier alias confirmation.
@@ -144,6 +153,7 @@ Implemented in `database/migrations/20260924_01_jev_entity_merge_infrastructure.
 - `packages/api/routes/groupRoutes.js`
 - `packages/api/services/entityMergeService.js`
 - `packages/api/services/jevClient.js`
+- `packages/api/services/jevGateService.js`
 - `packages/api/services/partyMergeService.js`
 - `packages/api/services/cycleCountService.js`
 - `packages/api/services/analytics/registry/sources.js`
@@ -154,6 +164,7 @@ Implemented in `database/migrations/20260924_01_jev_entity_merge_infrastructure.
 - `packages/api/tests/partyMergeService.test.js`
 - `packages/api/tests/entityMergeService.test.js`
 - `packages/api/tests/jevClient.test.js`
+- `packages/api/tests/jevGateService.test.js`
 - `.env.example`
 - `packages/web/src/components/layout/MainLayout.jsx`
 - `packages/web/src/config/navigation.js`
@@ -161,6 +172,7 @@ Implemented in `database/migrations/20260924_01_jev_entity_merge_infrastructure.
 - `packages/web/src/pages/PartyMergePage.jsx`
 - `packages/web/src/pages/CustomersPage.jsx`
 - `packages/web/src/pages/SuppliersPage.jsx`
+- `packages/web/src/components/forms/PartForm.jsx`
 - `packages/web/src/pages/PowerSearchPage.jsx`
 - `packages/web/src/pages/SettingsPage.jsx`
 - `database/migrations/20260927_01_cycle_count_priority_scoring.sql`
@@ -175,6 +187,7 @@ Implemented in `database/migrations/20260924_01_jev_entity_merge_infrastructure.
 - `docker compose exec -T backend node scripts/migrate.js verify`
 - `npm run -w packages/api test -- --runInBand tests/entityMergeService.test.js`
 - `npm run -w packages/api test -- --runInBand tests/jevClient.test.js tests/entityMergeService.test.js`
+- `npm run -w packages/api test -- --runInBand tests/jevClient.test.js tests/jevGateService.test.js`
 - Live Jev smoke tests (2026-09-25): a fictional duplicate-company payload returned `typesafe/jev-1.13-20260917` with Noul probability `0.96`. OpenRouter's official tutorial payload also returned valid Noul (`0.96`), Choice (`payments`, confidence `0.64`), and Score (`1.99`) answers from TypeSafe. No system master data was sent externally.
 - Duplicate-scan upsert regression (2026-09-25): PostgreSQL `EXPLAIN` successfully compiled the explicit unordered-pair conflict targets for both brand and group suggestion tables; this fixes the prior `ON CONFLICT DO UPDATE requires inference specification` 500.
 - `docker compose exec -T backend npm test -- --runInBand` (full suite passed)
@@ -190,3 +203,4 @@ Implemented in `database/migrations/20260924_01_jev_entity_merge_infrastructure.
 - **2026-09-25** (Codex): Added fingerprinted persistent Jev duplicate-decision caching to avoid repeat Decisions API calls on unchanged pairs while automatically invalidating on input, model, or prompt changes.
 - **2026-09-27** (Codex): Implemented Phase 2 customer and supplier duplicate cleanup: Jev-assisted scans, explicit merge review, transactional historical-reference reassignment, and safeguards for active drafts and customer wallets. Real-data review remains an administrator task.
 - **2026-09-27** (Codex): Implemented Phase 3 local-first workflows: exact normalized part-number cross-references in Power Search, cost/velocity/age/adjustment-based cycle-count priority, and lead-time-aware reorder cover using delivered PO history with a conservative 30-day fallback.
+- **2026-09-27** (Codex): Implemented Phase 4 real-time Jev gates: bounded local candidate selection, typed Choice/Noul validation, brand reuse, group prediction, customer/supplier duplicate blocking, and part duplicate blocking. All gates are configuration-gated and fail open on unavailable AI/search services.

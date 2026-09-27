@@ -4,8 +4,10 @@ const { generateUniqueCode } = require('../helpers/codeGenerator');
 const { normalizeText } = require('../helpers/normalizeEntity');
 const { protect, hasPermission } = require('../middleware/authMiddleware');
 const EntityMergeService = require('../services/entityMergeService');
+const JevGateService = require('../services/jevGateService');
 const router = express.Router();
 const mergeService = new EntityMergeService(db, 'brand');
+const jevGates = new JevGateService({ db });
 
 // GET all brands
 router.get('/brands', protect, async (req, res) => {
@@ -23,6 +25,15 @@ router.post('/brands', protect, hasPermission(['brands:manage', 'parts:create'])
   const { brand_code } = req.body;
   if (!brand_name) {
     return res.status(400).json({ message: 'Brand name is required.' });
+  }
+
+  const existing = await jevGates.chooseExistingBrand(brand_name);
+  if (existing) {
+    return res.status(200).json({
+      ...existing.record,
+      existing: true,
+      jev: { confidence: existing.confidence, model: existing.model },
+    });
   }
 
   const client = await db.getClient();

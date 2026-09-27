@@ -91,6 +91,53 @@ class JevClient {
             clearTimeout(timeout);
         }
     }
+
+    async evaluateChoice({ question = 'choice', state, instructions, choices }) {
+        if (!this.isConfigured()) return null;
+        if (!Array.isArray(choices) || choices.length === 0) return null;
+        const config = this.config;
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), config.timeoutMs);
+        try {
+            const response = await this.fetchImpl(config.apiUrl, {
+                method: 'POST',
+                headers: {
+                    Authorization: `Bearer ${config.apiKey}`,
+                    'Content-Type': 'application/json',
+                    Accept: 'application/json',
+                    'HTTP-Referer': this.env.OPENROUTER_HTTP_REFERER || 'http://localhost:5173',
+                    'X-Title': 'Forson Business Suite',
+                },
+                signal: controller.signal,
+                body: JSON.stringify({
+                    model: config.model,
+                    state,
+                    questions: {
+                        [question]: {
+                            type: 'choice',
+                            instructions,
+                            choices,
+                        },
+                    },
+                }),
+            });
+            const responseText = await response.text();
+            if (!response.ok) throw new Error(`Jev choice decision failed (HTTP ${response.status})`);
+            let payload;
+            try { payload = JSON.parse(responseText); }
+            catch { throw new Error('Jev choice decision returned invalid JSON'); }
+            const answer = payload?.answers?.[question];
+            const choice = answer?.choice;
+            const confidence = Number(answer?.confidence);
+            const allowed = new Set(choices.map((item) => typeof item === 'string' ? item : item.value));
+            if (typeof choice !== 'string' || !allowed.has(choice) || !Number.isFinite(confidence) || confidence < 0 || confidence > 1) {
+                throw new Error('Jev choice decision returned an invalid choice or confidence');
+            }
+            return { choice, confidence, model: payload.model || config.model };
+        } finally {
+            clearTimeout(timeout);
+        }
+    }
 }
 
 module.exports = JevClient;

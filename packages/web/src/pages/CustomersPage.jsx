@@ -109,7 +109,7 @@ const CustomersPage = ({ onNavigate }) => {
                 fetchCustomers();
                 return 'Customer saved successfully!';
             },
-            error: 'Failed to save customer.',
+            error: (err) => err.response?.data?.message || 'Failed to save customer.',
         });
     };
 

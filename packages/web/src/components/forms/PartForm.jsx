@@ -144,6 +144,7 @@ const PartForm = ({ part, initialValues = null, uppercaseText = false, brands, g
     const [initialBrandName, setInitialBrandName] = useState('');
     const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
     const [showAdvanced, setShowAdvanced] = useState(false);
+    const [groupPrediction, setGroupPrediction] = useState(null);
 
     const brandOptions = useMemo(() => brands.map(b => ({ value: b.brand_id, label: b.brand_name, code: b.brand_code })), [brands]);
     const groupOptions = useMemo(() => groups.map(g => ({ value: g.group_id, label: g.group_name, code: g.group_code })), [groups]);
@@ -223,6 +224,23 @@ const PartForm = ({ part, initialValues = null, uppercaseText = false, brands, g
     const handleComboboxChange = (name, value) => {
         setFormData(prev => ({ ...prev, [name]: value }));
     };
+
+    const predictGroupFromDetail = useCallback(async () => {
+        // Never replace a group the user has consciously selected. The endpoint
+        // is an optional convenience, not a classification requirement.
+        if (isBulkEdit || formData.group_id || !formData.detail?.trim()) return;
+        try {
+            const { data } = await api.get('/parts/predict-group', { params: { detail: formData.detail } });
+            const prediction = data?.prediction;
+            if (!prediction) return;
+            setFormData(prev => prev.group_id ? prev : { ...prev, group_id: prediction.group_id });
+            setGroupPrediction(prediction);
+        } catch (error) {
+            // Predictions intentionally fail quietly: a normal manual selection
+            // remains available when Jev is not deployed or a request times out.
+            console.debug('Group prediction unavailable:', error?.message);
+        }
+    }, [formData.detail, formData.group_id, isBulkEdit]);
 
     useEffect(() => {
         const handleKeyDown = (e) => {
@@ -359,7 +377,12 @@ const PartForm = ({ part, initialValues = null, uppercaseText = false, brands, g
                 {!isBulkEdit && (
                     <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Part Detail</label>
-                        <input type="text" name="detail" value={formData.detail} onChange={handleChange} onFocus={(e) => e.target.select()} className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
+                        <input type="text" name="detail" value={formData.detail} onChange={handleChange} onBlur={predictGroupFromDetail} onFocus={(e) => e.target.select()} className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
+                        {groupPrediction && (
+                            <p className="mt-1 text-xs text-primary-600 dark:text-primary-400">
+                                Suggested group: {groupPrediction.group_name} ({Math.round(groupPrediction.confidence * 100)}% confidence)
+                            </p>
+                        )}
                     </div>
                 )}
 

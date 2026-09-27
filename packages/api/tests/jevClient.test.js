@@ -51,4 +51,19 @@ describe('JevClient', () => {
         await expect(client.evaluateDuplicate({ entityType: 'brand', left: { name: 'A' }, right: { name: 'B' } }))
             .rejects.toThrow('invalid Noul probability');
     });
+
+    test('sends Choice options and only accepts a listed value with a confidence', async () => {
+        const fetchImpl = jest.fn().mockResolvedValue({
+            ok: true,
+            text: async () => JSON.stringify({ answers: { group: { type: 'choice', choice: '2', confidence: 0.86 } } }),
+        });
+        const client = new JevClient({ env: { OPENROUTER_API_KEY: 'test-key' }, fetchImpl });
+
+        await expect(client.evaluateChoice({
+            question: 'group', state: { input: 'Brake pad' }, instructions: 'Choose a group.',
+            choices: [{ value: '1', label: 'Engine' }, { value: '2', label: 'Brakes' }],
+        })).resolves.toEqual({ choice: '2', confidence: 0.86, model: 'typesafe/jev-1.13' });
+
+        expect(JSON.parse(fetchImpl.mock.calls[0][1].body).questions.group).toMatchObject({ type: 'choice' });
+    });
 });

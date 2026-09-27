@@ -5,7 +5,9 @@ const { getNextDocumentNumber } = require('../helpers/documentNumberGenerator');
 const { protect, hasPermission } = require('../middleware/authMiddleware');
 const { normalizeText, normalizeName, normalizeEmail, normalizePhone } = require('../helpers/normalizeEntity');
 const partyMergeRoutes = require('./partyMergeRoutes');
+const JevGateService = require('../services/jevGateService');
 const router = express.Router();
+const jevGates = new JevGateService({ db });
 
 router.use(partyMergeRoutes(db, 'supplier'));
 
@@ -76,6 +78,13 @@ router.post('/suppliers', protect, hasPermission('suppliers:edit'), async (req, 
     address = normalizeText(address);
     if (!supplier_name) {
         return res.status(400).json({ message: 'Supplier name is required.' });
+    }
+    const existing = await jevGates.findPartyDuplicate('supplier', supplier_name);
+    if (existing) {
+        return res.status(409).json({
+            message: `A likely duplicate supplier already exists: ${existing.record.entity_name}.`,
+            duplicate: { supplier_id: existing.record.entity_id, display_name: existing.record.entity_name, confidence: existing.confidence, model: existing.model },
+        });
     }
     try {
         const supplier_code = await getNextDocumentNumber(db, 'SUPP');

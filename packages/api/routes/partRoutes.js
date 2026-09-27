@@ -8,7 +8,9 @@ const { normalizePartData } = require('../helpers/normalizePart');
 const { normalizeText, normalizePartNumber } = require('../helpers/normalizeEntity');
 const { parsePaginationQuery, paginatedResponse } = require('../helpers/pagination');
 const { withYearTokens } = require('../helpers/vehicleFitmentSearch');
+const JevGateService = require('../services/jevGateService');
 const router = express.Router();
+const jevGates = new JevGateService({ db, meiliClient });
 
 // Helper function to get all data for a part for Meilisearch indexing
 const getPartDataForMeili = async (client, partId) => {
@@ -463,6 +465,26 @@ router.get('/parts/barcode/:barcode', protect, async (req, res) => {
 });
 
 // GET a single part by ID
+// Predicting is advisory: a missing key, unavailable Decisions API, or low
+// confidence deliberately returns no prediction instead of delaying the form.
+// It must precede /parts/:id so Express does not interpret "predict-group" as
+// an identifier.
+router.get('/parts/predict-group', protect, hasPermission('parts:create'), async (req, res) => {
+    const detail = normalizeText(req.query.detail);
+    if (!detail || detail.length < 3) return res.status(400).json({ message: 'detail must contain at least 3 characters.' });
+    const prediction = await jevGates.predictGroup(detail);
+    if (!prediction) return res.json({ prediction: null });
+    res.json({
+        prediction: {
+            group_id: prediction.record.group_id,
+            group_name: prediction.record.group_name,
+            group_code: prediction.record.group_code,
+            confidence: prediction.confidence,
+            model: prediction.model,
+        },
+    });
+});
+
 router.get('/parts/:id', protect, hasPermission(['parts:view', 'goods_receipt:create', 'goods_receipt:edit']), async (req, res) => {
     const { id } = req.params;
     try {
@@ -513,7 +535,6 @@ router.get('/parts/:id', protect, hasPermission(['parts:view', 'goods_receipt:cr
     }
 });
 
-// GET /api/parts/:id/tags - Get all tags for a specific part
 router.get('/parts/:id/tags', protect, hasPermission('parts:view'), async (req, res) => {
     const { id } = req.params;
     try {
@@ -533,6 +554,18 @@ router.get('/parts/:id/tags', protect, hasPermission('parts:view'), async (req, 
 });
 
 router.post('/parts', protect, hasPermission('parts:create'), async (req, res) => {
+    const duplicate = await jevGates.findPartDuplicate(req.body);
+    if (duplicate) {
+        return res.status(409).json({
+            message: `A likely duplicate part already exists: ${duplicate.record.entity_name}.`,
+            duplicate: {
+                part_id: duplicate.record.entity_id,
+                display_name: duplicate.record.entity_name,
+                confidence: duplicate.confidence,
+                model: duplicate.model,
+            },
+        });
+    }
     const client = await db.getClient();
     try {
         await client.query('BEGIN');

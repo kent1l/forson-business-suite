@@ -129,7 +129,7 @@ const SuppliersPage = ({ onNavigate }) => {
                 fetchSuppliers();
                 return 'Supplier saved!';
             },
-            error: 'Failed to save supplier.',
+            error: (err) => err.response?.data?.message || 'Failed to save supplier.',
         });
     };
 
