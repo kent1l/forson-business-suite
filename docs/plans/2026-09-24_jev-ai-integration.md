@@ -1,7 +1,7 @@
 # Jev AI Integration & Data Cleanup — Developer Handoff
 
 > **Forson Business Suite** | **Date:** 2026-09-24 | **Branch:** `master`
-> **Status:** Planning complete. Implementation has not started.
+> **Status:** Phases 0–3 implemented; operational master-data cleanup remains before Jev gates can be activated.
 
 ## 0. Status at a Glance
 
@@ -10,7 +10,7 @@
 | 0: Schema Infrastructure (Migrations) | **Complete** | §5-0 |
 | 1: Brand & Group Management Feature (UI + AI Scan) | **Implementation Complete; Cleanup Pending** | §5-1 — Jev is configuration-gated; an administrator still needs to review real data |
 | 2: Customer & Supplier Merge Feature (UI + AI Scan) | **Implementation Complete; Cleanup Pending** | §5-2 |
-| 3: Local-First Features (Cross-ref, basic scoring) | **Not Started** | §5-3 |
+| 3: Local-First Features (Cross-ref, basic scoring) | **Implementation Complete** | §5-3 |
 | 4: Activate Jev Gates (Brand, Group, Cust, Supp, Part) | **Not Started** | §5-4 |
 | 5: Inline Parsers (Expenses, Fitment, PO) | **Not Started** | §5-5 |
 | 6: Background & Batch (Dedup worker, nightly scoring) | **Not Started** | §5-6 |
@@ -99,10 +99,20 @@ Implemented in `database/migrations/20260924_01_jev_entity_merge_infrastructure.
 
 - [ ] An administrator must run the customer and supplier scans and manually review, merge, or dismiss real-data suggestions. Records with active drafts or customer wallets require their respective workflow/balance cleanup before they can merge.
 
-### 5-3: Local-First Features — Not Started
-- **C1 (Cross-Ref):** Add secondary SQL query in `powerSearchRoutes.js` using `REGEXP_REPLACE` to find parts with identical normalized part numbers. Display in a new "Interchangeable Part Numbers" section below Power Search results.
-- **B3 (Cycle Count Priority):** Implement a local scoring formula (velocity × cost × days_since_count × adjustment_flag).
-- **C2 (Reorder Engine):** Implement local velocity/lead-time formula.
+### 5-3: Local-First Features — Implementation Complete
+
+#### As built (2026-09-27)
+
+- [x] **C1 (Cross-Ref):** Added the permission-protected `GET /api/power-search/interchangeable-parts?part_ids=…` lookup. It uses local PostgreSQL `REGEXP_REPLACE(LOWER(...))` normalization, ignores short identifiers and soft-deleted aliases, and returns only other active catalog records. `PowerSearchPage` requests it after the ordinary Meilisearch result and renders the "Interchangeable Part Numbers" section below the results.
+- [x] **B3 (Cycle Count Priority):** Replaced the additive score with a local multiplier: count age × 30-day stock-out velocity × WAC/last-cost value × adjustment-since-last-count risk. Negative stock and an explicitly requested audit remain hard overrides. `20260927_01_cycle_count_priority_scoring.sql` seeds the cost weight (`0.01`) and adjustment multiplier (`2`), both editable under Cycle Count settings.
+- [x] **C2 (Reorder Engine):** The existing local 90-day velocity/cover candidate engine now uses each part's delivered purchase-order history when available. Reorder quantity covers the greater of the existing 30-day floor or measured lead time plus seven days; it retains the 30-day floor when there is no trustworthy PO-to-receipt history. Pack-size and supplier-minimum rules remain out of scope.
+
+#### Verification (2026-09-27)
+
+- `npm run -w packages/api test -- --runInBand tests/analyticsPhase4.test.js tests/powerSearchInterchangeableParts.test.js tests/cycleCountPriority.test.js` — 23 tests passed.
+- `npm run -w packages/api lint` — passes with the repository's existing warnings only.
+- `npm run -w packages/web build` — passes.
+- `docker compose exec -T backend node scripts/migrate.js up` and `verify` — migration applied locally and checksums verified.
 
 ### 5-4: Activate Jev Gates — Not Started
 *Prerequisite: Stages 1 and 2 must be complete and data cleaned.*
@@ -135,6 +145,11 @@ Implemented in `database/migrations/20260924_01_jev_entity_merge_infrastructure.
 - `packages/api/services/entityMergeService.js`
 - `packages/api/services/jevClient.js`
 - `packages/api/services/partyMergeService.js`
+- `packages/api/services/cycleCountService.js`
+- `packages/api/services/analytics/registry/sources.js`
+- `packages/api/services/analytics/registry/metrics/inventory.js`
+- `packages/api/services/analytics/boards/inventory.js`
+- `packages/api/routes/powerSearchRoutes.js`
 - `packages/api/routes/partyMergeRoutes.js`
 - `packages/api/tests/partyMergeService.test.js`
 - `packages/api/tests/entityMergeService.test.js`
@@ -146,6 +161,11 @@ Implemented in `database/migrations/20260924_01_jev_entity_merge_infrastructure.
 - `packages/web/src/pages/PartyMergePage.jsx`
 - `packages/web/src/pages/CustomersPage.jsx`
 - `packages/web/src/pages/SuppliersPage.jsx`
+- `packages/web/src/pages/PowerSearchPage.jsx`
+- `packages/web/src/pages/SettingsPage.jsx`
+- `database/migrations/20260927_01_cycle_count_priority_scoring.sql`
+- `packages/api/tests/powerSearchInterchangeableParts.test.js`
+- `packages/api/tests/cycleCountPriority.test.js`
 - `docs/plans/2026-09-24_jev-ai-integration.md`
 
 ## 8. Verification Commands
@@ -169,3 +189,4 @@ Implemented in `database/migrations/20260924_01_jev_entity_merge_infrastructure.
 - **2026-09-25** (Codex): Modernized the Brands and Groups manager with searchable records and suggestions plus a safeguarded multi-record merge review flow; production web build and focused merge/Jev tests passed.
 - **2026-09-25** (Codex): Added fingerprinted persistent Jev duplicate-decision caching to avoid repeat Decisions API calls on unchanged pairs while automatically invalidating on input, model, or prompt changes.
 - **2026-09-27** (Codex): Implemented Phase 2 customer and supplier duplicate cleanup: Jev-assisted scans, explicit merge review, transactional historical-reference reassignment, and safeguards for active drafts and customer wallets. Real-data review remains an administrator task.
+- **2026-09-27** (Codex): Implemented Phase 3 local-first workflows: exact normalized part-number cross-references in Power Search, cost/velocity/age/adjustment-based cycle-count priority, and lead-time-aware reorder cover using delivered PO history with a conservative 30-day fallback.

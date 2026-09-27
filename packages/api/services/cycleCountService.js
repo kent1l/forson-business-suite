@@ -27,6 +27,10 @@ async function generateCycleCountBatches() {
         const uncountedWeight = parseInt(settings['CYCLE_COUNT_UNCOUNTED_WEIGHT'] || '1', 10);
         const velocityWeight = parseInt(settings['CYCLE_COUNT_VELOCITY_WEIGHT'] || '5', 10);
         const negativeStockWeight = parseInt(settings['CYCLE_COUNT_NEGATIVE_STOCK_WEIGHT'] || '1000', 10);
+        // Cost is scaled to hundreds of pesos by default, so it raises the
+        // priority of valuable stock without swamping velocity or count age.
+        const costWeight = parseFloat(settings['CYCLE_COUNT_COST_WEIGHT'] || '0.01');
+        const adjustmentMultiplier = parseFloat(settings['CYCLE_COUNT_ADJUSTMENT_MULTIPLIER'] || '2');
 
         // 2. Fetch available employees
         const { rows: employees } = await client.query(`
@@ -54,6 +58,7 @@ async function generateCycleCountBatches() {
                     p.group_id,
                     COALESCE(pis.last_counted_at, p.date_created) AS last_counted_at,
                     COALESCE(pis.audit_requested, FALSE) AS audit_requested,
+                    COALESCE(NULLIF(p.wac_cost, 0), NULLIF(p.last_cost, 0), 0) AS unit_cost,
                     (SELECT COALESCE(SUM(quantity), 0) FROM inventory_transaction WHERE part_id = p.part_id) AS current_stock,
                     (
                         SELECT COALESCE(SUM(ABS(quantity)), 0)
@@ -61,7 +66,14 @@ async function generateCycleCountBatches() {
                         WHERE part_id = p.part_id
                           AND trans_type = 'StockOut'
                           AND transaction_date >= NOW() - INTERVAL '30 days'
-                    ) AS velocity_30d
+                    ) AS velocity_30d,
+                    EXISTS (
+                        SELECT 1
+                        FROM inventory_transaction adjustment
+                        WHERE adjustment.part_id = p.part_id
+                          AND adjustment.transaction_date >= COALESCE(pis.last_counted_at, p.date_created)
+                          AND adjustment.trans_type IN ('Adjustment', 'Cycle Count Adjustment', 'Cycle Count Auto-Adjustment')
+                    ) AS has_adjustment_since_count
                 FROM part p
                 LEFT JOIN part_inventory_stats pis ON p.part_id = pis.part_id
                 WHERE p.is_active = TRUE
@@ -71,14 +83,18 @@ async function generateCycleCountBatches() {
                 group_id,
                 audit_requested,
                 (
-                    GREATEST(0, EXTRACT(DAY FROM (NOW() - last_counted_at))) * $1 +
-                    velocity_30d * $2 +
-                    CASE WHEN current_stock < 0 THEN $3 ELSE 0 END +
+                    GREATEST(1, EXTRACT(DAY FROM (NOW() - last_counted_at)) * $1) *
+                    GREATEST(1, velocity_30d * $2) *
+                    GREATEST(1, unit_cost * $3) *
+                    CASE WHEN has_adjustment_since_count THEN GREATEST($4, 1) ELSE 1 END +
+                    -- Operational overrides remain hard signals rather than
+                    -- just another factor in the ordinary priority score.
+                    CASE WHEN current_stock < 0 THEN $5 ELSE 0 END +
                     CASE WHEN audit_requested THEN 999999 ELSE 0 END
                 ) AS priority_score
             FROM part_metrics
             ORDER BY priority_score DESC
-        `, [uncountedWeight, velocityWeight, negativeStockWeight]);
+        `, [uncountedWeight, velocityWeight, costWeight, adjustmentMultiplier, negativeStockWeight]);
 
         if (parts.length === 0) {
             console.log('[CycleCountEngine] No active parts found.');

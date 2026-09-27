@@ -5,6 +5,65 @@ const { activeAliasCondition } = require('../helpers/partNumberSoftDelete');
 const { protect, hasPermission } = require('../middleware/authMiddleware');
 const router = express.Router();
 
+const parsePartIds = (value) => [...new Set(String(value || '')
+    .split(',')
+    .map(id => id.trim())
+    .filter(id => /^\d+$/.test(id))
+    .map(Number)
+    .filter(Number.isSafeInteger))].slice(0, 200);
+
+// GET /api/power-search/interchangeable-parts?part_ids=1,2
+// Punctuation/case-insensitive part-number equality is deterministic, so this
+// stays a local PostgreSQL lookup rather than calling search or an AI service.
+router.get('/power-search/interchangeable-parts', protect, hasPermission(['parts:view', 'pos:use']), async (req, res) => {
+    const partIds = parsePartIds(req.query.part_ids);
+    if (partIds.length === 0) return res.json([]);
+
+    try {
+        const { rows } = await db.query(`
+            WITH searched_numbers AS (
+                SELECT DISTINCT REGEXP_REPLACE(LOWER(pn.part_number), '[^a-z0-9]', '', 'g') AS normalized_number
+                FROM part_number pn
+                WHERE pn.part_id = ANY($1::int[])
+                  AND ${activeAliasCondition('pn')}
+                  AND LENGTH(REGEXP_REPLACE(LOWER(pn.part_number), '[^a-z0-9]', '', 'g')) >= 3
+            ), matches AS (
+                SELECT pn.part_id,
+                       ARRAY_AGG(DISTINCT pn.part_number) AS matching_part_numbers
+                FROM part_number pn
+                JOIN searched_numbers sn
+                  ON REGEXP_REPLACE(LOWER(pn.part_number), '[^a-z0-9]', '', 'g') = sn.normalized_number
+                WHERE ${activeAliasCondition('pn')}
+                  AND pn.part_id <> ALL($1::int[])
+                GROUP BY pn.part_id
+            )
+            SELECT p.part_id,
+                   p.internal_sku,
+                   p.detail,
+                   b.brand_name,
+                   g.group_name,
+                   (SELECT display_name FROM public.parts_view pv WHERE pv.part_id = p.part_id) AS display_name,
+                   m.matching_part_numbers,
+                   COALESCE(stock.stock_on_hand, 0) AS stock_on_hand
+            FROM matches m
+            JOIN part p ON p.part_id = m.part_id
+            LEFT JOIN brand b ON b.brand_id = p.brand_id
+            LEFT JOIN "group" g ON g.group_id = p.group_id
+            LEFT JOIN LATERAL (
+                SELECT SUM(it.quantity) AS stock_on_hand
+                FROM inventory_transaction it
+                WHERE it.part_id = p.part_id
+            ) stock ON TRUE
+            WHERE p.is_active = TRUE
+            ORDER BY p.internal_sku ASC NULLS LAST, p.part_id ASC
+        `, [partIds]);
+        res.json(rows);
+    } catch (err) {
+        console.error('Interchangeable part-number lookup failed:', err.message);
+        res.status(500).send('Server Error during interchangeable part-number lookup.');
+    }
+});
+
 // GET /api/power-search/parts - Advanced multi-filter search using Meilisearch
 // Default behavior: only return active parts unless `status=all` or `status=inactive` is passed.
 // Vehicle filter params (all optional, integers): make_id, model_id, engine_id, year.

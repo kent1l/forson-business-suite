@@ -293,12 +293,20 @@ const CycleCountSettings = ({ settings, handleChange }) => (
                 <input type="number" name="CYCLE_COUNT_BATCH_SIZE" value={settings.CYCLE_COUNT_BATCH_SIZE || ''} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 rounded-lg" />
             </div>
             <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Points per day uncounted</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Days-until-count weight</label>
                 <input type="number" name="CYCLE_COUNT_UNCOUNTED_WEIGHT" value={settings.CYCLE_COUNT_UNCOUNTED_WEIGHT || ''} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 rounded-lg" />
             </div>
             <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Points per sale (30d)</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Sales velocity weight (30d)</label>
                 <input type="number" name="CYCLE_COUNT_VELOCITY_WEIGHT" value={settings.CYCLE_COUNT_VELOCITY_WEIGHT || ''} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 rounded-lg" />
+            </div>
+            <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Cost weight</label>
+                <input type="number" step="0.001" min="0" name="CYCLE_COUNT_COST_WEIGHT" value={settings.CYCLE_COUNT_COST_WEIGHT || '0.01'} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 rounded-lg" />
+            </div>
+            <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Adjustment risk multiplier</label>
+                <input type="number" step="0.1" min="1" name="CYCLE_COUNT_ADJUSTMENT_MULTIPLIER" value={settings.CYCLE_COUNT_ADJUSTMENT_MULTIPLIER || '2'} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 rounded-lg" />
             </div>
             <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Points for negative stock</label>

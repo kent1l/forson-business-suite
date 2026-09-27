@@ -98,8 +98,8 @@ const INVENTORY_BOARD = {
                 + '90 days, so the top of the list is the money most at risk. This is '
                 + 'deliberately NOT the "below reorder point" flag, which fires on thousands of '
                 + 'parts from unmaintained defaults. Units short is a starting point for a '
-                + 'purchase order, not a recommendation: it knows nothing about pack sizes, '
-                + 'supplier minimums or lead times.',
+                + 'purchase order, not a recommendation: it uses the part’s delivered-PO lead '
+                + 'time when available, but does not know pack sizes or supplier minimums.',
             span: { base: 12, md: 12, lg: 12 },
             query: {
                 metrics: [

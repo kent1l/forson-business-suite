@@ -225,9 +225,9 @@ const INVENTORY_METRICS = {
         id: 'inventory.reorder_units_short',
         label: 'Units Short',
         description:
-            'Units needed to bring each part back to thirty days of cover. A starting point for '
-            + 'a purchase order, not a recommendation: it knows nothing about pack sizes, '
-            + 'supplier minimums or lead times.',
+            'Units needed to cover the larger of thirty days or the part’s measured purchase '
+            + 'lead time plus a seven-day buffer. A starting point for a purchase order, not a '
+            + 'recommendation: it does not know pack sizes or supplier minimums.',
         kind: 'snapshot',
         source: 'reorder_candidates',
         expr: (c) => `SUM(${c.units_short})`,
