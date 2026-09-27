@@ -4,7 +4,10 @@ const { protect, hasPermission } = require('../middleware/authMiddleware');
 const { parsePaginationQuery, paginatedResponse } = require('../helpers/pagination');
 const { getNextDocumentNumber } = require('../helpers/documentNumberGenerator');
 const { normalizeText, normalizeName, normalizeEmail, normalizePhone, normalizeTin } = require('../helpers/normalizeEntity');
+const partyMergeRoutes = require('./partyMergeRoutes');
 const router = express.Router();
+
+router.use(partyMergeRoutes(db, 'customer'));
 
 // Applies the shared normalization rules to the customer fields that accept
 // freetext, in place, so POST and PUT stay in sync with each other and with

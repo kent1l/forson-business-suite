@@ -4,7 +4,10 @@ const { parsePaginationQuery, paginatedResponse } = require('../helpers/paginati
 const { getNextDocumentNumber } = require('../helpers/documentNumberGenerator');
 const { protect, hasPermission } = require('../middleware/authMiddleware');
 const { normalizeText, normalizeName, normalizeEmail, normalizePhone } = require('../helpers/normalizeEntity');
+const partyMergeRoutes = require('./partyMergeRoutes');
 const router = express.Router();
+
+router.use(partyMergeRoutes(db, 'supplier'));
 
 // GET all suppliers with status filter
 router.get('/suppliers', protect, hasPermission('suppliers:view'), async (req, res) => {

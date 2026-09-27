@@ -11,7 +11,7 @@ import SortableHeader from '../components/ui/SortableHeader';
 import { useAuth } from '../contexts/AuthContext'; // <-- NEW: Import useAuth
 import { sortData } from '../utils/sortData';
 
-const CustomersPage = () => {
+const CustomersPage = ({ onNavigate }) => {
     const { hasPermission } = useAuth(); // <-- NEW: Use the auth context
     const [customers, setCustomers] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -117,11 +117,10 @@ const CustomersPage = () => {
         <div className="space-y-6">
             <div className="flex justify-between items-center">
                 <h1 className="text-2xl font-semibold text-gray-800 dark:text-slate-100">Customers</h1>
-                {hasPermission('customers:edit') && (
-                    <button onClick={handleAdd} className="bg-primary-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-primary-700 transition shadow-sm text-sm">
-                        Add Customer
-                    </button>
-                )}
+                {hasPermission('customers:edit') && <div className="flex gap-2">
+                    <button onClick={() => onNavigate('customer_management')} className="border border-primary-600 text-primary-700 dark:text-primary-300 px-4 py-2 rounded-lg font-semibold hover:bg-primary-50 dark:hover:bg-primary-950 transition text-sm">Clean duplicates</button>
+                    <button onClick={handleAdd} className="bg-primary-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-primary-700 transition shadow-sm text-sm">Add Customer</button>
+                </div>}
             </div>
 
             <FilterBar 

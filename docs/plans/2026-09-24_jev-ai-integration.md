@@ -9,7 +9,7 @@
 |---|---|---|
 | 0: Schema Infrastructure (Migrations) | **Complete** | §5-0 |
 | 1: Brand & Group Management Feature (UI + AI Scan) | **Implementation Complete; Cleanup Pending** | §5-1 — Jev is configuration-gated; an administrator still needs to review real data |
-| 2: Customer & Supplier Merge Feature (UI + AI Scan) | **Not Started** | §5-2 |
+| 2: Customer & Supplier Merge Feature (UI + AI Scan) | **Implementation Complete; Cleanup Pending** | §5-2 |
 | 3: Local-First Features (Cross-ref, basic scoring) | **Not Started** | §5-3 |
 | 4: Activate Jev Gates (Brand, Group, Cust, Supp, Part) | **Not Started** | §5-4 |
 | 5: Inline Parsers (Expenses, Fitment, PO) | **Not Started** | §5-5 |
@@ -84,10 +84,20 @@ Implemented in `database/migrations/20260924_01_jev_entity_merge_infrastructure.
 - [ ] Ensure `OPENROUTER_API_KEY` is present in the deployment environment, then enable `JEV_ENABLED=true`. The Decisions endpoint and pinned model are represented in `.env.example`; until the OpenRouter key is configured, scans continue to use their safe local `pg_trgm` fallback.
 - [ ] An administrator must run the scans and manually review/merge the real brand and group duplicates. This session intentionally did not change production-like master data.
 
-### 5-2: Customer & Supplier Merge Feature — Not Started
-- **Backend:** Create `CustomerMergeService` (reassigns `invoice`, `customer_payment`, `customer_tag`, `draft_transaction`) and `SupplierMergeService` (reassigns `goods_receipt`, `purchase_order`). Include robust conflict detection (e.g., open drafts).
-- **Frontend:** Add duplicate scan workflows and suggestions drawers to existing Customer/Supplier pages.
-- **Execution:** Run the scan and merge duplicates.
+### 5-2: Customer & Supplier Merge Feature — Implementation Complete; Cleanup Pending
+
+#### As built (2026-09-27)
+
+- [x] Added the transaction-safe customer/supplier merge service and protected API workflows for directory listing, scan, suggestions, preview, merge, and dismissal.
+- [x] Customer merges reassign invoices, payments, tags (with conflict-safe tag de-duplication), sales/AR/withholding records, and related historical references. Supplier merges reassign goods receipts, purchase orders, bills, AP records, freight references, and related historical references.
+- [x] Active drafts referring to a selected party block the merge. Customer wallet records also block merging until balances are deliberately consolidated, avoiding accidental loss of financial state.
+- [x] Added Jev-filtered trigram scanning with deterministic local fallback, preserving the human review requirement.
+- [x] Added the duplicate-cleanup workflow to the existing Customers and Suppliers pages, including canonical selection, impact preview, explicit confirmation, and suggestion dismissal.
+- [x] Added focused `partyMergeService` tests.
+
+#### Remaining operational work
+
+- [ ] An administrator must run the customer and supplier scans and manually review, merge, or dismiss real-data suggestions. Records with active drafts or customer wallets require their respective workflow/balance cleanup before they can merge.
 
 ### 5-3: Local-First Features — Not Started
 - **C1 (Cross-Ref):** Add secondary SQL query in `powerSearchRoutes.js` using `REGEXP_REPLACE` to find parts with identical normalized part numbers. Display in a new "Interchangeable Part Numbers" section below Power Search results.
@@ -124,12 +134,18 @@ Implemented in `database/migrations/20260924_01_jev_entity_merge_infrastructure.
 - `packages/api/routes/groupRoutes.js`
 - `packages/api/services/entityMergeService.js`
 - `packages/api/services/jevClient.js`
+- `packages/api/services/partyMergeService.js`
+- `packages/api/routes/partyMergeRoutes.js`
+- `packages/api/tests/partyMergeService.test.js`
 - `packages/api/tests/entityMergeService.test.js`
 - `packages/api/tests/jevClient.test.js`
 - `.env.example`
 - `packages/web/src/components/layout/MainLayout.jsx`
 - `packages/web/src/config/navigation.js`
 - `packages/web/src/pages/EntityManagementPage.jsx`
+- `packages/web/src/pages/PartyMergePage.jsx`
+- `packages/web/src/pages/CustomersPage.jsx`
+- `packages/web/src/pages/SuppliersPage.jsx`
 - `docs/plans/2026-09-24_jev-ai-integration.md`
 
 ## 8. Verification Commands
@@ -152,3 +168,4 @@ Implemented in `database/migrations/20260924_01_jev_entity_merge_infrastructure.
 - **2026-09-25** (Codex): Resumed the interrupted Phase 1 implementation, completed and verified the local merge-management workflow and migration, added the OpenRouter Jev Noul duplicate-scoring adapter, and smoke-tested it successfully with a fictional payload.
 - **2026-09-25** (Codex): Modernized the Brands and Groups manager with searchable records and suggestions plus a safeguarded multi-record merge review flow; production web build and focused merge/Jev tests passed.
 - **2026-09-25** (Codex): Added fingerprinted persistent Jev duplicate-decision caching to avoid repeat Decisions API calls on unchanged pairs while automatically invalidating on input, model, or prompt changes.
+- **2026-09-27** (Codex): Implemented Phase 2 customer and supplier duplicate cleanup: Jev-assisted scans, explicit merge review, transactional historical-reference reassignment, and safeguards for active drafts and customer wallets. Real-data review remains an administrator task.

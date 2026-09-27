@@ -13,7 +13,7 @@ import SortableHeader from '../components/ui/SortableHeader';
 import { useAuth } from '../contexts/AuthContext';
 import { formatCurrency } from '../utils/currency';
 
-const SuppliersPage = () => {
+const SuppliersPage = ({ onNavigate }) => {
     const { hasPermission } = useAuth();
     const canViewAp = hasPermission('ap:view');
     const [suppliers, setSuppliers] = useState([]);
@@ -149,11 +149,10 @@ const SuppliersPage = () => {
                     <h1 className="text-2xl font-semibold text-gray-800 dark:text-slate-100">Suppliers</h1>
                     <p className="text-sm text-gray-500 dark:text-slate-400 mt-1">Directory, payables balance, and payment status for every supplier.</p>
                 </div>
-                {hasPermission('suppliers:edit') && (
-                    <button onClick={handleAdd} className="bg-primary-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-primary-700 transition shadow-sm text-sm">
-                        Add Supplier
-                    </button>
-                )}
+                {hasPermission('suppliers:edit') && <div className="flex gap-2">
+                    <button onClick={() => onNavigate('supplier_management')} className="border border-primary-600 text-primary-700 dark:text-primary-300 px-4 py-2 rounded-lg font-semibold hover:bg-primary-50 dark:hover:bg-primary-950 transition text-sm">Clean duplicates</button>
+                    <button onClick={handleAdd} className="bg-primary-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-primary-700 transition shadow-sm text-sm">Add Supplier</button>
+                </div>}
             </div>
 
             <div className="border-b border-gray-200 dark:border-slate-700">

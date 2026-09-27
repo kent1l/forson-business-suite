@@ -48,6 +48,7 @@ import SoaGenPage from '../../pages/SoaGenPage';
 import WithholdingTaxPage from '../../pages/WithholdingTaxPage';
 import ARConcessionsPage from '../../pages/ARConcessionsPage';
 import EntityManagementPage from '../../pages/EntityManagementPage';
+import PartyMergePage from '../../pages/PartyMergePage';
 
 const MainLayout = ({ user, onLogout, onNavigate, currentPage, pageState, posLines, setPosLines }) => {
     const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -60,13 +61,15 @@ const MainLayout = ({ user, onLogout, onNavigate, currentPage, pageState, posLin
             case 'reporting': return <ReportingPage />;
             case 'analytics': return <AnalyticsPage onNavigate={onNavigate} />;
             case 'power_search': return <PowerSearchPage />;
-            case 'suppliers': return <SuppliersPage user={user} />;
+            case 'suppliers': return <SuppliersPage user={user} onNavigate={onNavigate} />;
+            case 'supplier_management': return <PartyMergePage party="supplier" onNavigate={onNavigate} />;
             case 'parts': return <PartsPage user={user} onNavigate={onNavigate} />;
             case 'parts_cleanup': return <PartsCleanupPage user={user} onNavigate={onNavigate} />;
             case 'brand_management': return <EntityManagementPage entity="brand" onNavigate={onNavigate} />;
             case 'group_management': return <EntityManagementPage entity="group" onNavigate={onNavigate} />;
             case 'applications': return <ApplicationsPage user={user} />;
-            case 'customers': return <CustomersPage user={user} />;
+            case 'customers': return <CustomersPage user={user} onNavigate={onNavigate} />;
+            case 'customer_management': return <PartyMergePage party="customer" onNavigate={onNavigate} />;
             case 'goods_receipt': return <GoodsReceiptPage user={user} onNavigate={onNavigate} pageState={currentPage === 'goods_receipt' ? pageState : null} />;
             case 'goods_receipt_history': return <GoodsReceiptHistoryPage user={user} />;
             case 'goods_receipt_drafts': return <GoodsReceiptDraftsPage onNavigate={onNavigate} />;
