@@ -69,4 +69,22 @@ describe('JevClient', () => {
             criteria: { 1: 'Engine', 2: 'Brakes' },
         });
     });
+
+    test('sends and validates typed Score and Noul decisions', async () => {
+        const fetchImpl = jest.fn()
+            .mockResolvedValueOnce({ ok: true, text: async () => JSON.stringify({ answers: { ambiguity: { type: 'score', score: 1.4, confidence: 0.72 } } }) })
+            .mockResolvedValueOnce({ ok: true, text: async () => JSON.stringify({ answers: { alias: { type: 'noul', noul: 0.94 } } }) });
+        const client = new JevClient({ env: { OPENROUTER_API_KEY: 'test-key' }, fetchImpl });
+
+        await expect(client.evaluateScore({
+            question: 'ambiguity', state: { input: 'bayad sa tubig' }, instructions: 'Rate ambiguity.',
+            criteria: ['clear', 'some ambiguity', 'ambiguous'],
+        })).resolves.toEqual({ score: 1.4, confidence: 0.72, model: 'typesafe/jev-1.13' });
+        await expect(client.evaluateNoul({
+            question: 'alias', state: { left: 'ACME', right: 'Acme Trading' }, instructions: 'Same supplier?',
+        })).resolves.toEqual({ probability: 0.94, model: 'typesafe/jev-1.13' });
+
+        expect(JSON.parse(fetchImpl.mock.calls[0][1].body).questions.ambiguity).toMatchObject({ type: 'score', criteria: ['clear', 'some ambiguity', 'ambiguous'] });
+        expect(JSON.parse(fetchImpl.mock.calls[1][1].body).questions.alias.type).toBe('noul');
+    });
 });

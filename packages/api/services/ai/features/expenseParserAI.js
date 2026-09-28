@@ -4,6 +4,13 @@ const embeddingClient = require('../core/embeddingClient');
 const { wrapJsonInstruction, sanitizeInput } = require('../core/promptBuilder');
 const expenseLexicon = require('../../expenseLexiconService');
 const categoryVectors = require('../../expenseCategoryVectorService');
+const JevClient = require('../../jevClient');
+
+const jevClient = new JevClient();
+const decisionThreshold = (value, fallback) => Number.isFinite(Number(value))
+    ? Math.max(0.5, Math.min(0.99, Number(value))) : fallback;
+const JEV_CATEGORY_CONFIDENCE = decisionThreshold(process.env.JEV_EXPENSE_CATEGORY_CONFIDENCE, 0.80);
+const JEV_ALIAS_PROBABILITY = decisionThreshold(process.env.JEV_EXPENSE_SUPPLIER_ALIAS_THRESHOLD, 0.90);
 
 // Cosine distance above which a stored example is considered unrelated. Without
 // this, a near-empty corpus returns its handful of rows for every query and the
@@ -68,6 +75,69 @@ function takeCachedEmbedding(text) {
  * Feature module: AI-assisted Natural Language Expense Parser with RAG pgvector dynamic few-shot retrieval.
  */
 class ExpenseParserAI {
+    async _screenAmbiguity(text) {
+        if (!jevClient.isConfigured()) return null;
+        try {
+            return await jevClient.evaluateScore({
+                question: 'expense_ambiguity', state: { expense_description: text },
+                instructions: 'Rate how much free-form reasoning is needed to safely extract an expense. This only chooses the parser tier; it does not classify the expense.',
+                criteria: [
+                    'Clear amount and ordinary operating expense with unambiguous wording.',
+                    'Some missing or shorthand detail, but a normal parser can plausibly extract the fields.',
+                    'Ambiguous nature, payee, category, amount, or date that needs careful reasoning.',
+                ],
+            });
+        } catch (error) {
+            console.warn('[ExpenseParserAI] Jev ambiguity screen unavailable:', error.message);
+            return null;
+        }
+    }
+
+    async _chooseCategory(text, categories) {
+        if (!jevClient.isConfigured() || !categories.length) return null;
+        const choices = categories.map(c => ({ value: String(c.category_id), label: `${c.category_name}${c.description ? `: ${c.description}` : ''}` }));
+        choices.push({ value: 'no_match', label: 'No reliable operating-expense category' });
+        try {
+            const decision = await jevClient.evaluateChoice({
+                question: 'expense_category', state: { expense_description: text }, choices,
+                instructions: 'Choose the one listed operating-expense category best supported by the description. Choose no_match for an uncertain, non-operating, or unsupported category.',
+            });
+            if (!decision || decision.choice === 'no_match' || decision.confidence < JEV_CATEGORY_CONFIDENCE) return null;
+            const category = categories.find(c => String(c.category_id) === decision.choice);
+            return category ? { category, ...decision } : null;
+        } catch (error) {
+            console.warn('[ExpenseParserAI] Jev category choice unavailable:', error.message);
+            return null;
+        }
+    }
+
+    async _confirmPayeeAlias(payee, knownPayees) {
+        const normalized = normalizeSupplierName(payee);
+        if (!jevClient.isConfigured() || !normalized || !knownPayees.length) return null;
+        // Keep the external decision tightly bounded: only a locally plausible alias
+        // is sent, never the whole payee history.
+        const candidate = knownPayees.find((name) => {
+            const candidateNormalized = normalizeSupplierName(name);
+            return candidateNormalized && candidateNormalized !== normalized
+                && (candidateNormalized.includes(normalized) || normalized.includes(candidateNormalized));
+        });
+        if (!candidate) return null;
+        try {
+            const decision = await jevClient.evaluateNoul({
+                question: 'supplier_alias', state: { entered_payee: payee, existing_payee: candidate },
+                instructions: 'Is the entered payee an alternate spelling, abbreviation, or alias for the same real-world supplier/payee as the existing payee?',
+                criteria: {
+                    true: 'They refer to the same supplier or payee.',
+                    false: 'They are different suppliers or payees.',
+                },
+            });
+            return decision?.probability >= JEV_ALIAS_PROBABILITY ? { payee: candidate, ...decision } : null;
+        } catch (error) {
+            console.warn('[ExpenseParserAI] Jev supplier alias confirmation unavailable:', error.message);
+            return null;
+        }
+    }
+
     /**
      * Parses natural language expense text into structured fields.
      *
@@ -333,10 +403,14 @@ User expense description: "${safeText}"${clarifyingAnswerBlock}`;
 }`;
 
         const prompt = wrapJsonInstruction(basePrompt, schema);
+        const ambiguity = await this._screenAmbiguity(originalText);
 
         let llmResult;
         try {
-            llmResult = await llmClient.executeWithPool('interactive_parser_pool', { prompt, timeoutMs: 25000 });
+            const pool = ambiguity?.score >= 1.5 && ambiguity.confidence >= 0.60
+                ? 'expense_reasoning_pool'
+                : 'interactive_parser_pool';
+            llmResult = await llmClient.executeWithPool(pool, { prompt, timeoutMs: pool === 'expense_reasoning_pool' ? 30000 : 25000 });
         } catch (err) {
             console.error('[ExpenseParserAI] LLM parse call failed:', err.message);
             const error = new Error('AI parsing service unavailable');
@@ -346,6 +420,9 @@ User expense description: "${safeText}"${clarifyingAnswerBlock}`;
         }
 
         let raw = llmResult.data || {};
+
+        const jevCategory = await this._chooseCategory(originalText, categories);
+        if (jevCategory) raw = { ...raw, category_name: jevCategory.category.category_name };
 
         // Escalate to the stronger pool when the parse looks weak. A MISSING amount or
         // category is the strongest signal something went wrong, so those escalate too
@@ -517,11 +594,12 @@ User expense description: "${safeText}"${clarifyingAnswerBlock}`;
             }
         }
 
+        const payeeAlias = await this._confirmPayeeAlias(raw.payee, knownPayees);
         const baseParsed = {
             amount: parsedAmount,
             category_id: matchedCategory ? matchedCategory.category_id : null,
             category_name: matchedCategory ? matchedCategory.category_name : (raw.category_name || null),
-            payee: raw.payee ? String(raw.payee).trim().substring(0, 200) : null,
+            payee: payeeAlias?.payee || (raw.payee ? String(raw.payee).trim().substring(0, 200) : null),
             payment_method_id: matchedPm ? matchedPm.method_id : null,
             // Never turn an unknown or omitted method into Cash. Payment method
             // changes the reconciliation path, so an explicit user selection is
@@ -568,7 +646,12 @@ User expense description: "${safeText}"${clarifyingAnswerBlock}`;
             clarifying_options: withAliases.clarifying_options,
             applied_aliases: appliedAliases.map(a => ({ term: a.term, target_type: a.target_type })),
             raw_llm_response: raw,
-            provider: llmResult.provider || llmResult.providerUsed
+            provider: llmResult.provider || llmResult.providerUsed,
+            jev_decisions: {
+                ambiguity: ambiguity ? { score: ambiguity.score, confidence: ambiguity.confidence, model: ambiguity.model } : null,
+                category: jevCategory ? { category_id: jevCategory.category.category_id, confidence: jevCategory.confidence, model: jevCategory.model } : null,
+                supplier_alias: payeeAlias ? { payee: payeeAlias.payee, probability: payeeAlias.probability, model: payeeAlias.model } : null,
+            },
         };
     }
 

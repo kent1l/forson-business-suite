@@ -145,6 +145,59 @@ class JevClient {
             clearTimeout(timeout);
         }
     }
+
+    async evaluateNoul({ question = 'noul', state, instructions, criteria }) {
+        if (!this.isConfigured()) return null;
+        const config = this.config;
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), config.timeoutMs);
+        try {
+            const response = await this.fetchImpl(config.apiUrl, {
+                method: 'POST', headers: this.#headers(config), signal: controller.signal,
+                body: JSON.stringify({ model: config.model, state, questions: { [question]: {
+                    type: 'noul', instructions, ...(criteria ? { criteria } : {}),
+                } } }),
+            });
+            const responseText = await response.text();
+            if (!response.ok) throw new Error(`Jev noul decision failed (HTTP ${response.status})`);
+            let payload;
+            try { payload = JSON.parse(responseText); } catch { throw new Error('Jev noul decision returned invalid JSON'); }
+            const probability = Number(payload?.answers?.[question]?.noul);
+            if (!Number.isFinite(probability) || probability < 0 || probability > 1) throw new Error('Jev noul decision returned an invalid probability');
+            return { probability, model: payload.model || config.model };
+        } finally { clearTimeout(timeout); }
+    }
+
+    async evaluateScore({ question = 'score', state, instructions, criteria }) {
+        if (!this.isConfigured() || !Array.isArray(criteria) || criteria.length < 2 || criteria.length > 10) return null;
+        const config = this.config;
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), config.timeoutMs);
+        try {
+            const response = await this.fetchImpl(config.apiUrl, {
+                method: 'POST', headers: this.#headers(config), signal: controller.signal,
+                body: JSON.stringify({ model: config.model, state, questions: { [question]: { type: 'score', instructions, criteria } } }),
+            });
+            const responseText = await response.text();
+            if (!response.ok) throw new Error(`Jev score decision failed (HTTP ${response.status})`);
+            let payload;
+            try { payload = JSON.parse(responseText); } catch { throw new Error('Jev score decision returned invalid JSON'); }
+            const answer = payload?.answers?.[question];
+            const score = Number(answer?.score);
+            const confidence = Number(answer?.confidence);
+            if (!Number.isFinite(score) || score < 0 || score > criteria.length - 1 || !Number.isFinite(confidence) || confidence < 0 || confidence > 1) {
+                throw new Error('Jev score decision returned an invalid score or confidence');
+            }
+            return { score, confidence, model: payload.model || config.model };
+        } finally { clearTimeout(timeout); }
+    }
+
+    #headers(config) {
+        return {
+            Authorization: `Bearer ${config.apiKey}`, 'Content-Type': 'application/json', Accept: 'application/json',
+            'HTTP-Referer': this.env.OPENROUTER_HTTP_REFERER || 'http://localhost:5173', 'X-Title': 'Forson Business Suite',
+        };
+    }
 }
 
 module.exports = JevClient;

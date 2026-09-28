@@ -12,7 +12,7 @@
 | 2: Customer & Supplier Merge Feature (UI + AI Scan) | **Implementation Complete; Cleanup Pending** | §5-2 |
 | 3: Local-First Features (Cross-ref, basic scoring) | **Implementation Complete** | §5-3 |
 | 4: Activate Jev Gates (Brand, Group, Cust, Supp, Part) | **Implementation Complete; Configuration Pending** | §5-4 |
-| 5: Inline Parsers (Expenses, Fitment, PO) | **Not Started** | §5-5 |
+| 5: Inline Parsers (Expenses, Fitment, PO) | **Implementation Complete; Configuration Pending** | §5-5 |
 | 6: Background & Batch (Dedup worker, nightly scoring) | **Not Started** | §5-6 |
 
 ## 1. For a New Session or Agent Picking This Up
@@ -137,10 +137,10 @@ Implemented in `database/migrations/20260924_01_jev_entity_merge_infrastructure.
 - [x] Added a shared confirmation prompt to Brand, Group, Customer, Supplier, and Part create flows. **Use existing** returns that record; **Create new** is accepted only after the backend re-evaluates the same candidate and confirms it remains in the mid-band, so a stale client cannot bypass a high-confidence decision.
 - [x] Defaults: Brand/Group `0.80–0.89`, Customer/Supplier `0.80–0.89`, Part `0.80–0.91`; lower confidence preserves the normal workflow. `JEV_BRAND_CONFIRM_THRESHOLD`, `JEV_GROUP_CONFIRM_THRESHOLD`, `JEV_PARTY_CONFIRM_THRESHOLD`, and `JEV_PART_CONFIRM_THRESHOLD` configure the lower bounds.
 
-### 5-5: Inline Parsers — Not Started
-- **A2 (Expense):** Update `expenseParserAI.js` to use Jev `Score` for ambiguity pre-screening, `Choice` for standard categories, and `Noul` for supplier alias confirmation.
-- **A3 (Fitment):** Update `vehicleFitmentParserAI.js` to use `Choice` to instantly disambiguate fuel types and close make/model matches from `fuzzyResolveModel()`. Enable live typeahead in UI.
-- **A5 (PO):** Update `purchaseOrderParserAI.js` to use Jev `Choice` instead of the generative LLM when disambiguating ambiguous PO line Meilisearch matches.
+### 5-5: Inline Parsers — Implementation Complete; Configuration Pending
+- [x] **A2 (Expense):** `expenseParserAI.js` uses Jev `Score` to choose the normal or reasoning parser tier, `Choice` for bounded active-category classification, and `Noul` to confirm a locally plausible supplier/payee alias. Low-confidence, malformed, unavailable, or disabled decisions preserve the existing parser result.
+- [x] **A3 (Fitment):** `vehicleFitmentParserAI.js` uses bounded Jev `Choice` requests for close model candidates and fuel type only after taxonomy validation. The Describe Fitment UI now refreshes reviewable suggestions after a 600 ms typing pause; stale requests cannot overwrite newer text.
+- [x] **A5 (PO):** `purchaseOrderParserAI.js` uses Jev `Choice` across only the close Meilisearch matches. A high-confidence choice resolves an otherwise ambiguous structured line without a generative parsing call; all other lines retain the existing local/LLM fallback and editable ambiguity.
 
 ### 5-6: Background & Batch — Not Started
 - **A1 (Dedup Worker):** Update `deduplicationEngine.js`. Add Jev `Noul` as a pre-filter *before* the free LLM call in `analyzeClusterWithAI()`.
@@ -212,3 +212,4 @@ Implemented in `database/migrations/20260924_01_jev_entity_merge_infrastructure.
 - **2026-09-27** (Codex): Implemented Phase 3 local-first workflows: exact normalized part-number cross-references in Power Search, cost/velocity/age/adjustment-based cycle-count priority, and lead-time-aware reorder cover using delivered PO history with a conservative 30-day fallback.
 - **2026-09-27** (Codex): Implemented Phase 4 real-time Jev gates: bounded local candidate selection, typed Choice/Noul validation, brand reuse, group prediction, customer/supplier duplicate blocking, and part duplicate blocking. All gates are configuration-gated and fail open on unavailable AI/search services.
 - **2026-09-28** (Codex): Corrected Jev Choice requests to use the Decisions API's keyed `criteria` contract after live HTTP 400 responses, and made exact normalized brand/group matches resolve locally before bounded AI evaluation. This prevents exact duplicates from reaching database uniqueness errors and shows the Part form's existing-record feedback.
+- **2026-09-28** (Codex): Implemented Phase 5 inline Jev decisions: expense ambiguity/category/payee-alias checks, fitment fuel/model choices with debounced live suggestions, and PO catalog candidate choices. All are configuration-gated and fail open to the established local/generative paths.
