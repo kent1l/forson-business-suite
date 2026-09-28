@@ -56,16 +56,16 @@ describe('refund routes', () => {
     
     // Setup queries responses:
     // 1. BEGIN transaction -> resolved
-    // 2. validation query for line -> resolved with original line details including cost_at_sale
-    // 3. Select tax rates -> resolved with default rate
-    // 4. Insert credit_note -> resolved returning cn_id = 42
-    // 5. Insert breakdown -> resolved
-    // 6. Insert credit_note_line -> resolved
-    // 7. Insert inventory_transaction -> resolved
-    // 8. COMMIT transaction -> resolved
+    // 2. lock and validate invoice
+    // 3. validation query for line -> resolved with original line details including cost_at_sale
+    // 4. Select tax rates -> resolved with default rate
+    // 5. Insert credit_note -> resolved returning cn_id = 42
     
     client.query
       .mockResolvedValueOnce({}) // BEGIN
+      .mockResolvedValueOnce({ rows: [{ // locked invoice
+        invoice_id: 99, invoice_number: 'INV-99', customer_id: 10, status: 'Paid'
+      }] })
       .mockResolvedValueOnce({   // validation query
         rows: [{
           invoice_line_id: 101,
@@ -81,7 +81,6 @@ describe('refund routes', () => {
         }]
       })
       .mockResolvedValueOnce({ rows: [{ tax_rate_id: 1, rate_name: 'VAT 12%' }] }) // tax rates names query
-      .mockResolvedValueOnce({ rows: [{ customer_id: 10 }] }) // customer_id lookup
       .mockResolvedValueOnce({ rows: [{ cn_id: 42 }] }) // insert credit note
       .mockResolvedValueOnce({ rows: [{ ledger_id: 1 }] }) // append_ar_ledger_entry
       .mockResolvedValueOnce({}) // insert breakdown
@@ -134,6 +133,9 @@ describe('refund routes', () => {
     // 2 units' share of the discount: (2*100) - (10*2) = 180, not 200.
     client.query
       .mockResolvedValueOnce({}) // BEGIN
+      .mockResolvedValueOnce({ rows: [{ // locked invoice
+        invoice_id: 99, invoice_number: 'INV-99', customer_id: 10, status: 'Paid'
+      }] })
       .mockResolvedValueOnce({   // validation query
         rows: [{
           invoice_line_id: 101,
@@ -149,7 +151,6 @@ describe('refund routes', () => {
         }]
       })
       .mockResolvedValueOnce({ rows: [{ tax_rate_id: 1, rate_name: 'VAT 12%' }] }) // rate names
-      .mockResolvedValueOnce({ rows: [{ customer_id: 10 }] }) // customer_id lookup
       .mockResolvedValueOnce({ rows: [{ cn_id: 43 }] }) // insert credit note
       .mockResolvedValueOnce({ rows: [{ ledger_id: 2 }] }) // append_ar_ledger_entry
       .mockResolvedValueOnce({}) // insert breakdown
@@ -184,5 +185,60 @@ describe('refund routes', () => {
     // params: [cn_id, part_id, quantity, sale_price, tax_rate_id, tax_rate_snapshot, tax_base, tax_amount, ...]
     expect(lineInsertCall[1][6]).toBe(180);  // tax_base
     expect(lineInsertCall[1][7]).toBe(21.6); // tax_amount
+  });
+
+  it('rejects a refund for a voided invoice before creating any financial or stock records', async () => {
+    const client = await db.getClient();
+    client.query
+      .mockResolvedValueOnce({}) // BEGIN
+      .mockResolvedValueOnce({ rows: [{
+        invoice_id: 99, invoice_number: 'INV-99', customer_id: 10, status: 'Cancelled'
+      }] })
+      .mockResolvedValueOnce({}); // ROLLBACK
+
+    const res = await request(app)
+      .post('/api/refunds')
+      .send({
+        invoice_id: 99,
+        employee_id: 10,
+        lines: [{ invoice_line_id: 101, quantity: 1 }]
+      });
+
+    expect(res.status).toBe(409);
+    expect(res.body.message).toBe('Cannot refund a voided invoice.');
+    expect(client.query.mock.calls.some(([sql]) => typeof sql === 'string' && sql.includes('INSERT INTO credit_note'))).toBe(false);
+    expect(client.query.mock.calls.some(([sql]) => typeof sql === 'string' && sql.includes('INSERT INTO inventory_transaction'))).toBe(false);
+  });
+
+  it('rejects duplicate line selections rather than refunding the same sold quantity twice', async () => {
+    const client = await db.getClient();
+    client.query
+      .mockResolvedValueOnce({}) // BEGIN
+      .mockResolvedValueOnce({ rows: [{
+        invoice_id: 99, invoice_number: 'INV-99', customer_id: 10, status: 'Paid'
+      }] })
+      .mockResolvedValueOnce({ // first line validation
+        rows: [{
+          invoice_line_id: 101, part_id: 5, original_quantity: '5', sale_price: '100',
+          discount_amount: '0', cost_at_sale: '60', tax_rate_id: null,
+          tax_rate_snapshot: '0', is_tax_inclusive: false, refunded_quantity: '0'
+        }]
+      })
+      .mockResolvedValueOnce({}); // ROLLBACK after duplicate selection
+
+    const res = await request(app)
+      .post('/api/refunds')
+      .send({
+        invoice_id: 99,
+        employee_id: 10,
+        lines: [
+          { invoice_line_id: 101, quantity: 1 },
+          { invoice_line_id: 101, quantity: 1 }
+        ]
+      });
+
+    expect(res.status).toBe(400);
+    expect(res.body.message).toContain('only be refunded once');
+    expect(client.query.mock.calls.some(([sql]) => typeof sql === 'string' && sql.includes('INSERT INTO credit_note'))).toBe(false);
   });
 });

@@ -18,11 +18,33 @@ router.post('/refunds', protect, hasPermission('invoicing:create'), async (req, 
     try {
         await client.query('BEGIN');
 
+        // A refund and a void are mutually exclusive corrections.  Holding the
+        // invoice lock also serializes two refund requests, so each validation
+        // sees every credit note already issued for the invoice.
+        const { rows: [invoice] } = await client.query(
+            `SELECT invoice_id, invoice_number, customer_id, status
+             FROM invoice
+             WHERE invoice_id = $1
+             FOR UPDATE`,
+            [invoice_id]
+        );
+        if (!invoice) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ message: 'Invoice not found.' });
+        }
+        if (invoice.status === 'Cancelled') {
+            await client.query('ROLLBACK');
+            return res.status(409).json({
+                message: 'Cannot refund a voided invoice.'
+            });
+        }
+
         // Validate all refund lines first (security layer) before creating any records
         let cnSubtotalExTax = 0;
         let cnTaxTotal = 0;
         const cnTaxBreakdown = new Map();
         const refundLinesWithTax = [];
+        const requestedLineIds = new Set();
 
         for (const line of lines) {
             const { invoice_line_id, quantity } = line;
@@ -31,6 +53,15 @@ router.post('/refunds', protect, hasPermission('invoicing:create'), async (req, 
                 await client.query('ROLLBACK');
                 return res.status(400).json({ message: 'Missing invoice_line_id for refund line.' });
             }
+            if (!Number.isFinite(Number(quantity)) || Number(quantity) <= 0) {
+                await client.query('ROLLBACK');
+                return res.status(400).json({ message: 'Refund quantity must be a positive number.' });
+            }
+            if (requestedLineIds.has(invoice_line_id)) {
+                await client.query('ROLLBACK');
+                return res.status(400).json({ message: `Invoice line ${invoice_line_id} can only be refunded once per request.` });
+            }
+            requestedLineIds.add(invoice_line_id);
 
             const validationQuery = `
                 SELECT
@@ -59,8 +90,9 @@ router.post('/refunds', protect, hasPermission('invoicing:create'), async (req, 
                 return res.status(400).json({ message: `Invoice line not found: ${invoice_line_id}.` });
             }
 
+            const refundQuantity = Number(quantity);
             const availableToRefund = Number(lineData.original_quantity) - Number(lineData.refunded_quantity || 0);
-            if (quantity > availableToRefund) {
+            if (refundQuantity > availableToRefund) {
                 await client.query('ROLLBACK');
                 return res.status(400).json({
                     message: `Refund failed for part_id ${lineData.part_id}: requested ${quantity}, available ${availableToRefund}.`
@@ -81,7 +113,7 @@ router.post('/refunds', protect, hasPermission('invoicing:create'), async (req, 
             const originalQuantity = Number(lineData.original_quantity);
             const originalDiscount = Number(lineData.discount_amount || 0);
             const unitDiscount = originalQuantity > 0 ? originalDiscount / originalQuantity : 0;
-            const lineTotal = (quantity * salePrice) - (unitDiscount * quantity);
+            const lineTotal = (refundQuantity * salePrice) - (unitDiscount * refundQuantity);
 
             const { tax_base: taxBase, tax_amount: taxAmount } =
                 computeTaxForBase(lineTotal, taxRateSnapshot, isTaxInclusive);
@@ -92,7 +124,7 @@ router.post('/refunds', protect, hasPermission('invoicing:create'), async (req, 
             refundLinesWithTax.push({
                 invoice_line_id,
                 part_id: lineData.part_id,
-                quantity,
+                quantity: refundQuantity,
                 sale_price: salePrice,
                 cost_at_sale: Number(lineData.cost_at_sale || 0),
                 tax_rate_id: taxRateId,
@@ -135,26 +167,24 @@ router.post('/refunds', protect, hasPermission('invoicing:create'), async (req, 
         // All validations passed; create credit note and lines
         const creditNoteNumber = await getNextDocumentNumber(client, 'CN');
 
-        // Resolve customer_id from invoice for ledger entry
-        const { rows: [invRow] } = await client.query(
-            'SELECT customer_id FROM invoice WHERE invoice_id = $1', [invoice_id]);
-        if (!invRow) throw new Error(`Invoice ${invoice_id} not found during refund`);
-        const { customer_id } = invRow;
+        // Never trust the invoice number in the request body; it is only a UI
+        // display value.  The locked invoice is the authoritative document.
+        const { customer_id: customerId, invoice_number: invoiceNumber } = invoice;
 
         // Create the main credit note record
         const cnQuery = `
             INSERT INTO credit_note (cn_number, invoice_id, employee_id, total_amount, subtotal_ex_tax, tax_total, tax_calculation_version, refund_payment_method, notes)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING cn_id;
         `;
-        const cnResult = await client.query(cnQuery, [creditNoteNumber, invoice_id, employee_id, cnTotalAmount, cnSubtotalExTax, cnTaxTotal, 'v1.0', refund_payment_method, `Refund for Invoice #${invoice_number}`]);
+        const cnResult = await client.query(cnQuery, [creditNoteNumber, invoice_id, employee_id, cnTotalAmount, cnSubtotalExTax, cnTaxTotal, 'v1.0', refund_payment_method, `Refund for Invoice #${invoiceNumber}`]);
         const newCnId = cnResult.rows[0].cn_id;
 
         // Ledger: CREDIT_MEMO_APPLIED
         await arLedger.appendEntry(client, {
-            customerId: customer_id, invoiceId: invoice_id, cnId: newCnId,
+            customerId, invoiceId: invoice_id, cnId: newCnId,
             entryType: 'CREDIT_MEMO_APPLIED', amount: -cnTotalAmount,
             referenceNo: creditNoteNumber,
-            notes: `Credit note ${creditNoteNumber} for Invoice #${invoice_number}`,
+            notes: `Credit note ${creditNoteNumber} for Invoice #${invoiceNumber}`,
             createdBy: employee_id,
         });
 
@@ -181,7 +211,7 @@ router.post('/refunds', protect, hasPermission('invoicing:create'), async (req, 
                 INSERT INTO inventory_transaction (part_id, trans_type, quantity, unit_cost, reference_no, employee_id, notes)
                 VALUES ($1, 'Refund', $2, $3, $4, $5, $6);
             `;
-            await client.query(transactionQuery, [line.part_id, line.quantity, line.cost_at_sale, creditNoteNumber, employee_id, `Refund for Invoice #${invoice_number}`]);
+            await client.query(transactionQuery, [line.part_id, line.quantity, line.cost_at_sale, creditNoteNumber, employee_id, `Refund for Invoice #${invoiceNumber}`]);
         }
 
         // 4. Update the original invoice status is handled automatically by the update_invoice_balance_after_payment trigger on credit_note table
