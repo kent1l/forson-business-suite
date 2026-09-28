@@ -1,18 +1,18 @@
 # Jev AI Integration & Data Cleanup — Developer Handoff
 
 > **Forson Business Suite** | **Date:** 2026-09-24 | **Branch:** `master`
-> **Status:** Phases 0–4 implemented. Jev gates remain configuration-gated and fail open until a deployment supplies `OPENROUTER_API_KEY` and enables Jev.
+> **Status:** All implementation phases are complete and verified in local development. Jev is enabled locally; production rollout and administrator-reviewed master-data cleanup remain outstanding.
 
 ## 0. Status at a Glance
 
 | Phase | Status | Reference |
 |---|---|---|
 | 0: Schema Infrastructure (Migrations) | **Complete** | §5-0 |
-| 1: Brand & Group Management Feature (UI + AI Scan) | **Implementation Complete; Cleanup Pending** | §5-1 — Jev is configuration-gated; an administrator still needs to review real data |
-| 2: Customer & Supplier Merge Feature (UI + AI Scan) | **Implementation Complete; Cleanup Pending** | §5-2 |
+| 1: Brand & Group Management Feature (UI + AI Scan) | **Implementation Complete; Local Cleanup Pending** | §5-1 — 2 Brand and 78 Group suggestions await administrator review |
+| 2: Customer & Supplier Merge Feature (UI + AI Scan) | **Implementation Complete; Local Queue Clear** | §5-2 — production data still needs its own review |
 | 3: Local-First Features (Cross-ref, basic scoring) | **Implementation Complete** | §5-3 |
-| 4: Activate Jev Gates (Brand, Group, Cust, Supp, Part) | **Implementation Complete; Configuration Pending** | §5-4 |
-| 5: Inline Parsers (Expenses, Fitment, PO) | **Implementation Complete; Configuration Pending** | §5-5 |
+| 4: Activate Jev Gates (Brand, Group, Cust, Supp, Part) | **Implementation Complete; Production Rollout Pending** | §5-4 |
+| 5: Inline Parsers (Expenses, Fitment, PO) | **Implementation Complete; Production Rollout Pending** | §5-5 |
 | 6: Background & Batch (Dedup worker, nightly scoring) | **Complete in local development; deployment rollout pending** | §5-6 |
 
 ## 1. For a New Session or Agent Picking This Up
@@ -64,7 +64,7 @@ Implemented in `database/migrations/20260924_01_jev_entity_merge_infrastructure.
 - Adds soft-merge pointers and `is_merged` flags for customers, suppliers, brands, and groups, with consistency checks and lookup indexes.
 - Adds pairwise duplicate-suggestion tables for those four entities. Each captures confidence, detection method, optional AI reasoning, review/merge audit fields, and prevents duplicate pairs regardless of ordering.
 
-### 5-1: Brand & Group Management Feature — Partially Complete
+### 5-1: Brand & Group Management Feature — Implementation Complete; Local Cleanup Pending
 
 #### As built (2026-09-25)
 
@@ -79,12 +79,13 @@ Implemented in `database/migrations/20260924_01_jev_entity_merge_infrastructure.
 - [x] Added a durable, shared Jev duplicate-decision cache. It retains positive and negative Noul probabilities separately from the human-review suggestion workflow, and only reuses a decision when the unordered pair, normalized names/codes, configured model, and versioned prompt all still match.
 - [x] Documented the deployment-only Jev configuration in `.env.example` and added contract/fallback tests in `packages/api/tests/jevClient.test.js`.
 
-#### Remaining operational work
+#### Remaining operational work (verified 2026-09-28)
 
-- [ ] Ensure `OPENROUTER_API_KEY` is present in the deployment environment, then enable `JEV_ENABLED=true`. The Decisions endpoint and pinned model are represented in `.env.example`; until the OpenRouter key is configured, scans continue to use their safe local `pg_trgm` fallback.
-- [ ] An administrator must run the scans and manually review/merge the real brand and group duplicates. This session intentionally did not change production-like master data.
+- [ ] Set `OPENROUTER_API_KEY` and `JEV_ENABLED=true` in staging/production. The local development stack is configured and active; deployment configuration was not in scope for this audit.
+- [ ] An authorized administrator must review the **2 pending Brand** and **78 pending Group** suggestions in the local database, then merge or dismiss each with the existing preview workflow. Automatic merging remains intentionally unsupported.
+- [ ] Run the same scans and review workflow against staging/production master data after deployment; this audit did not inspect or modify those environments.
 
-### 5-2: Customer & Supplier Merge Feature — Implementation Complete; Cleanup Pending
+### 5-2: Customer & Supplier Merge Feature — Implementation Complete; Local Queue Clear
 
 #### As built (2026-09-27)
 
@@ -95,9 +96,10 @@ Implemented in `database/migrations/20260924_01_jev_entity_merge_infrastructure.
 - [x] Added the duplicate-cleanup workflow to the existing Customers and Suppliers pages, including canonical selection, impact preview, explicit confirmation, and suggestion dismissal.
 - [x] Added focused `partyMergeService` tests.
 
-#### Remaining operational work
+#### Remaining operational work (verified 2026-09-28)
 
-- [ ] An administrator must run the customer and supplier scans and manually review, merge, or dismiss real-data suggestions. Records with active drafts or customer wallets require their respective workflow/balance cleanup before they can merge.
+- [x] Local pending-suggestion queue is clear: **0 Customer** and **0 Supplier** suggestions. Existing local history includes 1 merged Supplier and no merged Customers.
+- [ ] An administrator must still run the customer and supplier scans in staging/production and manually review, merge, or dismiss any real-data suggestions. Records with active drafts or customer wallets require their respective workflow/balance cleanup before they can merge.
 
 ### 5-3: Local-First Features — Implementation Complete
 
@@ -128,7 +130,8 @@ Implemented in `database/migrations/20260924_01_jev_entity_merge_infrastructure.
 
 #### Remaining operational work
 
-- [ ] Set `OPENROUTER_API_KEY` and `JEV_ENABLED=true` in the deployment environment, then observe the thresholds against cleaned production master data. Without a configured Jev client, every Phase 4 gate is intentionally inactive and normal creation continues.
+- [x] The local development stack has an OpenRouter key and `JEV_ENABLED=true`; the gates are active with the documented fail-open behavior.
+- [ ] Set `OPENROUTER_API_KEY` and `JEV_ENABLED=true` in staging/production, then observe the thresholds against cleaned production master data. Without a configured Jev client, every Phase 4 gate intentionally remains inactive and normal creation continues.
 
 #### Follow-up: Operator-confirmed confidence band (implemented 2026-09-28)
 
@@ -141,6 +144,11 @@ Implemented in `database/migrations/20260924_01_jev_entity_merge_infrastructure.
 - [x] **A2 (Expense):** `expenseParserAI.js` uses Jev `Score` to choose the normal or reasoning parser tier, `Choice` for bounded active-category classification, and `Noul` to confirm a locally plausible supplier/payee alias. Low-confidence, malformed, unavailable, or disabled decisions preserve the existing parser result.
 - [x] **A3 (Fitment):** `vehicleFitmentParserAI.js` uses bounded Jev `Choice` requests for close model candidates and fuel type only after taxonomy validation. The Describe Fitment UI now refreshes reviewable suggestions after a 600 ms typing pause; stale requests cannot overwrite newer text.
 - [x] **A5 (PO):** `purchaseOrderParserAI.js` uses Jev `Choice` across only the close Meilisearch matches. A high-confidence choice resolves an otherwise ambiguous structured line without a generative parsing call; all other lines retain the existing local/LLM fallback and editable ambiguity.
+
+#### Remaining operational work
+
+- [x] The local development stack has an enabled Jev client, so the bounded inline decisions are eligible to run while retaining their fail-open local/generative fallbacks.
+- [ ] Roll the same configuration out to staging/production and monitor confidence distributions and fallback rates before adjusting thresholds.
 
 ### 5-6: Background & Batch — Complete in Local Development; Deployment Rollout Pending
 
@@ -224,6 +232,7 @@ Implemented in `database/migrations/20260924_01_jev_entity_merge_infrastructure.
 - `npm run -w packages/web build` (passes; existing chunk-size/dynamic-import warnings only)
 - `docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T backend node scripts/migrate.js status` / `verify` (204 applied, 0 pending, checksums verified)
 - `docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T backend wget -qO- http://127.0.0.1:3001/health` (`{"status":"ok"}`); logs confirm the 01:30 Jev scorer and 02:00 cycle-count scheduler.
+- **Audit verification (2026-09-28):** local stack reports Jev enabled with an OpenRouter key and `typesafe/jev-1.13`; migrations report 205 applied, 0 pending, and verified checksums; the health endpoint returns `{"status":"ok"}`. The 9 targeted Jev suites passed (51 tests), the Docker-backed full API suite passed, API/web lint passed with existing warnings only, and the production web build passed.
 - Live Jev smoke tests (2026-09-25): a fictional duplicate-company payload returned `typesafe/jev-1.13-20260917` with Noul probability `0.96`. OpenRouter's official tutorial payload also returned valid Noul (`0.96`), Choice (`payments`, confidence `0.64`), and Score (`1.99`) answers from TypeSafe. No system master data was sent externally.
 - Duplicate-scan upsert regression (2026-09-25): PostgreSQL `EXPLAIN` successfully compiled the explicit unordered-pair conflict targets for both brand and group suggestion tables; this fixes the prior `ON CONFLICT DO UPDATE requires inference specification` 500.
 - `docker compose exec -T backend npm test -- --runInBand` (full suite passed)
@@ -245,3 +254,4 @@ Implemented in `database/migrations/20260924_01_jev_entity_merge_infrastructure.
 - **2026-09-28** (Codex): Implemented Phase 6 background Jev overlays: conservative Noul negative pre-filtering before free deduplication LLM calls, bounded nightly Score refreshes for cycle-count and reorder candidates, short-lived advisory score persistence, and hard local safety overrides.
 - **2026-09-28** (Codex): Activated and verified Phase 6 in the local development stack. Corrected the dev migration mount/path so the container verifier uses the same `/usr/database/migrations` contract as production; backend health, migration checksums, and scheduler registration all pass.
 - **2026-09-28** (Codex): Added content-fingerprinted Jev batch caches after operational review: unchanged dedupe clusters reuse Noul decisions for 30 days and unchanged inventory candidates reuse Score decisions for seven days, while changed source facts/prompt/model bypass the cache.
+- **2026-09-28** (Codex): Audited every implementation phase against the committed diff and local running stack. All code phases, migrations, targeted tests, full API suite, lint, and web build pass. Recorded the remaining administrator cleanup queue (2 Brand, 78 Group) and the unverified staging/production rollout as operational—not code—work.
