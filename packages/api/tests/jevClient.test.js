@@ -64,6 +64,9 @@ describe('JevClient', () => {
             choices: [{ value: '1', label: 'Engine' }, { value: '2', label: 'Brakes' }],
         })).resolves.toEqual({ choice: '2', confidence: 0.86, model: 'typesafe/jev-1.13' });
 
-        expect(JSON.parse(fetchImpl.mock.calls[0][1].body).questions.group).toMatchObject({ type: 'choice' });
+        expect(JSON.parse(fetchImpl.mock.calls[0][1].body).questions.group).toMatchObject({
+            type: 'choice',
+            criteria: { 1: 'Engine', 2: 'Brakes' },
+        });
     });
 });

@@ -26,15 +26,34 @@ class JevGateService {
     enabled() { return this.jevClient.isConfigured(); }
 
     async chooseExistingBrand(name) {
-        if (!this.enabled() || !normalize(name)) return null;
+        if (!normalize(name)) return null;
+        const exact = await this.#findExact('brand', 'brand_id', 'brand_name', 'brand_code', name);
+        if (exact) return exact;
+        if (!this.enabled()) return null;
         const { rows } = await this.db.query(
             'SELECT brand_id, brand_name, brand_code FROM brand WHERE NOT is_merged ORDER BY brand_name LIMIT 200'
         );
-        return this.#chooseRecord({
+        return this.#chooseExisting({
             question: 'brand', input: normalize(name), records: rows,
-            id: 'brand_id', label: (row) => `${row.brand_name}${row.brand_code ? ` (${row.brand_code})` : ''}`,
+            id: 'brand_id', nameKey: 'brand_name', label: (row) => `${row.brand_name}${row.brand_code ? ` (${row.brand_code})` : ''}`,
             instructions: 'Does the proposed brand name refer to one of these existing brands? Choose the existing brand only when it is the same real-world brand; otherwise choose no_match.',
             minConfidence: threshold(this.env.JEV_BRAND_GATE_THRESHOLD, 0.90),
+        });
+    }
+
+    async chooseExistingGroup(name) {
+        if (!normalize(name)) return null;
+        const exact = await this.#findExact('"group"', 'group_id', 'group_name', 'group_code', name);
+        if (exact) return exact;
+        if (!this.enabled()) return null;
+        const { rows } = await this.db.query(
+            'SELECT group_id, group_name, group_code FROM "group" WHERE NOT is_merged ORDER BY group_name LIMIT 200'
+        );
+        return this.#chooseExisting({
+            question: 'group', input: normalize(name), records: rows,
+            id: 'group_id', nameKey: 'group_name', label: (row) => `${row.group_name}${row.group_code ? ` (${row.group_code})` : ''}`,
+            instructions: 'Does the proposed product group name refer to one of these existing groups? Choose the existing group only when it is the same group; otherwise choose no_match.',
+            minConfidence: threshold(this.env.JEV_GROUP_GATE_THRESHOLD, 0.90),
         });
     }
 
@@ -115,6 +134,24 @@ class JevGateService {
             this.logger.warn?.(`Jev ${question} gate unavailable; allowing normal workflow: ${error.message}`);
             return null;
         }
+    }
+
+    async #chooseExisting(options) {
+        const exact = options.records.find((row) => normalize(row[options.nameKey]).toLocaleLowerCase() === options.input.toLocaleLowerCase());
+        if (exact) return { record: exact, confidence: 1, model: 'local-exact-match' };
+        if (!this.enabled()) return null;
+        return this.#chooseRecord(options);
+    }
+
+    async #findExact(table, id, name, code, input) {
+        const { rows } = await this.db.query(
+            `SELECT ${id}, ${name}, ${code} FROM ${table}
+             WHERE NOT is_merged
+               AND LOWER(regexp_replace(BTRIM(${name}), '\\s+', ' ', 'g')) = LOWER($1)
+             LIMIT 1`,
+            [normalize(input)]
+        );
+        return rows[0] ? { record: rows[0], confidence: 1, model: 'local-exact-match' } : null;
     }
 
     async #noulMatch(entityType, proposed, candidates, minConfidence) {

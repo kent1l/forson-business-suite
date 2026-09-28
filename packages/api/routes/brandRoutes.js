@@ -15,6 +15,7 @@ router.get('/brands', protect, async (req, res) => {
     res.json(await mergeService.list());
   } catch (err) {
     console.error(err.message);
+    if (err.code === '23505') return res.status(409).json({ message: 'A brand with this name already exists.' });
     res.status(500).send('Server Error');
   }
 });

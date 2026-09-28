@@ -116,7 +116,14 @@ class JevClient {
                         [question]: {
                             type: 'choice',
                             instructions,
-                            choices,
+                            // The Decisions API's Choice primitive accepts an
+                            // object keyed by the returned option, not an array.
+                            // Keeping `choices` as the local caller contract
+                            // lets us validate the answer against the same set.
+                            criteria: Object.fromEntries(choices.map((item) => [
+                                typeof item === 'string' ? item : item.value,
+                                typeof item === 'string' ? item : item.label,
+                            ])),
                         },
                     },
                 }),

@@ -4,8 +4,10 @@ const { generateUniqueCode } = require('../helpers/codeGenerator');
 const { normalizeText } = require('../helpers/normalizeEntity');
 const { protect, hasPermission } = require('../middleware/authMiddleware');
 const EntityMergeService = require('../services/entityMergeService');
+const JevGateService = require('../services/jevGateService');
 const router = express.Router();
 const mergeService = new EntityMergeService(db, 'group');
+const jevGates = new JevGateService({ db });
 
 // GET all groups
 router.get('/groups', protect, async (req, res) => {
@@ -13,6 +15,7 @@ router.get('/groups', protect, async (req, res) => {
     res.json(await mergeService.list());
   } catch (err) {
     console.error(err.message);
+    if (err.code === '23505') return res.status(409).json({ message: 'A group with this name already exists.' });
     res.status(500).send('Server Error');
   }
 });
@@ -23,6 +26,15 @@ router.post('/groups', protect, hasPermission(['groups:manage', 'parts:create'])
   const { group_code } = req.body;
   if (!group_name) {
     return res.status(400).json({ message: 'Group name is required.' });
+  }
+
+  const existing = await jevGates.chooseExistingGroup(group_name);
+  if (existing) {
+    return res.status(200).json({
+      ...existing.record,
+      existing: true,
+      jev: { confidence: existing.confidence, model: existing.model },
+    });
   }
 
   const client = await db.getClient();

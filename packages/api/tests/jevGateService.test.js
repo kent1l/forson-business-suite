@@ -1,27 +1,40 @@
 const JevGateService = require('../services/jevGateService');
 
 describe('JevGateService', () => {
-    test('does not query local data when Jev is not configured', async () => {
-        const db = { query: jest.fn() };
+    test('does not call Jev when it is not configured', async () => {
+        const db = { query: jest.fn().mockResolvedValue({ rows: [] }) };
         const service = new JevGateService({ db, jevClient: { isConfigured: () => false } });
 
         await expect(service.chooseExistingBrand('Acme')).resolves.toBeNull();
         await expect(service.findPartDuplicate({ detail: 'Brake pad' })).resolves.toBeNull();
-        expect(db.query).not.toHaveBeenCalled();
+        expect(db.query).toHaveBeenCalledTimes(1);
     });
 
     test('returns a brand only for an allowed high-confidence Choice response', async () => {
-        const db = { query: jest.fn().mockResolvedValue({ rows: [{ brand_id: 7, brand_name: 'Acme', brand_code: 'AC' }] }) };
+        const db = { query: jest.fn()
+            .mockResolvedValueOnce({ rows: [] })
+            .mockResolvedValueOnce({ rows: [{ brand_id: 7, brand_name: 'Acme', brand_code: 'AC' }] }) };
         const jevClient = {
             isConfigured: () => true,
             evaluateChoice: jest.fn().mockResolvedValue({ choice: '7', confidence: 0.95, model: 'jev-test' }),
         };
         const service = new JevGateService({ db, jevClient, env: {} });
 
-        await expect(service.chooseExistingBrand('ACME')).resolves.toEqual({
+        await expect(service.chooseExistingBrand('Acme Turbo')).resolves.toEqual({
             record: { brand_id: 7, brand_name: 'Acme', brand_code: 'AC' }, confidence: 0.95, model: 'jev-test',
         });
         expect(jevClient.evaluateChoice).toHaveBeenCalledWith(expect.objectContaining({ question: 'brand' }));
+    });
+
+    test('uses an exact local brand match without spending a Jev request', async () => {
+        const db = { query: jest.fn().mockResolvedValue({ rows: [{ brand_id: 7, brand_name: 'Acme', brand_code: 'AC' }] }) };
+        const jevClient = { isConfigured: () => true, evaluateChoice: jest.fn() };
+        const service = new JevGateService({ db, jevClient, env: {} });
+
+        await expect(service.chooseExistingBrand('  ACME  ')).resolves.toMatchObject({
+            record: { brand_id: 7 }, confidence: 1, model: 'local-exact-match',
+        });
+        expect(jevClient.evaluateChoice).not.toHaveBeenCalled();
     });
 
     test('requires a local party candidate and a high Noul probability before blocking', async () => {

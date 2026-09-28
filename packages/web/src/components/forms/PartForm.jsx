@@ -31,6 +31,7 @@ const BrandGroupForm = ({ type, onSave, onCancel, initialName = '', uppercaseTex
             if (type === 'Group' && data?.group_code) setCode(data.group_code);
             // reset the name so next open is fresh
             setName('');
+            if (data?.existing) toast.success(`Using existing ${type}: ${data.brand_name || data.group_name}.`);
             onSave(data);
         } catch (err) {
             console.error(err);
