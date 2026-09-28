@@ -502,6 +502,40 @@ CREATE TABLE IF NOT EXISTS public.credit_note_line (
     sale_price numeric(12,2) NOT NULL
 );
 
+-- Correct & Restart Sale cases.  Keep this baseline aligned with
+-- 20260928_03_sales_correction_cases.sql for new databases.
+CREATE TABLE IF NOT EXISTS public.sales_correction_case (
+    correction_case_id bigserial PRIMARY KEY,
+    original_invoice_id integer NOT NULL UNIQUE REFERENCES public.invoice(invoice_id) ON DELETE RESTRICT,
+    replacement_invoice_id integer UNIQUE REFERENCES public.invoice(invoice_id) ON DELETE RESTRICT,
+    requested_by integer NOT NULL REFERENCES public.employee(employee_id) ON DELETE RESTRICT,
+    approved_by integer REFERENCES public.employee(employee_id) ON DELETE RESTRICT,
+    reason_code varchar(80) NOT NULL,
+    reason_text text NOT NULL,
+    state varchar(32) NOT NULL DEFAULT 'DRAFT',
+    financial_resolution varchar(48) NOT NULL,
+    resolution_evidence jsonb NOT NULL DEFAULT '{}'::jsonb,
+    idempotency_key uuid NOT NULL DEFAULT gen_random_uuid(),
+    requested_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    approved_at timestamptz,
+    executed_at timestamptz,
+    completed_at timestamptz,
+    failure_reason text,
+    CONSTRAINT chk_sales_correction_state CHECK (state IN ('DRAFT', 'PENDING_APPROVAL', 'APPROVED', 'EXECUTING', 'COMPLETED', 'REJECTED', 'FAILED', 'REQUIRES_MANUAL_REVIEW')),
+    CONSTRAINT chk_sales_correction_resolution CHECK (financial_resolution IN ('CANCEL_ONLY', 'REVERSE_PAYMENT_AND_CANCEL', 'REFUND_NOT_RELEASED_AND_CANCEL', 'RECOVER_REFUND_AND_RESTART', 'INDEPENDENT_REPLACEMENT', 'MANUAL_REVIEW')),
+    CONSTRAINT chk_sales_correction_reason_text CHECK (length(btrim(reason_text)) >= 5),
+    CONSTRAINT uq_sales_correction_idempotency UNIQUE (idempotency_key)
+);
+
+CREATE TABLE IF NOT EXISTS public.sales_correction_event (
+    correction_event_id bigserial PRIMARY KEY,
+    correction_case_id bigint NOT NULL REFERENCES public.sales_correction_case(correction_case_id) ON DELETE RESTRICT,
+    event_type varchar(48) NOT NULL,
+    event_data jsonb NOT NULL DEFAULT '{}'::jsonb,
+    created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_by integer REFERENCES public.employee(employee_id) ON DELETE SET NULL
+);
+
 --
 -- DOCUMENT MANAGEMENT (used by documentsRoutes.js)
 --
