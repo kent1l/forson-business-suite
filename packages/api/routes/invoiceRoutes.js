@@ -1032,8 +1032,25 @@ router.delete('/invoices/:id', protect, hasPermission('invoice:delete'), async (
             return res.status(400).json({ message: 'Invoice is already voided.' });
         }
 
-        // Reverse stock for whatever quantity hasn't already been returned via a refund
-        // (credit_note), so a previously part-refunded invoice isn't double-restocked.
+        // A credit note is an issued financial document and may represent cash
+        // already returned to the customer.  Voiding its invoice would leave
+        // the credit note in refund/tax reporting after the sale is excluded,
+        // effectively applying two corrections to one sale.  Keep the credit
+        // note as the authoritative correction instead.
+        const { rows: [refundState] } = await client.query(
+            `SELECT EXISTS(
+                SELECT 1 FROM credit_note WHERE invoice_id = $1
+             ) AS has_refunds`,
+            [id]
+        );
+        if (refundState.has_refunds) {
+            await client.query('ROLLBACK');
+            return res.status(409).json({
+                message: 'Cannot void an invoice with issued credit notes. The refund is the final correction for this sale.'
+            });
+        }
+
+        // Refunds are rejected above, so every sold quantity is reversed once.
         const { rows: lines } = await client.query(`
             SELECT il.invoice_line_id, il.part_id, il.quantity, il.cost_at_sale,
                    COALESCE(rf.quantity_refunded, 0) AS quantity_refunded
