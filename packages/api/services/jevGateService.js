@@ -38,6 +38,7 @@ class JevGateService {
             id: 'brand_id', nameKey: 'brand_name', label: (row) => `${row.brand_name}${row.brand_code ? ` (${row.brand_code})` : ''}`,
             instructions: 'Does the proposed brand name refer to one of these existing brands? Choose the existing brand only when it is the same real-world brand; otherwise choose no_match.',
             minConfidence: threshold(this.env.JEV_BRAND_GATE_THRESHOLD, 0.90),
+            confirmConfidence: threshold(this.env.JEV_BRAND_CONFIRM_THRESHOLD, 0.80),
         });
     }
 
@@ -54,6 +55,7 @@ class JevGateService {
             id: 'group_id', nameKey: 'group_name', label: (row) => `${row.group_name}${row.group_code ? ` (${row.group_code})` : ''}`,
             instructions: 'Does the proposed product group name refer to one of these existing groups? Choose the existing group only when it is the same group; otherwise choose no_match.',
             minConfidence: threshold(this.env.JEV_GROUP_GATE_THRESHOLD, 0.90),
+            confirmConfidence: threshold(this.env.JEV_GROUP_CONFIRM_THRESHOLD, 0.80),
         });
     }
 
@@ -86,7 +88,9 @@ class JevGateService {
             FROM ${table}
             WHERE NOT is_merged AND similarity(LOWER(${display}), LOWER($1)) >= $2
             ORDER BY local_score DESC, ${id} ASC LIMIT 8`, [normalize(name), localThreshold]);
-        return this.#noulMatch(type, { name: normalize(name) }, rows, threshold(this.env.JEV_PARTY_GATE_THRESHOLD, 0.90));
+        return this.#noulMatch(type, { name: normalize(name) }, rows,
+            threshold(this.env.JEV_PARTY_GATE_THRESHOLD, 0.90),
+            threshold(this.env.JEV_PARTY_CONFIRM_THRESHOLD, 0.80));
     }
 
     async findPartDuplicate(payload) {
@@ -113,10 +117,12 @@ class JevGateService {
             entity_name: [row.display_name || row.detail, row.part_numbers, row.internal_sku].filter(Boolean).join(' | '),
             entity_code: row.internal_sku || null,
         }));
-        return this.#noulMatch('part catalog item', proposed, candidates, threshold(this.env.JEV_PART_GATE_THRESHOLD, 0.92));
+        return this.#noulMatch('part catalog item', proposed, candidates,
+            threshold(this.env.JEV_PART_GATE_THRESHOLD, 0.92),
+            threshold(this.env.JEV_PART_CONFIRM_THRESHOLD, 0.80));
     }
 
-    async #chooseRecord({ question, input, records, id, label, instructions, minConfidence }) {
+    async #chooseRecord({ question, input, records, id, label, instructions, minConfidence, confirmConfidence = minConfidence }) {
         if (!records.length) return null;
         const choices = records.map((row) => ({ value: String(row[id]), label: label(row) }));
         choices.push({ value: 'no_match', label: 'No reliable match' });
@@ -127,9 +133,12 @@ class JevGateService {
                 instructions,
                 choices,
             });
-            if (!decision || decision.choice === 'no_match' || decision.confidence < minConfidence) return null;
+            if (!decision || decision.choice === 'no_match' || decision.confidence < confirmConfidence) return null;
             const record = records.find((row) => String(row[id]) === decision.choice);
-            return record ? { record, confidence: decision.confidence, model: decision.model } : null;
+            return record ? {
+                record, confidence: decision.confidence, model: decision.model,
+                action: decision.confidence >= minConfidence ? 'reuse' : 'confirm',
+            } : null;
         } catch (error) {
             this.logger.warn?.(`Jev ${question} gate unavailable; allowing normal workflow: ${error.message}`);
             return null;
@@ -138,7 +147,7 @@ class JevGateService {
 
     async #chooseExisting(options) {
         const exact = options.records.find((row) => normalize(row[options.nameKey]).toLocaleLowerCase() === options.input.toLocaleLowerCase());
-        if (exact) return { record: exact, confidence: 1, model: 'local-exact-match' };
+        if (exact) return { record: exact, confidence: 1, model: 'local-exact-match', action: 'reuse' };
         if (!this.enabled()) return null;
         return this.#chooseRecord(options);
     }
@@ -151,10 +160,10 @@ class JevGateService {
              LIMIT 1`,
             [normalize(input)]
         );
-        return rows[0] ? { record: rows[0], confidence: 1, model: 'local-exact-match' } : null;
+        return rows[0] ? { record: rows[0], confidence: 1, model: 'local-exact-match', action: 'reuse' } : null;
     }
 
-    async #noulMatch(entityType, proposed, candidates, minConfidence) {
+    async #noulMatch(entityType, proposed, candidates, minConfidence, confirmConfidence = minConfidence) {
         for (const candidate of candidates) {
             try {
                 const decision = await this.jevClient.evaluateDuplicate({
@@ -162,7 +171,10 @@ class JevGateService {
                     left: proposed,
                     right: { name: candidate.entity_name, code: candidate.entity_code },
                 });
-                if (decision?.probability >= minConfidence) return { record: candidate, confidence: decision.probability, model: decision.model };
+                if (decision?.probability >= confirmConfidence) return {
+                    record: candidate, confidence: decision.probability, model: decision.model,
+                    action: decision.probability >= minConfidence ? 'block' : 'confirm',
+                };
             } catch (error) {
                 this.logger.warn?.(`Jev ${entityType} gate unavailable; allowing normal workflow: ${error.message}`);
                 return null;

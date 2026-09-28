@@ -10,6 +10,7 @@ import PaginationControls from '../components/ui/PaginationControls';
 import SortableHeader from '../components/ui/SortableHeader';
 import { useAuth } from '../contexts/AuthContext'; // <-- NEW: Import useAuth
 import { sortData } from '../utils/sortData';
+import { postWithJevConfirmation } from '../helpers/jevConfirmation';
 
 const CustomersPage = ({ onNavigate }) => {
     const { hasPermission } = useAuth(); // <-- NEW: Use the auth context
@@ -100,14 +101,14 @@ const CustomersPage = ({ onNavigate }) => {
     const handleSave = async (customerData) => {
         const promise = currentCustomer
             ? api.put(`/customers/${currentCustomer.customer_id}`, customerData)
-            : api.post('/customers', customerData);
+            : postWithJevConfirmation('/customers', customerData, 'customer');
 
         toast.promise(promise, {
             loading: 'Saving customer...',
-            success: () => {
+            success: (res) => {
                 setIsModalOpen(false);
                 fetchCustomers();
-                return 'Customer saved successfully!';
+                return res?.data?.existing ? 'Using the existing customer.' : 'Customer saved successfully!';
             },
             error: (err) => err.response?.data?.message || 'Failed to save customer.',
         });

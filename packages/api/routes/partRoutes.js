@@ -556,8 +556,15 @@ router.get('/parts/:id/tags', protect, hasPermission('parts:view'), async (req, 
 router.post('/parts', protect, hasPermission('parts:create'), async (req, res) => {
     const duplicate = await jevGates.findPartDuplicate(req.body);
     if (duplicate) {
+        const confirmation = req.body?.jev_confirmation;
+        if (duplicate.action === 'confirm' && confirmation?.candidate_id === duplicate.record.entity_id && confirmation?.action === 'create_new') {
+            // Freshly re-evaluated mid-band result; operator elected to create.
+        } else if (duplicate.action === 'confirm' && confirmation?.candidate_id === duplicate.record.entity_id && confirmation?.action === 'use_existing') {
+            return res.json({ existing: true, part_id: duplicate.record.entity_id, display_name: duplicate.record.entity_name, jev: { confidence: duplicate.confidence, model: duplicate.model } });
+        } else {
         return res.status(409).json({
-            message: `A likely duplicate part already exists: ${duplicate.record.entity_name}.`,
+            message: `${duplicate.action === 'confirm' ? 'Possible' : 'A likely'} duplicate part already exists: ${duplicate.record.entity_name}.`,
+            confirmation_required: duplicate.action === 'confirm',
             duplicate: {
                 part_id: duplicate.record.entity_id,
                 display_name: duplicate.record.entity_name,
@@ -565,6 +572,7 @@ router.post('/parts', protect, hasPermission('parts:create'), async (req, res) =
                 model: duplicate.model,
             },
         });
+        }
     }
     const client = await db.getClient();
     try {

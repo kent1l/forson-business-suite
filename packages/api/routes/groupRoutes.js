@@ -30,11 +30,23 @@ router.post('/groups', protect, hasPermission(['groups:manage', 'parts:create'])
 
   const existing = await jevGates.chooseExistingGroup(group_name);
   if (existing) {
+    const confirmation = req.body?.jev_confirmation;
+    if (existing.action === 'confirm' && confirmation?.candidate_id !== existing.record.group_id) {
+      return res.status(409).json({
+        message: `Possible existing group: ${existing.record.group_name}. Confirm whether to use it.`,
+        confirmation_required: true,
+        duplicate: { group_id: existing.record.group_id, display_name: existing.record.group_name, confidence: existing.confidence, model: existing.model },
+      });
+    }
+    if (existing.action === 'confirm' && confirmation?.action === 'create_new') {
+      // Fresh decision + explicit operator selection permits a distinct group.
+    } else {
     return res.status(200).json({
       ...existing.record,
       existing: true,
       jev: { confidence: existing.confidence, model: existing.model },
     });
+    }
   }
 
   const client = await db.getClient();

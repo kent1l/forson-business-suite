@@ -272,10 +272,18 @@ router.post('/customers', protect, hasPermission('customers:edit'), async (req, 
     const displayName = customerData.company_name || [customerData.first_name, customerData.last_name].filter(Boolean).join(' ');
     const existing = await jevGates.findPartyDuplicate('customer', displayName);
     if (existing) {
+        const confirmation = req.body?.jev_confirmation;
+        if (existing.action === 'confirm' && confirmation?.candidate_id === existing.record.entity_id && confirmation?.action === 'create_new') {
+            // Freshly re-evaluated mid-band result; operator elected to create.
+        } else if (existing.action === 'confirm' && confirmation?.candidate_id === existing.record.entity_id && confirmation?.action === 'use_existing') {
+            return res.json({ existing: true, customer_id: existing.record.entity_id, display_name: existing.record.entity_name, jev: { confidence: existing.confidence, model: existing.model } });
+        } else {
         return res.status(409).json({
-            message: `A likely duplicate customer already exists: ${existing.record.entity_name}.`,
+            message: `${existing.action === 'confirm' ? 'Possible' : 'A likely'} duplicate customer already exists: ${existing.record.entity_name}.`,
+            confirmation_required: existing.action === 'confirm',
             duplicate: { customer_id: existing.record.entity_id, display_name: existing.record.entity_name, confidence: existing.confidence, model: existing.model },
         });
+        }
     }
     const client = await db.getClient();
     try {

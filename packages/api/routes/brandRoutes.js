@@ -30,11 +30,24 @@ router.post('/brands', protect, hasPermission(['brands:manage', 'parts:create'])
 
   const existing = await jevGates.chooseExistingBrand(brand_name);
   if (existing) {
+    const confirmation = req.body?.jev_confirmation;
+    if (existing.action === 'confirm' && confirmation?.candidate_id !== existing.record.brand_id) {
+      return res.status(409).json({
+        message: `Possible existing brand: ${existing.record.brand_name}. Confirm whether to use it.`,
+        confirmation_required: true,
+        duplicate: { brand_id: existing.record.brand_id, display_name: existing.record.brand_name, confidence: existing.confidence, model: existing.model },
+      });
+    }
+    if (existing.action === 'confirm' && confirmation?.action === 'create_new') {
+      // The decision was freshly re-evaluated above; this is the operator's
+      // explicit choice to retain a distinct record in the mid-confidence band.
+    } else {
     return res.status(200).json({
       ...existing.record,
       existing: true,
       jev: { confidence: existing.confidence, model: existing.model },
     });
+    }
   }
 
   const client = await db.getClient();

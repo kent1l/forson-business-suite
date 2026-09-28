@@ -8,6 +8,7 @@ import TagInput from '../ui/TagInput'; // <-- Import TagInput
 import MathExpressionInput from '../ui/MathExpressionInput';
 import ApplicationSearchCombobox from '../applications/ApplicationSearchCombobox';
 import PartApplicationManager from '../../pages/PartApplicationManager';
+import { postWithJevConfirmation } from '../../helpers/jevConfirmation';
 
 const BrandGroupForm = ({ type, onSave, onCancel, initialName = '', uppercaseText = false }) => {
     const [name, setName] = useState(initialName || '');
@@ -25,7 +26,7 @@ const BrandGroupForm = ({ type, onSave, onCancel, initialName = '', uppercaseTex
         const payload = type === 'Brand' ? { brand_name: name } : { group_name: name };
         try {
             setSaving(true);
-            const { data } = await api.post(endpoint, payload);
+            const { data } = await postWithJevConfirmation(endpoint, payload, type.toLowerCase());
             // If server returned the generated code, show/update it locally
             if (type === 'Brand' && data?.brand_code) setCode(data.brand_code);
             if (type === 'Group' && data?.group_code) setCode(data.group_code);

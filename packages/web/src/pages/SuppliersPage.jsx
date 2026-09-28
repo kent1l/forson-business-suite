@@ -12,6 +12,7 @@ import PaginationControls from '../components/ui/PaginationControls';
 import SortableHeader from '../components/ui/SortableHeader';
 import { useAuth } from '../contexts/AuthContext';
 import { formatCurrency } from '../utils/currency';
+import { postWithJevConfirmation } from '../helpers/jevConfirmation';
 
 const SuppliersPage = ({ onNavigate }) => {
     const { hasPermission } = useAuth();
@@ -120,14 +121,14 @@ const SuppliersPage = ({ onNavigate }) => {
     const handleSave = async (supplierData) => {
         const promise = currentSupplier
             ? api.put(`/suppliers/${currentSupplier.supplier_id}`, supplierData)
-            : api.post('/suppliers', supplierData);
+            : postWithJevConfirmation('/suppliers', supplierData, 'supplier');
 
         toast.promise(promise, {
             loading: 'Saving supplier...',
-            success: () => {
+            success: (res) => {
                 setIsModalOpen(false);
                 fetchSuppliers();
-                return 'Supplier saved!';
+                return res?.data?.existing ? 'Using the existing supplier.' : 'Supplier saved!';
             },
             error: (err) => err.response?.data?.message || 'Failed to save supplier.',
         });

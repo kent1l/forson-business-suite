@@ -130,6 +130,13 @@ Implemented in `database/migrations/20260924_01_jev_entity_merge_infrastructure.
 
 - [ ] Set `OPENROUTER_API_KEY` and `JEV_ENABLED=true` in the deployment environment, then observe the thresholds against cleaned production master data. Without a configured Jev client, every Phase 4 gate is intentionally inactive and normal creation continues.
 
+#### Follow-up: Operator-confirmed confidence band (implemented 2026-09-28)
+
+- [x] Exact normalized Brand/Group matches and high-confidence Jev decisions retain automatic reuse/block behavior.
+- [x] Added configurable mid-bands. The API returns an authenticated `confirmation_required` response with candidate identity, confidence, and model rather than silently using or blocking a record.
+- [x] Added a shared confirmation prompt to Brand, Group, Customer, Supplier, and Part create flows. **Use existing** returns that record; **Create new** is accepted only after the backend re-evaluates the same candidate and confirms it remains in the mid-band, so a stale client cannot bypass a high-confidence decision.
+- [x] Defaults: Brand/Group `0.80–0.89`, Customer/Supplier `0.80–0.89`, Part `0.80–0.91`; lower confidence preserves the normal workflow. `JEV_BRAND_CONFIRM_THRESHOLD`, `JEV_GROUP_CONFIRM_THRESHOLD`, `JEV_PARTY_CONFIRM_THRESHOLD`, and `JEV_PART_CONFIRM_THRESHOLD` configure the lower bounds.
+
 ### 5-5: Inline Parsers — Not Started
 - **A2 (Expense):** Update `expenseParserAI.js` to use Jev `Score` for ambiguity pre-screening, `Choice` for standard categories, and `Noul` for supplier alias confirmation.
 - **A3 (Fitment):** Update `vehicleFitmentParserAI.js` to use `Choice` to instantly disambiguate fuel types and close make/model matches from `fuzzyResolveModel()`. Enable live typeahead in UI.

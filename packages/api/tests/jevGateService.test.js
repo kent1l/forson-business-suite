@@ -21,7 +21,7 @@ describe('JevGateService', () => {
         const service = new JevGateService({ db, jevClient, env: {} });
 
         await expect(service.chooseExistingBrand('Acme Turbo')).resolves.toEqual({
-            record: { brand_id: 7, brand_name: 'Acme', brand_code: 'AC' }, confidence: 0.95, model: 'jev-test',
+            record: { brand_id: 7, brand_name: 'Acme', brand_code: 'AC' }, confidence: 0.95, model: 'jev-test', action: 'reuse',
         });
         expect(jevClient.evaluateChoice).toHaveBeenCalledWith(expect.objectContaining({ question: 'brand' }));
     });
@@ -46,9 +46,31 @@ describe('JevGateService', () => {
         const service = new JevGateService({ db, jevClient, env: {} });
 
         await expect(service.findPartyDuplicate('supplier', 'ACME SUPPLY INC')).resolves.toEqual({
-            record: { entity_id: 3, entity_name: 'Acme Supply', entity_code: 'SUP-3' }, confidence: 0.93, model: 'jev-test',
+            record: { entity_id: 3, entity_name: 'Acme Supply', entity_code: 'SUP-3' }, confidence: 0.93, model: 'jev-test', action: 'block',
         });
         expect(db.query.mock.calls[0][0]).toContain('similarity');
+    });
+
+    test('returns a confirmation action for a Choice result in the configured mid-band', async () => {
+        const db = { query: jest.fn()
+            .mockResolvedValueOnce({ rows: [] })
+            .mockResolvedValueOnce({ rows: [{ brand_id: 7, brand_name: 'Acme', brand_code: 'AC' }] }) };
+        const jevClient = { isConfigured: () => true, evaluateChoice: jest.fn().mockResolvedValue({ choice: '7', confidence: 0.84, model: 'jev-test' }) };
+        const service = new JevGateService({ db, jevClient, env: {} });
+
+        await expect(service.chooseExistingBrand('Acme Turbo')).resolves.toMatchObject({
+            record: { brand_id: 7 }, confidence: 0.84, action: 'confirm',
+        });
+    });
+
+    test('returns a confirmation action for a Noul result in the configured mid-band', async () => {
+        const db = { query: jest.fn().mockResolvedValue({ rows: [{ entity_id: 3, entity_name: 'Acme Supply', entity_code: 'SUP-3' }] }) };
+        const jevClient = { isConfigured: () => true, evaluateDuplicate: jest.fn().mockResolvedValue({ probability: 0.84, model: 'jev-test' }) };
+        const service = new JevGateService({ db, jevClient, env: {} });
+
+        await expect(service.findPartyDuplicate('supplier', 'Acme Turbo Supply')).resolves.toMatchObject({
+            record: { entity_id: 3 }, confidence: 0.84, action: 'confirm',
+        });
     });
 
     test('fails open when Meilisearch or Jev cannot evaluate a part candidate', async () => {

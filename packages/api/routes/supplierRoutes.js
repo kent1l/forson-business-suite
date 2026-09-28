@@ -81,10 +81,18 @@ router.post('/suppliers', protect, hasPermission('suppliers:edit'), async (req, 
     }
     const existing = await jevGates.findPartyDuplicate('supplier', supplier_name);
     if (existing) {
+        const confirmation = req.body?.jev_confirmation;
+        if (existing.action === 'confirm' && confirmation?.candidate_id === existing.record.entity_id && confirmation?.action === 'create_new') {
+            // Freshly re-evaluated mid-band result; operator elected to create.
+        } else if (existing.action === 'confirm' && confirmation?.candidate_id === existing.record.entity_id && confirmation?.action === 'use_existing') {
+            return res.json({ existing: true, supplier_id: existing.record.entity_id, display_name: existing.record.entity_name, jev: { confidence: existing.confidence, model: existing.model } });
+        } else {
         return res.status(409).json({
-            message: `A likely duplicate supplier already exists: ${existing.record.entity_name}.`,
+            message: `${existing.action === 'confirm' ? 'Possible' : 'A likely'} duplicate supplier already exists: ${existing.record.entity_name}.`,
+            confirmation_required: existing.action === 'confirm',
             duplicate: { supplier_id: existing.record.entity_id, display_name: existing.record.entity_name, confidence: existing.confidence, model: existing.model },
         });
+        }
     }
     try {
         const supplier_code = await getNextDocumentNumber(db, 'SUPP');
