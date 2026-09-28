@@ -13,6 +13,7 @@ test('Jev clear non-match pre-filter skips the free group LLM and caches pairs',
     jev.evaluateNoul.mockResolvedValue({ probability: 0.02, model: 'typesafe/jev-test' });
     const db = { query: jest.fn()
         .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [] })
         .mockResolvedValue({ rows: [] }) };
     const engine = new DeduplicationEngine(db);
 
@@ -38,4 +39,36 @@ test('uncertain Jev pre-filter preserves the explainable free-LLM path', async (
         { part_id: 2, display_name: 'Filter 2', part_numbers: [] },
     ])).resolves.toEqual([]);
     expect(llmRouter.analyzeGroup).toHaveBeenCalled();
+});
+
+test('reuses a cached Jev cluster decision without a provider call', async () => {
+    const jev = JevClient.mock.results[0].value;
+    const callsBefore = jev.evaluateNoul.mock.calls.length;
+    const db = { query: jest.fn()
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [{ probability: '0.02', model: 'typesafe/jev-test' }] })
+        .mockResolvedValue({ rows: [] }) };
+
+    await expect(new DeduplicationEngine(db).analyzeClusterWithAI([
+        { part_id: 1, display_name: 'Oil Filter', part_numbers: [] },
+        { part_id: 2, display_name: 'Brake Pad', part_numbers: [] },
+    ])).resolves.toEqual([]);
+    expect(jev.evaluateNoul.mock.calls).toHaveLength(callsBefore);
+});
+
+test('skips both AI tiers once every cluster pair has a cached verdict', async () => {
+    const jev = JevClient.mock.results[0].value;
+    const callsBefore = jev.evaluateNoul.mock.calls.length;
+    const llmCallsBefore = llmRouter.analyzeGroup.mock.calls.length;
+    const db = { query: jest.fn()
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [{ part_id_1: 1, part_id_2: 2 }] }) };
+
+    await expect(new DeduplicationEngine(db).analyzeClusterWithAI([
+        { part_id: 1, display_name: 'Oil Filter', part_numbers: [] },
+        { part_id: 2, display_name: 'Oil Filter Premium', part_numbers: [] },
+    ])).resolves.toEqual([]);
+    expect(jev.evaluateNoul.mock.calls).toHaveLength(callsBefore);
+    expect(llmRouter.analyzeGroup.mock.calls).toHaveLength(llmCallsBefore);
 });

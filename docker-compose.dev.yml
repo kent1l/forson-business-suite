@@ -25,12 +25,14 @@ services:
       - ./packages/api:/usr/src/app
       - backend_node_modules:/usr/src/app/node_modules
       - ./backups:/backups
-      - ./database:/database
+      # Keep the development mount aligned with the backend image and migration
+      # runner, which resolve repository migrations from /usr/database.
+      - ./database:/usr/database:ro
     environment:
       - NODE_ENV=development
       - CHOKIDAR_USEPOLLING=true
       - CHOKIDAR_INTERVAL=100
-      - MIGRATIONS_DIR=/database/migrations
+      - MIGRATIONS_DIR=/usr/database/migrations
       - DISABLE_MEILI_OUTBOX_WORKER=false
       - DISABLE_MEILI_APPLICATIONS_LISTENER=false
       - ENABLE_LEGACY_MEILI_PART_LISTENER=false

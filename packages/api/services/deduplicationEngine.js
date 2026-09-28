@@ -21,6 +21,11 @@ const JEV_DEDUPE_REJECT_THRESHOLD = (() => {
     const value = Number(process.env.JEV_DEDUPE_PREFILTER_REJECT_THRESHOLD || 0.10);
     return Number.isFinite(value) ? Math.max(0.01, Math.min(value, 0.49)) : 0.10;
 })();
+const JEV_DEDUPE_PREFILTER_CACHE_HOURS = (() => {
+    const value = Number(process.env.JEV_DEDUPE_PREFILTER_CACHE_HOURS || 720);
+    return Number.isFinite(value) ? Math.max(1, Math.min(Math.floor(value), 24 * 365)) : 720;
+})();
+const JEV_DEDUPE_PREFILTER_PROMPT_VERSION = 'cluster-duplicate-v1';
 
 // Helper: Extract engine part size tokens (STD, 0.25, 0.50, etc.)
 function extractSizeToken(text) {
@@ -226,10 +231,28 @@ class DeduplicationEngine {
         `, [partIds]);
         const exclusionPairs = new Set(exclusionRes.rows.map(r => `${r.part_id_1}_${r.part_id_2}`));
 
+        // `isExcluded` deliberately only contains non-duplicates because it is
+        // used to reject invalid suggested groups below. For repeat-work
+        // prevention, however, either a positive or negative cached AI verdict
+        // resolves a pair and means the cluster does not need another LLM pass.
+        const knownRes = await this.db.query(`
+            SELECT part_id_1, part_id_2 FROM public.part_exclusion
+            WHERE part_id_1 = ANY($1) OR part_id_2 = ANY($1)
+            UNION
+            SELECT part_id_1, part_id_2 FROM public.ai_match_cache
+            WHERE part_id_1 = ANY($1) OR part_id_2 = ANY($1)
+        `, [partIds]);
+        const knownPairs = new Set(knownRes.rows.map(r => `${r.part_id_1}_${r.part_id_2}`));
+
         const isExcluded = (id1, id2) => {
             const [a, b] = [id1, id2].sort((x, y) => x - y);
             return exclusionPairs.has(`${a}_${b}`);
         };
+
+        // A cluster whose every pair already has a verdict cannot yield new
+        // review work. Check before Jev so routine full scans do not re-call
+        // either AI tier for unchanged, fully resolved clusters.
+        if (this.areAllPairsKnown(partIds, knownPairs)) return [];
 
         // Jev is deliberately a cheap *negative* pre-filter here.  A positive
         // or uncertain result still goes to the free group LLM, which provides
@@ -303,8 +326,22 @@ class DeduplicationEngine {
 
     async screenClusterWithJev(parts) {
         if (!jevClient.isConfigured()) return null;
+        const fingerprint = this.buildJevClusterFingerprint(parts);
         try {
-            return await jevClient.evaluateNoul({
+            const cached = await this.db.query(`
+                SELECT probability, model
+                FROM public.jev_dedupe_cluster_cache
+                WHERE cluster_fingerprint = $1
+                  AND model = $2
+                  AND prompt_version = $3
+                  AND evaluated_at >= NOW() - make_interval(hours => $4)
+                LIMIT 1
+            `, [fingerprint, jevClient.config?.model || 'configured-model', JEV_DEDUPE_PREFILTER_PROMPT_VERSION, JEV_DEDUPE_PREFILTER_CACHE_HOURS]);
+            if (cached.rows[0]) {
+                return { probability: Number(cached.rows[0].probability), model: cached.rows[0].model, cached: true };
+            }
+
+            const decision = await jevClient.evaluateNoul({
                 question: 'cluster_contains_duplicate',
                 state: {
                     candidate_parts: parts.map((part) => ({
@@ -323,10 +360,43 @@ class DeduplicationEngine {
                     false: 'All records are clearly distinct parts; no duplicate review is useful.',
                 },
             });
+            if (decision) {
+                await this.db.query(`
+                    INSERT INTO public.jev_dedupe_cluster_cache
+                        (cluster_fingerprint, model, prompt_version, probability, evaluated_at)
+                    VALUES ($1, $2, $3, $4, NOW())
+                    ON CONFLICT (cluster_fingerprint, model, prompt_version) DO UPDATE SET
+                        probability = EXCLUDED.probability, evaluated_at = NOW()
+                `, [fingerprint, jevClient.config?.model || 'configured-model', JEV_DEDUPE_PREFILTER_PROMPT_VERSION, decision.probability]);
+            }
+            return decision;
         } catch (error) {
             console.warn('[DedupEngine] Jev pre-filter unavailable; using free LLM:', error.message);
             return null;
         }
+    }
+
+    areAllPairsKnown(partIds, knownPairs) {
+        for (let i = 0; i < partIds.length; i++) {
+            for (let j = i + 1; j < partIds.length; j++) {
+                const [a, b] = [partIds[i], partIds[j]].sort((x, y) => x - y);
+                if (!knownPairs.has(`${a}_${b}`)) return false;
+            }
+        }
+        return true;
+    }
+
+    buildJevClusterFingerprint(parts) {
+        const normalized = parts.map((part) => ({
+            id: part.part_id,
+            sku: part.internal_sku || null,
+            name: part.display_name || null,
+            detail: part.detail || null,
+            brand: part.brand_name || null,
+            group: part.group_name || null,
+            part_numbers: (part.part_numbers || []).map((pn) => typeof pn === 'object' ? pn.part_number : pn).filter(Boolean).sort(),
+        })).sort((left, right) => Number(left.id) - Number(right.id));
+        return crypto.createHash('sha256').update(JSON.stringify(normalized)).digest('hex');
     }
 
     // ─────────────────────────────────────────────────────────────────

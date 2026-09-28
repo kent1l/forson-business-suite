@@ -32,3 +32,15 @@ test('does not call Jev for hard cycle-count overrides', async () => {
     ])).resolves.toBe(0);
     expect(client.evaluateScore).not.toHaveBeenCalled();
 });
+
+test('reuses a fresh score when the candidate facts have not changed', async () => {
+    const database = { query: jest.fn((sql) => {
+        if (/SELECT 1 FROM public\.jev_inventory_score/i.test(sql)) return Promise.resolve({ rows: [{ '?column?': 1 }] });
+        return Promise.resolve({ rows: [] });
+    }) };
+    const client = { isConfigured: jest.fn(() => true), evaluateScore: jest.fn(), config: { model: 'typesafe/jev-test' } };
+    const service = new JevInventoryScoringService({ database, client, logger: { warn: jest.fn() } });
+
+    await expect(service.scoreRows('reorder', [{ part_id: 4, display_name: 'Oil Filter', stock_on_hand: 0 }])).resolves.toBe(0);
+    expect(client.evaluateScore).not.toHaveBeenCalled();
+});

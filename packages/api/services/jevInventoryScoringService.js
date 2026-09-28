@@ -1,5 +1,6 @@
 'use strict';
 
+const crypto = require('crypto');
 const cron = require('node-cron');
 const db = require('../db');
 const JevClient = require('./jevClient');
@@ -9,6 +10,7 @@ const SCORE_CRITERIA = Object.freeze([
     'Normal urgency: retain the local formula ranking.',
     'High operational urgency: prioritize this among otherwise similar local candidates.',
 ]);
+const SCORE_PROMPT_VERSION = 'inventory-urgency-v1';
 
 const scoreThreshold = (value, fallback = 0.80) => {
     const number = Number(value);
@@ -26,6 +28,11 @@ class JevInventoryScoringService {
     get maxCandidates() {
         const value = Number(this.env.JEV_INVENTORY_SCORE_MAX_CANDIDATES || 50);
         return Number.isFinite(value) ? Math.max(1, Math.min(Math.floor(value), 200)) : 50;
+    }
+
+    get cacheHours() {
+        const value = Number(this.env.JEV_INVENTORY_SCORE_CACHE_HOURS || 168);
+        return Number.isFinite(value) ? Math.max(1, Math.min(Math.floor(value), 24 * 365)) : 168;
     }
 
     async refresh() {
@@ -87,6 +94,8 @@ class JevInventoryScoringService {
             // overrides; Jev must never dilute either signal.
             if (scoreType === 'cycle_count' && (row.audit_requested || Number(row.stock_on_hand) < 0)) continue;
             try {
+                const fingerprint = this.buildFingerprint(scoreType, row);
+                if (await this.hasFreshScore(scoreType, row.part_id, fingerprint)) continue;
                 const decision = await this.client.evaluateScore({
                     question: `${scoreType}_urgency`,
                     state: { recommendation_type: scoreType, part: row },
@@ -96,18 +105,38 @@ class JevInventoryScoringService {
                 if (!decision || decision.confidence < threshold) continue;
                 await this.db.query(`
                     INSERT INTO public.jev_inventory_score
-                        (part_id, score_type, score, confidence, model, factors, evaluated_at)
-                    VALUES ($1, $2, $3, $4, $5, $6::jsonb, NOW())
+                        (part_id, score_type, score, confidence, model, input_fingerprint, factors, evaluated_at)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, NOW())
                     ON CONFLICT (part_id, score_type) DO UPDATE SET
                         score = EXCLUDED.score, confidence = EXCLUDED.confidence,
-                        model = EXCLUDED.model, factors = EXCLUDED.factors, evaluated_at = NOW()
-                `, [row.part_id, scoreType, Math.round(decision.score), decision.confidence, decision.model, JSON.stringify(row)]);
+                        model = EXCLUDED.model, input_fingerprint = EXCLUDED.input_fingerprint,
+                        factors = EXCLUDED.factors, evaluated_at = NOW()
+                `, [row.part_id, scoreType, Math.round(decision.score), decision.confidence, decision.model, fingerprint, JSON.stringify(row)]);
                 written++;
             } catch (error) {
                 this.logger.warn(`[JevInventoryScoring] ${scoreType} score unavailable for part ${row.part_id}:`, error.message);
             }
         }
         return written;
+    }
+
+    buildFingerprint(scoreType, row) {
+        // Include the configured model and prompt version in the input identity:
+        // changing either deliberately causes a one-time re-evaluation.
+        const stableRow = Object.fromEntries(Object.entries(row).sort(([left], [right]) => left.localeCompare(right)));
+        return crypto.createHash('sha256').update(JSON.stringify({
+            scoreType, row: stableRow, model: this.client.config?.model || 'configured-model', promptVersion: SCORE_PROMPT_VERSION,
+        })).digest('hex');
+    }
+
+    async hasFreshScore(scoreType, partId, fingerprint) {
+        const { rows } = await this.db.query(`
+            SELECT 1 FROM public.jev_inventory_score
+            WHERE part_id = $1 AND score_type = $2 AND input_fingerprint = $3
+              AND evaluated_at >= NOW() - make_interval(hours => $4)
+            LIMIT 1
+        `, [partId, scoreType, fingerprint, this.cacheHours]);
+        return Boolean(rows[0]);
     }
 }
 

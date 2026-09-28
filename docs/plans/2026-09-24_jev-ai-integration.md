@@ -13,7 +13,7 @@
 | 3: Local-First Features (Cross-ref, basic scoring) | **Implementation Complete** | §5-3 |
 | 4: Activate Jev Gates (Brand, Group, Cust, Supp, Part) | **Implementation Complete; Configuration Pending** | §5-4 |
 | 5: Inline Parsers (Expenses, Fitment, PO) | **Implementation Complete; Configuration Pending** | §5-5 |
-| 6: Background & Batch (Dedup worker, nightly scoring) | **Implementation Complete; Configuration Pending** | §5-6 |
+| 6: Background & Batch (Dedup worker, nightly scoring) | **Complete in local development; deployment rollout pending** | §5-6 |
 
 ## 1. For a New Session or Agent Picking This Up
 
@@ -142,12 +142,12 @@ Implemented in `database/migrations/20260924_01_jev_entity_merge_infrastructure.
 - [x] **A3 (Fitment):** `vehicleFitmentParserAI.js` uses bounded Jev `Choice` requests for close model candidates and fuel type only after taxonomy validation. The Describe Fitment UI now refreshes reviewable suggestions after a 600 ms typing pause; stale requests cannot overwrite newer text.
 - [x] **A5 (PO):** `purchaseOrderParserAI.js` uses Jev `Choice` across only the close Meilisearch matches. A high-confidence choice resolves an otherwise ambiguous structured line without a generative parsing call; all other lines retain the existing local/LLM fallback and editable ambiguity.
 
-### 5-6: Background & Batch — Implementation Complete; Configuration Pending
+### 5-6: Background & Batch — Complete in Local Development; Deployment Rollout Pending
 
 #### As built (2026-09-28)
 
-- [x] **A1 (Dedup Worker):** `DeduplicationEngine.analyzeClusterWithAI()` first sends its already-bounded cluster to Jev `Noul`. Only a very high-confidence all-distinct result (probability at or below `JEV_DEDUPE_PREFILTER_REJECT_THRESHOLD`, default `0.10`) skips the free group LLM and writes negative `JEV_PREFILTER` cache rows. Positive, uncertain, disabled, malformed, and unavailable decisions still use the free LLM, preserving explainable review groups.
-- [x] **B3/C2 (Jev Overlay):** Added the expiring `jev_inventory_score` store and the nightly `JevInventoryScoringService`. It evaluates only a bounded number of locally eligible cycle-count and reorder candidates (`JEV_INVENTORY_SCORE_MAX_CANDIDATES`, default `50`) using Jev `Score`.
+- [x] **A1 (Dedup Worker):** `DeduplicationEngine.analyzeClusterWithAI()` first sends its already-bounded cluster to Jev `Noul`. Only a very high-confidence all-distinct result (probability at or below `JEV_DEDUPE_PREFILTER_REJECT_THRESHOLD`, default `0.10`) skips the free group LLM and writes negative `JEV_PREFILTER` cache rows. A content-fingerprinted `jev_dedupe_cluster_cache` reuses the same Noul decision for 30 days by default (`JEV_DEDUPE_PREFILTER_CACHE_HOURS=720`); any part-detail change, prompt/model change, or expiry re-evaluates it. Once every pair in a cluster has any cached human/LLM verdict, both AI tiers skip the unchanged cluster altogether. Positive, uncertain, disabled, malformed, and unavailable new decisions still use the free LLM, preserving explainable review groups.
+- [x] **B3/C2 (Jev Overlay):** Added the expiring `jev_inventory_score` store and the nightly `JevInventoryScoringService`. It evaluates only a bounded number of locally eligible cycle-count and reorder candidates (`JEV_INVENTORY_SCORE_MAX_CANDIDATES`, default `50`) using Jev `Score`. Its content fingerprint skips unchanged candidates for seven days by default (`JEV_INVENTORY_SCORE_CACHE_HOURS=168`), while changed demand, stock, or other scoring facts immediately cause re-evaluation.
 - [x] Cycle-count batch generation reads fresh confident scores only and applies a modest 0.90/1.15 multiplier to ordinary local priorities. Negative stock and explicit audit requests remain hard local overrides and are never sent to Jev.
 - [x] The reorder board displays and ranks by an advisory 0–2 Jev urgency score when a fresh decision is available; absent/stale decisions are neutral (`1`), retaining the local reorder recommendation behavior.
 - [x] The refresh is scheduled for 01:30 Manila/server time by default (`JEV_INVENTORY_SCORE_SCHEDULE`), ahead of the existing default 02:00 cycle-count batch. It is not scheduled at all without a configured Jev client.
@@ -155,8 +155,9 @@ Implemented in `database/migrations/20260924_01_jev_entity_merge_infrastructure.
 
 #### Remaining operational work
 
-- [ ] Apply `20260928_01_jev_inventory_scoring.sql` with the normal migration workflow before enabling the API process that schedules the overlay.
-- [ ] Set `OPENROUTER_API_KEY` and `JEV_ENABLED=true`, then observe the pre-filter rejection rate and score distribution before increasing the 50-candidate cap. The new batch behavior is intentionally dormant without those settings.
+- [x] Applied and checksum-verified `20260928_01_jev_inventory_scoring.sql` and `20260928_02_jev_batch_decision_cache.sql` locally. The root `.env` has `JEV_ENABLED=true`, an OpenRouter key, the Phase 6 defaults, and cache TTLs; the local dev backend is healthy and logs the 01:30 scorer plus 02:00 cycle-count scheduler.
+- [x] Fixed the development Compose database mount and `MIGRATIONS_DIR` to `/usr/database/migrations`, matching the migration runner and production image contract. `docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T backend node scripts/migrate.js verify` now works.
+- [ ] Deploy the committed backend image and `.env` settings to staging/production, then observe the pre-filter rejection rate and score distribution before increasing the 50-candidate cap.
 
 ## 6. Explicitly Deferred
 
@@ -196,6 +197,7 @@ Implemented in `database/migrations/20260924_01_jev_entity_merge_infrastructure.
 - `packages/web/src/pages/SettingsPage.jsx`
 - `database/migrations/20260927_01_cycle_count_priority_scoring.sql`
 - `database/migrations/20260928_01_jev_inventory_scoring.sql`
+- `database/migrations/20260928_02_jev_batch_decision_cache.sql`
 - `packages/api/services/deduplicationEngine.js`
 - `packages/api/services/jevInventoryScoringService.js`
 - `packages/api/services/cycleCountService.js`
@@ -203,6 +205,8 @@ Implemented in `database/migrations/20260924_01_jev_entity_merge_infrastructure.
 - `packages/api/services/analytics/registry/metrics/inventory.js`
 - `packages/api/services/analytics/boards/inventory.js`
 - `packages/api/tests/jevInventoryScoringService.test.js`
+- `packages/api/tests/deduplicationEngineJev.test.js`
+- `docker-compose.dev.yml`
 - `packages/api/tests/powerSearchInterchangeableParts.test.js`
 - `packages/api/tests/cycleCountPriority.test.js`
 - `docs/plans/2026-09-24_jev-ai-integration.md`
@@ -218,6 +222,8 @@ Implemented in `database/migrations/20260924_01_jev_entity_merge_infrastructure.
 - `npm run -w packages/api test -- --runInBand tests/deduplicationEngineJev.test.js tests/analyticsPhase4.test.js tests/cycleCountPriority.test.js tests/jevInventoryScoringService.test.js` (25 tests passed)
 - `docker compose exec -T backend node scripts/migrate.js up` and `verify` (applied and checksum-verified `20260928_01_jev_inventory_scoring.sql` locally)
 - `npm run -w packages/web build` (passes; existing chunk-size/dynamic-import warnings only)
+- `docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T backend node scripts/migrate.js status` / `verify` (204 applied, 0 pending, checksums verified)
+- `docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T backend wget -qO- http://127.0.0.1:3001/health` (`{"status":"ok"}`); logs confirm the 01:30 Jev scorer and 02:00 cycle-count scheduler.
 - Live Jev smoke tests (2026-09-25): a fictional duplicate-company payload returned `typesafe/jev-1.13-20260917` with Noul probability `0.96`. OpenRouter's official tutorial payload also returned valid Noul (`0.96`), Choice (`payments`, confidence `0.64`), and Score (`1.99`) answers from TypeSafe. No system master data was sent externally.
 - Duplicate-scan upsert regression (2026-09-25): PostgreSQL `EXPLAIN` successfully compiled the explicit unordered-pair conflict targets for both brand and group suggestion tables; this fixes the prior `ON CONFLICT DO UPDATE requires inference specification` 500.
 - `docker compose exec -T backend npm test -- --runInBand` (full suite passed)
@@ -237,3 +243,5 @@ Implemented in `database/migrations/20260924_01_jev_entity_merge_infrastructure.
 - **2026-09-28** (Codex): Corrected Jev Choice requests to use the Decisions API's keyed `criteria` contract after live HTTP 400 responses, and made exact normalized brand/group matches resolve locally before bounded AI evaluation. This prevents exact duplicates from reaching database uniqueness errors and shows the Part form's existing-record feedback.
 - **2026-09-28** (Codex): Implemented Phase 5 inline Jev decisions: expense ambiguity/category/payee-alias checks, fitment fuel/model choices with debounced live suggestions, and PO catalog candidate choices. All are configuration-gated and fail open to the established local/generative paths.
 - **2026-09-28** (Codex): Implemented Phase 6 background Jev overlays: conservative Noul negative pre-filtering before free deduplication LLM calls, bounded nightly Score refreshes for cycle-count and reorder candidates, short-lived advisory score persistence, and hard local safety overrides.
+- **2026-09-28** (Codex): Activated and verified Phase 6 in the local development stack. Corrected the dev migration mount/path so the container verifier uses the same `/usr/database/migrations` contract as production; backend health, migration checksums, and scheduler registration all pass.
+- **2026-09-28** (Codex): Added content-fingerprinted Jev batch caches after operational review: unchanged dedupe clusters reuse Noul decisions for 30 days and unchanged inventory candidates reuse Score decisions for seven days, while changed source facts/prompt/model bypass the cache.
