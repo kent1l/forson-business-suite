@@ -255,6 +255,21 @@ const INVENTORY_METRICS = {
         permission: 'analytics:view',
     },
 
+    'inventory.reorder_jev_urgency': {
+        id: 'inventory.reorder_jev_urgency',
+        label: 'Jev urgency',
+        description: 'Nightly advisory urgency score (0 low, 1 normal, 2 high). A missing or stale AI score is neutral.',
+        kind: 'snapshot',
+        source: 'reorder_candidates',
+        expr: (c) => `MAX(${c.jev_reorder_urgency})`,
+        fold: 'max',
+        format: 'integer',
+        direction: 'higher_is_better',
+        comparable: false,
+        grains: SNAPSHOT_ONLY,
+        permission: 'analytics:view',
+    },
+
     'inventory.dead_stock_share': {
         id: 'inventory.dead_stock_share',
         label: 'Dead Stock Share',

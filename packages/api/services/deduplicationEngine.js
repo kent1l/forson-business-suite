@@ -14,6 +14,13 @@
 const crypto = require('crypto');
 const { meiliClient } = require('../meilisearch');
 const llmRouter = require('./llmRouter');
+const JevClient = require('./jevClient');
+
+const jevClient = new JevClient();
+const JEV_DEDUPE_REJECT_THRESHOLD = (() => {
+    const value = Number(process.env.JEV_DEDUPE_PREFILTER_REJECT_THRESHOLD || 0.10);
+    return Number.isFinite(value) ? Math.max(0.01, Math.min(value, 0.49)) : 0.10;
+})();
 
 // Helper: Extract engine part size tokens (STD, 0.25, 0.50, etc.)
 function extractSizeToken(text) {
@@ -224,6 +231,29 @@ class DeduplicationEngine {
             return exclusionPairs.has(`${a}_${b}`);
         };
 
+        // Jev is deliberately a cheap *negative* pre-filter here.  A positive
+        // or uncertain result still goes to the free group LLM, which provides
+        // the explainable groups the review UI needs.  Only an exceptionally
+        // confident non-match avoids that slower call.
+        const jevDecision = await this.screenClusterWithJev(parts);
+        if (jevDecision && jevDecision.probability <= JEV_DEDUPE_REJECT_THRESHOLD) {
+            const cacheWrites = [];
+            for (let i = 0; i < partIds.length; i++) {
+                for (let j = i + 1; j < partIds.length; j++) {
+                    const [a, b] = [partIds[i], partIds[j]].sort((x, y) => x - y);
+                    if (exclusionPairs.has(`${a}_${b}`)) continue;
+                    cacheWrites.push(this.db.query(`
+                        INSERT INTO public.ai_match_cache (part_id_1, part_id_2, is_duplicate, source, reason)
+                        VALUES ($1, $2, FALSE, 'JEV_PREFILTER', $3)
+                        ON CONFLICT (part_id_1, part_id_2) DO NOTHING
+                    `, [a, b, `Jev pre-filter found no duplicate in cluster (probability ${jevDecision.probability.toFixed(2)}).`])
+                        .catch(err => console.error('[DedupEngine] Jev cache write failed:', err.message)));
+                }
+            }
+            await Promise.all(cacheWrites);
+            return [];
+        }
+
         // Call the AI
         const aiResult = await llmRouter.analyzeGroup(parts);
         if (aiResult.skipped) return [];
@@ -269,6 +299,34 @@ class DeduplicationEngine {
         await Promise.all(cacheWrites);
 
         return validGroups;
+    }
+
+    async screenClusterWithJev(parts) {
+        if (!jevClient.isConfigured()) return null;
+        try {
+            return await jevClient.evaluateNoul({
+                question: 'cluster_contains_duplicate',
+                state: {
+                    candidate_parts: parts.map((part) => ({
+                        id: part.part_id,
+                        sku: part.internal_sku || null,
+                        name: part.display_name || null,
+                        detail: part.detail || null,
+                        brand: part.brand_name || null,
+                        group: part.group_name || null,
+                        part_numbers: (part.part_numbers || []).map((pn) => typeof pn === 'object' ? pn.part_number : pn).filter(Boolean),
+                    })),
+                },
+                instructions: 'Does this bounded candidate cluster contain at least two catalog records for the same physical automotive part? This is only a pre-filter: answer false only when the records are clearly distinct.',
+                criteria: {
+                    true: 'At least two records plausibly refer to the same sellable part and need explainable duplicate review.',
+                    false: 'All records are clearly distinct parts; no duplicate review is useful.',
+                },
+            });
+        } catch (error) {
+            console.warn('[DedupEngine] Jev pre-filter unavailable; using free LLM:', error.message);
+            return null;
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────

@@ -10,6 +10,7 @@ const { startSearchRepairWorker } = require('./search-repair-worker');
 const { startWorker: startDedupeScanWorker, runScanCycle } = require('./dedupe-scan-worker');
 global.runDeduplicationScan = runScanCycle;
 const { startCycleCountEngine } = require('./services/cycleCountService');
+const { startJevInventoryScoringEngine } = require('./services/jevInventoryScoringService');
 const { startPdcReminderEngine } = require('./services/pdcReminderService');
 const { startApDueDateReminderEngine } = require('./services/apDueDateReminderService');
 const { startArDueDateReminderEngine } = require('./services/arDueDateReminderService');
@@ -212,6 +213,7 @@ app.listen(PORT, async () => {
     console.log('Legacy part meili listener disabled (set ENABLE_LEGACY_MEILI_PART_LISTENER=true to enable).');
   }
   startCycleCountEngine();
+  startJevInventoryScoringEngine();
   startPdcReminderEngine();
   startApDueDateReminderEngine();
   startArDueDateReminderEngine();

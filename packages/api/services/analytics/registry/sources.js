@@ -350,7 +350,12 @@ const SOURCES = Object.freeze({
                AND ${POSTED_RECEIPT}
              GROUP BY po.po_id, po.order_date
            ) delivered_orders
-         ) lead ON TRUE`,
+         ) lead ON TRUE
+         LEFT JOIN public.jev_inventory_score jev_reorder_score
+           ON jev_reorder_score.part_id = p.part_id
+          AND jev_reorder_score.score_type = 'reorder'
+          AND jev_reorder_score.confidence >= 0.80
+          AND jev_reorder_score.evaluated_at >= NOW() - INTERVAL '2 days'`,
         // grains: ['none'] so no month breakdown can repeat today's list.
         dateColumn: null,
         providedJoins: Object.freeze(['part']),
@@ -379,6 +384,10 @@ const SOURCES = Object.freeze({
             // Never negative: a part short on one measure must not hand a
             // negative "shortfall" to a purchasing decision.
             units_short: "GREATEST(CEIL((dem.qty / 90.0) * GREATEST(30, CEIL(COALESCE(lead.avg_lead_days, 0)) + 7)) - soh.soh, 0)",
+            // The nightly Jev score is advisory and expires quickly.  A missing
+            // score is deliberately neutral so the local revenue ranking stays
+            // fully usable without an AI provider.
+            jev_reorder_urgency: 'COALESCE(jev_reorder_score.score, 1)',
         }),
         joins: Object.freeze({
             brand: 'LEFT JOIN brand b ON b.brand_id = p.brand_id',

@@ -73,9 +73,15 @@ async function generateCycleCountBatches() {
                         WHERE adjustment.part_id = p.part_id
                           AND adjustment.transaction_date >= COALESCE(pis.last_counted_at, p.date_created)
                           AND adjustment.trans_type IN ('Adjustment', 'Cycle Count Adjustment', 'Cycle Count Auto-Adjustment')
-                    ) AS has_adjustment_since_count
+                    ) AS has_adjustment_since_count,
+                    jev_score.score AS jev_score
                 FROM part p
                 LEFT JOIN part_inventory_stats pis ON p.part_id = pis.part_id
+                LEFT JOIN public.jev_inventory_score jev_score
+                  ON jev_score.part_id = p.part_id
+                 AND jev_score.score_type = 'cycle_count'
+                 AND jev_score.confidence >= 0.80
+                 AND jev_score.evaluated_at >= NOW() - INTERVAL '2 days'
                 WHERE p.is_active = TRUE
             )
             SELECT
@@ -91,7 +97,14 @@ async function generateCycleCountBatches() {
                     -- just another factor in the ordinary priority score.
                     CASE WHEN current_stock < 0 THEN $5 ELSE 0 END +
                     CASE WHEN audit_requested THEN 999999 ELSE 0 END
-                ) AS priority_score
+                ) * CASE
+                    -- Jev only nudges ordinary local priorities. The explicit
+                    -- stock/audit overrides above remain the decisive signal.
+                    WHEN audit_requested OR current_stock < 0 THEN 1
+                    WHEN jev_score = 2 THEN 1.15
+                    WHEN jev_score = 0 THEN 0.90
+                    ELSE 1
+                END AS priority_score
             FROM part_metrics
             ORDER BY priority_score DESC
         `, [uncountedWeight, velocityWeight, costWeight, adjustmentMultiplier, negativeStockWeight]);
