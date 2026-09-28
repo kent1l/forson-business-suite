@@ -108,10 +108,7 @@ CREATE TABLE IF NOT EXISTS public.part (
     date_created timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     created_by integer REFERENCES public.employee(employee_id) ON DELETE SET NULL,
     date_modified timestamp with time zone,
-    modified_by integer REFERENCES public.employee(employee_id) ON DELETE SET NULL,
-    merged_into_supplier_id integer REFERENCES public.supplier(supplier_id) ON DELETE RESTRICT,
-    is_merged boolean NOT NULL DEFAULT false,
-    CONSTRAINT chk_supplier_merge_state CHECK ((is_merged AND merged_into_supplier_id IS NOT NULL) OR (NOT is_merged AND merged_into_supplier_id IS NULL))
+    modified_by integer REFERENCES public.employee(employee_id) ON DELETE SET NULL
 );
 
 -- New: normalized vehicle tables for make, model, engine
@@ -197,7 +194,10 @@ CREATE TABLE IF NOT EXISTS public.supplier (
     date_created timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     created_by integer REFERENCES public.employee(employee_id) ON DELETE SET NULL,
     date_modified timestamp with time zone,
-    modified_by integer REFERENCES public.employee(employee_id) ON DELETE SET NULL
+    modified_by integer REFERENCES public.employee(employee_id) ON DELETE SET NULL,
+    merged_into_supplier_id integer REFERENCES public.supplier(supplier_id) ON DELETE RESTRICT,
+    is_merged boolean NOT NULL DEFAULT false,
+    CONSTRAINT chk_supplier_merge_state CHECK ((is_merged AND merged_into_supplier_id IS NOT NULL) OR (NOT is_merged AND merged_into_supplier_id IS NULL))
 );
 
 CREATE TABLE IF NOT EXISTS public.goods_receipt (
