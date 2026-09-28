@@ -10,8 +10,9 @@ import PaginationControls from '../components/ui/PaginationControls';
 import SortableHeader from '../components/ui/SortableHeader';
 import { useAuth } from '../contexts/AuthContext'; // <-- NEW: Import useAuth
 import { sortData } from '../utils/sortData';
+import { postWithJevConfirmation } from '../helpers/jevConfirmation';
 
-const CustomersPage = () => {
+const CustomersPage = ({ onNavigate }) => {
     const { hasPermission } = useAuth(); // <-- NEW: Use the auth context
     const [customers, setCustomers] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -100,16 +101,16 @@ const CustomersPage = () => {
     const handleSave = async (customerData) => {
         const promise = currentCustomer
             ? api.put(`/customers/${currentCustomer.customer_id}`, customerData)
-            : api.post('/customers', customerData);
+            : postWithJevConfirmation('/customers', customerData, 'customer');
 
         toast.promise(promise, {
             loading: 'Saving customer...',
-            success: () => {
+            success: (res) => {
                 setIsModalOpen(false);
                 fetchCustomers();
-                return 'Customer saved successfully!';
+                return res?.data?.existing ? 'Using the existing customer.' : 'Customer saved successfully!';
             },
-            error: 'Failed to save customer.',
+            error: (err) => err.response?.data?.message || 'Failed to save customer.',
         });
     };
 
@@ -117,11 +118,10 @@ const CustomersPage = () => {
         <div className="space-y-6">
             <div className="flex justify-between items-center">
                 <h1 className="text-2xl font-semibold text-gray-800 dark:text-slate-100">Customers</h1>
-                {hasPermission('customers:edit') && (
-                    <button onClick={handleAdd} className="bg-primary-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-primary-700 transition shadow-sm text-sm">
-                        Add Customer
-                    </button>
-                )}
+                {hasPermission('customers:edit') && <div className="flex gap-2">
+                    <button onClick={() => onNavigate('customer_management')} className="border border-primary-600 text-primary-700 dark:text-primary-300 px-4 py-2 rounded-lg font-semibold hover:bg-primary-50 dark:hover:bg-primary-950 transition text-sm">Clean duplicates</button>
+                    <button onClick={handleAdd} className="bg-primary-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-primary-700 transition shadow-sm text-sm">Add Customer</button>
+                </div>}
             </div>
 
             <FilterBar 

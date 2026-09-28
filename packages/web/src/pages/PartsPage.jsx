@@ -15,6 +15,7 @@ import PartNumberManager from './PartNumberManager';
 import PartApplicationManager from './PartApplicationManager';
 import { formatApplicationText } from '../helpers/applicationTextHelper';
 import { sortData } from '../utils/sortData';
+import { postWithJevConfirmation } from '../helpers/jevConfirmation';
 
 const asArray = (value) => (Array.isArray(value) ? value : []);
 
@@ -86,7 +87,7 @@ const PartsPage = ({ user, onNavigate }) => {
     const handleSave = (partData) => {
         const promise = currentPart
             ? api.put(`/parts/${currentPart.part_id}`, { ...partData, modified_by: user.employee_id })
-            : api.post('/parts', { ...partData, created_by: user.employee_id });
+            : postWithJevConfirmation('/parts', { ...partData, created_by: user.employee_id }, 'part');
         toast.promise(promise, {
             loading: `${currentPart ? 'Updating' : 'Creating'} part...`,
             success: (res) => {
@@ -97,6 +98,10 @@ const PartsPage = ({ user, onNavigate }) => {
                     // Created new part: open the Applications manager for the new part
                     const newPart = res?.data || res;
                     setIsFormModalOpen(false);
+                    if (newPart?.existing) {
+                        setCurrentPart(null);
+                        return 'Using the existing part.';
+                    }
                     setCurrentPart(newPart);
                     setIsAppModalOpen(true);
                     return 'Part created successfully!';

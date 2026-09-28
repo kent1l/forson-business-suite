@@ -4,6 +4,11 @@ const schemaValidator = require('../core/schemaValidator');
 const db = require('../../../db');
 const { meiliClient } = require('../../../meilisearch');
 const poLineParser = require('../../../helpers/poLineParser');
+const JevClient = require('../../jevClient');
+
+const jevClient = new JevClient();
+const JEV_CATALOG_MATCH_CONFIDENCE = Number.isFinite(Number(process.env.JEV_PO_CATALOG_MATCH_THRESHOLD))
+    ? Math.max(0.5, Math.min(0.99, Number(process.env.JEV_PO_CATALOG_MATCH_THRESHOLD))) : 0.85;
 
 const MATCH_THRESHOLD = Number(process.env.PO_SEARCH_MATCH_THRESHOLD || 0.6);
 const AMBIGUOUS_MARGIN = 0.08;
@@ -52,6 +57,28 @@ const withoutStructuredQuantityAndUnit = (description, quantity, unit) => {
 };
 
 class PurchaseOrderParserAI {
+    async _chooseAmbiguousCandidate(raw, candidates) {
+        if (!jevClient.isConfigured() || candidates.length < 2) return null;
+        const choices = candidates.map((candidate) => ({
+            value: String(candidate.part_id),
+            label: [candidate.display_name || candidate.detail, candidate.internal_sku, candidate.brand_name, candidate.group_name]
+                .filter(Boolean).join(' | '),
+        }));
+        choices.push({ value: 'no_match', label: 'No reliable catalog match' });
+        try {
+            const decision = await jevClient.evaluateChoice({
+                question: 'po_catalog_match', state: { purchase_order_line: raw }, choices,
+                instructions: 'Choose the existing catalog item that this purchase-order line most specifically identifies. Choose no_match unless one candidate is a reliable match.',
+            });
+            if (!decision || decision.choice === 'no_match' || decision.confidence < JEV_CATALOG_MATCH_CONFIDENCE) return null;
+            const part = candidates.find(candidate => String(candidate.part_id) === decision.choice);
+            return part ? { part, ...decision } : null;
+        } catch (error) {
+            console.warn('[SmartPO] Jev catalog choice unavailable:', error.message);
+            return null;
+        }
+    }
+
     async _resolveDraftReferences(brand, group) {
         const { rows } = await db.query(
             `SELECT
@@ -110,6 +137,13 @@ class PurchaseOrderParserAI {
         let resolution = this._classifyCandidates(tierOne.raw_description, candidates);
         let finalParse = tierOne;
         let aiData = null;
+        // A bounded Jev Choice resolves close Meilisearch candidates without asking
+        // the generative parser to guess. It is advisory and falls through to the
+        // established editable ambiguous state on low confidence or provider errors.
+        if (resolution.match_status === 'ambiguous') {
+            const selected = await this._chooseAmbiguousCandidate(raw, resolution.candidates);
+            if (selected) resolution = { match_status: 'jev', part: selected.part, candidates: null, jev: selected };
+        }
         const shouldUseAI = !localParseIsTrusted || candidates.length === 0 || (candidates[0]?.score || 0) < MATCH_THRESHOLD;
 
         if (shouldUseAI) {
@@ -123,6 +157,10 @@ class PurchaseOrderParserAI {
                 finalParse = { ...tierOne, ...aiData };
                 candidates = await this._findPartCandidates(aiData.raw_description || tierOne.raw_description);
                 resolution = this._classifyCandidates(aiData.raw_description || tierOne.raw_description, candidates);
+                if (resolution.match_status === 'ambiguous') {
+                    const selected = await this._chooseAmbiguousCandidate(raw, resolution.candidates);
+                    if (selected) resolution = { match_status: 'jev', part: selected.part, candidates: null, jev: selected };
+                }
                 if (resolution.part) resolution.match_status = 'ai';
             } catch (error) {
                 console.warn('[SmartPO] AI fallback unavailable:', error.message);

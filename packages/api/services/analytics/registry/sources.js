@@ -313,6 +313,11 @@ const SOURCES = Object.freeze({
         id: 'reorder_candidates',
         label: 'Parts needing a reorder',
         grain: 'part',
+        // A part's own delivered PO history is the best local lead-time signal.
+        // The fallback is the established 30-day cover floor, so historical
+        // receipts without a PO link never produce a fabricated lead time.
+        // (The receipt join is intentionally per PO first: partial deliveries
+        // count from the first arrival, not once for every receipt line.)
         from: `FROM part p
          LEFT JOIN LATERAL (
            SELECT COALESCE(SUM(it.quantity), 0) AS soh
@@ -328,8 +333,29 @@ const SOURCES = Object.freeze({
            WHERE il3.part_id = p.part_id
              AND i3.status <> 'Cancelled'
              AND (i3.invoice_date AT TIME ZONE 'Asia/Manila')::date
-                 > (CURRENT_DATE - INTERVAL '90 days')) dem ON TRUE`,
-        // A position as of now, like the stock snapshot: metrics here declare
+                 > (CURRENT_DATE - INTERVAL '90 days')) dem ON TRUE
+         LEFT JOIN LATERAL (
+           SELECT AVG(first_receipt_at - order_date) AS avg_lead_days
+           FROM (
+             SELECT po.po_id,
+                    (po.order_date AT TIME ZONE 'Asia/Manila')::date AS order_date,
+                    MIN((gr.receipt_date AT TIME ZONE 'Asia/Manila')::date) AS first_receipt_at
+             FROM purchase_order_line pol
+             JOIN purchase_order po ON po.po_id = pol.po_id
+             JOIN goods_receipt gr ON gr.po_id = po.po_id
+             JOIN goods_receipt_line grl ON grl.grn_id = gr.grn_id AND grl.part_id = p.part_id
+             WHERE pol.part_id = p.part_id
+               AND po.status <> 'Cancelled'
+               AND ${ACTIVE_RECEIPT}
+               AND ${POSTED_RECEIPT}
+             GROUP BY po.po_id, po.order_date
+           ) delivered_orders
+         ) lead ON TRUE
+         LEFT JOIN public.jev_inventory_score jev_reorder_score
+           ON jev_reorder_score.part_id = p.part_id
+          AND jev_reorder_score.score_type = 'reorder'
+          AND jev_reorder_score.confidence >= 0.80
+          AND jev_reorder_score.evaluated_at >= NOW() - INTERVAL '2 days'`,
         // grains: ['none'] so no month breakdown can repeat today's list.
         dateColumn: null,
         providedJoins: Object.freeze(['part']),
@@ -352,10 +378,16 @@ const SOURCES = Object.freeze({
             demand_90d: 'dem.qty',
             orders_90d: 'dem.orders',
             revenue_90d: 'dem.revenue',
-            // Units needed to reach thirty days of cover. Never negative: a part
-            // that is short on one measure and not the other should read 0, not
-            // hand a negative "shortfall" to a purchasing decision.
-            units_short: "GREATEST(CEIL((dem.qty / 90.0) * 30) - soh.soh, 0)",
+            // Keep the established 30-day safety floor, then extend it for a
+            // measured longer lead time plus one week of buffer.
+            reorder_cover_days: 'GREATEST(30, CEIL(COALESCE(lead.avg_lead_days, 0)) + 7)',
+            // Never negative: a part short on one measure must not hand a
+            // negative "shortfall" to a purchasing decision.
+            units_short: "GREATEST(CEIL((dem.qty / 90.0) * GREATEST(30, CEIL(COALESCE(lead.avg_lead_days, 0)) + 7)) - soh.soh, 0)",
+            // The nightly Jev score is advisory and expires quickly.  A missing
+            // score is deliberately neutral so the local revenue ranking stays
+            // fully usable without an AI provider.
+            jev_reorder_urgency: 'COALESCE(jev_reorder_score.score, 1)',
         }),
         joins: Object.freeze({
             brand: 'LEFT JOIN brand b ON b.brand_id = p.brand_id',

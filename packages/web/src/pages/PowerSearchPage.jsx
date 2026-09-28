@@ -25,6 +25,7 @@ const MoneyCell = ({ value, className = '' }) => {
 
 const PowerSearchPage = () => {
     const [results, setResults] = useState([]);
+    const [interchangeableParts, setInterchangeableParts] = useState([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
     const [keyword, setKeyword] = useState('');
@@ -59,6 +60,7 @@ const PowerSearchPage = () => {
         // Search when keyword OR vehicle filter is set
         if (!keyword.trim() && !hasVehicleFilter) {
             setResults([]);
+            setInterchangeableParts([]);
             setHasSearched(false);
             return;
         }
@@ -77,6 +79,23 @@ const PowerSearchPage = () => {
 
                 const response = await api.get(`/power-search/parts`, { params });
                 setResults(response.data);
+
+                const partIds = response.data.map(part => part.part_id).filter(Boolean);
+                if (partIds.length === 0) {
+                    setInterchangeableParts([]);
+                } else {
+                    try {
+                        const interchangeResponse = await api.get('/power-search/interchangeable-parts', {
+                            params: { part_ids: partIds.join(',') }
+                        });
+                        setInterchangeableParts(interchangeResponse.data);
+                    } catch (interchangeError) {
+                        // The primary search remains useful if this supplemental
+                        // local lookup is temporarily unavailable.
+                        console.error('Failed to load interchangeable parts', interchangeError);
+                        setInterchangeableParts([]);
+                    }
+                }
 
             } catch (err) {
                 setError('An error occurred during the search.');
@@ -191,6 +210,37 @@ const PowerSearchPage = () => {
                     </div>
                 )}
             </div>
+
+            {interchangeableParts.length > 0 && (
+                <section className="bg-white dark:bg-slate-800 p-6 rounded-xl border border-gray-200 dark:border-slate-700 shadow-card">
+                    <h2 className="text-lg font-semibold text-gray-800 dark:text-slate-100">Interchangeable Part Numbers</h2>
+                    <p className="mt-1 text-sm text-gray-500 dark:text-slate-400">
+                        Active catalog records sharing an exact part number after punctuation and case are normalized.
+                    </p>
+                    <div className="mt-4 overflow-x-auto">
+                        <table className="w-full text-left">
+                            <thead className="border-b border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-700/40">
+                                <tr>
+                                    <th className="p-3 text-sm font-semibold text-gray-600 dark:text-slate-300">SKU</th>
+                                    <th className="p-3 text-sm font-semibold text-gray-600 dark:text-slate-300">Display Name</th>
+                                    <th className="p-3 text-sm font-semibold text-gray-600 dark:text-slate-300">Matching Number</th>
+                                    <th className="p-3 text-sm font-semibold text-gray-600 dark:text-slate-300 text-right">Stock</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-100 dark:divide-slate-700/60">
+                                {interchangeableParts.map(part => (
+                                    <tr key={part.part_id} className="hover:bg-gray-50 dark:hover:bg-slate-700/40 cursor-pointer text-gray-800 dark:text-slate-200 transition-colors" onClick={() => openPartDetail(part)}>
+                                        <td className="p-3 text-sm font-mono text-gray-900 dark:text-slate-100">{part.internal_sku}</td>
+                                        <td className="p-3 text-sm font-medium text-gray-900 dark:text-slate-100">{part.display_name}</td>
+                                        <td className="p-3 text-sm font-mono text-gray-600 dark:text-slate-400">{part.matching_part_numbers.join('; ')}</td>
+                                        <td className="p-3 text-sm text-right font-mono text-gray-700 dark:text-slate-300">{Number(part.stock_on_hand).toFixed(2)}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+            )}
 
             <Modal isOpen={isDetailOpen} onClose={() => setIsDetailOpen(false)} title={selectedPartDetail ? selectedPartDetail.display_name : 'Part Details'}>
                 {detailLoading && <p className="text-gray-500 dark:text-slate-400">Loading...</p>}

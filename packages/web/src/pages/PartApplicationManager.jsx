@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import api from '../api';
 import Icon from '../components/ui/Icon';
 import InfoTip from '../components/ui/InfoTip';
@@ -39,13 +39,16 @@ const DescribeFitmentPanel = ({ partId, onCommitted }) => {
     const [editingIndex, setEditingIndex] = useState(null);
     const [saving, setSaving] = useState(false);
     const [saveErrors, setSaveErrors] = useState({});
+    const parseRequest = useRef(0);
 
-    const handleParse = async () => {
-        if (!text.trim()) return;
+    const handleParse = useCallback(async (value = text) => {
+        if (!value.trim()) return;
+        const request = ++parseRequest.current;
         setParsing(true);
         setParseError('');
         try {
-            const { data } = await api.post('/applications/parse-fitment-text', { text });
+            const { data } = await api.post('/applications/parse-fitment-text', { text: value });
+            if (request !== parseRequest.current) return;
             // Keep each row's originally typed text so that if the reviewer
             // resolves it by hand we can record what it meant (see
             // recordAliasFromEdit).
@@ -63,13 +66,27 @@ const DescribeFitmentPanel = ({ partId, onCommitted }) => {
             setParseSource(data.source || 'ai');
             setSaveErrors({});
         } catch (error) {
+            if (request !== parseRequest.current) return;
             setParseError(error.response?.data?.error || error.response?.data?.message || error.message);
             setCandidates(null);
             setParseSource(null);
         } finally {
-            setParsing(false);
+            if (request === parseRequest.current) setParsing(false);
         }
-    };
+    }, [text]);
+
+    // Keep suggestions current while the operator types, with a short debounce
+    // and request sequencing so a slow earlier parse can never overwrite newer
+    // input. The explicit button remains useful for retrying immediately.
+    useEffect(() => {
+        if (text.trim().length < 3) {
+            parseRequest.current += 1;
+            setCandidates(null);
+            return undefined;
+        }
+        const timer = setTimeout(() => handleParse(text), 600);
+        return () => clearTimeout(timer);
+    }, [text, handleParse]);
 
     const updateCandidate = (idx, patch) => {
         setCandidates(prev => prev.map((c, i) => i === idx ? { ...c, ...patch } : c));
@@ -185,11 +202,11 @@ const DescribeFitmentPanel = ({ partId, onCommitted }) => {
             <div className="flex justify-end mt-2">
                 <button
                     type="button"
-                    onClick={handleParse}
+                    onClick={() => handleParse(text)}
                     disabled={parsing || !text.trim()}
                     className="px-3.5 py-2 bg-gray-100 dark:bg-slate-700 text-gray-700 dark:text-slate-200 border border-gray-300 dark:border-slate-600 rounded-lg hover:bg-gray-200 dark:hover:bg-slate-600 text-sm font-medium transition-colors disabled:opacity-50"
                 >
-                    {parsing ? 'Parsing…' : 'Parse Description'}
+                    {parsing ? 'Updating suggestions…' : 'Parse Description'}
                 </button>
             </div>
             {parseError && <p className="text-sm text-danger-600 dark:text-danger-400 mt-2">{parseError}</p>}

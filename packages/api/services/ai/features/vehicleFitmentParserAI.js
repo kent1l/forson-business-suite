@@ -1,8 +1,14 @@
 const db = require('../../../db');
 const llmClient = require('../core/llmClient');
 const { wrapJsonInstruction, sanitizeInput } = require('../core/promptBuilder');
+const JevClient = require('../../jevClient');
 
 const VALID_FUEL_TYPES = ['diesel', 'gasoline', 'hybrid', 'mild_hybrid', 'electric', 'other'];
+const jevClient = new JevClient();
+const JEV_FITMENT_CHOICE_CONFIDENCE = Number.isFinite(Number(process.env.JEV_FITMENT_CHOICE_THRESHOLD))
+    ? Math.max(0.5, Math.min(0.99, Number(process.env.JEV_FITMENT_CHOICE_THRESHOLD))) : 0.85;
+
+const modelKey = (value) => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
 /**
  * Feature module: AI-assisted natural-language vehicle fitment entry.
@@ -123,7 +129,8 @@ ${cleanText}
 
         try {
             const res = await llmClient.executeWithPool('vehicle_fitment_parser_pool', { prompt, timeoutMs: 30000 });
-            return this._validateResult(res.data, grounding);
+            const validated = this._validateResult(res.data, grounding);
+            return this._resolveJevAmbiguities(validated, grounding, cleanText);
         } catch (error) {
             console.error('[VehicleFitmentParserAI] parseFitmentText error:', error.message);
             const err = new Error(`AI fitment parsing failed: ${error.message}`);
@@ -198,6 +205,57 @@ ${cleanText}
             fitments: cleaned,
             notes: typeof result?.notes === 'string' ? result.notes : ''
         };
+    }
+
+    async _resolveJevAmbiguities(result, grounding, sourceText) {
+        if (!jevClient.isConfigured() || !result.fitments.length) return result;
+        const models = grounding.models || [];
+        const resolved = await Promise.all(result.fitments.map(async (fitment) => {
+            const next = { ...fitment };
+            // Deterministic exact model ids always win. Jev only settles the same
+            // close-name ambiguity that fuzzyResolveModel() intentionally leaves for
+            // review, and only from a compact taxonomy shortlist.
+            if (!next.model_id && next.model) {
+                const key = modelKey(next.model);
+                const choices = models
+                    .filter(model => !next.make_id || model.make_id === next.make_id)
+                    .filter(model => {
+                        const candidate = modelKey(model.model_name);
+                        return candidate.includes(key) || key.includes(candidate);
+                    })
+                    .slice(0, 5)
+                    .map(model => ({ value: String(model.model_id), label: `${model.make_name || ''} ${model.model_name}`.trim() }));
+                if (choices.length > 1) {
+                    choices.push({ value: 'no_match', label: 'No reliable model match' });
+                    try {
+                        const decision = await jevClient.evaluateChoice({
+                            question: 'fitment_model', state: { fitment_text: sourceText, proposed_model: next.model }, choices,
+                            instructions: 'Choose the existing vehicle model referred to by the text. Choose no_match unless the match is reliable.',
+                        });
+                        if (decision?.choice !== 'no_match' && decision?.confidence >= JEV_FITMENT_CHOICE_CONFIDENCE) {
+                            const model = models.find(row => String(row.model_id) === decision.choice);
+                            if (model) {
+                                next.model_id = model.model_id;
+                                next.model = model.model_name;
+                                next.make_id = model.make_id;
+                            }
+                        }
+                    } catch (error) { console.warn('[VehicleFitmentParserAI] Jev model choice unavailable:', error.message); }
+                }
+            }
+            if (!next.fuel_type && (next.engine || next.displacement_liters != null)) {
+                const choices = VALID_FUEL_TYPES.map(value => ({ value, label: value.replace('_', ' ') }));
+                try {
+                    const decision = await jevClient.evaluateChoice({
+                        question: 'fitment_fuel', state: { fitment_text: sourceText, engine: next.engine, displacement_liters: next.displacement_liters }, choices,
+                        instructions: 'Choose the fuel type only when it is stated or reliably implied by the engine. Otherwise choose other.',
+                    });
+                    if (decision?.confidence >= JEV_FITMENT_CHOICE_CONFIDENCE) next.fuel_type = decision.choice;
+                } catch (error) { console.warn('[VehicleFitmentParserAI] Jev fuel choice unavailable:', error.message); }
+            }
+            return next;
+        }));
+        return { ...result, fitments: resolved };
     }
 }
 

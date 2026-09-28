@@ -95,6 +95,15 @@ describe('purchasing — lead time is registered and refuses to answer', () => {
     });
 });
 
+describe('inventory reorder — local velocity and lead-time coverage', () => {
+    test('reorder quantity uses delivered PO history when it exists and retains a 30-day floor', () => {
+        const { text } = build({ metrics: ['inventory.reorder_units_short'], dateRange: RANGE });
+        expect(text).toContain('purchase_order_line pol');
+        expect(text).toContain('goods_receipt gr ON gr.po_id = po.po_id');
+        expect(text).toContain('GREATEST(30, CEIL(COALESCE(lead.avg_lead_days, 0)) + 7)');
+    });
+});
+
 describe('payables', () => {
     test('the aging bands are the same ones receivables uses, applied to bills', () => {
         const cols = SOURCES.supplier_bill_open.cols;
