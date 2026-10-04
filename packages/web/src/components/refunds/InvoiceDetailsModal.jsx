@@ -10,6 +10,7 @@ import ChangeTransactionDateModal from '../common/ChangeTransactionDateModal';
 import TransactionDateHistory from '../common/TransactionDateHistory';
 import InfoTip from '../ui/InfoTip';
 import ExchangeModal from '../pos/ExchangeModal';
+import SalesCorrectionModal from './SalesCorrectionModal';
 
 // Helper function to get payment status badge styles
 const getPaymentStatusBadge = (status) => {
@@ -39,6 +40,7 @@ void ChangeTransactionDateModal;
 void TransactionDateHistory;
 void InfoTip;
 void ExchangeModal;
+void SalesCorrectionModal;
 
 const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
     const { settings } = useSettings();
@@ -52,6 +54,7 @@ const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
     const [isEditingReceiptNo, setIsEditingReceiptNo] = useState(false);
     const [editingReceiptNo, setEditingReceiptNo] = useState('');
     const [showChangeDate, setShowChangeDate] = useState(false);
+    const [showSalesCorrection, setShowSalesCorrection] = useState(false);
 
     useEffect(() => {
         if (!isOpen || !invoice) return;
@@ -412,6 +415,14 @@ const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
                                         Void Invoice
                                     </button>
                                 )}
+                                {settings?.ENABLE_SALES_CORRECTIONS === 'true' && hasPermission('sales_correction:create') && invoice.status !== 'Cancelled' && (
+                                    <button
+                                        onClick={() => setShowSalesCorrection(true)}
+                                        className="bg-primary-600 text-white text-sm font-semibold px-3 py-2 rounded-lg hover:bg-primary-700 transition-colors"
+                                    >
+                                        Correct & Restart
+                                    </button>
+                                )}
                                 {hasPermission(['transaction:change_date', 'transaction:change_date_unrestricted']) && (
                                     <button
                                         onClick={() => setShowChangeDate(true)}
@@ -469,6 +480,15 @@ const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
                 initialInvoice={invoice}
                 onExchangeSuccess={handleExchangeSuccess}
                 zIndexClass="z-50"
+            />
+            <SalesCorrectionModal
+                isOpen={showSalesCorrection}
+                onClose={() => setShowSalesCorrection(false)}
+                invoice={invoice}
+                onCompleted={() => {
+                    onActionSuccess();
+                    window.dispatchEvent(new CustomEvent('invoices:changed'));
+                }}
             />
         </Modal>
     );

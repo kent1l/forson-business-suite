@@ -362,7 +362,7 @@ router.post('/invoices', protect, hasPermission('invoicing:create'), async (req,
         // A concession granted at the counter: part of the sale forgiven so the
         // customer can settle now. Never a tender — see the block near the end of
         // this handler, after the invoice and its tenders exist.
-        discount } = req.body;
+        discount, sales_correction_case_id } = req.body;
 
     if (!customer_id || !employee_id || !lines || !Array.isArray(lines) || lines.length === 0) {
         return res.status(400).json({ message: 'Missing required fields.' });
@@ -419,6 +419,29 @@ router.post('/invoices', protect, hasPermission('invoicing:create'), async (req,
     const client = await db.getClient();
     try {
         await client.query('BEGIN');
+
+        // A Correct & Restart replacement is still an ordinary fresh invoice:
+        // it receives normal pricing, stock, tax and payment validation below.
+        // The link is accepted only after its original correction completed, so
+        // a client cannot attach a replacement to an unapproved case.
+        let correctionCase = null;
+        if (sales_correction_case_id !== undefined && sales_correction_case_id !== null) {
+            const { rows: [caseRow] } = await client.query(
+                `SELECT correction_case_id, original_invoice_id, replacement_invoice_id, state
+                   FROM sales_correction_case
+                  WHERE correction_case_id = $1 FOR UPDATE`,
+                [sales_correction_case_id],
+            );
+            if (!caseRow) {
+                await client.query('ROLLBACK');
+                return res.status(404).json({ message: 'Sales correction case not found.' });
+            }
+            if (caseRow.state !== 'COMPLETED' || caseRow.replacement_invoice_id !== null) {
+                await client.query('ROLLBACK');
+                return res.status(409).json({ message: 'This sales correction case is not available for a replacement invoice.' });
+            }
+            correctionCase = caseRow;
+        }
 
         const invoice_number = await getNextDocumentNumber(client, 'INV');
 
@@ -588,6 +611,16 @@ router.post('/invoices', protect, hasPermission('invoicing:create'), async (req,
     // Store numeric paid amount and computed status with tax breakdown
     const invoiceResult = await client.query(invoiceQuery, [invoice_number, customer_id, employee_id, total_amount, subtotal_ex_tax, tax_total, paid, status, normalizedTerms, canonicalDays, dueDate, prn, taxCalculation.tax_calculation_version]);
         const newInvoiceId = invoiceResult.rows[0].invoice_id;
+
+        if (correctionCase) {
+            await client.query(
+                `UPDATE sales_correction_case
+                    SET replacement_invoice_id = $2
+                  WHERE correction_case_id = $1
+                    AND replacement_invoice_id IS NULL`,
+                [correctionCase.correction_case_id, newInvoiceId],
+            );
+        }
 
         // Ledger: INVOICE_POSTED for credit-term invoices and on-account sales
         if (isCreditSale || (paid < total_amount && normalizedTerms !== 'Cash')) {
