@@ -232,6 +232,10 @@ class EntityMergeService {
         return new MasterDataMergeService(this.db, this.entity.type).history(limit);
     }
 
+    async revert(operationId, employeeId, reason) {
+        return new MasterDataMergeService(this.db, this.entity.type).revert(operationId, employeeId, reason);
+    }
+
     async execute(request, employeeId) {
         return new MasterDataMergeService(this.db, this.entity.type).execute(request, employeeId);
     }

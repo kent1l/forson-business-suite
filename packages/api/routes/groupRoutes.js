@@ -97,6 +97,10 @@ router.get('/groups/merge-history', protect, hasPermission('groups:manage'), asy
   try { res.json({ operations: await mergeService.history(req.query.limit) }); }
   catch (err) { res.status(err.statusCode || 500).json({ message: err.message || 'Unable to load merge history.' }); }
 });
+router.post('/groups/merge-history/:operationId/revert', protect, hasPermission('groups:manage'), async (req, res) => {
+  try { res.json({ result: await mergeService.revert(req.params.operationId, req.user.employee_id, req.body?.reason) }); }
+  catch (err) { res.status(err.statusCode || 500).json({ message: err.message || 'Unable to revert merge.' }); }
+});
 router.post('/groups/merge', protect, hasPermission('groups:manage'), async (req, res) => {
   try { res.json({ success: true, result: await mergeService.execute(req.body || {}, req.user.employee_id) }); }
   catch (err) { res.status(err.statusCode || 500).json({ message: err.message || 'Unable to merge groups.', blockers: err.blockers || [] }); }

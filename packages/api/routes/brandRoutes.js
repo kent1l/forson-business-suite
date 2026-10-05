@@ -103,6 +103,10 @@ router.get('/brands/merge-history', protect, hasPermission('brands:manage'), asy
   try { res.json({ operations: await mergeService.history(req.query.limit) }); }
   catch (err) { res.status(err.statusCode || 500).json({ message: err.message || 'Unable to load merge history.' }); }
 });
+router.post('/brands/merge-history/:operationId/revert', protect, hasPermission('brands:manage'), async (req, res) => {
+  try { res.json({ result: await mergeService.revert(req.params.operationId, req.user.employee_id, req.body?.reason) }); }
+  catch (err) { res.status(err.statusCode || 500).json({ message: err.message || 'Unable to revert merge.' }); }
+});
 router.post('/brands/merge', protect, hasPermission('brands:manage'), async (req, res) => {
   try { res.json({ success: true, result: await mergeService.execute(req.body || {}, req.user.employee_id) }); }
   catch (err) { res.status(err.statusCode || 500).json({ message: err.message || 'Unable to merge brands.', blockers: err.blockers || [] }); }

@@ -27,6 +27,14 @@ describe('master data merge preview confirmation', () => {
             previewToken: service.previewToken(fingerprint, Date.now()) }, 1))
             .rejects.toMatchObject({ statusCode: 400 });
     });
+
+    test('requires a revert reason before touching the database', async () => {
+        const client = { query: jest.fn() };
+        const service = new MasterDataMergeService({}, 'brand');
+        await expect(service.revertWithClient(client, '12345678-1234-1234-1234-123456789abc', 1, '  '))
+            .rejects.toMatchObject({ statusCode: 400 });
+        expect(client.query).not.toHaveBeenCalled();
+    });
 });
 
 describe('stale transaction IDs', () => {

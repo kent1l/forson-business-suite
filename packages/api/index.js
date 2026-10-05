@@ -18,6 +18,7 @@ const { startLedgerReconciliationEngine } = require('./services/ledgerReconcilia
 const { startNotificationGroomer } = require('./services/notificationGroomer');
 const { startAnalyticsAlertEngine } = require('./services/analyticsAlertService');
 const { startPartMergeSnapshotCleanup } = require('./services/partMergeMaintenanceService');
+const { startMasterDataMergeSnapshotCleanup } = require('./services/masterDataMergeMaintenanceService');
 
 // Set default timezone to Philippine Time
 process.env.TZ = 'Asia/Manila';
@@ -197,6 +198,7 @@ app.listen(PORT, async () => {
   }
 
   startPartMergeSnapshotCleanup();
+  startMasterDataMergeSnapshotCleanup();
 
 
   if (process.env.DISABLE_SEARCH_REPAIR_WORKER !== 'true') {

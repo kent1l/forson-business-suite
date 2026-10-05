@@ -1,7 +1,7 @@
 # Master Data Merge Integrity — Supplier, Customer, Brand, and Group
 
 > **Forson Business Suite** | **Date:** 2026-10-05 | **Branch:** `master`
-> **Status:** Phases 1 and 2 committed. Phase 3 implemented in the working tree with the limits in §8. Phase 4 and rollout remain. The phase 3 blocked-preview migration has not been deployed.
+> **Status:** Phases 1–3 committed. Phase 4 is implemented in the working tree; phase 5 rollout remains. This work has not deployed migration `20261005_05`.
 
 ## 0. Status at a Glance
 
@@ -11,7 +11,8 @@
 | Merge contract and relationship policy | Committed | Runtime policy registry is checked against PostgreSQL before preview and execution |
 | Schema and audit infrastructure | Committed | Inactive state, merge constraints, aliases, audit tables, namespaced locks, FK/draft guards, and catalog drift tests |
 | Transactional merge engine | Committed | Shared engine handles collisions, wallets, tags, aliases, drafts, snapshots, outbox, and atomic postconditions |
-| API and review UI | Phase 3 in working tree | Impact matrix, ten-minute signed token, acknowledgment, history, retired-row conflicts, and stale-write checks; see §8 limits |
+| API and review UI | Phase 3 committed | Impact matrix, ten-minute signed token, acknowledgment, history, retired-row conflicts, and stale-write checks; see §8 limits |
+| Guarded revert | Phase 4 in working tree | Exact after-image safety checks, atomic restoration, history action, catalog requeue, and snapshot retention; see §9 |
 | Tests and rollout | Partially implemented | Rollback-only PostgreSQL suites cover key paths; broader relationship, concurrency, route, and deployment verification remain |
 
 ## 1. For a New Session or Agent Picking This Up
@@ -223,6 +224,10 @@ Do not allow merge chains. If a stale client supplies an already merged ID, reso
 
 ## 9. Phase 4 — Guarded Revert
 
+**As built in the working tree:** Migration `20261005_05_master_data_merge_revert.sql` adds post-merge images to snapshots and permits a retired master to be restored only inside a transaction restoring that operation's recorded before-image. New merges capture every affected row's after-image, including merge-created aliases, tags, and canonical wallets; the operation stores a snapshot count. Operations created before this capture are ineligible for automatic revert. The shared service locks the operation and all selected masters, checks the 24-hour window, checks for later merges, compares every affected row with its exact after-image, and refuses new alias/tag/wallet activity. It restores snapshots in foreign-key-safe order, verifies every before-image, checks wallet integrity, enqueues part catalog upserts, and records actor and mandatory reason in the same transaction. Constraint collisions and any late failure roll back the whole revert. All four history pages offer the guarded action when the operation is within the window. Daily maintenance expires old operations and purges detailed snapshots 90 days after the undo deadline while retaining the compact operation row.
+
+**Limits for phase 5:** the history button indicates that an operation may be *attempted* within the window; the server makes the final safety decision under locks. The old unique name/code values remain reserved on retired tombstones, so ordinary writes cannot create a collision; a privileged data repair that does create one is refused by the snapshot check or database uniqueness constraint. Run route-level authorization and browser interaction tests, a true concurrent-writer test, and target-database migration verification before rollout.
+
 Follow the part merge model with a limited undo window, but validate entity-specific risks:
 
 1. Revert from snapshots in one transaction and record actor plus mandatory reason.
@@ -318,3 +323,4 @@ Roll out behind a setting such as `ENABLE_SAFE_MASTER_DATA_MERGE`. Apply migrati
 | 2026-10-05 | Codex | Implemented phase 1 schema, namespaced locks, write guards, aliases, audit storage, policy registry, and PostgreSQL drift/guard tests in the working tree. Migration was tested inside a rolled-back transaction; it was not deployed. |
 | 2026-10-05 | Codex | Implemented the phase 2 shared transactional engine, draft write guard, minimal fingerprint/blocker UI wiring, and rollback-only PostgreSQL coverage. New migrations were not deployed. |
 | 2026-10-05 | Codex | Added phase 3 preview tokens, full impact review, history, retired-row and stale-write conflicts, plus focused tests. Rollback-only PostgreSQL merge tests, API tests, lint, and web build passed; rollout remains pending. |
+| 2026-10-05 | Codex | Implemented phase 4 guarded revert with after-images, strict safety checks, atomic restoration, catalog requeue, history UI, and retention cleanup. Rollback-only PostgreSQL tests passed; migration 05 was not deployed. |

@@ -97,6 +97,10 @@ class PartyMergeService {
         return new MasterDataMergeService(this.db, this.party.table).history(limit);
     }
 
+    async revert(operationId, employeeId, reason) {
+        return new MasterDataMergeService(this.db, this.party.table).revert(operationId, employeeId, reason);
+    }
+
     async execute(request, employeeId) {
         return new MasterDataMergeService(this.db, this.party.table).execute(request, employeeId);
     }

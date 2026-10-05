@@ -344,12 +344,15 @@ class MasterDataMergeService {
                     CONCAT_WS(' ', actor.first_name, actor.last_name) AS actor_name,
                     o.started_at, o.completed_at,
                     o.undo_expires_at, o.status, o.impact, o.decisions,
+                    o.reverted_at, o.reverted_by_employee_id, o.revert_reason,
+                    CONCAT_WS(' ', reverter.first_name, reverter.last_name) AS reverted_by_name,
                     (SELECT jsonb_agg(s.before_image ORDER BY s.record_id)
                      FROM public.master_data_merge_snapshot s
                      WHERE s.operation_id = o.operation_id AND s.table_name = $1) AS master_before_images,
                     (status = 'active' AND undo_expires_at > NOW()) AS within_undo_window
              FROM public.master_data_merge_operation o
              LEFT JOIN public.employee actor ON actor.employee_id = o.actor_employee_id
+             LEFT JOIN public.employee reverter ON reverter.employee_id = o.reverted_by_employee_id
              WHERE entity_type = $1
              ORDER BY started_at DESC LIMIT $2`, [this.entity, size]);
         const operations = rows.map(row => {
@@ -365,7 +368,8 @@ class MasterDataMergeService {
                 sources: row.source_ids.map(id => find(id) ? {
                     id, name: displayName(this.entity, find(id)), code: find(id)[this.config.code],
                 } : { id }),
-                revertEligible: false,
+                revertEligible: row.within_undo_window && row.decisions?.afterImagesCaptured === true &&
+                    Number.isInteger(row.decisions?.snapshotCount),
             };
         });
         const { rows: blocked } = await client.query(
@@ -435,6 +439,34 @@ class MasterDataMergeService {
             (table === 'group' ? '"group"' : table) + ' t WHERE ' + where + ' FOR UPDATE) t' +
             ' ON CONFLICT (operation_id, table_name, record_id) DO NOTHING',
             [operationId, table, ids]);
+    }
+
+    async captureAfterImages(client, operationId, keepId) {
+        const { rows: tables } = await client.query(
+            'SELECT DISTINCT table_name FROM public.master_data_merge_snapshot WHERE operation_id = $1',
+            [operationId]);
+        for (const { table_name: table } of tables) {
+            const columns = await this.primaryKey(client, table);
+            const key = 'jsonb_build_array(' + columns.map(name => 't."' + name + '"').join(', ') + ')::text';
+            const relation = table === 'group' ? '"group"' : '"' + table + '"';
+            await client.query(
+                'UPDATE public.master_data_merge_snapshot s SET after_image = to_jsonb(t) ' +
+                'FROM public.' + relation + ' t WHERE s.operation_id = $1 AND s.table_name = $2 ' +
+                'AND s.record_id = ' + key, [operationId, table]);
+        }
+        const addedTables = [this.config.alias];
+        if (this.entity === 'customer') addedTables.push('customer_tag', 'customer_wallet');
+        for (const table of addedTables) {
+            const columns = await this.primaryKey(client, table);
+            const key = 'jsonb_build_array(' + columns.map(name => 't."' + name + '"').join(', ') + ')::text';
+            await client.query(
+                'INSERT INTO public.master_data_merge_snapshot ' +
+                '(operation_id, table_name, record_id, before_image, after_image) ' +
+                'SELECT $1, $2, ' + key + ', NULL, to_jsonb(t) FROM public."' + table + '" t ' +
+                'WHERE t."' + this.config.id + '" = $3 ' +
+                'ON CONFLICT (operation_id, table_name, record_id) DO UPDATE ' +
+                'SET after_image = EXCLUDED.after_image', [operationId, table, keepId]);
+        }
     }
 
     async captureBeforeImages(client, operationId, review) {
@@ -630,6 +662,196 @@ class MasterDataMergeService {
         }
     }
 
+    revertTables() {
+        return new Set([
+            this.entity, this.config.alias, this.entity + '_duplicate_suggestion',
+            ...this.policy.references.map(([table]) => table),
+            ...(DRAFT_KEYS[this.entity] ? ['draft_transaction'] : []),
+            ...(this.entity === 'customer' ? ['customer_wallet', 'customer_wallet_transaction'] : []),
+            ...((this.entity === 'brand' || this.entity === 'group') ? ['entity_duplicate_decision_cache'] : []),
+        ]);
+    }
+
+    async currentSnapshotRow(client, snapshot, image = snapshot.after_image) {
+        if (!this.revertTables().has(snapshot.table_name)) throw conflict('Unknown snapshot table; automatic revert is disabled.');
+        const table = snapshot.table_name;
+        const relation = table === 'group' ? '"group"' : '"' + table + '"';
+        const columns = await this.primaryKey(client, table);
+        const key = 'jsonb_build_array(' + columns.map(name => 't."' + name + '"').join(', ') + ')::text';
+        const { rows } = await client.query(
+            'SELECT to_jsonb(t) = $2::jsonb AS matches FROM public.' + relation + ' t ' +
+            'WHERE ' + key + ' = $1 FOR UPDATE',
+            [snapshot.record_id, image === null ? null : JSON.stringify(image)]);
+        return rows[0] || null;
+    }
+
+    async assertRevertSafe(client, operation, snapshots) {
+        if (operation.status !== 'active' || new Date(operation.undo_expires_at) <= new Date()) {
+            throw conflict('This merge is outside its revert window.');
+        }
+        if (operation.decisions?.afterImagesCaptured !== true || !snapshots.length ||
+            Number(operation.decisions.snapshotCount) !== snapshots.length ||
+            snapshots.some(row => row.before_image === null && row.after_image === null)) {
+            throw conflict('Complete merge snapshots are unavailable; use a forward correction.');
+        }
+        const ids = [operation.canonical_id, ...operation.source_ids];
+        const { rows: otherMerges } = await client.query(
+            `SELECT operation_id FROM public.master_data_merge_operation
+             WHERE entity_type = $1 AND operation_id <> $2 AND started_at >= $3
+               AND (canonical_id = ANY($4::int[]) OR source_ids && $4::int[]) LIMIT 1`,
+            [this.entity, operation.operation_id, operation.completed_at, ids]);
+        if (otherMerges.length) throw conflict('A selected master took part in another merge after this one.');
+        for (const snapshot of snapshots) {
+            const current = await this.currentSnapshotRow(client, snapshot);
+            if (snapshot.after_image === null ? current !== null : !current?.matches) {
+                throw conflict('An affected ' + snapshot.table_name + ' row changed after the merge; use a forward correction.');
+            }
+        }
+        const scoped = [this.config.alias];
+        if (this.entity === 'customer') scoped.push('customer_tag', 'customer_wallet', 'customer_wallet_transaction');
+        for (const table of scoped) {
+            const columns = await this.primaryKey(client, table);
+            const key = 'jsonb_build_array(' + columns.map(name => 't."' + name + '"').join(', ') + ')::text';
+            const { rows } = await client.query(
+                'SELECT ' + key + ' AS record_id FROM public."' + table + '" t WHERE t."' +
+                this.config.id + '" = ANY($1::int[]) FOR UPDATE', [ids]);
+            const known = new Set(snapshots.filter(row => row.table_name === table).map(row => row.record_id));
+            if (rows.some(row => !known.has(row.record_id))) {
+                throw conflict('New ' + table + ' activity makes this revert unsafe.');
+            }
+        }
+    }
+
+    async restoreSnapshotRow(client, snapshot) {
+        const table = snapshot.table_name;
+        const relation = table === 'group' ? '"group"' : '"' + table + '"';
+        const type = 'public.' + relation;
+        const columns = await this.primaryKey(client, table);
+        const key = 'jsonb_build_array(' + columns.map(name => 't."' + name + '"').join(', ') + ')::text';
+        if (snapshot.before_image === null) {
+            await client.query('DELETE FROM public.' + relation + ' t WHERE ' + key + ' = $1', [snapshot.record_id]);
+        } else if (snapshot.after_image === null) {
+            await client.query('INSERT INTO public.' + relation +
+                ' SELECT (jsonb_populate_record(NULL::' + type + ', $1::jsonb)).*',
+                [JSON.stringify(snapshot.before_image)]);
+        } else {
+            const { rows: writable } = await client.query(
+                `SELECT column_name FROM information_schema.columns
+                 WHERE table_schema = 'public' AND table_name = $1 AND is_generated = 'NEVER'
+                 ORDER BY ordinal_position`, [table]);
+            const assignments = writable.map(row => row.column_name).filter(name => !columns.includes(name))
+                .map(name => '"' + name + '" = restored."' + name + '"').join(', ');
+            if (assignments) await client.query(
+                'UPDATE public.' + relation + ' t SET ' + assignments +
+                ' FROM jsonb_populate_record(NULL::' + type + ', $2::jsonb) restored ' +
+                'WHERE ' + key + ' = $1', [snapshot.record_id, JSON.stringify(snapshot.before_image)]);
+        }
+    }
+
+    async revertWithClient(client, operationId, actorEmployeeId, reason) {
+        if (!/^[0-9a-f-]{36}$/i.test(String(operationId))) {
+            throw Object.assign(new Error('A valid merge operation ID is required.'), { statusCode: 400 });
+        }
+        if (!Number.isInteger(Number(actorEmployeeId)) || Number(actorEmployeeId) <= 0 ||
+            typeof reason !== 'string' || !reason.trim()) {
+            throw Object.assign(new Error('A revert actor and reason are required.'), { statusCode: 400 });
+        }
+        await this.assertCatalogPolicy(client);
+        const { rows: [operation] } = await client.query(
+            'SELECT * FROM public.master_data_merge_operation WHERE operation_id = $1 AND entity_type = $2 FOR UPDATE',
+            [operationId, this.entity]);
+        if (!operation) throw Object.assign(new Error('Merge operation not found.'), { statusCode: 404 });
+        const ids = [operation.canonical_id, ...operation.source_ids].sort((a, b) => a - b);
+        for (const id of ids) await client.query('SELECT pg_advisory_xact_lock($1::int, $2::int)', [this.policy.namespace, id]);
+        const { rows: masters } = await client.query(
+            'SELECT ' + this.config.id + ' FROM public.' + this.config.table + ' WHERE ' +
+            this.config.id + ' = ANY($1::int[]) ORDER BY ' + this.config.id + ' FOR UPDATE', [ids]);
+        if (masters.length !== ids.length) throw conflict('A merge master is missing; automatic revert is unsafe.');
+        const { rows: snapshots } = await client.query(
+            'SELECT table_name, record_id, before_image, after_image FROM public.master_data_merge_snapshot ' +
+            'WHERE operation_id = $1 ORDER BY table_name, record_id', [operationId]);
+        await this.assertRevertSafe(client, operation, snapshots);
+        await client.query("SELECT set_config('master_data_merge.revert_operation', $1, true)", [operationId]);
+        const byTable = table => snapshots.filter(row => row.table_name === table);
+        const unions = [this.config.alias, ...(this.entity === 'customer' ? ['customer_tag'] : [])];
+        for (const table of unions) for (const row of byTable(table).filter(item => item.before_image === null)) {
+            await this.restoreSnapshotRow(client, row);
+        }
+        for (const row of byTable(this.entity)) await this.restoreSnapshotRow(client, row);
+        for (const row of byTable('customer_wallet').filter(item => item.after_image === null)) {
+            await this.restoreSnapshotRow(client, row);
+        }
+        const delayed = new Set([this.entity, ...unions, 'customer_wallet']);
+        for (const row of snapshots.filter(item => !delayed.has(item.table_name))) {
+            await this.restoreSnapshotRow(client, row);
+        }
+        for (const table of unions) for (const row of byTable(table).filter(item => item.before_image !== null)) {
+            await this.restoreSnapshotRow(client, row);
+        }
+        for (const row of byTable('customer_wallet').filter(item => item.after_image !== null)) {
+            await this.restoreSnapshotRow(client, row);
+        }
+        for (const snapshot of snapshots) {
+            const restored = await this.currentSnapshotRow(client, snapshot, snapshot.before_image);
+            if (snapshot.before_image === null ? restored !== null : !restored?.matches) {
+                throw new Error('Restored row failed its before-image postcondition: ' + snapshot.table_name);
+            }
+        }
+        const remaining = await this.walletState(client, ids);
+        if (remaining.blockers.length) throw conflict('Restored wallet ledger is inconsistent; revert was rolled back.');
+        const affectedParts = snapshots.filter(row => row.table_name === 'part')
+            .map(row => row.before_image?.part_id).filter(Boolean);
+        for (const partId of affectedParts) {
+            await enqueuePartUpsert(partId, { source: 'masterDataMergeService.revert', entity: this.entity }, client);
+        }
+        await client.query(
+            "UPDATE public.master_data_merge_operation SET status = 'reverted', reverted_at = NOW(), " +
+            'reverted_by_employee_id = $2, revert_reason = $3 WHERE operation_id = $1',
+            [operationId, actorEmployeeId, reason.trim()]);
+        return { operationId, restoredIds: operation.source_ids, canonicalId: operation.canonical_id };
+    }
+
+    async revert(operationId, actorEmployeeId, reason) {
+        const client = await this.db.getClient();
+        try {
+            await client.query('BEGIN');
+            const result = await this.revertWithClient(client, operationId, actorEmployeeId, reason);
+            await client.query('COMMIT');
+            return result;
+        } catch (error) {
+            await client.query('ROLLBACK');
+            if (['23505', '23503', '23514'].includes(error.code)) {
+                throw conflict('A later change conflicts with the original master data; use a forward correction.');
+            }
+            throw error;
+        } finally { client.release(); }
+    }
+
+    async purgeExpiredMergeSnapshotsWithClient(client) {
+        await client.query(
+            "UPDATE public.master_data_merge_operation SET status = 'expired' " +
+            "WHERE status = 'active' AND undo_expires_at <= NOW()");
+        const result = await client.query(
+            'DELETE FROM public.master_data_merge_snapshot snapshot ' +
+            'USING public.master_data_merge_operation operation ' +
+            'WHERE snapshot.operation_id = operation.operation_id ' +
+            "AND operation.undo_expires_at < NOW() - INTERVAL '90 days'");
+        return result.rowCount;
+    }
+
+    async purgeExpiredMergeSnapshots() {
+        const client = await this.db.getClient();
+        try {
+            await client.query('BEGIN');
+            const deleted = await this.purgeExpiredMergeSnapshotsWithClient(client);
+            await client.query('COMMIT');
+            return deleted;
+        } catch (error) {
+            await client.query('ROLLBACK');
+            throw error;
+        } finally { client.release(); }
+    }
+
     async executeWithClient(client, request, actorEmployeeId) {
         if (!Number.isInteger(Number(actorEmployeeId)) || Number(actorEmployeeId) <= 0) {
             throw Object.assign(new Error('A valid merge actor is required.'), { statusCode: 400 });
@@ -677,10 +899,14 @@ class MasterDataMergeService {
             await enqueuePartUpsert(partId, { source: 'masterDataMergeService', entity: this.entity }, client);
         }
         await this.assertPostconditions(client, review, affectedParts);
+        await this.captureAfterImages(client, operation.operation_id, review.keepId);
+        const { rows: [snapshotTotal] } = await client.query(
+            'SELECT COUNT(*)::int AS count FROM public.master_data_merge_snapshot WHERE operation_id = $1',
+            [operation.operation_id]);
         await client.query(
             "UPDATE public.master_data_merge_operation SET status = 'active', completed_at = NOW(), " +
             "decisions = decisions || $2::jsonb WHERE operation_id = $1",
-            [operation.operation_id, JSON.stringify({ suggestions })]);
+            [operation.operation_id, JSON.stringify({ suggestions, afterImagesCaptured: true, snapshotCount: snapshotTotal.count })]);
         return { operationId: operation.operation_id, keepId: review.keepId,
             mergedIds: review.mergeIds, impact: review.impact, partsReassigned: affectedParts.length };
     }
