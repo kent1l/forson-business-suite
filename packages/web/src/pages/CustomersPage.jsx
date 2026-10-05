@@ -151,7 +151,7 @@ const CustomersPage = ({ onNavigate }) => {
                             <tbody className="divide-y divide-gray-100 dark:divide-slate-700/60">
                                 {customers.map(customer => (
                                     <tr key={customer.customer_id} onClick={() => setHistoryCustomer(customer)} className="cursor-pointer hover:bg-gray-50 dark:hover:bg-slate-700/40 text-gray-800 dark:text-slate-200 transition-colors">
-                                        <td className="p-3 text-sm font-medium text-primary-700 dark:text-primary-300">{customer.first_name} {customer.last_name}</td>
+                                        <td className="p-3 text-sm font-medium text-gray-900 dark:text-slate-100">{customer.first_name} {customer.last_name}</td>
                                         <td className="p-3 text-sm text-gray-700 dark:text-slate-300">{customer.company_name}</td>
                                         <td className="p-3 text-sm hidden sm:table-cell text-gray-700 dark:text-slate-300 font-mono">{customer.phone}</td>
                                         <td className="p-3 text-sm text-center">
