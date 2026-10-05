@@ -172,6 +172,7 @@ const SuppliersPage = ({ onNavigate }) => {
                                     <SortableHeader column="supplier_name" sortConfig={sortConfig} onSort={handleSort}>Name</SortableHeader>
                                     <SortableHeader className="hidden sm:table-cell" column="contact_person" sortConfig={sortConfig} onSort={handleSort}>Contact Person</SortableHeader>
                                     <SortableHeader className="hidden md:table-cell" column="phone" sortConfig={sortConfig} onSort={handleSort}>Phone</SortableHeader>
+                                    <SortableHeader className="hidden lg:table-cell text-center" column="payment_terms_days" sortConfig={sortConfig} onSort={handleSort}>Days Term</SortableHeader>
                                     {canViewAp && <th className="p-3 text-sm font-semibold text-gray-600 dark:text-slate-300 text-right">AP Balance</th>}
                                     <SortableHeader className="text-center" column="status" sortConfig={sortConfig} onSort={handleSort}>Status</SortableHeader>
                                     <th className="p-3 text-sm font-semibold text-gray-600 dark:text-slate-300 text-right">Actions</th>
@@ -192,9 +193,10 @@ const SuppliersPage = ({ onNavigate }) => {
                                         </td>
                                         <td className="p-3 text-sm hidden sm:table-cell text-gray-700 dark:text-slate-300">{supplier.contact_person}</td>
                                         <td className="p-3 text-sm hidden md:table-cell text-gray-700 dark:text-slate-300">{supplier.phone}</td>
+                                        <td className="p-3 text-sm hidden lg:table-cell text-center text-gray-700 dark:text-slate-300">{supplier.payment_terms_days ?? '—'}</td>
                                         {canViewAp && (
                                             <td className="p-3 text-sm text-right font-mono text-gray-900 dark:text-slate-100">
-                                                {supplier.ap ? formatCurrency(supplier.ap.total_balance_due) : '—'}
+                                                {formatCurrency(supplier.ap?.total_balance_due ?? 0)}
                                             </td>
                                         )}
                                         <td className="p-3 text-sm text-center">

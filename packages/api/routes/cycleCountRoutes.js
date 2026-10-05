@@ -931,11 +931,13 @@ router.get('/inventory/cycle-count/audit-log', protect, hasPermission('cycle_cou
                 al.*,
                 COALESCE(pv.display_name, p.internal_sku, p.detail) AS display_name,
                 p.internal_sku,
-                e.first_name || ' ' || e.last_name AS actioned_by_name
+                counted_by.first_name || ' ' || counted_by.last_name AS counted_by_name
             FROM cycle_count_audit_log al
+            LEFT JOIN cycle_count_line l ON l.line_id = al.line_id
+            LEFT JOIN cycle_count_batch b ON b.batch_id = l.batch_id
             LEFT JOIN part p ON al.part_id = p.part_id
             LEFT JOIN parts_view pv ON pv.part_id = al.part_id
-            LEFT JOIN employee e ON al.actioned_by = e.employee_id
+            LEFT JOIN employee counted_by ON b.employee_id = counted_by.employee_id
             ORDER BY al.actioned_at DESC
             LIMIT $1 OFFSET $2
         `, [limit, offset]);

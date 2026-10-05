@@ -44,6 +44,8 @@ router.get('/suppliers', protect, hasPermission('suppliers:view'), async (req, r
     orderBy = `ORDER BY contact_person ${dir} NULLS LAST`;
   } else if (sortBy === 'phone') {
     orderBy = `ORDER BY phone ${dir} NULLS LAST`;
+  } else if (sortBy === 'payment_terms_days') {
+    orderBy = `ORDER BY payment_terms_days ${dir} NULLS LAST`;
   } else if (sortBy === 'status') {
     orderBy = `ORDER BY is_active ${dir}`;
   }
