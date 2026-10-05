@@ -3,6 +3,7 @@ const db = require('../db');
 const { generateUniqueCode } = require('../helpers/codeGenerator');
 const { normalizeText } = require('../helpers/normalizeEntity');
 const { protect, hasPermission } = require('../middleware/authMiddleware');
+const { requireMergeStage } = require('../middleware/masterDataMergeRollout');
 const EntityMergeService = require('../services/entityMergeService');
 const JevGateService = require('../services/jevGateService');
 const router = express.Router();
@@ -87,31 +88,31 @@ router.put('/brands/:id', protect, hasPermission('brands:manage'), async (req, r
   catch (err) { res.status(err.statusCode || (err.code === '23505' || err.code === '23514' ? 409 : 500)).json({ message: err.message || 'Unable to update brand.', canonicalId: err.canonicalId }); }
 });
 
-router.post('/brands/scan-duplicates', protect, hasPermission('brands:manage'), async (req, res) => {
+router.post('/brands/scan-duplicates', protect, hasPermission('brands:manage'), requireMergeStage('preview'), async (req, res) => {
   try { res.json({ success: true, ...(await mergeService.scan(req.body || {})) }); }
   catch (err) { console.error('Brand duplicate scan failed:', err); res.status(500).json({ message: 'Unable to scan brands.' }); }
 });
-router.get('/brands/duplicate-suggestions', protect, hasPermission('brands:manage'), async (_req, res) => {
+router.get('/brands/duplicate-suggestions', protect, hasPermission('brands:manage'), requireMergeStage('preview'), async (_req, res) => {
   try { res.json({ success: true, suggestions: await mergeService.suggestions() }); }
   catch { res.status(500).json({ message: 'Unable to load brand suggestions.' }); }
 });
-router.post('/brands/merge-preview', protect, hasPermission('brands:manage'), async (req, res) => {
+router.post('/brands/merge-preview', protect, hasPermission('brands:manage'), requireMergeStage('preview'), async (req, res) => {
   try { res.json({ success: true, ...(await mergeService.preview(req.body || {}, req.user.employee_id)) }); }
   catch (err) { res.status(err.statusCode || 500).json({ message: err.message || 'Unable to preview brand merge.' }); }
 });
-router.get('/brands/merge-history', protect, hasPermission('brands:manage'), async (req, res) => {
+router.get('/brands/merge-history', protect, hasPermission('brands:manage'), requireMergeStage('preview'), async (req, res) => {
   try { res.json({ operations: await mergeService.history(req.query.limit) }); }
   catch (err) { res.status(err.statusCode || 500).json({ message: err.message || 'Unable to load merge history.' }); }
 });
-router.post('/brands/merge-history/:operationId/revert', protect, hasPermission('brands:manage'), async (req, res) => {
+router.post('/brands/merge-history/:operationId/revert', protect, hasPermission('brands:manage'), requireMergeStage('execute'), async (req, res) => {
   try { res.json({ result: await mergeService.revert(req.params.operationId, req.user.employee_id, req.body?.reason) }); }
   catch (err) { res.status(err.statusCode || 500).json({ message: err.message || 'Unable to revert merge.' }); }
 });
-router.post('/brands/merge', protect, hasPermission('brands:manage'), async (req, res) => {
+router.post('/brands/merge', protect, hasPermission('brands:manage'), requireMergeStage('execute'), async (req, res) => {
   try { res.json({ success: true, result: await mergeService.execute(req.body || {}, req.user.employee_id) }); }
   catch (err) { res.status(err.statusCode || 500).json({ message: err.message || 'Unable to merge brands.', blockers: err.blockers || [] }); }
 });
-router.post('/brands/duplicate-suggestions/:id/dismiss', protect, hasPermission('brands:manage'), async (req, res) => {
+router.post('/brands/duplicate-suggestions/:id/dismiss', protect, hasPermission('brands:manage'), requireMergeStage('preview'), async (req, res) => {
   try { await mergeService.dismiss(req.params.id, req.user.employee_id); res.json({ success: true }); }
   catch (err) { res.status(err.statusCode || 500).json({ message: err.message || 'Unable to dismiss suggestion.' }); }
 });

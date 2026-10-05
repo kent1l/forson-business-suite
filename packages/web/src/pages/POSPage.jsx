@@ -974,8 +974,11 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
             sale_price: i.sale_price
         }));
         setLines(restoredLines);
-        const customer = customers.find(c => c.customer_id === cart.customerId);
-        if (customer) setSelectedCustomer(customer);
+        const customer = customers.find(c => String(c.customer_id) === String(cart.customerId));
+        setSelectedCustomer(customer || null);
+        if (cart.customerId && !customer) {
+            toast('The saved customer is no longer available. Choose a current customer before checkout.');
+        }
         const taxRate = taxRates.find(r => r.tax_rate_id === cart.taxRateId);
         if (taxRate) setSelectedTaxRate(taxRate);
         removeSaved(id); // consume on restore (approved default)

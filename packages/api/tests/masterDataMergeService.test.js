@@ -2,6 +2,8 @@ const fs = require('fs');
 const path = require('path');
 const db = require('../db');
 const MasterDataMergeService = require('../services/masterDataMergeService');
+const mergePolicy = require('../services/masterDataMergePolicy');
+const { audit: auditMasterDataMerge } = require('../scripts/auditMasterDataMerge');
 
 const migration = fs.readFileSync(path.resolve(__dirname, '../../../database/migrations/20261005_02_master_data_merge_phase1.sql'), 'utf8');
 const draftGuardMigration = fs.readFileSync(path.resolve(__dirname, '../../../database/migrations/20261005_03_master_data_merge_draft_guard.sql'), 'utf8');
@@ -33,6 +35,14 @@ describe('MasterDataMergeService against PostgreSQL', () => {
     });
 
     let revertFixtureNumber = 0;
+    const expectNoSourceOwnership = async (entity, sourceId) => {
+        for (const [table, column, action] of mergePolicy[entity].references) {
+            if (action === 'provenance' || action === 'workflow') continue;
+            const { rows: [row] } = await client.query(
+                `SELECT COUNT(*)::int AS count FROM public."${table}" WHERE "${column}" = $1`, [sourceId]);
+            expect({ entity, table, column, count: row.count }).toMatchObject({ count: 0 });
+        }
+    };
     const mergedBrandFixture = async label => {
         const suffix = `${Date.now()}${++revertFixtureNumber}`;
         const code = prefix => `${prefix}${String(revertFixtureNumber).padStart(5, '0')}`;
@@ -85,6 +95,7 @@ describe('MasterDataMergeService against PostgreSQL', () => {
         expect(result.partsReassigned).toBe(1);
         const { rows: [moved] } = await client.query('SELECT brand_id FROM part WHERE part_id = $1', [part.part_id]);
         expect(moved.brand_id).toBe(keep.brand_id);
+        await expectNoSourceOwnership('brand', source.brand_id);
         const { rows: aliases } = await client.query(
             'SELECT alias_name FROM brand_alias WHERE brand_id = $1 ORDER BY alias_name', [keep.brand_id]);
         expect(aliases.map(row => row.alias_name)).toEqual(expect.arrayContaining([
@@ -119,6 +130,14 @@ describe('MasterDataMergeService against PostgreSQL', () => {
         expect(revertedOperation).toMatchObject({ status: 'reverted', revert_reason: 'Duplicate was distinct' });
         await expect(service.revertWithClient(client, result.operationId, actorId, 'Again'))
             .rejects.toMatchObject({ statusCode: 409 });
+    });
+
+    test('read-only rollout audit checks the migrated schema and policy registry', async () => {
+        const report = await auditMasterDataMerge(client);
+        expect(report.policyDrift).toEqual([]);
+        expect(report.findings).toHaveProperty('activeDraftsWithRetiredIds');
+        expect(report.findings['customer.walletMismatches']).toEqual(expect.any(Array));
+        expect(report.migrations['20261005_05_master_data_merge_revert.sql']).toBe('pending');
     });
 
     test('supplier preview blocks both receipt-number collisions without retiring sources', async () => {
@@ -173,6 +192,7 @@ describe('MasterDataMergeService against PostgreSQL', () => {
         const review = await service.review(client, request);
         expect(review.drafts.affected).toHaveLength(2);
         const result = await service.executeWithClient(client, { ...request, previewFingerprint: review.fingerprint }, actorId);
+        await expectNoSourceOwnership('supplier', source.supplier_id);
         const { rows } = await client.query(
             'SELECT draft_data FROM draft_transaction WHERE draft_id = ANY($1::int[]) ORDER BY draft_id',
             [[po.draft_id, grn.draft_id]]);
@@ -215,6 +235,7 @@ describe('MasterDataMergeService against PostgreSQL', () => {
         const review = await service.review(client, request);
         expect(review.blockers).toEqual([]);
         const result = await service.executeWithClient(client, { ...request, previewFingerprint: review.fingerprint }, actorId);
+        await expectNoSourceOwnership('customer', source.customer_id);
         const { rows: [wallet] } = await client.query(
             'SELECT balance FROM customer_wallet WHERE customer_id = $1', [keep.customer_id]);
         expect(Number(wallet.balance)).toBe(15);
@@ -232,6 +253,52 @@ describe('MasterDataMergeService against PostgreSQL', () => {
         expect(restoredWallets.map(row => Number(row.balance))).toEqual([10, 5]);
         const { rows: [restoredTag] } = await client.query('SELECT customer_id FROM customer_tag WHERE tag_id = $1', [tag.tag_id]);
         expect(restoredTag.customer_id).toBe(source.customer_id);
+    });
+
+    test('customer merge handles no wallets, overlapping aliases and tags, and a saved sale draft', async () => {
+        const suffix = String(Date.now() + 9);
+        const { rows: [keep] } = await client.query(
+            'INSERT INTO customer (first_name) VALUES ($1) RETURNING customer_id', [`Saved keep ${suffix}`]);
+        const { rows: [source] } = await client.query(
+            'INSERT INTO customer (first_name) VALUES ($1) RETURNING customer_id', [`Saved source ${suffix}`]);
+        const { rows: [tag] } = await client.query(
+            'INSERT INTO tag (tag_name) VALUES ($1) RETURNING tag_id', [`Saved tag ${suffix}`]);
+        for (const customerId of [keep.customer_id, source.customer_id]) {
+            await client.query('INSERT INTO customer_tag (customer_id, tag_id) VALUES ($1, $2)',
+                [customerId, tag.tag_id]);
+        }
+        await client.query('INSERT INTO customer_alias (customer_id, alias_name) VALUES ($1, $2)',
+            [keep.customer_id, `OVERLAP ${suffix}`]);
+        await client.query('INSERT INTO customer_alias (customer_id, alias_name) VALUES ($1, $2)',
+            [source.customer_id, `overlap ${suffix}`]);
+        const { rows: [draft] } = await client.query(
+            "INSERT INTO draft_transaction (employee_id, transaction_type, draft_name, draft_data, expires_at) " +
+            "VALUES ($1, 'SALE', $2, $3::jsonb, NOW() + INTERVAL '7 days') RETURNING draft_id",
+            [actorId, `Saved sale ${suffix}`, JSON.stringify({ cart: { customerId: String(source.customer_id), items: [] } })]);
+        const service = new MasterDataMergeService(db, 'customer');
+        const request = { keepId: keep.customer_id, mergeIds: [source.customer_id] };
+        const review = await service.review(client, request);
+        expect(review.blockers).toEqual([]);
+        const result = await service.executeWithClient(client,
+            { ...request, previewFingerprint: review.fingerprint }, actorId);
+        await expectNoSourceOwnership('customer', source.customer_id);
+        const { rows: [updated] } = await client.query('SELECT draft_data FROM draft_transaction WHERE draft_id = $1',
+            [draft.draft_id]);
+        expect(updated.draft_data.cart.customerId).toBe(String(keep.customer_id));
+        const { rows: [aliasCount] } = await client.query(
+            'SELECT COUNT(*)::int AS count FROM customer_alias WHERE customer_id = $1 AND lower(alias_name) = lower($2)',
+            [keep.customer_id, `overlap ${suffix}`]);
+        expect(aliasCount.count).toBe(1);
+        const { rows: [tagCount] } = await client.query(
+            'SELECT COUNT(*)::int AS count FROM customer_tag WHERE customer_id = $1 AND tag_id = $2',
+            [keep.customer_id, tag.tag_id]);
+        expect(tagCount.count).toBe(1);
+        const { rows: [walletCount] } = await client.query(
+            'SELECT COUNT(*)::int AS count FROM customer_wallet WHERE customer_id = ANY($1::int[])',
+            [[keep.customer_id, source.customer_id]]);
+        expect(walletCount.count).toBe(0);
+        await service.revertWithClient(client, result.operationId, actorId, 'Restore saved sale');
+        await client.query('DELETE FROM draft_transaction WHERE draft_id = $1', [draft.draft_id]);
     });
 
     test('customer preview blocks certificate collisions and inconsistent wallet balances', async () => {
@@ -285,6 +352,7 @@ describe('MasterDataMergeService against PostgreSQL', () => {
         const request = { keepId: keep.group_id, mergeIds: [source.group_id] };
         const review = await service.review(client, request);
         const result = await service.executeWithClient(client, { ...request, previewFingerprint: review.fingerprint }, actorId);
+        await expectNoSourceOwnership('group', source.group_id);
         const { rows: [retired] } = await client.query(
             'SELECT is_active, is_merged, merged_into_group_id FROM "group" WHERE group_id = $1',
             [source.group_id]);

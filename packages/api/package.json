@@ -11,6 +11,7 @@
     "migrate": "node scripts/migrate.js",
     "migrate:status": "node scripts/migrate.js status",
     "migrate:verify": "node scripts/migrate.js verify",
+    "audit:master-merge": "node scripts/auditMasterDataMerge.js",
     "reconcile:ar": "node scripts/reconcileArBalances.js",
     "normalize:data": "node scripts/normalizeExistingData.js"
   },

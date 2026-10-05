@@ -1,7 +1,7 @@
 # Master Data Merge Integrity — Supplier, Customer, Brand, and Group
 
 > **Forson Business Suite** | **Date:** 2026-10-05 | **Branch:** `master`
-> **Status:** Phases 1–3 committed. Phase 4 is implemented in the working tree; phase 5 rollout remains. This work has not deployed migration `20261005_05`.
+> **Status:** Phases 1–4 committed. Phase 5 verification and rollout are in progress. The four merge migrations remain pending in the local development database; staging and production have not been audited or enabled.
 
 ## 0. Status at a Glance
 
@@ -12,8 +12,8 @@
 | Schema and audit infrastructure | Committed | Inactive state, merge constraints, aliases, audit tables, namespaced locks, FK/draft guards, and catalog drift tests |
 | Transactional merge engine | Committed | Shared engine handles collisions, wallets, tags, aliases, drafts, snapshots, outbox, and atomic postconditions |
 | API and review UI | Phase 3 committed | Impact matrix, ten-minute signed token, acknowledgment, history, retired-row conflicts, and stale-write checks; see §8 limits |
-| Guarded revert | Phase 4 in working tree | Exact after-image safety checks, atomic restoration, history action, catalog requeue, and snapshot retention; see §9 |
-| Tests and rollout | Partially implemented | Rollback-only PostgreSQL suites cover key paths; broader relationship, concurrency, route, and deployment verification remain |
+| Guarded revert | Committed | Exact after-image safety checks, atomic restoration, history action, catalog requeue, and snapshot retention; see §9 |
+| Tests and rollout | In progress | Rollout gate, read-only audit, route authorization tests, and explicit zero-reference checks added; concurrent-writer and full relationship fixtures plus target-environment verification remain |
 
 ## 1. For a New Session or Agent Picking This Up
 
@@ -238,7 +238,13 @@ Follow the part merge model with a limited undo window, but validate entity-spec
 
 ## 10. Phase 5 — Verification and Rollout
 
-**Partially done:** `masterDataMergeService.test.js` exercises the shared engine against real PostgreSQL inside a rolled-back transaction. It covers brand/group success, aliases and outbox, supplier receipt collisions, PO/GRN draft rewriting and stale-draft rejection, customer tag/wallet consolidation, certificate and wallet blockers, unknown drafts, stale fingerprints, and a late outbox failure rolled back to a savepoint. The phase 1 policy/schema test remains. Full FK fixture coverage, true concurrent-writer tests, route behavior, staging data audit, and deployment verification remain.
+**As built in the phase 5 working tree:** A single rollout gate on all four entities' merge routes accepts `ENABLE_SAFE_MASTER_DATA_MERGE=off|preview|execute`; `off` is the default. `preview` permits directory, scan, suggestions, preview, and history; `execute` also permits merge and guarded revert. All stages still require their existing permission middleware. The old direct execution methods already delegate to the shared engine, so the gate applies to every execution route. `masterDataMergeRoutes.test.js` checks route authentication, permission, preview-only blocking, and execution dispatch. `masterDataMergeService.test.js` now explicitly checks zero source ownership across every policy entry after a successful merge of each entity and runs the read-only audit against the migrated schema inside its rolled-back PostgreSQL transaction. The existing drift, collision, draft, wallet, revert, and rollback tests remain. POS saved sales and invoice drafts now clear a retired customer selection on restore and require the operator to choose a current customer.
+
+`npm run -w packages/api audit:master-merge` prints JSON and uses a read-only, repeatable-read transaction. It checks merged active rows, invalid canonical chains, operational references, supplier receipt and customer certificate collisions, wallet totals, active drafts with retired typed IDs, alias ownership through the registry, live FK policy drift, and migration checksums. Exit `0` means no findings and all merge migrations applied; exit `2` means findings or pending migrations; exit `1` means the audit itself failed. If phase 1 is pending, it reports `schemaReady: false` and migration status without querying tables that do not yet exist. Set `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, and `DB_NAME` for each target environment; the command never repairs data.
+
+**Verification on 2026-10-05:** Six focused API suites passed in the development backend container (35 tests), including a zero-wallet customer, overlapping aliases/tags, and a string customer ID in a saved sale draft. API and web lint completed with existing warnings and no errors; web build passed. Local `migrate status` reported 205 applied and six pending migrations, including `20261005_02` through `_05`; `migrate verify` passed. The standalone local audit exited `2` with `schemaReady: false` and those four merge migrations pending. No migration was applied or merge executed against a persistent database in this phase.
+
+**Still required before enabling execution:** Create real fixtures for every operational FK and assert movement, run a true concurrent child-writer test after installing migrations in an isolated database, audit other stale transaction payload variants, exercise all four route families and browser interactions, apply migrations in staging, run the audit and fixture merges for all four entities there, then repeat the read-only audit in production before setting `preview` and later `execute`. The local development database is not a substitute for staging or production evidence. Any audit finding needs a dedicated reviewed correction before enabling merge execution.
 
 ### 10.1 Required automated coverage
 
@@ -287,7 +293,7 @@ npm run -w packages/api migrate:verify -- --host localhost
 graphify update .
 ```
 
-Roll out behind a setting such as `ENABLE_SAFE_MASTER_DATA_MERGE`. Apply migrations and run the existing-data audit first, enable preview in staging, execute fixture merges for all four entity types, then enable execution. Keep the old execution endpoints disabled once the new engine is active so two merge semantics cannot coexist.
+Roll out with `ENABLE_SAFE_MASTER_DATA_MERGE`. Apply migrations and run the existing-data audit first; set `preview` in staging, then `execute` for fixture merges of all four entity types after review. Repeat the audit in production before enabling it there. The shared engine is the only merge execution path; `off` and `preview` return `503` for merge and revert. Leave `off` wherever migrations or audit clearance are pending.
 
 ## 11. Expected Files and Components
 
@@ -324,3 +330,4 @@ Roll out behind a setting such as `ENABLE_SAFE_MASTER_DATA_MERGE`. Apply migrati
 | 2026-10-05 | Codex | Implemented the phase 2 shared transactional engine, draft write guard, minimal fingerprint/blocker UI wiring, and rollback-only PostgreSQL coverage. New migrations were not deployed. |
 | 2026-10-05 | Codex | Added phase 3 preview tokens, full impact review, history, retired-row and stale-write conflicts, plus focused tests. Rollback-only PostgreSQL merge tests, API tests, lint, and web build passed; rollout remains pending. |
 | 2026-10-05 | Codex | Implemented phase 4 guarded revert with after-images, strict safety checks, atomic restoration, catalog requeue, history UI, and retention cleanup. Rollback-only PostgreSQL tests passed; migration 05 was not deployed. |
+| 2026-10-05 | Codex | Began phase 5: added staged route gate, read-only audit, route authorization tests, explicit policy-wide zero-reference assertions, and a tested rollout handoff. Local merge migrations remain pending; staging and production verification plus concurrent-writer/full-FK fixtures remain. |

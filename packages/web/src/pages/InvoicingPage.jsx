@@ -381,7 +381,11 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
             is_tax_inclusive_price: i.is_tax_inclusive_price || false
         }));
         setLines(restoredLines);
-        if (cart.customerId) setSelectedCustomer(String(cart.customerId));
+        const customer = customers.find(c => String(c.customer_id) === String(cart.customerId));
+        setSelectedCustomer(customer ? String(customer.customer_id) : '');
+        if (cart.customerId && !customer) {
+            toast('The saved customer is no longer available. Choose a current customer before posting.');
+        }
         const taxRate = taxRates.find(r => r.tax_rate_id === cart.taxRateId);
         if (taxRate) setSelectedTaxRate(taxRate);
         if (cart.terms !== undefined) setTerms(cart.terms);
