@@ -134,6 +134,77 @@ router.get('/customers', protect, hasPermission(['customers:view', 'pos:use']), 
     }
 });
 
+// GET /api/customers/:id/purchase-history - completed and historical sales for one customer.
+// This intentionally lives behind customers:view, so staff who can review a customer record
+// do not also need permission to create invoices.
+router.get('/customers/:id/purchase-history', protect, hasPermission('customers:view'), async (req, res) => {
+    const { page, pageSize, offset, limit } = parsePaginationQuery(req.query);
+    const customerId = Number.parseInt(req.params.id, 10);
+    if (!Number.isInteger(customerId) || customerId <= 0) {
+        return res.status(400).json({ message: 'A valid customer id is required.' });
+    }
+
+    try {
+        const countResult = await db.query(
+            'SELECT COUNT(*)::int AS total FROM invoice WHERE customer_id = $1',
+            [customerId]
+        );
+        const { rows } = await db.query(`
+            SELECT
+                i.invoice_id, i.invoice_number, i.invoice_date, i.physical_receipt_no,
+                i.total_amount, i.amount_paid, i.status, i.terms, i.due_date,
+                COALESCE(refunds.total_refunded, 0) AS total_refunded,
+                GREATEST(i.total_amount - COALESCE(refunds.total_refunded, 0), 0) AS net_amount,
+                GREATEST(i.total_amount - COALESCE(refunds.total_refunded, 0) - i.amount_paid, 0) AS balance_due
+            FROM invoice i
+            LEFT JOIN LATERAL (
+                SELECT COALESCE(SUM(cn.total_amount), 0) AS total_refunded
+                FROM credit_note cn
+                WHERE cn.invoice_id = i.invoice_id
+            ) refunds ON TRUE
+            WHERE i.customer_id = $1
+            ORDER BY i.invoice_date DESC, i.invoice_id DESC
+            LIMIT $2 OFFSET $3
+        `, [customerId, limit, offset]);
+        res.json(paginatedResponse({ data: rows, page, pageSize, total: countResult.rows[0]?.total || 0 }));
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).send('Server Error');
+    }
+});
+
+// GET /api/customers/:id/purchase-history/:invoiceId - line-item detail for a transaction
+// belonging to the selected customer. Scoping the invoice by customer prevents a history URL
+// from exposing another customer's transaction.
+router.get('/customers/:id/purchase-history/:invoiceId', protect, hasPermission('customers:view'), async (req, res) => {
+    const customerId = Number.parseInt(req.params.id, 10);
+    const invoiceId = Number.parseInt(req.params.invoiceId, 10);
+    if (!Number.isInteger(customerId) || !Number.isInteger(invoiceId) || customerId <= 0 || invoiceId <= 0) {
+        return res.status(400).json({ message: 'Valid customer and transaction ids are required.' });
+    }
+
+    try {
+        const { rows } = await db.query(`
+            SELECT
+                il.invoice_line_id, il.quantity, il.sale_price, COALESCE(il.discount_amount, 0) AS discount_amount,
+                p.detail, b.brand_name, g.group_name,
+                (SELECT display_name FROM public.parts_view pv WHERE pv.part_id = p.part_id) AS display_name,
+                (SELECT STRING_AGG(pn.part_number, '; ') FROM part_number pn WHERE pn.part_id = p.part_id AND ${require('../helpers/partNumberSoftDelete').activeAliasCondition('pn')}) AS part_numbers
+            FROM invoice_line il
+            JOIN invoice i ON i.invoice_id = il.invoice_id
+            JOIN part p ON p.part_id = il.part_id
+            LEFT JOIN brand b ON b.brand_id = p.brand_id
+            LEFT JOIN "group" g ON g.group_id = p.group_id
+            WHERE i.customer_id = $1 AND i.invoice_id = $2
+            ORDER BY p.detail
+        `, [customerId, invoiceId]);
+        res.json(rows);
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).send('Server Error');
+    }
+});
+
 // GET /api/customers/:id/tags - Get all tags for a specific customer
 router.get('/customers/:id/tags', protect, hasPermission('customers:view'), async (req, res) => {
     const { id } = req.params;
