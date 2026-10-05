@@ -1,16 +1,16 @@
 const { normalizeText } = require('../helpers/normalizeEntity');
 const JevClient = require('./jevClient');
 const crypto = require('crypto');
-const MERGE_POLICY = require('./masterDataMergePolicy');
+const MasterDataMergeService = require('./masterDataMergeService');
 
 const ENTITIES = {
     brand: {
-        type: 'brand', table: 'brand', id: 'brand_id', name: 'brand_name', code: 'brand_code', namespace: MERGE_POLICY.brand.namespace,
+        type: 'brand', table: 'brand', id: 'brand_id', name: 'brand_name', code: 'brand_code',
         mergedInto: 'merged_into_brand_id', suggestion: 'brand_duplicate_suggestion',
         alias: 'brand_alias', partColumn: 'brand_id'
     },
     group: {
-        type: 'group', table: '"group"', id: 'group_id', name: 'group_name', code: 'group_code', namespace: MERGE_POLICY.group.namespace,
+        type: 'group', table: '"group"', id: 'group_id', name: 'group_name', code: 'group_code',
         mergedInto: 'merged_into_group_id', suggestion: 'group_duplicate_suggestion',
         alias: 'group_alias', partColumn: 'group_id'
     }
@@ -218,50 +218,12 @@ class EntityMergeService {
         return rows;
     }
 
-    async preview({ keepId, mergeIds }) {
-        const e = this.entity;
-        const ids = this.validateIds(keepId, mergeIds);
-        const { rows } = await this.db.query(`SELECT ${e.id}, ${e.name}, ${e.code}, is_merged, ${e.mergedInto} FROM ${e.table} WHERE ${e.id} = ANY($1::int[])`, [ids]);
-        this.assertMergeable(rows, keepId, mergeIds);
-        const { rows: usage } = await this.db.query(`SELECT COUNT(*)::int AS parts_reassigned FROM part WHERE ${e.partColumn} = ANY($1::int[])`, [mergeIds]);
-        return { keep: rows.find(row => row[e.id] === Number(keepId)), merge: rows.filter(row => mergeIds.includes(row[e.id])), impact: usage[0] };
+    async preview(request) {
+        return new MasterDataMergeService(this.db, this.entity.type).preview(request);
     }
 
-    async execute({ keepId, mergeIds, suggestionIds = [] }, employeeId) {
-        const e = this.entity;
-        const ids = this.validateIds(keepId, mergeIds);
-        if (!Array.isArray(suggestionIds)) {
-            throw Object.assign(new Error('Suggestion IDs must be an array'), { statusCode: 400 });
-        }
-        const selectedSuggestionIds = [...new Set(suggestionIds.map(Number))];
-        if (selectedSuggestionIds.some(id => !Number.isInteger(id) || id <= 0)) {
-            throw Object.assign(new Error('Suggestion IDs must be positive integers'), { statusCode: 400 });
-        }
-        const client = await this.db.getClient();
-        try {
-            await client.query('BEGIN');
-            for (const id of [...ids].sort((a, b) => a - b)) await client.query('SELECT pg_advisory_xact_lock($1::int, $2::int)', [e.namespace, id]);
-            const { rows } = await client.query(`SELECT ${e.id}, ${e.name}, ${e.code}, is_merged, ${e.mergedInto} FROM ${e.table} WHERE ${e.id} = ANY($1::int[]) FOR UPDATE`, [ids]);
-            this.assertMergeable(rows, keepId, mergeIds);
-            const { rowCount: partsReassigned } = await client.query(`UPDATE part SET ${e.partColumn} = $1 WHERE ${e.partColumn} = ANY($2::int[])`, [keepId, mergeIds]);
-            for (const source of rows.filter(row => mergeIds.includes(row[e.id]))) {
-                await client.query(`INSERT INTO public.${e.alias} (${e.id}, alias_name, alias_code, source_${e.id}) VALUES ($1, $2, $3, $4) ON CONFLICT (${e.id}, alias_name) DO NOTHING`, [keepId, source[e.name], source[e.code], source[e.id]]);
-            }
-            await client.query(`UPDATE ${e.table} SET is_merged = TRUE, is_active = FALSE, ${e.mergedInto} = $1 WHERE ${e.id} = ANY($2::int[])`, [keepId, mergeIds]);
-            if (selectedSuggestionIds.length) {
-                await client.query(`UPDATE public.${e.suggestion}
-                    SET status = 'merged', merged_at = NOW(), merged_by = $1, updated_at = NOW()
-                    WHERE suggestion_id = ANY($2::bigint[]) AND status = 'pending'`, [employeeId, selectedSuggestionIds]);
-            }
-            // Suggestions involving a source entity cannot be actioned after it is merged.
-            // Keep the user-confirmed suggestion auditable as "merged" and dismiss all others.
-            await client.query(`UPDATE public.${e.suggestion}
-                SET status = 'dismissed', dismissed_at = NOW(), dismissed_by = $1, updated_at = NOW()
-                WHERE status = 'pending'
-                  AND (${e.id} = ANY($2::int[]) OR duplicate_${e.id} = ANY($2::int[]))`, [employeeId, mergeIds]);
-            await client.query('COMMIT');
-            return { keepId: Number(keepId), mergedIds: mergeIds, partsReassigned };
-        } catch (error) { await client.query('ROLLBACK'); throw error; } finally { client.release(); }
+    async execute(request, employeeId) {
+        return new MasterDataMergeService(this.db, this.entity.type).execute(request, employeeId);
     }
 
     async dismiss(suggestionId, employeeId) {

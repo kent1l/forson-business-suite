@@ -101,7 +101,7 @@ router.post('/brands/merge-preview', protect, hasPermission('brands:manage'), as
 });
 router.post('/brands/merge', protect, hasPermission('brands:manage'), async (req, res) => {
   try { res.json({ success: true, result: await mergeService.execute(req.body || {}, req.user.employee_id) }); }
-  catch (err) { res.status(err.statusCode || 500).json({ message: err.message || 'Unable to merge brands.' }); }
+  catch (err) { res.status(err.statusCode || 500).json({ message: err.message || 'Unable to merge brands.', blockers: err.blockers || [] }); }
 });
 router.post('/brands/duplicate-suggestions/:id/dismiss', protect, hasPermission('brands:manage'), async (req, res) => {
   try { await mergeService.dismiss(req.params.id, req.user.employee_id); res.json({ success: true }); }

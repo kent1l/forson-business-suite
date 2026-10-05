@@ -26,7 +26,7 @@ module.exports = function partyMergeRoutes(db, party) {
     });
     router.post(`/${plural}/merge`, protect, hasPermission(permission), async (req, res) => {
         try { res.json({ result: await service.execute(req.body || {}, req.user.employee_id) }); }
-        catch (error) { res.status(error.statusCode || 500).json({ message: error.message || `Unable to merge ${plural}.` }); }
+        catch (error) { res.status(error.statusCode || 500).json({ message: error.message || `Unable to merge ${plural}.`, blockers: error.blockers || [] }); }
     });
     router.post(`/${plural}/duplicate-suggestions/:id/dismiss`, protect, hasPermission(permission), async (req, res) => {
         try { await service.dismiss(req.params.id, req.user.employee_id); res.json({ success: true }); }

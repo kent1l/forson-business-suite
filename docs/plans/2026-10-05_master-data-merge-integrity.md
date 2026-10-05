@@ -1,18 +1,18 @@
 # Master Data Merge Integrity — Supplier, Customer, Brand, and Group
 
 > **Forson Business Suite** | **Date:** 2026-10-05 | **Branch:** `master`
-> **Status:** Phase 1 implemented in the working tree; phases 2–4 remain planned. Migration has not been deployed.
+> **Status:** Phase 1 committed; phase 2 implemented in the working tree. Phase 3 is partly started; phase 4 and rollout remain. Neither new migration has been deployed.
 
 ## 0. Status at a Glance
 
 | Phase | Status | Outcome |
 |---|---|---|
 | Current behavior and schema audit | Complete | Existing services, tests, migrations, live foreign keys, constraints, and merged rows were inspected |
-| Merge contract and relationship policy | Planned | One explicit policy registry will cover every relationship and be checked against PostgreSQL metadata |
-| Schema and audit infrastructure | Implemented in working tree | Inactive state, merge constraints, aliases, audit tables, namespaced locks, FK guards, and a catalog drift test |
-| Transactional merge engine | Not started | Replace source IDs, handle collisions and aggregates, retire sources, and assert postconditions atomically |
-| API and review UI | Not started | Show complete impact, blockers, special resolutions, history, and guarded revert state |
-| Tests and rollout | Not started | Add real-PostgreSQL policy, collision, concurrency, rollback, and drift coverage before enabling merges |
+| Merge contract and relationship policy | Implemented in working tree | Runtime policy registry is checked against PostgreSQL before preview and execution |
+| Schema and audit infrastructure | Phase 1 committed; draft guard in working tree | Inactive state, merge constraints, aliases, audit tables, namespaced locks, FK/draft guards, and catalog drift tests |
+| Transactional merge engine | Implemented in working tree | Shared engine handles collisions, wallets, tags, aliases, drafts, snapshots, outbox, and atomic postconditions |
+| API and review UI | Partially implemented | Structured blockers, impact, fingerprint, and basic blocker display; history, revert UI, stale-client handling, and full review layout remain |
+| Tests and rollout | Partially implemented | Rollback-only PostgreSQL suites cover key paths; broader relationship, concurrency, route, and deployment verification remain |
 
 ## 1. For a New Session or Agent Picking This Up
 
@@ -170,6 +170,17 @@ Phase 1 creates the audit infrastructure but the existing endpoints do not yet w
 
 ## 7. Phase 2 — Unified Transactional Merge Engine
 
+**As built in the working tree:** `MasterDataMergeService` is now the only execution path for supplier, customer, brand, and group; the old service classes retain directory/scanning behavior and delegate preview/execution. Execution requires the preview fingerprint and the existing route permission middleware. It checks the live FK catalog against the policy registry, takes entity-specific advisory and master-row locks, recomputes impact and blockers under those locks, records a merge operation plus before-images, applies special policies and ordinary FK moves, retires sources, checks zero operational references and other invariants, then marks the operation active before commit. Every error rolls the API transaction back.
+
+- Supplier receipt numbers and customer certificate numbers block with conflicting record IDs. The owning document workflow must resolve them; execution does not silently void or delete documents.
+- Customer tags and all four entities' aliases are unioned with normalized deduplication. Existing alias provenance is preserved where present.
+- Customer wallets are locked and checked against their ledgers. Transactions retain amounts/references/actors, move to the canonical wallet, and receive chronological running balances; inconsistent or negative streams block.
+- Active server drafts use known JSON keys and transaction types. PO `selectedSupplier`, goods-receipt supplier/freight paths, generic supplier/customer IDs, and saved customer fields are rewritten. Unknown payloads with possible source IDs block. Migration `20261005_03_master_data_merge_draft_guard.sql` serializes known draft paths with merge locks and rejects new retired IDs.
+- Source-related duplicate suggestions are snapshotted and terminally archived; brand/group decision cache rows involving a source are snapshotted and invalidated. Affected part IDs receive durable Meilisearch upserts in the merge transaction.
+- Review fingerprints include master identity, relationship row identities, aliases, suggestions, drafts, wallet state, impact, and blockers. A stale fingerprint returns `409`.
+
+**Still outside phase 2:** browser-local saved sales and stale transaction submissions need phase 3 API redirects or explicit conflicts. The preview fingerprint has no expiry yet; phase 3 specifies a short-lived token. The old `parts_reassigned` display remains a compact summary pending the full impact UI. No migration was applied to the live local database; integration tests apply both migrations inside rolled-back PostgreSQL transactions.
+
 Build one shared engine with entity-specific policy adapters. Supplier/customer and brand/group may keep separate discovery/scanning logic, but execution must use the same lifecycle:
 
 1. Validate IDs, permission, entity type, and distinct canonical/source membership.
@@ -196,6 +207,8 @@ Do not allow merge chains. If a stale client supplies an already merged ID, reso
 
 ## 8. Phase 3 — Preview, API, and UI
 
+**Partially done:** preview now returns per-relationship counts, structured blockers, affected draft names, wallet total, and a policy fingerprint. The existing merge pages send that fingerprint, show basic blockers, and disable blocked merges. Remaining: full impact matrix, explicit historical-name acknowledgment, token expiry, history/revert views, read-only retired-row behavior across normal endpoints, and stale-client ID handling.
+
 1. Return a structured preview with one count per relationship, affected draft names, aliases/tags to union, wallet totals, collision blockers, warnings, and the postcondition scope.
 2. Generate a short-lived preview token/fingerprint bound to entity type, canonical ID, source IDs, policy version, and observed conflict state. Execution requires it and rechecks under locks.
 3. Replace the party page's single linked-record total and the entity page's parts-only total with the full impact matrix.
@@ -217,6 +230,8 @@ Follow the part merge model with a limited undo window, but validate entity-spec
 5. If safe automatic revert cannot be proven, leave the merge intact and require a forward correction. Never perform a best-effort partial undo.
 
 ## 10. Phase 5 — Verification and Rollout
+
+**Partially done:** `masterDataMergeService.test.js` exercises the shared engine against real PostgreSQL inside a rolled-back transaction. It covers brand/group success, aliases and outbox, supplier receipt collisions, PO/GRN draft rewriting and stale-draft rejection, customer tag/wallet consolidation, certificate and wallet blockers, unknown drafts, stale fingerprints, and a late outbox failure rolled back to a savepoint. The phase 1 policy/schema test remains. Full FK fixture coverage, true concurrent-writer tests, route behavior, staging data audit, and deployment verification remain.
 
 ### 10.1 Required automated coverage
 
@@ -255,6 +270,7 @@ Repair existing merged rows with a dedicated idempotent data migration or review
 ```bash
 npm run -w packages/api test -- --runInBand packages/api/tests/partyMergeService.test.js packages/api/tests/entityMergeService.test.js
 npm run -w packages/api test -- --runInBand packages/api/tests/masterDataMergePolicy.test.js
+npm run -w packages/api test -- --runInBand packages/api/tests/masterDataMergeService.test.js
 npm run -w packages/api test -- --runInBand packages/api/tests/masterDataMerge_db_test.js
 npm run -w packages/api lint
 npm run -w packages/web lint
@@ -298,3 +314,4 @@ Roll out behind a setting such as `ENABLE_SAFE_MASTER_DATA_MERGE`. Apply migrati
 |---|---|---|
 | 2026-10-05 | Codex + product owner | Verified current supplier/customer/brand/group merge behavior against source, tests, migrations, and the live development schema; documented the complete safe-merge plan. |
 | 2026-10-05 | Codex | Implemented phase 1 schema, namespaced locks, write guards, aliases, audit storage, policy registry, and PostgreSQL drift/guard tests in the working tree. Migration was tested inside a rolled-back transaction; it was not deployed. |
+| 2026-10-05 | Codex | Implemented the phase 2 shared transactional engine, draft write guard, minimal fingerprint/blocker UI wiring, and rollback-only PostgreSQL coverage. New migrations were not deployed. |

@@ -95,7 +95,7 @@ router.post('/groups/merge-preview', protect, hasPermission('groups:manage'), as
 });
 router.post('/groups/merge', protect, hasPermission('groups:manage'), async (req, res) => {
   try { res.json({ success: true, result: await mergeService.execute(req.body || {}, req.user.employee_id) }); }
-  catch (err) { res.status(err.statusCode || 500).json({ message: err.message || 'Unable to merge groups.' }); }
+  catch (err) { res.status(err.statusCode || 500).json({ message: err.message || 'Unable to merge groups.', blockers: err.blockers || [] }); }
 });
 router.post('/groups/duplicate-suggestions/:id/dismiss', protect, hasPermission('groups:manage'), async (req, res) => {
   try { await mergeService.dismiss(req.params.id, req.user.employee_id); res.json({ success: true }); }
