@@ -11,6 +11,7 @@ import SortableHeader from '../components/ui/SortableHeader';
 import { useAuth } from '../contexts/AuthContext'; // <-- NEW: Import useAuth
 import { sortData } from '../utils/sortData';
 import { postWithJevConfirmation } from '../helpers/jevConfirmation';
+import CustomerPurchaseHistoryModal from '../components/customers/CustomerPurchaseHistoryModal';
 
 const CustomersPage = ({ onNavigate }) => {
     const { hasPermission } = useAuth(); // <-- NEW: Use the auth context
@@ -24,6 +25,7 @@ const CustomersPage = ({ onNavigate }) => {
     const [page, setPage] = useState(1);
     const [pageSize, setPageSize] = useState(25);
     const [total, setTotal] = useState(0);
+    const [historyCustomer, setHistoryCustomer] = useState(null);
 
     const filterTabs = [
         { key: 'active', label: 'Active' },
@@ -148,8 +150,8 @@ const CustomersPage = ({ onNavigate }) => {
                             </thead>
                             <tbody className="divide-y divide-gray-100 dark:divide-slate-700/60">
                                 {customers.map(customer => (
-                                    <tr key={customer.customer_id} className="hover:bg-gray-50 dark:hover:bg-slate-700/40 text-gray-800 dark:text-slate-200 transition-colors">
-                                        <td className="p-3 text-sm font-medium text-gray-900 dark:text-slate-100">{customer.first_name} {customer.last_name}</td>
+                                    <tr key={customer.customer_id} onClick={() => setHistoryCustomer(customer)} className="cursor-pointer hover:bg-gray-50 dark:hover:bg-slate-700/40 text-gray-800 dark:text-slate-200 transition-colors">
+                                        <td className="p-3 text-sm font-medium text-primary-700 dark:text-primary-300">{customer.first_name} {customer.last_name}</td>
                                         <td className="p-3 text-sm text-gray-700 dark:text-slate-300">{customer.company_name}</td>
                                         <td className="p-3 text-sm hidden sm:table-cell text-gray-700 dark:text-slate-300 font-mono">{customer.phone}</td>
                                         <td className="p-3 text-sm text-center">
@@ -160,8 +162,8 @@ const CustomersPage = ({ onNavigate }) => {
                                         <td className="p-3 text-sm text-right">
                                             {hasPermission('customers:edit') && (
                                                 <>
-                                                    <button onClick={() => handleEdit(customer)} className="text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 mr-3 p-1" title="Edit Customer"><Icon path={ICONS.edit} className="h-5 w-5"/></button>
-                                                    <button onClick={() => handleDelete(customer.customer_id)} className="text-danger-600 dark:text-danger-400 hover:text-danger-700 dark:hover:text-danger-300 p-1" title="Delete Customer"><Icon path={ICONS.trash} className="h-5 w-5"/></button>
+                                                    <button onClick={(event) => { event.stopPropagation(); handleEdit(customer); }} className="text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 mr-3 p-1" title="Edit Customer"><Icon path={ICONS.edit} className="h-5 w-5"/></button>
+                                                    <button onClick={(event) => { event.stopPropagation(); handleDelete(customer.customer_id); }} className="text-danger-600 dark:text-danger-400 hover:text-danger-700 dark:hover:text-danger-300 p-1" title="Delete Customer"><Icon path={ICONS.trash} className="h-5 w-5"/></button>
                                                 </>
                                             )}
                                         </td>
@@ -186,6 +188,7 @@ const CustomersPage = ({ onNavigate }) => {
             <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={currentCustomer ? 'Edit Customer' : 'Add New Customer'}>
                 <CustomerForm customer={currentCustomer} onSave={handleSave} onCancel={() => setIsModalOpen(false)} />
             </Modal>
+            <CustomerPurchaseHistoryModal customer={historyCustomer} isOpen={!!historyCustomer} onClose={() => setHistoryCustomer(null)} />
         </div>
     );
 };
