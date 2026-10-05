@@ -12,51 +12,61 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 router.get('/inventory', protect, hasPermission('inventory:view'), async (req, res) => {
     const { search = '' } = req.query;
     const { paginated, page, pageSize, offset, limit } = parsePaginationQuery(req.query);
-    const sortBy = String(req.query.sortBy || 'name').toLowerCase();
+    const normalizedSearch = String(search || '').trim();
+    const sortBy = String(req.query.sortBy || 'relevance').toLowerCase();
     const sortDirection = String(req.query.sortDirection || 'ASC').toUpperCase() === 'DESC' ? 'DESC' : 'ASC';
     const isGlobalSort = ['sku', 'name', 'display_name', 'stock_on_hand', 'wac', 'total_value'].includes(sortBy);
 
     try {
-        // --- NEW: Hybrid Meilisearch + DB Query ---
+        // A browse has no relevance concept, so read directly from PostgreSQL.
+        // A keyword search starts in Meilisearch and retains its ranked order
+        // unless the user explicitly chooses a column sort.
+        let partIds = null;
+        let total = 0;
+        let queryParams = [];
+        let whereClause = '';
+        let sqlOffset = paginated ? 'LIMIT $1 OFFSET $2' : '';
+        let orderByClause = 'ORDER BY LOWER(COALESCE(g.group_name, \'\') || \' \' || COALESCE(b.brand_name, \'\') || \' \' || COALESCE(p.detail, \'\')) ASC, p.part_id ASC';
 
-        // 1. Get a list of part IDs from Meilisearch
-        const index = meiliClient.index('parts');
-        const metadataResults = paginated && isGlobalSort
-            ? await index.search(search, { limit: 0, offset: 0, attributesToRetrieve: ['part_id'] })
-            : null;
-        const totalHits = metadataResults?.estimatedTotalHits || metadataResults?.totalHits || 0;
-        const fetchLimit = paginated && isGlobalSort
-            ? Math.min(totalHits, 20000)
-            : (paginated ? limit : 200);
-        const fetchOffset = paginated && isGlobalSort ? 0 : (paginated ? offset : 0);
+        if (normalizedSearch) {
+            const index = meiliClient.index('parts');
+            const metadataResults = paginated && isGlobalSort
+                ? await index.search(normalizedSearch, { limit: 0, offset: 0, attributesToRetrieve: ['part_id'] })
+                : null;
+            const totalHits = metadataResults?.estimatedTotalHits || metadataResults?.totalHits || 0;
+            const fetchLimit = paginated && isGlobalSort
+                ? Math.min(totalHits, 20000)
+                : (paginated ? limit : 200);
+            const fetchOffset = paginated && isGlobalSort ? 0 : (paginated ? offset : 0);
+            const searchResults = await index.search(normalizedSearch, {
+                limit: fetchLimit,
+                offset: fetchOffset,
+                attributesToRetrieve: ['part_id'],
+            });
+            partIds = searchResults.hits
+                .map(hit => parseInt(hit.part_id, 10))
+                .filter(id => !Number.isNaN(id));
+            total = isGlobalSort
+                ? (totalHits || partIds.length)
+                : (searchResults.estimatedTotalHits || searchResults.totalHits || partIds.length);
 
-        const searchResults = await index.search(search, {
-            limit: fetchLimit,
-            offset: fetchOffset,
-            attributesToRetrieve: ['part_id'], // We only need the ID
-        });
-        // Ensure we send integer IDs to Postgres (Meili may return strings)
-        const partIds = searchResults.hits
-            .map(hit => parseInt(hit.part_id, 10))
-            .filter(id => !Number.isNaN(id));
-
-        // If Meilisearch returns no results, we can stop here.
-        if (partIds.length === 0) {
-            if (paginated) {
-                return res.json(paginatedResponse({ data: [], page, pageSize, total: 0 }));
+            if (partIds.length === 0) {
+                if (paginated) return res.json(paginatedResponse({ data: [], page, pageSize, total: 0 }));
+                return res.json([]);
             }
-            return res.json([]);
+
+            queryParams = [partIds];
+            whereClause = 'WHERE p.part_id = ANY($1::int[])';
+            sqlOffset = isGlobalSort && paginated ? 'LIMIT $2 OFFSET $3' : '';
+            if (isGlobalSort && paginated) queryParams.push(limit, offset);
+
+            // Preserve Meilisearch relevance for search results. array_position
+            // is deterministic and keeps exact/strong matches at the top.
+            orderByClause = 'ORDER BY array_position($1::int[], p.part_id)';
+        } else if (paginated) {
+            queryParams = [limit, offset];
         }
 
-        // 2. Use those IDs to get the full inventory data from PostgreSQL
-        // Compute stock_on_hand once in a CTE to avoid duplicate subqueries and
-        // coalesce wac_cost to 0 so total_value is deterministic.
-        const queryParams = [partIds];
-        const sqlOffset = isGlobalSort && paginated ? 'LIMIT $2 OFFSET $3' : '';
-        if (isGlobalSort && paginated) {
-            queryParams.push(limit, offset);
-        }
-        let orderByClause = 'ORDER BY p.detail ASC';
         if (isGlobalSort) {
             if (sortBy === 'sku') {
                 orderByClause = `ORDER BY LOWER(COALESCE(p.internal_sku, '')) ${sortDirection}, p.part_id ${sortDirection}`;
@@ -69,6 +79,11 @@ router.get('/inventory', protect, hasPermission('inventory:view'), async (req, r
             } else {
                 orderByClause = `ORDER BY LOWER(COALESCE(g.group_name, '') || ' ' || COALESCE(b.brand_name, '') || ' ' || COALESCE(p.detail, '')) ${sortDirection}, p.part_id ${sortDirection}`;
             }
+        }
+
+        if (!normalizedSearch && sortBy === 'relevance') {
+            // "Best match" has no special meaning without a search; browse by name.
+            orderByClause = 'ORDER BY LOWER(COALESCE(g.group_name, \'\') || \' \' || COALESCE(b.brand_name, \'\') || \' \' || COALESCE(p.detail, \'\')) ASC, p.part_id ASC';
         }
 
         const query = `
@@ -98,7 +113,7 @@ router.get('/inventory', protect, hasPermission('inventory:view'), async (req, r
             LEFT JOIN stock s ON s.part_id = p.part_id
             LEFT JOIN brand b ON p.brand_id = b.brand_id
             LEFT JOIN "group" g ON p.group_id = g.group_id
-            WHERE p.part_id = ANY($1::int[])
+            ${whereClause}
             ${orderByClause}
             ${sqlOffset};
         `;
@@ -108,9 +123,10 @@ router.get('/inventory', protect, hasPermission('inventory:view'), async (req, r
         if (!paginated) {
             return res.json(rows);
         }
-        const total = isGlobalSort
-            ? (totalHits || rows.length)
-            : (searchResults.estimatedTotalHits || searchResults.totalHits || rows.length);
+        if (!normalizedSearch) {
+            const { rows: countRows } = await db.query('SELECT COUNT(*)::int AS total FROM part');
+            total = countRows[0]?.total || 0;
+        }
         res.json(paginatedResponse({ data: rows, page, pageSize, total }));
     } catch (err) {
         console.error(err.message);

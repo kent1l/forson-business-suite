@@ -29,7 +29,9 @@ const InventoryPage = ({ pageState = null }) => {
     const [pageSize, setPageSize] = useState(25);
     const [total, setTotal] = useState(0);
     const [sortConfig, setSortConfig] = useState({ key: null, direction: 'ASC' });
-    const [globalSortBy, setGlobalSortBy] = useState('name');
+    // Relevance is the natural default while searching. Selecting a table
+    // column deliberately replaces that ranking with the requested ordering.
+    const [globalSortBy, setGlobalSortBy] = useState('relevance');
     const [globalSortDirection, setGlobalSortDirection] = useState('ASC');
     // No client-side sort: preserve backend / MeiliSearch ordering
 
@@ -158,6 +160,7 @@ const InventoryPage = ({ pageState = null }) => {
                             onChange={(e) => setGlobalSortBy(e.target.value)}
                             className="rounded-md border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
                         >
+                            <option value="relevance">Best match</option>
                             <option value="sku">SKU</option>
                             <option value="name">Name</option>
                             <option value="stock_on_hand">Stock on Hand</option>
