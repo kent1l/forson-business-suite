@@ -6,6 +6,7 @@ const { getNextDocumentNumber } = require('../helpers/documentNumberGenerator');
 const { normalizeText, normalizeName, normalizeEmail, normalizePhone, normalizeTin } = require('../helpers/normalizeEntity');
 const partyMergeRoutes = require('./partyMergeRoutes');
 const JevGateService = require('../services/jevGateService');
+const { rejectRetired } = require('../helpers/masterDataStatus');
 const router = express.Router();
 const jevGates = new JevGateService({ db });
 
@@ -65,7 +66,7 @@ router.get('/customers', protect, hasPermission(['customers:view', 'pos:use']), 
     const { status = 'active', search, sortBy, sortOrder = 'ASC' } = req.query;
     const { paginated, page, pageSize, offset, limit } = parsePaginationQuery(req.query);
     
-    let whereConditions = [];
+    let whereConditions = ['c.is_merged = FALSE'];
     let queryParams = [];
     let paramIdx = 1;
 
@@ -391,6 +392,7 @@ router.put('/customers/:id', protect, hasPermission('customers:edit'), async (re
     const client = await db.getClient();
     try {
         await client.query('BEGIN');
+        if (await rejectRetired(client, 'customer', id, res)) { await client.query('ROLLBACK'); return; }
         const { rows } = await client.query(
             `UPDATE customer SET first_name = $1, last_name = $2, company_name = $3, phone = $4, email = $5, address = $6,
                                 is_active = $7, credit_limit = $8, tin = $9, registered_name = $10,
@@ -405,6 +407,7 @@ router.put('/customers/:id', protect, hasPermission('customers:edit'), async (re
         res.json(updatedCustomer);
     } catch (err) {
         await client.query('ROLLBACK');
+        if (err.code === '23514') return res.status(409).json({ message: 'This customer is merged. Refresh the customer directory.' });
         console.error(err.message);
         res.status(500).send('Server Error');
     } finally {
@@ -416,6 +419,7 @@ router.put('/customers/:id', protect, hasPermission('customers:edit'), async (re
 router.delete('/customers/:id', protect, hasPermission('customers:edit'), async (req, res) => {
     const { id } = req.params;
     try {
+        if (await rejectRetired(db, 'customer', id, res)) return;
         const invoiceCheck = await db.query('SELECT 1 FROM invoice WHERE customer_id = $1 LIMIT 1', [id]);
         if (invoiceCheck.rows.length > 0) {
             return res.status(400).json({ message: 'Cannot delete customer. They have existing invoices.' });
@@ -426,6 +430,7 @@ router.delete('/customers/:id', protect, hasPermission('customers:edit'), async 
         }
         res.status(200).json({ message: 'Customer deleted successfully.' });
     } catch (err) {
+        if (err.code === '23514') return res.status(409).json({ message: 'This customer is merged. Refresh the customer directory.' });
         console.error(err.message);
         res.status(500).send('Server Error');
     }

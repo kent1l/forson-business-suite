@@ -5,6 +5,7 @@ const MasterDataMergeService = require('../services/masterDataMergeService');
 
 const migration = fs.readFileSync(path.resolve(__dirname, '../../../database/migrations/20261005_02_master_data_merge_phase1.sql'), 'utf8');
 const draftGuardMigration = fs.readFileSync(path.resolve(__dirname, '../../../database/migrations/20261005_03_master_data_merge_draft_guard.sql'), 'utf8');
+const previewHistoryMigration = fs.readFileSync(path.resolve(__dirname, '../../../database/migrations/20261005_04_master_data_merge_preview_history.sql'), 'utf8');
 
 describe('MasterDataMergeService against PostgreSQL', () => {
     let client;
@@ -15,6 +16,7 @@ describe('MasterDataMergeService against PostgreSQL', () => {
         await client.query('BEGIN');
         await client.query(migration);
         await client.query(draftGuardMigration);
+        await client.query(previewHistoryMigration);
         const { rows } = await client.query('SELECT employee_id FROM employee ORDER BY employee_id LIMIT 1');
         actorId = rows[0]?.employee_id;
         if (!actorId) throw new Error('Integration database needs an employee actor.');
@@ -64,6 +66,12 @@ describe('MasterDataMergeService against PostgreSQL', () => {
         const { rows: [operation] } = await client.query(
             'SELECT status FROM master_data_merge_operation WHERE operation_id = $1', [result.operationId]);
         expect(operation.status).toBe('active');
+        const history = await service.history(50, client);
+        const recorded = history.find(entry => entry.operation_id === result.operationId);
+        expect(recorded.canonical.name).toBe(`Merge keep ${suffix}`);
+        expect(recorded.sources[0].name).toBe(`Merge source ${suffix}`);
+        expect(recorded.actor_name).toBeTruthy();
+        expect(recorded.revertEligible).toBe(false);
         const { rows: [snapshot] } = await client.query(
             "SELECT COUNT(*)::int AS count FROM master_data_merge_snapshot WHERE operation_id = $1 AND table_name = 'part'",
             [result.operationId]);
@@ -75,6 +83,7 @@ describe('MasterDataMergeService against PostgreSQL', () => {
     });
 
     test('supplier preview blocks both receipt-number collisions without retiring sources', async () => {
+        process.env.JWT_SECRET = process.env.JWT_SECRET || 'merge-integration-test-secret';
         const suffix = String(Date.now() + 1);
         const { rows: [keep] } = await client.query(
             'INSERT INTO supplier (supplier_name) VALUES ($1) RETURNING supplier_id', [`Receipt keep ${suffix}`]);
@@ -91,6 +100,12 @@ describe('MasterDataMergeService against PostgreSQL', () => {
         const review = await service.review(client, request);
         expect(review.blockers.map(item => item.field)).toEqual(expect.arrayContaining([
             'supplier_invoice_no', 'physical_receipt_no']));
+        const preview = await service.preview(request, actorId, client);
+        expect(preview.conflicts).toHaveLength(2);
+        const blockedHistory = (await service.history(50, client)).find(entry =>
+            entry.status === 'blocked' && entry.canonical_id === keep.supplier_id);
+        expect(blockedHistory.blockers).toHaveLength(2);
+        expect(blockedHistory.sources[0].name).toBe(`Receipt source ${suffix}`);
         await expect(service.executeWithClient(client,
             { ...request, previewFingerprint: review.fingerprint }, actorId))
             .rejects.toMatchObject({ statusCode: 409 });

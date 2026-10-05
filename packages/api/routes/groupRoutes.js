@@ -75,11 +75,11 @@ router.put('/groups/bulk', protect, hasPermission('groups:manage'), async (req, 
     if (!updates.length) return res.status(400).json({ message: 'updates must contain at least one change.' });
     const results = await Promise.all(updates.map(({ group_id, ...values }) => mergeService.update(group_id, values)));
     res.json({ success: true, groups: results });
-  } catch (err) { res.status(err.statusCode || (err.code === '23505' ? 409 : 500)).json({ message: err.message || 'Unable to update groups.' }); }
+  } catch (err) { res.status(err.statusCode || (err.code === '23505' || err.code === '23514' ? 409 : 500)).json({ message: err.message || 'Unable to update groups.', canonicalId: err.canonicalId }); }
 });
 router.put('/groups/:id', protect, hasPermission('groups:manage'), async (req, res) => {
   try { res.json({ success: true, group: await mergeService.update(req.params.id, req.body || {}) }); }
-  catch (err) { res.status(err.statusCode || (err.code === '23505' ? 409 : 500)).json({ message: err.message || 'Unable to update group.' }); }
+  catch (err) { res.status(err.statusCode || (err.code === '23505' || err.code === '23514' ? 409 : 500)).json({ message: err.message || 'Unable to update group.', canonicalId: err.canonicalId }); }
 });
 router.post('/groups/scan-duplicates', protect, hasPermission('groups:manage'), async (req, res) => {
   try { res.json({ success: true, ...(await mergeService.scan(req.body || {})) }); }
@@ -90,8 +90,12 @@ router.get('/groups/duplicate-suggestions', protect, hasPermission('groups:manag
   catch { res.status(500).json({ message: 'Unable to load group suggestions.' }); }
 });
 router.post('/groups/merge-preview', protect, hasPermission('groups:manage'), async (req, res) => {
-  try { res.json({ success: true, ...(await mergeService.preview(req.body || {})) }); }
+  try { res.json({ success: true, ...(await mergeService.preview(req.body || {}, req.user.employee_id)) }); }
   catch (err) { res.status(err.statusCode || 500).json({ message: err.message || 'Unable to preview group merge.' }); }
+});
+router.get('/groups/merge-history', protect, hasPermission('groups:manage'), async (req, res) => {
+  try { res.json({ operations: await mergeService.history(req.query.limit) }); }
+  catch (err) { res.status(err.statusCode || 500).json({ message: err.message || 'Unable to load merge history.' }); }
 });
 router.post('/groups/merge', protect, hasPermission('groups:manage'), async (req, res) => {
   try { res.json({ success: true, result: await mergeService.execute(req.body || {}, req.user.employee_id) }); }

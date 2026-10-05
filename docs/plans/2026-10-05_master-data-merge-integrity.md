@@ -1,17 +1,17 @@
 # Master Data Merge Integrity — Supplier, Customer, Brand, and Group
 
 > **Forson Business Suite** | **Date:** 2026-10-05 | **Branch:** `master`
-> **Status:** Phase 1 committed; phase 2 implemented in the working tree. Phase 3 is partly started; phase 4 and rollout remain. Neither new migration has been deployed.
+> **Status:** Phases 1 and 2 committed. Phase 3 implemented in the working tree with the limits in §8. Phase 4 and rollout remain. The phase 3 blocked-preview migration has not been deployed.
 
 ## 0. Status at a Glance
 
 | Phase | Status | Outcome |
 |---|---|---|
 | Current behavior and schema audit | Complete | Existing services, tests, migrations, live foreign keys, constraints, and merged rows were inspected |
-| Merge contract and relationship policy | Implemented in working tree | Runtime policy registry is checked against PostgreSQL before preview and execution |
-| Schema and audit infrastructure | Phase 1 committed; draft guard in working tree | Inactive state, merge constraints, aliases, audit tables, namespaced locks, FK/draft guards, and catalog drift tests |
-| Transactional merge engine | Implemented in working tree | Shared engine handles collisions, wallets, tags, aliases, drafts, snapshots, outbox, and atomic postconditions |
-| API and review UI | Partially implemented | Structured blockers, impact, fingerprint, and basic blocker display; history, revert UI, stale-client handling, and full review layout remain |
+| Merge contract and relationship policy | Committed | Runtime policy registry is checked against PostgreSQL before preview and execution |
+| Schema and audit infrastructure | Committed | Inactive state, merge constraints, aliases, audit tables, namespaced locks, FK/draft guards, and catalog drift tests |
+| Transactional merge engine | Committed | Shared engine handles collisions, wallets, tags, aliases, drafts, snapshots, outbox, and atomic postconditions |
+| API and review UI | Phase 3 in working tree | Impact matrix, ten-minute signed token, acknowledgment, history, retired-row conflicts, and stale-write checks; see §8 limits |
 | Tests and rollout | Partially implemented | Rollback-only PostgreSQL suites cover key paths; broader relationship, concurrency, route, and deployment verification remain |
 
 ## 1. For a New Session or Agent Picking This Up
@@ -207,7 +207,9 @@ Do not allow merge chains. If a stale client supplies an already merged ID, reso
 
 ## 8. Phase 3 — Preview, API, and UI
 
-**Partially done:** preview now returns per-relationship counts, structured blockers, affected draft names, wallet total, and a policy fingerprint. The existing merge pages send that fingerprint, show basic blockers, and disable blocked merges. Remaining: full impact matrix, explicit historical-name acknowledgment, token expiry, history/revert views, read-only retired-row behavior across normal endpoints, and stale-client ID handling.
+**As built in the working tree:** preview returns each relationship count, drafts, aliases, tag count, wallet total, blockers, warnings, and postcondition scope. A signed token expires after ten minutes; execution verifies it before opening a transaction, then recomputes the fingerprint under locks. The two merge pages show a shared impact matrix and require explicit historical-document acknowledgment. A stale `409` refreshes the preview and clears acknowledgment. The four history endpoints show actor, time, source/canonical names, counts, status, and the undo-window state; guarded revert is disabled until phase 4. Migration `20261005_04_master_data_merge_preview_history.sql` stores blocked previews with their actor, impact, and conflicting records for that history. Normal supplier/customer edits and deletes return `409` with canonical ID for retired rows. Brand/group edits return the same through the shared service. The API preflights submitted master IDs on write requests and rejects inactive or retired choices; database guards remain the final race-safe protection. Default directories exclude merged records, and brand/group choices also exclude inactive rows. Merge success reloads the directory and suggestion queue; other page data loads afresh on navigation.
+
+**Limits to verify in phase 5:** conflict actions navigate to the owning record list with IDs shown; they do not open a specific row. Browser-local saved sales are protected when posted through a submitted customer ID, but older client payload shapes without that key need an endpoint audit. The API's global stale-ID preflight covers typed `supplier_id`, `freight_supplier_id`, `customer_id`, `brand_id`, and `group_id` fields in JSON writes; untyped or non-JSON forms still rely on the database guards. No live migration or UI browser test was run in this phase.
 
 1. Return a structured preview with one count per relationship, affected draft names, aliases/tags to union, wallet totals, collision blockers, warnings, and the postcondition scope.
 2. Generate a short-lived preview token/fingerprint bound to entity type, canonical ID, source IDs, policy version, and observed conflict state. Execution requires it and rechecks under locks.
@@ -315,3 +317,4 @@ Roll out behind a setting such as `ENABLE_SAFE_MASTER_DATA_MERGE`. Apply migrati
 | 2026-10-05 | Codex + product owner | Verified current supplier/customer/brand/group merge behavior against source, tests, migrations, and the live development schema; documented the complete safe-merge plan. |
 | 2026-10-05 | Codex | Implemented phase 1 schema, namespaced locks, write guards, aliases, audit storage, policy registry, and PostgreSQL drift/guard tests in the working tree. Migration was tested inside a rolled-back transaction; it was not deployed. |
 | 2026-10-05 | Codex | Implemented the phase 2 shared transactional engine, draft write guard, minimal fingerprint/blocker UI wiring, and rollback-only PostgreSQL coverage. New migrations were not deployed. |
+| 2026-10-05 | Codex | Added phase 3 preview tokens, full impact review, history, retired-row and stale-write conflicts, plus focused tests. Rollback-only PostgreSQL merge tests, API tests, lint, and web build passed; rollout remains pending. |

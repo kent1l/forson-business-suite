@@ -2,6 +2,7 @@ const { normalizeText } = require('../helpers/normalizeEntity');
 const JevClient = require('./jevClient');
 const crypto = require('crypto');
 const MasterDataMergeService = require('./masterDataMergeService');
+const { masterStatus, retiredConflict } = require('../helpers/masterDataStatus');
 
 const ENTITIES = {
     brand: {
@@ -32,7 +33,7 @@ class EntityMergeService {
             FROM ${e.table} e
             LEFT JOIN ${e.table} target ON target.${e.id} = e.${e.mergedInto}
             LEFT JOIN part p ON p.${e.partColumn} = e.${e.id}
-            WHERE NOT e.is_merged
+            WHERE NOT e.is_merged AND e.is_active
             GROUP BY e.${e.id}, target.${e.name}
             ORDER BY e.${e.name}`);
         return rows;
@@ -50,7 +51,12 @@ class EntityMergeService {
         if (code !== undefined) { params.push(code); fields.push(`${e.code} = $${params.length}`); }
         params.push(id);
         const { rows } = await this.db.query(`UPDATE ${e.table} SET ${fields.join(', ')} WHERE ${e.id} = $${params.length} AND is_merged = FALSE RETURNING *`, params);
-        if (!rows[0]) throw Object.assign(new Error('Entity was not found or has already been merged'), { statusCode: 404 });
+        if (!rows[0]) {
+            const status = await masterStatus(this.db, e.type, id);
+            if (status?.is_merged) throw Object.assign(new Error(retiredConflict(e.type, status).message),
+                { statusCode: 409, canonicalId: status.canonical_id });
+            throw Object.assign(new Error('Entity was not found'), { statusCode: 404 });
+        }
         return rows[0];
     }
 
@@ -218,8 +224,12 @@ class EntityMergeService {
         return rows;
     }
 
-    async preview(request) {
-        return new MasterDataMergeService(this.db, this.entity.type).preview(request);
+    async preview(request, employeeId) {
+        return new MasterDataMergeService(this.db, this.entity.type).preview(request, employeeId);
+    }
+
+    async history(limit) {
+        return new MasterDataMergeService(this.db, this.entity.type).history(limit);
     }
 
     async execute(request, employeeId) {

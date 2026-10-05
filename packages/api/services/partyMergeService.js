@@ -27,7 +27,7 @@ class PartyMergeService {
     async list() {
         const p = this.party;
         const usage = MERGE_POLICY[p.table].references.filter(([, , action]) => action !== 'provenance' && action !== 'workflow').map(([table, column]) => `(SELECT COUNT(*) FROM ${table} r WHERE r.${column} = c.${p.id})`).join(' + ');
-        const { rows } = await this.db.query(`SELECT c.*, ${p.name} AS display_name, (${usage})::int AS reference_count FROM ${p.table} c WHERE NOT c.is_merged ORDER BY display_name`);
+        const { rows } = await this.db.query(`SELECT c.*, ${p.name} AS display_name, (${usage})::int AS reference_count FROM ${p.table} c WHERE NOT c.is_merged AND c.is_active ORDER BY display_name`);
         return rows;
     }
 
@@ -89,8 +89,12 @@ class PartyMergeService {
         return [keep, ...merge];
     }
 
-    async preview(request) {
-        return new MasterDataMergeService(this.db, this.party.table).preview(request);
+    async preview(request, employeeId) {
+        return new MasterDataMergeService(this.db, this.party.table).preview(request, employeeId);
+    }
+
+    async history(limit) {
+        return new MasterDataMergeService(this.db, this.party.table).history(limit);
     }
 
     async execute(request, employeeId) {

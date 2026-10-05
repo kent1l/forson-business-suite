@@ -6,6 +6,7 @@ const { protect, hasPermission } = require('../middleware/authMiddleware');
 const { normalizeText, normalizeName, normalizeEmail, normalizePhone } = require('../helpers/normalizeEntity');
 const partyMergeRoutes = require('./partyMergeRoutes');
 const JevGateService = require('../services/jevGateService');
+const { rejectRetired } = require('../helpers/masterDataStatus');
 const router = express.Router();
 const jevGates = new JevGateService({ db });
 
@@ -16,7 +17,7 @@ router.get('/suppliers', protect, hasPermission('suppliers:view'), async (req, r
   const { status = 'active', search, sortBy, sortOrder = 'ASC' } = req.query;
   const { paginated, page, pageSize, offset, limit } = parsePaginationQuery(req.query);
 
-  let whereConditions = [];
+  let whereConditions = ['is_merged = FALSE'];
   let queryParams = [];
   let paramIdx = 1;
 
@@ -127,6 +128,7 @@ router.put('/suppliers/:id', protect, hasPermission('suppliers:edit'), async (re
     }
 
     try {
+        if (await rejectRetired(db, 'supplier', id, res)) return;
         const updatedSupplier = await db.query(
             'UPDATE supplier SET supplier_name = $1, contact_person = $2, phone = $3, email = $4, address = $5, is_active = $6, payment_terms_days = $7 WHERE supplier_id = $8 RETURNING *',
             [supplier_name, contact_person, phone, email, address, is_active, payment_terms_days || null, id]
@@ -138,6 +140,7 @@ router.put('/suppliers/:id', protect, hasPermission('suppliers:edit'), async (re
 
         res.json(updatedSupplier.rows[0]);
     } catch (err) {
+        if (err.code === '23514') return res.status(409).json({ message: 'This supplier is merged or inactive. Refresh the supplier directory.' });
         if (err.code === '23505') {
             return res.status(409).json({ message: 'A supplier with this name already exists.' });
         }
@@ -150,12 +153,14 @@ router.put('/suppliers/:id', protect, hasPermission('suppliers:edit'), async (re
 router.delete('/suppliers/:id', protect, hasPermission('suppliers:edit'), async (req, res) => { // FIX: Was /customers/:id
     const { id } = req.params;
     try {
+        if (await rejectRetired(db, 'supplier', id, res)) return;
         const deleteOp = await db.query('DELETE FROM supplier WHERE supplier_id = $1 RETURNING *', [id]);
         if (deleteOp.rowCount === 0) {
             return res.status(404).json({ message: 'Supplier not found' });
         }
         res.json({ message: 'Supplier deleted successfully' });
     } catch (err) {
+        if (err.code === '23514') return res.status(409).json({ message: 'This supplier is merged. Refresh the supplier directory.' });
         if (err.code === '23503') {
             return res.status(400).json({ message: 'Cannot delete this supplier because they are linked to one or more goods receipts.' });
         }

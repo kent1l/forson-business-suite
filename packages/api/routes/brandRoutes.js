@@ -78,13 +78,13 @@ router.put('/brands/bulk', protect, hasPermission('brands:manage'), async (req, 
     const results = await Promise.all(updates.map(({ brand_id, ...values }) => mergeService.update(brand_id, values)));
     res.json({ success: true, brands: results });
   } catch (err) {
-    res.status(err.statusCode || (err.code === '23505' ? 409 : 500)).json({ message: err.message || 'Unable to update brands.' });
+    res.status(err.statusCode || (err.code === '23505' || err.code === '23514' ? 409 : 500)).json({ message: err.message || 'Unable to update brands.', canonicalId: err.canonicalId });
   }
 });
 
 router.put('/brands/:id', protect, hasPermission('brands:manage'), async (req, res) => {
   try { res.json({ success: true, brand: await mergeService.update(req.params.id, req.body || {}) }); }
-  catch (err) { res.status(err.statusCode || (err.code === '23505' ? 409 : 500)).json({ message: err.message || 'Unable to update brand.' }); }
+  catch (err) { res.status(err.statusCode || (err.code === '23505' || err.code === '23514' ? 409 : 500)).json({ message: err.message || 'Unable to update brand.', canonicalId: err.canonicalId }); }
 });
 
 router.post('/brands/scan-duplicates', protect, hasPermission('brands:manage'), async (req, res) => {
@@ -96,8 +96,12 @@ router.get('/brands/duplicate-suggestions', protect, hasPermission('brands:manag
   catch { res.status(500).json({ message: 'Unable to load brand suggestions.' }); }
 });
 router.post('/brands/merge-preview', protect, hasPermission('brands:manage'), async (req, res) => {
-  try { res.json({ success: true, ...(await mergeService.preview(req.body || {})) }); }
+  try { res.json({ success: true, ...(await mergeService.preview(req.body || {}, req.user.employee_id)) }); }
   catch (err) { res.status(err.statusCode || 500).json({ message: err.message || 'Unable to preview brand merge.' }); }
+});
+router.get('/brands/merge-history', protect, hasPermission('brands:manage'), async (req, res) => {
+  try { res.json({ operations: await mergeService.history(req.query.limit) }); }
+  catch (err) { res.status(err.statusCode || 500).json({ message: err.message || 'Unable to load merge history.' }); }
 });
 router.post('/brands/merge', protect, hasPermission('brands:manage'), async (req, res) => {
   try { res.json({ success: true, result: await mergeService.execute(req.body || {}, req.user.employee_id) }); }

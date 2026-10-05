@@ -3,6 +3,7 @@ const policy = require('./masterDataMergePolicy');
 const { enqueuePartUpsert } = require('./meiliOutboxService');
 
 const VERSION = 'master-merge-v2';
+const PREVIEW_TTL_MS = 10 * 60 * 1000;
 const CONFIG = {
     supplier: { table: 'supplier', id: 'supplier_id', code: 'supplier_code', alias: 'supplier_alias', name: 'supplier_name' },
     customer: { table: 'customer', id: 'customer_id', code: 'customer_code', alias: 'customer_alias', name: null },
@@ -275,20 +276,114 @@ class MasterDataMergeService {
         return { ...state, impact, aliases, suggestions, drafts, wallets, blockers, fingerprint };
     }
 
-    async preview(request) {
-        await this.assertCatalogPolicy(this.db);
-        const review = await this.review(this.db, request);
+    async preview(request, actorEmployeeId, client = this.db) {
+        await this.assertCatalogPolicy(client);
+        const review = await this.review(client, request);
         const impact = { ...review.impact };
         if (this.entity === 'brand' || this.entity === 'group') {
             impact.parts_reassigned = impact['part.' + this.config.id] || 0;
+        }
+        if (review.blockers.length && Number.isInteger(Number(actorEmployeeId)) && Number(actorEmployeeId) > 0) {
+            await client.query(
+                `INSERT INTO public.master_data_merge_blocked_preview
+                 (entity_type, canonical_id, source_ids, actor_employee_id, impact, blockers, master_names)
+                 VALUES ($1, $2, $3::int[], $4, $5::jsonb, $6::jsonb, $7::jsonb)`,
+                [this.entity, review.keepId, review.mergeIds, actorEmployeeId,
+                    JSON.stringify(impact), JSON.stringify(review.blockers),
+                    JSON.stringify([review.keep, ...review.sources].map(row => ({
+                        id: row[this.config.id], name: displayName(this.entity, row), code: row[this.config.code],
+                    })))]);
         }
         return {
             keep: review.keep, merge: review.sources, impact,
             conflicts: review.blockers, drafts: review.drafts.affected.map(row =>
                 ({ draftId: row.draft_id, draftName: row.draft_name, paths: row.hits })),
+            aliasesToUnion: [
+                ...review.sources.map(row => ({ name: displayName(this.entity, row),
+                    code: row[this.config.code], sourceId: row[this.config.id] })),
+                ...review.aliases.filter(row => review.mergeIds.includes(row[this.config.id]))
+                    .map(row => ({ name: row.alias_name, code: row.alias_code, sourceId: row[this.config.id] })),
+            ],
+            tagsToUnion: this.entity === 'customer' ? impact['customer_tag.customer_id'] || 0 : 0,
             walletTotal: review.wallets.wallets.reduce((sum, row) => sum + Number(row.balance), 0),
             previewFingerprint: review.fingerprint,
+            previewToken: this.previewToken(review.fingerprint, Date.now()),
+            warnings: ['Historical documents will display under the canonical record after merging.'],
+            postconditionScope: [...Object.keys(review.impact),
+                ...(review.drafts.affected.length ? ['draft_transaction.draft_data'] : []),
+                ...(this.entity === 'customer' ? ['customer_wallet.balance', 'customer_wallet_transaction.balance_after'] : []),
+                ...((this.entity === 'brand' || this.entity === 'group') ? ['meili_sync_outbox.part'] : [])],
         };
+    }
+
+    previewToken(fingerprint, issuedAt) {
+        const payload = `${VERSION}:${this.entity}:${fingerprint}:${issuedAt}`;
+        const secret = process.env.JWT_SECRET || process.env.SESSION_SECRET;
+        if (!secret) throw new Error('A server signing secret is required for merge previews.');
+        const signature = crypto.createHmac('sha256', secret).update(payload).digest('hex');
+        return `${issuedAt}.${signature}`;
+    }
+
+    assertPreviewToken(request) {
+        const match = /^(\d{13})\.([a-f0-9]{64})$/.exec(request.previewToken || '');
+        if (!match) throw conflict('Refresh the merge preview before confirming.');
+        const issuedAt = Number(match[1]);
+        if (issuedAt > Date.now() || Date.now() - issuedAt > PREVIEW_TTL_MS) {
+            throw conflict('Merge preview expired. Refresh and review it again.');
+        }
+        const expected = this.previewToken(request.previewFingerprint, issuedAt);
+        if (!crypto.timingSafeEqual(Buffer.from(request.previewToken), Buffer.from(expected))) {
+            throw conflict('Merge preview token is invalid. Refresh and review it again.');
+        }
+    }
+
+    async history(limit = 50, client = this.db) {
+        const size = Math.min(Math.max(Number(limit) || 50, 1), 100);
+        const { rows } = await client.query(
+            `SELECT o.operation_id, o.canonical_id, o.source_ids, o.actor_employee_id,
+                    CONCAT_WS(' ', actor.first_name, actor.last_name) AS actor_name,
+                    o.started_at, o.completed_at,
+                    o.undo_expires_at, o.status, o.impact, o.decisions,
+                    (SELECT jsonb_agg(s.before_image ORDER BY s.record_id)
+                     FROM public.master_data_merge_snapshot s
+                     WHERE s.operation_id = o.operation_id AND s.table_name = $1) AS master_before_images,
+                    (status = 'active' AND undo_expires_at > NOW()) AS within_undo_window
+             FROM public.master_data_merge_operation o
+             LEFT JOIN public.employee actor ON actor.employee_id = o.actor_employee_id
+             WHERE entity_type = $1
+             ORDER BY started_at DESC LIMIT $2`, [this.entity, size]);
+        const operations = rows.map(row => {
+            const masters = row.master_before_images || [];
+            const find = id => masters.find(master => master[this.config.id] === id);
+            const { master_before_images: _beforeImages, ...operation } = row;
+            return {
+                ...operation,
+                canonical: find(row.canonical_id) ? {
+                    id: row.canonical_id, name: displayName(this.entity, find(row.canonical_id)),
+                    code: find(row.canonical_id)[this.config.code],
+                } : { id: row.canonical_id },
+                sources: row.source_ids.map(id => find(id) ? {
+                    id, name: displayName(this.entity, find(id)), code: find(id)[this.config.code],
+                } : { id }),
+                revertEligible: false,
+            };
+        });
+        const { rows: blocked } = await client.query(
+            `SELECT p.preview_id, p.canonical_id, p.source_ids, p.actor_employee_id,
+                    CONCAT_WS(' ', actor.first_name, actor.last_name) AS actor_name,
+                    p.observed_at, p.impact, p.blockers, p.master_names
+             FROM public.master_data_merge_blocked_preview p
+             LEFT JOIN public.employee actor ON actor.employee_id = p.actor_employee_id
+             WHERE p.entity_type = $1 ORDER BY p.observed_at DESC LIMIT $2`, [this.entity, size]);
+        return [...operations, ...blocked.map(row => ({
+            operation_id: row.preview_id, canonical_id: row.canonical_id, source_ids: row.source_ids,
+            actor_employee_id: row.actor_employee_id, actor_name: row.actor_name,
+            started_at: row.observed_at, status: 'blocked',
+            impact: { references: row.impact }, blockers: row.blockers,
+            canonical: row.master_names.find(item => item.id === row.canonical_id),
+            sources: row.master_names.filter(item => row.source_ids.includes(item.id)),
+            revertEligible: false, within_undo_window: false,
+        }))].sort((a, b) => new Date(b.started_at) - new Date(a.started_at)).slice(0, size);
     }
 
     async execute(request, actorEmployeeId) {
@@ -298,6 +393,10 @@ class MasterDataMergeService {
         }
         if (typeof request.previewFingerprint !== 'string' || !/^[a-f0-9]{64}$/.test(request.previewFingerprint)) {
             throw conflict('Refresh the merge preview before confirming.');
+        }
+        this.assertPreviewToken(request);
+        if (request.acknowledgeHistoricalDocuments !== true) {
+            throw Object.assign(new Error('Acknowledge the historical document change before merging.'), { statusCode: 400 });
         }
         const client = await this.db.getClient();
         try {

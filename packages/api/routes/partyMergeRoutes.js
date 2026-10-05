@@ -21,8 +21,12 @@ module.exports = function partyMergeRoutes(db, party) {
         catch { res.status(500).json({ message: `Unable to load ${party} suggestions.` }); }
     });
     router.post(`/${plural}/merge-preview`, protect, hasPermission(permission), async (req, res) => {
-        try { res.json(await service.preview(req.body || {})); }
+        try { res.json(await service.preview(req.body || {}, req.user.employee_id)); }
         catch (error) { res.status(error.statusCode || 500).json({ message: error.message || `Unable to preview ${party} merge.` }); }
+    });
+    router.get(`/${plural}/merge-history`, protect, hasPermission(permission), async (req, res) => {
+        try { res.json({ operations: await service.history(req.query.limit) }); }
+        catch (error) { res.status(error.statusCode || 500).json({ message: error.message || 'Unable to load merge history.' }); }
     });
     router.post(`/${plural}/merge`, protect, hasPermission(permission), async (req, res) => {
         try { res.json({ result: await service.execute(req.body || {}, req.user.employee_id) }); }
