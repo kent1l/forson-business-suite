@@ -6,6 +6,7 @@ export default function CycleCountControlsTab() {
     const [triggerLoading, setTriggerLoading] = useState(false);
     const [employees, setEmployees] = useState([]);
     const [empLoading, setEmpLoading] = useState(true);
+    const [savingAutoAssign, setSavingAutoAssign] = useState(false);
 
     // Part search state
     const [partQuery, setPartQuery] = useState('');
@@ -118,6 +119,31 @@ export default function CycleCountControlsTab() {
             toast.error(err.response?.data?.message || 'Assignment failed.');
         } finally {
             setAssigning(false);
+        }
+    };
+
+    const handleAutoAssignToggle = async (employeeId) => {
+        const employee = employees.find(emp => emp.employee_id === employeeId);
+        if (!employee) return;
+
+        const employeeIds = employees
+            .filter(emp => emp.auto_assign_enabled || emp.employee_id === employeeId)
+            .filter(emp => emp.employee_id !== employeeId || !employee.auto_assign_enabled)
+            .map(emp => emp.employee_id);
+
+        setSavingAutoAssign(true);
+        try {
+            await api.put('/inventory/cycle-count/auto-assign-employees', { employee_ids: employeeIds });
+            setEmployees(prev => prev.map(emp => (
+                emp.employee_id === employeeId
+                    ? { ...emp, auto_assign_enabled: !emp.auto_assign_enabled }
+                    : emp
+            )));
+            toast.success(`${employee.employee_name} ${employee.auto_assign_enabled ? 'removed from' : 'added to'} automatic assignments.`);
+        } catch (err) {
+            toast.error(err.response?.data?.message || 'Failed to update automatic assignments.');
+        } finally {
+            setSavingAutoAssign(false);
         }
     };
 
@@ -254,7 +280,10 @@ export default function CycleCountControlsTab() {
             {/* ── Employee Workload Overview ── */}
             <section className="border border-gray-200 rounded-lg p-5">
                 <div className="flex items-center justify-between mb-3">
-                    <h3 className="text-base font-semibold">Employee Workload</h3>
+                    <div>
+                        <h3 className="text-base font-semibold">Employee Workload</h3>
+                        <p className="text-xs text-gray-500 mt-1">Select the staff who may receive automatically generated cycle-count batches.</p>
+                    </div>
                     <button
                         onClick={fetchEmployees}
                         disabled={empLoading}
@@ -272,6 +301,8 @@ export default function CycleCountControlsTab() {
                         employees={employees} 
                         onRemoveItem={handleRemoveItem} 
                         onRemoveItems={handleRemoveItems} 
+                        onAutoAssignToggle={handleAutoAssignToggle}
+                        savingAutoAssign={savingAutoAssign}
                     />
                 )}
             </section>
@@ -279,7 +310,7 @@ export default function CycleCountControlsTab() {
     );
 }
 
-function EmployeeWorkloadTable({ employees, onRemoveItem, onRemoveItems }) {
+function EmployeeWorkloadTable({ employees, onRemoveItem, onRemoveItems, onAutoAssignToggle, savingAutoAssign }) {
     const [expanded, setExpanded] = useState(null);
     const [pendingLines, setPendingLines] = useState({});
     const [loadingEmp, setLoadingEmp] = useState(null);
@@ -335,6 +366,7 @@ function EmployeeWorkloadTable({ employees, onRemoveItem, onRemoveItems }) {
                 <thead className="bg-gray-50">
                     <tr>
                         <th className="py-2 px-3 border-b text-left">Employee</th>
+                        <th className="py-2 px-3 border-b text-center">Auto-assign</th>
                         <th className="py-2 px-3 border-b text-center">Active Batches</th>
                         <th className="py-2 px-3 border-b text-center">Pending Items</th>
                         <th className="py-2 px-3 border-b text-center">Manage</th>
@@ -355,6 +387,16 @@ function EmployeeWorkloadTable({ employees, onRemoveItem, onRemoveItems }) {
                             <React.Fragment key={emp.employee_id}>
                                 <tr className="border-b hover:bg-gray-50">
                                     <td className="py-2 px-3 font-medium">{emp.employee_name}</td>
+                                    <td className="py-2 px-3 text-center">
+                                        <input
+                                            type="checkbox"
+                                            checked={Boolean(emp.auto_assign_enabled)}
+                                            disabled={savingAutoAssign}
+                                            onChange={() => onAutoAssignToggle(emp.employee_id)}
+                                            aria-label={`Include ${emp.employee_name} in automatic cycle-count assignments`}
+                                            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer disabled:cursor-not-allowed"
+                                        />
+                                    </td>
                                     <td className="py-2 px-3 text-center">{emp.active_batches || 0}</td>
                                     <td className="py-2 px-3 text-center">
                                         <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-semibold ${parseInt(emp.pending_items) > 0 ? 'bg-orange-100 text-orange-700' : 'bg-gray-100 text-gray-600'}`}>
@@ -375,7 +417,7 @@ function EmployeeWorkloadTable({ employees, onRemoveItem, onRemoveItems }) {
 
                                 {expanded === emp.employee_id && (
                                     <tr>
-                                        <td colSpan={4} className="bg-gray-50 px-4 py-3 border-b">
+                                        <td colSpan={5} className="bg-gray-50 px-4 py-3 border-b">
                                             {loadingEmp === emp.employee_id ? (
                                                 <p className="text-xs text-gray-400">Loading items…</p>
                                             ) : lines.length === 0 ? (

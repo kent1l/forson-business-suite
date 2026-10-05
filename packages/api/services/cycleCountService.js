@@ -3,6 +3,16 @@ const db = require('../db');
 
 let currentCronJob = null;
 
+function parseAutoAssignEmployeeIds(value) {
+    try {
+        const ids = JSON.parse(value || '[]');
+        if (!Array.isArray(ids)) return [];
+        return [...new Set(ids.filter(Number.isInteger).filter(id => id > 0))];
+    } catch {
+        return [];
+    }
+}
+
 async function generateCycleCountBatches() {
     console.log('[CycleCountEngine] Starting nightly batch generation...');
     const client = await db.getClient();
@@ -31,6 +41,7 @@ async function generateCycleCountBatches() {
         // priority of valuable stock without swamping velocity or count age.
         const costWeight = parseFloat(settings['CYCLE_COUNT_COST_WEIGHT'] || '0.01');
         const adjustmentMultiplier = parseFloat(settings['CYCLE_COUNT_ADJUSTMENT_MULTIPLIER'] || '2');
+        const autoAssignEmployeeIds = parseAutoAssignEmployeeIds(settings['CYCLE_COUNT_AUTO_ASSIGN_EMPLOYEE_IDS']);
 
         // 2. Fetch available employees
         const { rows: employees } = await client.query(`
@@ -39,7 +50,8 @@ async function generateCycleCountBatches() {
             LEFT JOIN role_permission rp ON e.permission_level_id = rp.permission_level_id
             LEFT JOIN permission p ON rp.permission_id = p.permission_id
             WHERE e.is_active = TRUE
-              AND (e.permission_level_id = 10 OR p.permission_key = 'cycle_count:execute')
+              AND p.permission_key = 'cycle_count:execute'
+              AND e.employee_id = ANY($1::int[])
               AND NOT EXISTS (
                   SELECT 1
                   FROM leave_request lr
@@ -48,7 +60,7 @@ async function generateCycleCountBatches() {
                     AND (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Manila')::date
                         BETWEEN lr.date_from AND lr.date_to
               )
-        `);
+        `, [autoAssignEmployeeIds]);
 
         if (employees.length === 0) {
             console.log('[CycleCountEngine] No eligible employees found for cycle counting.');
@@ -233,5 +245,6 @@ async function startCycleCountEngine() {
 
 module.exports = {
     startCycleCountEngine,
-    generateCycleCountBatches
+    generateCycleCountBatches,
+    parseAutoAssignEmployeeIds
 };
