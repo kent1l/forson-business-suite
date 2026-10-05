@@ -931,11 +931,13 @@ router.get('/inventory/cycle-count/audit-log', protect, hasPermission('cycle_cou
                 al.*,
                 COALESCE(pv.display_name, p.internal_sku, p.detail) AS display_name,
                 p.internal_sku,
-                e.first_name || ' ' || e.last_name AS actioned_by_name
+                counted_by.first_name || ' ' || counted_by.last_name AS counted_by_name
             FROM cycle_count_audit_log al
+            LEFT JOIN cycle_count_line l ON l.line_id = al.line_id
+            LEFT JOIN cycle_count_batch b ON b.batch_id = l.batch_id
             LEFT JOIN part p ON al.part_id = p.part_id
             LEFT JOIN parts_view pv ON pv.part_id = al.part_id
-            LEFT JOIN employee e ON al.actioned_by = e.employee_id
+            LEFT JOIN employee counted_by ON b.employee_id = counted_by.employee_id
             ORDER BY al.actioned_at DESC
             LIMIT $1 OFFSET $2
         `, [limit, offset]);
@@ -1027,11 +1029,22 @@ router.post('/inventory/cycle-count/assign-item', protect, hasPermission('cycle_
 // GET /api/inventory/cycle-count/employees  — list employees eligible for cycle count
 router.get('/inventory/cycle-count/employees', protect, hasPermission('cycle_count:manage'), async (req, res) => {
     try {
+        const { rows: settingRows } = await db.query(
+            "SELECT setting_value FROM settings WHERE setting_key = 'CYCLE_COUNT_AUTO_ASSIGN_EMPLOYEE_IDS'"
+        );
+        let autoAssignEmployeeIds = [];
+        try {
+            const parsed = JSON.parse(settingRows[0]?.setting_value || '[]');
+            if (Array.isArray(parsed)) autoAssignEmployeeIds = parsed.filter(Number.isInteger).filter(id => id > 0);
+        } catch {
+            // A malformed legacy setting must not make the workload screen unavailable.
+        }
         const { rows } = await db.query(`
             SELECT
                 e.employee_id,
                 e.first_name || ' ' || e.last_name AS employee_name,
                 e.is_active,
+                e.employee_id = ANY($1::int[]) AS auto_assign_enabled,
                 COALESCE(sub.active_batches, 0) AS active_batches,
                 COALESCE(sub.pending_items, 0) AS pending_items
             FROM employee e
@@ -1046,18 +1059,50 @@ router.get('/inventory/cycle-count/employees', protect, hasPermission('cycle_cou
                 GROUP BY b.employee_id
             ) sub ON sub.employee_id = e.employee_id
             WHERE e.is_active = TRUE
-              AND (
-                  e.permission_level_id = 10
-                  OR EXISTS (
-                      SELECT 1 FROM role_permission rp
-                      JOIN permission p ON rp.permission_id = p.permission_id
-                      WHERE rp.permission_level_id = e.permission_level_id
-                        AND p.permission_key = 'cycle_count:execute'
-                  )
+              AND EXISTS (
+                  SELECT 1 FROM role_permission rp
+                  JOIN permission p ON rp.permission_id = p.permission_id
+                  WHERE rp.permission_level_id = e.permission_level_id
+                    AND p.permission_key = 'cycle_count:execute'
               )
             ORDER BY employee_name ASC
-        `);
+        `, [autoAssignEmployeeIds]);
         res.json(rows);
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).send('Server Error');
+    }
+});
+
+// PUT /api/inventory/cycle-count/auto-assign-employees — choose who receives generated batches
+router.put('/inventory/cycle-count/auto-assign-employees', protect, hasPermission('cycle_count:manage'), async (req, res) => {
+    const { employee_ids } = req.body || {};
+    if (!Array.isArray(employee_ids) || employee_ids.some(id => !Number.isInteger(id) || id <= 0)) {
+        return res.status(400).json({ message: 'employee_ids must be an array of positive integer employee IDs' });
+    }
+
+    const employeeIds = [...new Set(employee_ids)];
+    try {
+        const { rows: eligible } = await db.query(`
+            SELECT DISTINCT e.employee_id
+            FROM employee e
+            JOIN role_permission rp ON rp.permission_level_id = e.permission_level_id
+            JOIN permission p ON p.permission_id = rp.permission_id
+            WHERE e.is_active = TRUE
+              AND p.permission_key = 'cycle_count:execute'
+              AND e.employee_id = ANY($1::int[])
+        `, [employeeIds]);
+
+        if (eligible.length !== employeeIds.length) {
+            return res.status(400).json({ message: 'Every selected employee must be active and have cycle-count execution permission' });
+        }
+
+        await db.query(`
+            INSERT INTO settings (setting_key, setting_value, description)
+            VALUES ('CYCLE_COUNT_AUTO_ASSIGN_EMPLOYEE_IDS', $1, 'Employee IDs eligible for automatic cycle-count batch assignment')
+            ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value
+        `, [JSON.stringify(employeeIds)]);
+        res.json({ employee_ids: employeeIds });
     } catch (err) {
         console.error(err.message);
         res.status(500).send('Server Error');

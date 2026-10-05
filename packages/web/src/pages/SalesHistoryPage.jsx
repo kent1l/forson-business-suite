@@ -38,6 +38,16 @@ const getStatusBadge = (status) => {
     }
 };
 
+// The invoice lifecycle stays Paid/Unpaid for A/R aging after a partial credit
+// note, but Sales History should still communicate that a refund was issued.
+const getSalesHistoryStatus = (invoice) => {
+    const refunded = Number(invoice.refunded_amount) || 0;
+    const total = Number(invoice.total_amount) || 0;
+    if (refunded > 0 && refunded >= total) return 'Fully Refunded';
+    if (refunded > 0) return 'Partially Refunded';
+    return invoice.status;
+};
+
 
 const SalesHistoryPage = ({ pageState = null }) => {
     const { settings } = useSettings();
@@ -461,10 +471,10 @@ const SalesHistoryPage = ({ pageState = null }) => {
                 case 'customer':
                     av = asCustomer(a); bv = asCustomer(b); break;
                 case 'status':
-                    av = a.status; bv = b.status; break;
+                    av = getSalesHistoryStatus(a); bv = getSalesHistoryStatus(b); break;
                 case 'total_amount':
-                    av = parseFloat(a.total_amount) || 0;
-                    bv = parseFloat(b.total_amount) || 0;
+                    av = parseFloat(a.net_amount ?? a.total_amount) || 0;
+                    bv = parseFloat(b.net_amount ?? b.total_amount) || 0;
                     return factor * (av - bv);
                 default:
                     av = ''; bv = '';
@@ -831,11 +841,18 @@ const SalesHistoryPage = ({ pageState = null }) => {
                                         <td className="p-3 text-sm text-gray-600 dark:text-slate-400">{invoice.approved_by_name || 'System Auto-Approved'}</td>
                                         <td className="p-3 text-sm text-gray-800 dark:text-slate-100 font-medium">{invoice.customer_first_name} {invoice.customer_last_name}</td>
                                         <td className="p-3 text-sm">
-                                            <span className={`px-2 py-1 text-xs font-semibold rounded-full ${getStatusBadge(invoice.status)}`}>
-                                                {invoice.status}
+                                            <span className={`px-2 py-1 text-xs font-semibold rounded-full ${getStatusBadge(getSalesHistoryStatus(invoice))}`}>
+                                                {getSalesHistoryStatus(invoice)}
                                             </span>
                                         </td>
-                                        <td className="p-3 text-sm text-right font-mono font-semibold text-gray-900 dark:text-slate-100">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{parseFloat(invoice.total_amount).toFixed(2)}</td>
+                                        <td className="p-3 text-sm text-right font-mono font-semibold text-gray-900 dark:text-slate-100">
+                                            {invoice.refunded_amount > 0 && (
+                                                <span className="mr-2 text-xs font-normal text-gray-500 line-through">
+                                                    {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{parseFloat(invoice.total_amount).toFixed(2)}
+                                                </span>
+                                            )}
+                                            {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{parseFloat(invoice.net_amount ?? invoice.total_amount).toFixed(2)}
+                                        </td>
                                     </tr>
                                 ))}
                             </tbody>

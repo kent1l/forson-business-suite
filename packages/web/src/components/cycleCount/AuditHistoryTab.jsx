@@ -77,7 +77,7 @@ export default function AuditHistoryTab() {
                                     <th className="py-2 px-3 border-b text-right">Counted</th>
                                     <th className="py-2 px-3 border-b text-right">Variance</th>
                                     <th className="py-2 px-3 border-b text-right">Financial Impact</th>
-                                    <th className="py-2 px-3 border-b text-left">Actioned By</th>
+                                    <th className="py-2 px-3 border-b text-left">Counted By</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -105,7 +105,7 @@ export default function AuditHistoryTab() {
                                             <td className={`py-2 px-3 text-right font-bold ${colorCls}`}>
                                                 {formatCurrency(Math.abs(parseFloat(row.financial_impact) || 0), currencySymbol)}
                                             </td>
-                                            <td className="py-2 px-3 text-gray-600">{row.actioned_by_name || '—'}</td>
+                                            <td className="py-2 px-3 text-gray-600">{row.counted_by_name || '—'}</td>
                                         </tr>
                                     );
                                 })}
