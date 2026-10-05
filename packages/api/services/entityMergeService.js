@@ -1,15 +1,16 @@
 const { normalizeText } = require('../helpers/normalizeEntity');
 const JevClient = require('./jevClient');
 const crypto = require('crypto');
+const MERGE_POLICY = require('./masterDataMergePolicy');
 
 const ENTITIES = {
     brand: {
-        type: 'brand', table: 'brand', id: 'brand_id', name: 'brand_name', code: 'brand_code',
+        type: 'brand', table: 'brand', id: 'brand_id', name: 'brand_name', code: 'brand_code', namespace: MERGE_POLICY.brand.namespace,
         mergedInto: 'merged_into_brand_id', suggestion: 'brand_duplicate_suggestion',
         alias: 'brand_alias', partColumn: 'brand_id'
     },
     group: {
-        type: 'group', table: '"group"', id: 'group_id', name: 'group_name', code: 'group_code',
+        type: 'group', table: '"group"', id: 'group_id', name: 'group_name', code: 'group_code', namespace: MERGE_POLICY.group.namespace,
         mergedInto: 'merged_into_group_id', suggestion: 'group_duplicate_suggestion',
         alias: 'group_alias', partColumn: 'group_id'
     }
@@ -239,14 +240,14 @@ class EntityMergeService {
         const client = await this.db.getClient();
         try {
             await client.query('BEGIN');
-            for (const id of [...ids].sort((a, b) => a - b)) await client.query('SELECT pg_advisory_xact_lock($1::bigint)', [id]);
+            for (const id of [...ids].sort((a, b) => a - b)) await client.query('SELECT pg_advisory_xact_lock($1::int, $2::int)', [e.namespace, id]);
             const { rows } = await client.query(`SELECT ${e.id}, ${e.name}, ${e.code}, is_merged, ${e.mergedInto} FROM ${e.table} WHERE ${e.id} = ANY($1::int[]) FOR UPDATE`, [ids]);
             this.assertMergeable(rows, keepId, mergeIds);
             const { rowCount: partsReassigned } = await client.query(`UPDATE part SET ${e.partColumn} = $1 WHERE ${e.partColumn} = ANY($2::int[])`, [keepId, mergeIds]);
             for (const source of rows.filter(row => mergeIds.includes(row[e.id]))) {
                 await client.query(`INSERT INTO public.${e.alias} (${e.id}, alias_name, alias_code, source_${e.id}) VALUES ($1, $2, $3, $4) ON CONFLICT (${e.id}, alias_name) DO NOTHING`, [keepId, source[e.name], source[e.code], source[e.id]]);
             }
-            await client.query(`UPDATE ${e.table} SET is_merged = TRUE, ${e.mergedInto} = $1 WHERE ${e.id} = ANY($2::int[])`, [keepId, mergeIds]);
+            await client.query(`UPDATE ${e.table} SET is_merged = TRUE, is_active = FALSE, ${e.mergedInto} = $1 WHERE ${e.id} = ANY($2::int[])`, [keepId, mergeIds]);
             if (selectedSuggestionIds.length) {
                 await client.query(`UPDATE public.${e.suggestion}
                     SET status = 'merged', merged_at = NOW(), merged_by = $1, updated_at = NOW()

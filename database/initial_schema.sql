@@ -44,7 +44,9 @@ CREATE TABLE IF NOT EXISTS public.brand (
     brand_code character varying(10) NOT NULL UNIQUE,
     merged_into_brand_id integer REFERENCES public.brand(brand_id) ON DELETE RESTRICT,
     is_merged boolean NOT NULL DEFAULT false,
-    CONSTRAINT chk_brand_merge_state CHECK ((is_merged AND merged_into_brand_id IS NOT NULL) OR (NOT is_merged AND merged_into_brand_id IS NULL))
+    is_active boolean NOT NULL DEFAULT true,
+    CONSTRAINT chk_brand_merge_state CHECK ((is_merged AND merged_into_brand_id IS NOT NULL AND NOT is_active) OR (NOT is_merged AND merged_into_brand_id IS NULL)),
+    CONSTRAINT chk_brand_merge_not_self CHECK (merged_into_brand_id IS DISTINCT FROM brand_id)
 );
 
 CREATE TABLE IF NOT EXISTS public."group" (
@@ -53,7 +55,9 @@ CREATE TABLE IF NOT EXISTS public."group" (
     group_code character varying(10) NOT NULL UNIQUE,
     merged_into_group_id integer REFERENCES public."group"(group_id) ON DELETE RESTRICT,
     is_merged boolean NOT NULL DEFAULT false,
-    CONSTRAINT chk_group_merge_state CHECK ((is_merged AND merged_into_group_id IS NOT NULL) OR (NOT is_merged AND merged_into_group_id IS NULL))
+    is_active boolean NOT NULL DEFAULT true,
+    CONSTRAINT chk_group_merge_state CHECK ((is_merged AND merged_into_group_id IS NOT NULL AND NOT is_active) OR (NOT is_merged AND merged_into_group_id IS NULL)),
+    CONSTRAINT chk_group_merge_not_self CHECK (merged_into_group_id IS DISTINCT FROM group_id)
 );
 
 CREATE TABLE IF NOT EXISTS public.brand_alias (
@@ -190,14 +194,15 @@ CREATE TABLE IF NOT EXISTS public.supplier (
     phone character varying(50),
     email character varying(100),
     address text,
-    is_active boolean DEFAULT true,
+    is_active boolean NOT NULL DEFAULT true,
     date_created timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     created_by integer REFERENCES public.employee(employee_id) ON DELETE SET NULL,
     date_modified timestamp with time zone,
     modified_by integer REFERENCES public.employee(employee_id) ON DELETE SET NULL,
     merged_into_supplier_id integer REFERENCES public.supplier(supplier_id) ON DELETE RESTRICT,
     is_merged boolean NOT NULL DEFAULT false,
-    CONSTRAINT chk_supplier_merge_state CHECK ((is_merged AND merged_into_supplier_id IS NOT NULL) OR (NOT is_merged AND merged_into_supplier_id IS NULL))
+    CONSTRAINT chk_supplier_merge_state CHECK ((is_merged AND merged_into_supplier_id IS NOT NULL AND NOT is_active) OR (NOT is_merged AND merged_into_supplier_id IS NULL)),
+    CONSTRAINT chk_supplier_merge_not_self CHECK (merged_into_supplier_id IS DISTINCT FROM supplier_id)
 );
 
 CREATE TABLE IF NOT EXISTS public.goods_receipt (
@@ -225,11 +230,12 @@ CREATE TABLE IF NOT EXISTS public.customer (
     phone character varying(50),
     email character varying(100) UNIQUE,
     address text,
-    is_active boolean DEFAULT true,
+    is_active boolean NOT NULL DEFAULT true,
     date_created timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     merged_into_customer_id integer REFERENCES public.customer(customer_id) ON DELETE RESTRICT,
     is_merged boolean NOT NULL DEFAULT false,
-    CONSTRAINT chk_customer_merge_state CHECK ((is_merged AND merged_into_customer_id IS NOT NULL) OR (NOT is_merged AND merged_into_customer_id IS NULL))
+    CONSTRAINT chk_customer_merge_state CHECK ((is_merged AND merged_into_customer_id IS NOT NULL AND NOT is_active) OR (NOT is_merged AND merged_into_customer_id IS NULL)),
+    CONSTRAINT chk_customer_merge_not_self CHECK (merged_into_customer_id IS DISTINCT FROM customer_id)
 );
 
 -- Candidate pairs produced by duplicate scans. They are advisory only; every

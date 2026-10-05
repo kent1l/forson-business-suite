@@ -1,8 +1,9 @@
 const JevClient = require('./jevClient');
+const MERGE_POLICY = require('./masterDataMergePolicy');
 
 const PARTIES = {
     customer: {
-        table: 'customer', id: 'customer_id', code: 'customer_code', mergedInto: 'merged_into_customer_id',
+        table: 'customer', id: 'customer_id', code: 'customer_code', mergedInto: 'merged_into_customer_id', namespace: MERGE_POLICY.customer.namespace,
         suggestion: 'customer_duplicate_suggestion', permission: 'customers:edit',
         name: "COALESCE(NULLIF(c.company_name, ''), NULLIF(BTRIM(CONCAT_WS(' ', c.first_name, c.last_name)), ''), c.customer_code)",
         duplicateName: "COALESCE(NULLIF(d.company_name, ''), NULLIF(BTRIM(CONCAT_WS(' ', d.first_name, d.last_name)), ''), d.customer_code)",
@@ -14,7 +15,7 @@ const PARTIES = {
         tagTable: 'customer_tag', draftKey: 'customer_id', walletTable: 'customer_wallet', walletTransactionTable: 'customer_wallet_transaction',
     },
     supplier: {
-        table: 'supplier', id: 'supplier_id', code: 'supplier_code', mergedInto: 'merged_into_supplier_id',
+        table: 'supplier', id: 'supplier_id', code: 'supplier_code', mergedInto: 'merged_into_supplier_id', namespace: MERGE_POLICY.supplier.namespace,
         suggestion: 'supplier_duplicate_suggestion', permission: 'suppliers:edit',
         name: 'c.supplier_name', duplicateName: 'd.supplier_name',
         references: [
@@ -138,7 +139,7 @@ class PartyMergeService {
         const client = await this.db.getClient();
         try {
             await client.query('BEGIN');
-            for (const id of [...ids].sort((a, b) => a - b)) await client.query('SELECT pg_advisory_xact_lock($1::bigint)', [id]);
+            for (const id of [...ids].sort((a, b) => a - b)) await client.query('SELECT pg_advisory_xact_lock($1::int, $2::int)', [p.namespace, id]);
             const { rows } = await client.query(`SELECT ${p.id}, ${p.code}, ${p.name} AS display_name, is_merged, ${p.mergedInto} FROM ${p.table} c WHERE ${p.id} = ANY($1::int[]) FOR UPDATE`, [ids]);
             this.assertMergeable(rows, keepId, mergeIds);
             const conflicts = await this.findConflicts(client, keepId, mergeIds);
@@ -149,7 +150,7 @@ class PartyMergeService {
                 await client.query(`DELETE FROM ${p.tagTable} WHERE customer_id = ANY($1::int[])`, [mergeIds]);
             }
             for (const [table, column] of p.references) await client.query(`UPDATE ${table} SET ${column} = $1 WHERE ${column} = ANY($2::int[])`, [keepId, mergeIds]);
-            await client.query(`UPDATE ${p.table} SET is_merged = TRUE, ${p.mergedInto} = $1 WHERE ${p.id} = ANY($2::int[])`, [keepId, mergeIds]);
+            await client.query(`UPDATE ${p.table} SET is_merged = TRUE, is_active = FALSE, ${p.mergedInto} = $1 WHERE ${p.id} = ANY($2::int[])`, [keepId, mergeIds]);
             const selected = [...new Set(suggestionIds.map(Number).filter(Number.isInteger))];
             if (selected.length) await client.query(`UPDATE public.${p.suggestion} SET status = 'merged', merged_at = NOW(), merged_by = $1, updated_at = NOW() WHERE suggestion_id = ANY($2::bigint[]) AND status = 'pending'`, [employeeId, selected]);
             await client.query(`UPDATE public.${p.suggestion} SET status = 'dismissed', dismissed_at = NOW(), dismissed_by = $1, updated_at = NOW() WHERE status = 'pending' AND (${p.id} = ANY($2::int[]) OR duplicate_${p.id} = ANY($2::int[]))`, [employeeId, mergeIds]);

@@ -1,7 +1,7 @@
 # Master Data Merge Integrity — Supplier, Customer, Brand, and Group
 
 > **Forson Business Suite** | **Date:** 2026-10-05 | **Branch:** `master`
-> **Status:** Verified and planned. Implementation has not started.
+> **Status:** Phase 1 implemented in the working tree; phases 2–4 remain planned. Migration has not been deployed.
 
 ## 0. Status at a Glance
 
@@ -9,7 +9,7 @@
 |---|---|---|
 | Current behavior and schema audit | Complete | Existing services, tests, migrations, live foreign keys, constraints, and merged rows were inspected |
 | Merge contract and relationship policy | Planned | One explicit policy registry will cover every relationship and be checked against PostgreSQL metadata |
-| Schema and audit infrastructure | Not started | Add consistent inactive state, merge operations/snapshots, aliases, and race guards |
+| Schema and audit infrastructure | Implemented in working tree | Inactive state, merge constraints, aliases, audit tables, namespaced locks, FK guards, and a catalog drift test |
 | Transactional merge engine | Not started | Replace source IDs, handle collisions and aggregates, retire sources, and assert postconditions atomically |
 | API and review UI | Not started | Show complete impact, blockers, special resolutions, history, and guarded revert state |
 | Tests and rollout | Not started | Add real-PostgreSQL policy, collision, concurrency, rollback, and drift coverage before enabling merges |
@@ -19,10 +19,11 @@
 Before implementation:
 
 1. Run `graphify query "supplier customer brand group merge deduplication foreign keys inactive aliases wallet drafts"` for a current code map.
-2. Read this document and `docs/plans/2026-09-21_part-merge-reliability.md`. Reuse the part merge's transaction, lock, snapshot, history, and invariant patterns where the entity rules agree.
-3. Query `pg_constraint` in the target database for every foreign key referencing `supplier`, `customer`, `brand`, or `"group"`. Treat the live catalog and all unapplied migrations as inputs; do not trust a hard-coded service list by itself.
-4. Confirm this document's status against `git log`, `git status`, and migration status before changing code.
-5. Keep the relationship policy registry and its schema-drift integration test in the same change. A newly introduced foreign key must make the test fail until its merge policy is declared.
+2. Recall hindsight with tags `forson-business-suite`, `master-data-merge` for phase 1 lock and guard decisions.
+3. Read this document and `docs/plans/2026-09-21_part-merge-reliability.md`. Reuse the part merge's transaction, lock, snapshot, history, and invariant patterns where the entity rules agree.
+4. Query `pg_constraint` in the target database for every foreign key referencing `supplier`, `customer`, `brand`, or `"group"`. Treat the live catalog and all unapplied migrations as inputs; do not trust a hard-coded service list by itself.
+5. Confirm this document's status against `git log`, `git status`, and migration status before changing code.
+6. Keep the relationship policy registry and its schema-drift integration test in the same change. A newly introduced foreign key must make the test fail until its merge policy is declared.
 
 When a phase lands, update §0 and the relevant phase, retain non-obvious decisions to hindsight, and run `graphify update .`.
 
@@ -151,6 +152,10 @@ Wallets require a deterministic financial operation inside the merge transaction
 
 ## 6. Phase 1 — Schema and Invariants
 
+Implemented in `20261005_02_master_data_merge_phase1.sql`, the two merge services, and `masterDataMergePolicy.js`. The migration backfills retired rows, adds the four entity constraints, alias and audit tables, namespaced advisory locks, FK write guards, and relationship indexes. The merge services now set `is_active = FALSE` when retiring sources and use the same entity-specific lock namespaces as the database guards. `masterDataMergePolicy.test.js` applies the migration inside a rollback-only real-PostgreSQL transaction, compares the policy registry to `pg_constraint`, and exercises a retired-source write guard. Local validation passed; deployment migration status and production behavior remain unverified.
+
+Phase 1 creates the audit infrastructure but the existing endpoints do not yet write merge operations/snapshots. The old execution paths remain incomplete and should not be enabled for general merges until phase 2 moves every registered operational relationship and enforces zero references. The catalog test covers the local post-migration schema; rerun it against each target database before enabling the new engine.
+
 1. Add `is_active BOOLEAN NOT NULL DEFAULT TRUE` to brand and group. Backfill every already merged brand/group to inactive.
 2. Backfill every merged supplier/customer to `is_active = FALSE`, including the two live rows found by this audit.
 3. Strengthen merge-state checks for all four entities:
@@ -249,6 +254,7 @@ Repair existing merged rows with a dedicated idempotent data migration or review
 
 ```bash
 npm run -w packages/api test -- --runInBand packages/api/tests/partyMergeService.test.js packages/api/tests/entityMergeService.test.js
+npm run -w packages/api test -- --runInBand packages/api/tests/masterDataMergePolicy.test.js
 npm run -w packages/api test -- --runInBand packages/api/tests/masterDataMerge_db_test.js
 npm run -w packages/api lint
 npm run -w packages/web lint
@@ -291,3 +297,4 @@ Roll out behind a setting such as `ENABLE_SAFE_MASTER_DATA_MERGE`. Apply migrati
 | Date | Session | Change |
 |---|---|---|
 | 2026-10-05 | Codex + product owner | Verified current supplier/customer/brand/group merge behavior against source, tests, migrations, and the live development schema; documented the complete safe-merge plan. |
+| 2026-10-05 | Codex | Implemented phase 1 schema, namespaced locks, write guards, aliases, audit storage, policy registry, and PostgreSQL drift/guard tests in the working tree. Migration was tested inside a rolled-back transaction; it was not deployed. |
