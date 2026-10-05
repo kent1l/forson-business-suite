@@ -31,3 +31,26 @@ test('cycle-count priority multiplies count age, velocity, cost, and adjustment 
     expect(params).toEqual([1, 5, 0.02, 3, 1000]);
     expect(client.release).toHaveBeenCalled();
 });
+
+test('cycle-count assignment excludes employees on approved leave today in Manila', async () => {
+    const client = {
+        query: jest.fn((sql) => {
+            if (/^BEGIN/i.test(sql) || /^ROLLBACK/i.test(sql)) return Promise.resolve({});
+            if (/FROM settings/i.test(sql)) return Promise.resolve({ rows: [
+                { setting_key: 'CYCLE_COUNT_ENABLED', setting_value: 'true' },
+            ] });
+            if (/SELECT DISTINCT e\.employee_id/i.test(sql)) return Promise.resolve({ rows: [] });
+            return Promise.resolve({ rows: [] });
+        }),
+        release: jest.fn(),
+    };
+    db.getClient.mockResolvedValue(client);
+
+    await generateCycleCountBatches();
+
+    const [sql] = client.query.mock.calls.find(([query]) => /SELECT DISTINCT e\.employee_id/i.test(query));
+    expect(sql).toContain('FROM leave_request lr');
+    expect(sql).toContain("lr.status = 'Approved'");
+    expect(sql).toContain("CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Manila'");
+    expect(sql).toContain('BETWEEN lr.date_from AND lr.date_to');
+});

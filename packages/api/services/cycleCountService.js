@@ -40,6 +40,14 @@ async function generateCycleCountBatches() {
             LEFT JOIN permission p ON rp.permission_id = p.permission_id
             WHERE e.is_active = TRUE
               AND (e.permission_level_id = 10 OR p.permission_key = 'cycle_count:execute')
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM leave_request lr
+                  WHERE lr.employee_id = e.employee_id
+                    AND lr.status = 'Approved'
+                    AND (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Manila')::date
+                        BETWEEN lr.date_from AND lr.date_to
+              )
         `);
 
         if (employees.length === 0) {
