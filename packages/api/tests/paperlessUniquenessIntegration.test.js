@@ -127,9 +127,9 @@ describe('Paperless Matching & Cross-Table Physical Receipt Uniqueness Suite', (
         // Create second invoice without physical_receipt_no
         const inv2 = await db.query(`
             INSERT INTO invoice (invoice_number, customer_id, employee_id, total_amount, subtotal_ex_tax, tax_total, amount_paid, status)
-            VALUES ($1, $2, 1, 1000.00, 1000.00, 0, 0, 'Unpaid')
+            VALUES ($1, $2, $3, 1000.00, 1000.00, 0, 0, 'Unpaid')
             RETURNING invoice_id
-        `, [`INV-UNIQ2-${Date.now()}`, testCustomerId]);
+        `, [`INV-UNIQ2-${Date.now()}`, testCustomerId, testEmployeeId]);
 
         const inv2Id = inv2.rows[0].invoice_id;
 

@@ -16,15 +16,27 @@ jest.mock('../services/partyMergeService', () => jest.fn().mockImplementation(()
     revert: jest.fn().mockResolvedValue({ restoredIds: [2] }),
     history: jest.fn().mockResolvedValue([]),
 })));
+jest.mock('../services/entityMergeService', () => jest.fn().mockImplementation(() => ({
+    preview: jest.fn().mockResolvedValue({ fingerprint: 'review' }),
+    execute: jest.fn().mockResolvedValue({ operationId: 'merged' }),
+    revert: jest.fn().mockResolvedValue({ restoredIds: [2] }),
+    history: jest.fn().mockResolvedValue([]),
+})));
+jest.mock('../services/jevGateService', () => jest.fn().mockImplementation(() => ({})));
 
 const partyMergeRoutes = require('../routes/partyMergeRoutes');
 const PartyMergeService = require('../services/partyMergeService');
+const brandRoutes = require('../routes/brandRoutes');
+const groupRoutes = require('../routes/groupRoutes');
 
 describe('master-data merge route rollout and authorization', () => {
     const original = process.env.ENABLE_SAFE_MASTER_DATA_MERGE;
     const app = express();
     app.use(express.json());
     app.use('/api', partyMergeRoutes({}, 'supplier'));
+    app.use('/api', partyMergeRoutes({}, 'customer'));
+    app.use('/api', brandRoutes);
+    app.use('/api', groupRoutes);
     afterAll(() => {
         if (original === undefined) delete process.env.ENABLE_SAFE_MASTER_DATA_MERGE;
         else process.env.ENABLE_SAFE_MASTER_DATA_MERGE = original;
@@ -53,5 +65,22 @@ describe('master-data merge route rollout and authorization', () => {
             .send({ keepId: 1, mergeIds: [2] }).expect(200);
         expect(PartyMergeService.mock.results[0].value.execute).toHaveBeenCalledWith(
             { keepId: 1, mergeIds: [2] }, 7);
+    });
+
+    test.each([
+        ['customers', 'customers:edit'],
+        ['brands', 'brands:manage'],
+        ['groups', 'groups:manage'],
+    ])('%s routes enforce permission and rollout stage', async (plural, permission) => {
+        const auth = { Authorization: 'Bearer test', 'x-test-permissions': permission };
+        process.env.ENABLE_SAFE_MASTER_DATA_MERGE = 'off';
+        await request(app).post(`/api/${plural}/merge-preview`).set(auth).send({}).expect(503);
+        process.env.ENABLE_SAFE_MASTER_DATA_MERGE = 'preview';
+        await request(app).post(`/api/${plural}/merge-preview`).set('Authorization', 'Bearer test')
+            .send({}).expect(403);
+        await request(app).post(`/api/${plural}/merge-preview`).set(auth).send({}).expect(200);
+        await request(app).post(`/api/${plural}/merge`).set(auth).send({}).expect(503);
+        process.env.ENABLE_SAFE_MASTER_DATA_MERGE = 'execute';
+        await request(app).post(`/api/${plural}/merge`).set(auth).send({ keepId: 1, mergeIds: [2] }).expect(200);
     });
 });

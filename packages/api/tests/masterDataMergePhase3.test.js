@@ -40,6 +40,8 @@ describe('master data merge preview confirmation', () => {
 describe('stale transaction IDs', () => {
     test('finds typed IDs in nested draft and freight payloads', () => {
         expect(hasMasterIds({ header: { freight_costs: [{ supplier_id: '7' }] } })).toBe(true);
+        expect(hasMasterIds({ cart: { customerId: '7' } })).toBe(true);
+        expect(hasMasterIds({ selectedSupplier: '7' })).toBe(true);
         expect(hasMasterIds({ notes: 'supplier_id: 7' })).toBe(false);
     });
 
@@ -53,4 +55,17 @@ describe('stale transaction IDs', () => {
         expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ canonicalId: 3, retiredId: 7 }));
         expect(next).not.toHaveBeenCalled();
     });
+
+    test('returns the canonical ID for a saved sale with a string customerId', async () => {
+        const db = { query: jest.fn().mockResolvedValue({ rows: [{ id: 7, is_active: false,
+            is_merged: true, canonical_id: 3 }] }) };
+        const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+        const next = jest.fn();
+        await requireActiveMasters(db, { customerId: 'customer' })(
+            { method: 'POST', body: { cart: { customerId: '7' } } }, res, next);
+        expect(res.status).toHaveBeenCalledWith(409);
+        expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ canonicalId: 3, retiredId: 7 }));
+        expect(next).not.toHaveBeenCalled();
+    });
+
 });

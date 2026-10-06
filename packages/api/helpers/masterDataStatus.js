@@ -38,7 +38,8 @@ function requireActiveMasters(db, fields) {
             if (Array.isArray(value)) return value.forEach(visit);
             if (!value || typeof value !== 'object') return;
             for (const [key, child] of Object.entries(value)) {
-                if (fields[key] && child !== null && child !== undefined && child !== '') {
+                if (fields[key] && child !== null && child !== undefined && child !== '' &&
+                    typeof child !== 'object') {
                     candidates.push([fields[key], child]);
                 } else if (typeof child === 'object') visit(child);
             }
@@ -64,7 +65,9 @@ function hasMasterIds(value) {
     if (Array.isArray(value)) return value.some(hasMasterIds);
     if (!value || typeof value !== 'object') return false;
     return Object.entries(value).some(([key, child]) =>
-        ['supplier_id', 'freight_supplier_id', 'customer_id', 'brand_id', 'group_id'].includes(key)
+        ['supplier_id', 'freight_supplier_id', 'customer_id', 'brand_id', 'group_id',
+            'supplierId', 'freightSupplierId', 'selectedSupplier', 'customerId', 'selectedCustomer',
+            'brandId', 'groupId'].includes(key)
         || hasMasterIds(child));
 }
 

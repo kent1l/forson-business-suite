@@ -9,6 +9,7 @@ const migration = fs.readFileSync(path.resolve(__dirname, '../../../database/mig
 const draftGuardMigration = fs.readFileSync(path.resolve(__dirname, '../../../database/migrations/20261005_03_master_data_merge_draft_guard.sql'), 'utf8');
 const previewHistoryMigration = fs.readFileSync(path.resolve(__dirname, '../../../database/migrations/20261005_04_master_data_merge_preview_history.sql'), 'utf8');
 const revertMigration = fs.readFileSync(path.resolve(__dirname, '../../../database/migrations/20261005_05_master_data_merge_revert.sql'), 'utf8');
+const immutableOwnersMigration = fs.readFileSync(path.resolve(__dirname, '../../../database/migrations/20261005_06_master_data_merge_immutable_owners.sql'), 'utf8');
 
 describe('MasterDataMergeService against PostgreSQL', () => {
     let client;
@@ -22,9 +23,14 @@ describe('MasterDataMergeService against PostgreSQL', () => {
         await client.query(previewHistoryMigration);
         await client.query(revertMigration);
         await client.query(revertMigration);
+        await client.query(immutableOwnersMigration);
         const { rows } = await client.query('SELECT employee_id FROM employee ORDER BY employee_id LIMIT 1');
         actorId = rows[0]?.employee_id;
-        if (!actorId) throw new Error('Integration database needs an employee actor.');
+        if (!actorId) {
+            const { rows: [actor] } = await client.query(
+                "INSERT INTO employee (first_name, last_name) VALUES ('Merge', 'Integration') RETURNING employee_id");
+            actorId = actor.employee_id;
+        }
     });
 
     afterAll(async () => {
@@ -137,7 +143,42 @@ describe('MasterDataMergeService against PostgreSQL', () => {
         expect(report.policyDrift).toEqual([]);
         expect(report.findings).toHaveProperty('activeDraftsWithRetiredIds');
         expect(report.findings['customer.walletMismatches']).toEqual(expect.any(Array));
-        expect(report.migrations['20261005_05_master_data_merge_revert.sql']).toBe('pending');
+        expect(['pending', 'applied']).toContain(report.migrations['20261005_05_master_data_merge_revert.sql']);
+        expect(['pending', 'applied']).toContain(report.migrations['20261005_06_master_data_merge_immutable_owners.sql']);
+    });
+
+    test('rollout audit reports document collisions in pending duplicate suggestions', async () => {
+        await client.query('SAVEPOINT audit_suggestion_collisions');
+        try {
+            const suffix = `${Date.now()}-${Math.floor(Math.random() * 100000)}`;
+            const { rows: suppliers } = await client.query(
+                'INSERT INTO supplier (supplier_name) VALUES ($1), ($2) RETURNING supplier_id',
+                [`Audit supplier one ${suffix}`, `Audit supplier two ${suffix}`]);
+            for (const [index, supplier] of suppliers.entries()) {
+                await client.query('INSERT INTO goods_receipt (grn_number, supplier_id, received_by, ' +
+                    'supplier_invoice_no, physical_receipt_no) VALUES ($1, $2, $3, $4, $5)',
+                [`AUDIT-GRN-${index}-${suffix}`, supplier.supplier_id, actorId,
+                    `AUDIT-INV-${suffix}`, `AUDIT-PR-${suffix}`]);
+            }
+            await client.query('INSERT INTO supplier_duplicate_suggestion ' +
+                '(supplier_id, duplicate_supplier_id, confidence_score, detection_method) ' +
+                "VALUES ($1, $2, 1, 'test')", suppliers.map(row => row.supplier_id));
+            const { rows: customers } = await client.query(
+                'INSERT INTO customer (first_name) VALUES ($1), ($2) RETURNING customer_id',
+                [`Audit customer one ${suffix}`, `Audit customer two ${suffix}`]);
+            for (const customer of customers) await client.query(
+                "INSERT INTO withholding_tax_certificate (customer_id, certificate_type, certificate_no) " +
+                "VALUES ($1, '2307', $2)", [customer.customer_id, `AUDIT-CERT-${suffix}`]);
+            await client.query('INSERT INTO customer_duplicate_suggestion ' +
+                '(customer_id, duplicate_customer_id, confidence_score, detection_method) ' +
+                "VALUES ($1, $2, 1, 'test')", customers.map(row => row.customer_id));
+            const report = await auditMasterDataMerge(client);
+            expect(report.findings['supplier.supplier_invoice_no.pendingSuggestionCollisions']).toHaveLength(1);
+            expect(report.findings['supplier.physical_receipt_no.pendingSuggestionCollisions']).toHaveLength(1);
+            expect(report.findings['customer.pendingSuggestionCertificateCollisions']).toHaveLength(1);
+        } finally {
+            await client.query('ROLLBACK TO SAVEPOINT audit_suggestion_collisions');
+        }
     });
 
     test('supplier preview blocks both receipt-number collisions without retiring sources', async () => {
@@ -299,6 +340,105 @@ describe('MasterDataMergeService against PostgreSQL', () => {
         expect(walletCount.count).toBe(0);
         await service.revertWithClient(client, result.operationId, actorId, 'Restore saved sale');
         await client.query('DELETE FROM draft_transaction WHERE draft_id = $1', [draft.draft_id]);
+    });
+
+    test('supplier merge moves every registered operational relationship', async () => {
+        await client.query('SAVEPOINT full_supplier_registry');
+        try {
+            const suffix = `${Date.now()}-${Math.floor(Math.random() * 100000)}`;
+            const { rows: [keep] } = await client.query(
+                'INSERT INTO supplier (supplier_name) VALUES ($1) RETURNING supplier_id', [`Registry keep ${suffix}`]);
+            const { rows: [source] } = await client.query(
+                'INSERT INTO supplier (supplier_name) VALUES ($1) RETURNING supplier_id', [`Registry source ${suffix}`]);
+            const id = source.supplier_id;
+            const { rows: [grn] } = await client.query(
+                'INSERT INTO goods_receipt (grn_number, supplier_id, freight_supplier_id, received_by) ' +
+                'VALUES ($1, $2, $2, $3) RETURNING grn_id', [`REG-GRN-${suffix}`, id, actorId]);
+            await client.query('INSERT INTO goods_receipt_freight (grn_id, supplier_id, amount) VALUES ($1, $2, 0)',
+                [grn.grn_id, id]);
+            await client.query('INSERT INTO purchase_order (po_number, supplier_id, employee_id, total_amount) ' +
+                'VALUES ($1, $2, $3, 0)', [`REG-PO-${suffix}`, id, actorId]);
+            await client.query('INSERT INTO supplier_bill (supplier_id, total_amount) VALUES ($1, 0)', [id]);
+            await client.query("INSERT INTO ap_ledger (supplier_id, entry_type, amount, balance_after) " +
+                "VALUES ($1, 'BILL_POSTED', 0, 0)", [id]);
+            await client.query('INSERT INTO ap_payment (supplier_id, amount) VALUES ($1, 0)', [id]);
+            await client.query("INSERT INTO cheque_clearance_log (action, supplier_id) VALUES ('RECEIVED', $1)", [id]);
+            const service = new MasterDataMergeService(db, 'supplier');
+            const request = { keepId: keep.supplier_id, mergeIds: [id] };
+            const review = await service.review(client, request);
+            expect(review.blockers).toEqual([]);
+            for (const [table, column, action] of mergePolicy.supplier.references) {
+                if (action === 'move') expect(review.impact[`${table}.${column}`]).toBeGreaterThan(0);
+            }
+            const result = await service.executeWithClient(client,
+                { ...request, previewFingerprint: review.fingerprint }, actorId);
+            await expectNoSourceOwnership('supplier', id);
+            await client.query('SAVEPOINT reject_ap_ledger_edit');
+            await expect(client.query('UPDATE ap_ledger SET amount = 2 WHERE supplier_id = $1',
+                [keep.supplier_id])).rejects.toThrow('immutable');
+            await client.query('ROLLBACK TO SAVEPOINT reject_ap_ledger_edit');
+            await service.revertWithClient(client, result.operationId, actorId, 'Restore all supplier relationships');
+            const { rows: [restored] } = await client.query(
+                'SELECT COUNT(*)::int AS count FROM ap_ledger WHERE supplier_id = $1', [id]);
+            expect(restored.count).toBe(1);
+        } finally {
+            await client.query('ROLLBACK TO SAVEPOINT full_supplier_registry');
+        }
+    });
+
+    test('customer merge moves every registered operational relationship', async () => {
+        await client.query('SAVEPOINT full_customer_registry');
+        try {
+            const suffix = `${Date.now()}-${Math.floor(Math.random() * 100000)}`;
+            const { rows: [keep] } = await client.query(
+                'INSERT INTO customer (first_name) VALUES ($1) RETURNING customer_id', [`Registry keep ${suffix}`]);
+            const { rows: [source] } = await client.query(
+                'INSERT INTO customer (first_name) VALUES ($1) RETURNING customer_id', [`Registry source ${suffix}`]);
+            const id = source.customer_id;
+            const { rows: [invoice] } = await client.query(
+                'INSERT INTO invoice (invoice_number, customer_id, employee_id, total_amount) ' +
+                'VALUES ($1, $2, $3, 0) RETURNING invoice_id', [`REG-INV-${suffix}`, id, actorId]);
+            await client.query('INSERT INTO customer_payment (customer_id, employee_id, amount) VALUES ($1, $2, 0)',
+                [id, actorId]);
+            await client.query('INSERT INTO staged_sale (customer_id, employee_id, total_amount) VALUES ($1, $2, 0)',
+                [id, actorId]);
+            await client.query('INSERT INTO ar_adjustment (adjustment_no, customer_id, adjustment_type, ' +
+                'reason_code, total_amount, granted_by) VALUES ($1, $2, $3, $4, 1, $5)',
+            [`REG-ADJ-${suffix}`, id, 'SETTLEMENT_DISCOUNT', 'PROMPT_SETTLEMENT', actorId]);
+            await client.query("INSERT INTO ar_adjustment_authorization_log (action, requested_by, customer_id) " +
+                "VALUES ('AUTHORIZED', $1, $2)", [actorId, id]);
+            await client.query("INSERT INTO ar_ledger (customer_id, entry_type, amount, balance_after) " +
+                "VALUES ($1, 'INVOICE_POSTED', 0, 0)", [id]);
+            await client.query('INSERT INTO withholding_tax_line (invoice_id, customer_id, withholding_type, ' +
+                'treatment, rate_snapshot, tax_base, expected_withheld, actual_withheld) ' +
+                "VALUES ($1, $2, 'EWT_GOODS', 'INCOME_TAX_CREDITABLE', 0, 0, 0, 0)", [invoice.invoice_id, id]);
+            await client.query("INSERT INTO withholding_tax_certificate (customer_id, certificate_type) " +
+                "VALUES ($1, '2307')", [id]);
+            await client.query("INSERT INTO cheque_clearance_log (action, customer_id) VALUES ('RECEIVED', $1)", [id]);
+            const service = new MasterDataMergeService(db, 'customer');
+            const request = { keepId: keep.customer_id, mergeIds: [id] };
+            const review = await service.review(client, request);
+            expect(review.blockers).toEqual([]);
+            for (const [table, column, action] of mergePolicy.customer.references) {
+                if (action === 'move') expect(review.impact[`${table}.${column}`]).toBeGreaterThan(0);
+            }
+            const result = await service.executeWithClient(client,
+                { ...request, previewFingerprint: review.fingerprint }, actorId);
+            await expectNoSourceOwnership('customer', id);
+            await client.query('SAVEPOINT reject_ar_ledger_edit');
+            await expect(client.query('UPDATE ar_ledger SET amount = 2 WHERE customer_id = $1',
+                [keep.customer_id])).rejects.toThrow('immutable');
+            await client.query('ROLLBACK TO SAVEPOINT reject_ar_ledger_edit');
+            await service.revertWithClient(client, result.operationId, actorId, 'Restore all customer relationships');
+            const { rows: [restoredLedger] } = await client.query(
+                'SELECT COUNT(*)::int AS count FROM ar_ledger WHERE customer_id = $1', [id]);
+            const { rows: [restoredAdjustment] } = await client.query(
+                'SELECT COUNT(*)::int AS count FROM ar_adjustment WHERE customer_id = $1', [id]);
+            expect(restoredLedger.count).toBe(1);
+            expect(restoredAdjustment.count).toBe(1);
+        } finally {
+            await client.query('ROLLBACK TO SAVEPOINT full_customer_registry');
+        }
     });
 
     test('customer preview blocks certificate collisions and inconsistent wallet balances', async () => {

@@ -4,6 +4,7 @@ const db = require('../db');
 const { protect, hasPermission } = require('../middleware/authMiddleware');
 const walletService = require('../services/customerWalletService');
 const { parsePaginationQuery, paginatedResponse } = require('../helpers/pagination');
+const { masterStatus, retiredConflict } = require('../helpers/masterDataStatus');
 const router = express.Router();
 
 // GET /api/customers/:id/wallet - Get customer wallet info & transaction history
@@ -81,6 +82,11 @@ router.post('/customers/:id/wallet/adjust', protect, hasPermission('ar:manage'),
   } catch (err) {
     await client.query('ROLLBACK');
     console.error('Wallet Adjustment Error:', err.message);
+    if (err.code === '23514') {
+      const status = await masterStatus(db, 'customer', customerId);
+      return res.status(409).json(status?.is_merged ? retiredConflict('customer', status) :
+        { message: 'The selected customer is inactive. Refresh the selection.' });
+    }
     return res.status(400).json({ message: err.message || 'Failed to adjust wallet balance' });
   } finally {
     client.release();

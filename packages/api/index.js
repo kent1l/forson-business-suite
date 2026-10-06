@@ -34,6 +34,9 @@ const { requireActiveMasters, hasMasterIds } = require('./helpers/masterDataStat
 const checkMasterWrite = requireActiveMasters(require('./db'), {
   supplier_id: 'supplier', freight_supplier_id: 'supplier',
   customer_id: 'customer', brand_id: 'brand', group_id: 'group',
+  supplierId: 'supplier', freightSupplierId: 'supplier', selectedSupplier: 'supplier',
+  customerId: 'customer', selectedCustomer: 'customer',
+  brandId: 'brand', groupId: 'group',
 });
 app.use('/api', (req, res, next) => {
   if (!['POST', 'PUT', 'PATCH'].includes(req.method) || !hasMasterIds(req.body)) return next();

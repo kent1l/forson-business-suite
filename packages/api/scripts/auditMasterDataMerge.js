@@ -72,6 +72,22 @@ async function audit(client) {
                 AND other.${field} = gr.${field} AND other.status <> 'Voided' ${field === 'supplier_invoice_no' ?
     "AND other.workflow_status <> 'Cancelled'" : ''})`);
         add(`supplier.${field}.candidateCollisions`, rows);
+        const { rows: pending } = await client.query(`SELECT suggestion.suggestion_id,
+            suggestion.supplier_id, suggestion.duplicate_supplier_id,
+            receipt.${field} AS document_number,
+            array_agg(receipt.grn_id ORDER BY receipt.grn_id) AS receipt_ids
+            FROM public.supplier_duplicate_suggestion suggestion
+            JOIN public.supplier left_owner ON left_owner.supplier_id = suggestion.supplier_id
+            JOIN public.supplier right_owner ON right_owner.supplier_id = suggestion.duplicate_supplier_id
+            JOIN public.goods_receipt receipt ON receipt.supplier_id IN
+                (suggestion.supplier_id, suggestion.duplicate_supplier_id)
+            WHERE suggestion.status = 'pending' AND left_owner.is_active AND NOT left_owner.is_merged
+              AND right_owner.is_active AND NOT right_owner.is_merged
+              AND receipt.${field} IS NOT NULL ${extra.replaceAll('gr.', 'receipt.')}
+              AND receipt.status <> 'Voided'
+            GROUP BY suggestion.suggestion_id, receipt.${field}
+            HAVING COUNT(DISTINCT receipt.supplier_id) = 2`);
+        add(`supplier.${field}.pendingSuggestionCollisions`, pending);
     }
     const { rows: certificates } = await client.query(`SELECT source.merged_into_customer_id AS canonical_id,
         c.certificate_type, c.certificate_no, array_agg(c.certificate_id) AS certificate_ids
@@ -82,6 +98,21 @@ async function audit(client) {
             WHERE other.customer_id = source.merged_into_customer_id AND other.certificate_type = c.certificate_type
               AND other.certificate_no = c.certificate_no)`);
     add('customer.certificateCandidateCollisions', certificates);
+    const { rows: pendingCertificates } = await client.query(`SELECT suggestion.suggestion_id,
+        suggestion.customer_id, suggestion.duplicate_customer_id,
+        certificate.certificate_type, certificate.certificate_no,
+        array_agg(certificate.certificate_id ORDER BY certificate.certificate_id) AS certificate_ids
+        FROM public.customer_duplicate_suggestion suggestion
+        JOIN public.customer left_owner ON left_owner.customer_id = suggestion.customer_id
+        JOIN public.customer right_owner ON right_owner.customer_id = suggestion.duplicate_customer_id
+        JOIN public.withholding_tax_certificate certificate ON certificate.customer_id IN
+            (suggestion.customer_id, suggestion.duplicate_customer_id)
+        WHERE suggestion.status = 'pending' AND left_owner.is_active AND NOT left_owner.is_merged
+          AND right_owner.is_active AND NOT right_owner.is_merged
+          AND certificate.certificate_no IS NOT NULL AND certificate.status <> 'CANCELLED'
+        GROUP BY suggestion.suggestion_id, certificate.certificate_type, certificate.certificate_no
+        HAVING COUNT(DISTINCT certificate.customer_id) = 2`);
+    add('customer.pendingSuggestionCertificateCollisions', pendingCertificates);
     const { rows: wallets } = await client.query(`SELECT w.wallet_id, w.customer_id, w.balance,
         COALESCE(SUM(t.amount), 0) AS transaction_total,
         (array_agg(t.balance_after ORDER BY t.created_at DESC, t.transaction_id DESC))[1] AS last_balance

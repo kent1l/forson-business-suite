@@ -878,6 +878,7 @@ class MasterDataMergeService {
                 JSON.stringify({ references: review.impact, drafts: review.drafts.affected.length }),
                 JSON.stringify({ suggestionIds: selected, policyVersion: VERSION })]);
         await this.captureBeforeImages(client, operation.operation_id, review);
+        await client.query("SELECT set_config('master_data_merge.operation', $1, true)", [operation.operation_id]);
         const affectedParts = [];
         if (this.entity === 'brand' || this.entity === 'group') {
             const { rows } = await client.query(
