@@ -2,7 +2,7 @@ const crypto = require('crypto');
 const policy = require('./masterDataMergePolicy');
 const { enqueuePartUpsert } = require('./meiliOutboxService');
 
-const VERSION = 'master-merge-v2';
+const VERSION = 'master-merge-v3';
 const PREVIEW_TTL_MS = 10 * 60 * 1000;
 const CONFIG = {
     supplier: { table: 'supplier', id: 'supplier_id', code: 'supplier_code', alias: 'supplier_alias', name: 'supplier_name' },
@@ -116,11 +116,26 @@ class MasterDataMergeService {
     }
 
     async lockMasters(client, request) {
-        const { allIds } = idsFrom(request);
-        for (const id of allIds) {
+        const { allIds, mergeIds } = idsFrom(request);
+        const observed = await this.incomingTombstones(client, mergeIds);
+        const lockIds = [...new Set([...allIds, ...observed.map(row => row[this.config.id])])].sort((a, b) => a - b);
+        for (const id of lockIds) {
             await client.query('SELECT pg_advisory_xact_lock($1::int, $2::int)', [this.policy.namespace, id]);
         }
-        return this.loadMasters(client, request, true);
+        const masters = await this.loadMasters(client, request, true);
+        const incoming = await this.incomingTombstones(client, mergeIds, true);
+        if (incoming.length !== observed.length || incoming.some((row, index) =>
+            row[this.config.id] !== observed[index][this.config.id])) {
+            throw conflict('Retired source references changed. Refresh the merge preview.');
+        }
+        return { ...masters, incoming };
+    }
+
+    async incomingTombstones(client, mergeIds, locked = false) {
+        const { rows } = await client.query(
+            'SELECT * FROM public.' + this.config.table + ' WHERE is_merged AND merged_into_' + this.config.id +
+            ' = ANY($1::int[]) ORDER BY ' + this.config.id + (locked ? ' FOR UPDATE' : ''), [mergeIds]);
+        return rows;
     }
 
     async impact(client, mergeIds) {
@@ -245,7 +260,9 @@ class MasterDataMergeService {
 
     async review(client, request, locked = false) {
         const state = locked ? await this.lockMasters(client, request) : await this.loadMasters(client, request);
+        const incoming = locked ? state.incoming : await this.incomingTombstones(client, state.mergeIds);
         const impact = await this.impact(client, state.mergeIds);
+        impact.retired_sources_redirected = incoming.length;
         const relationships = await this.relationshipSignatures(client, state.mergeIds);
         const { rows: aliases } = await client.query(
             'SELECT * FROM public.' + this.config.alias + ' WHERE ' + this.config.id +
@@ -266,6 +283,7 @@ class MasterDataMergeService {
             masters: [state.keep, ...state.sources].map(row =>
                 [row[this.config.id], displayName(this.entity, row), row[this.config.code],
                     row.is_active, row.is_merged, row['merged_into_' + this.config.id]]),
+            incoming: incoming.map(row => [row[this.config.id], row['merged_into_' + this.config.id]]),
             impact, relationships, blockers, drafts: drafts.affected.map(row => [row.draft_id, row.draft_data]),
             aliases, suggestions,
             wallets: wallets.wallets.map(row => [row.wallet_id, row.balance]),
@@ -273,7 +291,7 @@ class MasterDataMergeService {
                 [row.transaction_id, row.customer_id, row.amount, row.balance_after, row.created_at]),
         };
         const fingerprint = crypto.createHash('sha256').update(JSON.stringify(fingerprintInput)).digest('hex');
-        return { ...state, impact, aliases, suggestions, drafts, wallets, blockers, fingerprint };
+        return { ...state, incoming, impact, aliases, suggestions, drafts, wallets, blockers, fingerprint };
     }
 
     async preview(request, actorEmployeeId, client = this.db) {
@@ -369,6 +387,7 @@ class MasterDataMergeService {
                     id, name: displayName(this.entity, find(id)), code: find(id)[this.config.code],
                 } : { id }),
                 revertEligible: row.within_undo_window && row.decisions?.afterImagesCaptured === true &&
+                    row.decisions?.tombstoneRedirectsNotSnapshotted !== true &&
                     Number.isInteger(row.decisions?.snapshotCount),
             };
         });
@@ -478,6 +497,8 @@ class MasterDataMergeService {
             await this.snapshot(client, operationId, table, 't.' + column + ' = ANY($3::int[])', ids);
         };
         await capture(this.entity, this.config.id, review.allIds);
+        if (review.incoming.length) await capture(this.entity, this.config.id,
+            review.incoming.map(row => row[this.config.id]));
         for (const [table, column, action] of this.policy.references) {
             if (action === 'provenance') continue;
             if (action === 'workflow') {
@@ -642,6 +663,10 @@ class MasterDataMergeService {
             (row.is_active || !row.is_merged || row['merged_into_' + this.config.id] !== review.keepId))) {
             throw new Error('Master retirement postcondition failed.');
         }
+        const { rows: [remainingTombstones] } = await client.query(
+            'SELECT COUNT(*)::int AS count FROM public.' + this.config.table + ' WHERE is_merged AND merged_into_' +
+            this.config.id + ' = ANY($1::int[])', [review.mergeIds]);
+        if (remainingTombstones.count) throw new Error('Merge left a tombstone chain.');
         if (this.entity === 'customer') {
             const wallet = await this.walletState(client, review.allIds);
             if (wallet.blockers.length) throw new Error('Wallet postcondition failed.');
@@ -688,6 +713,9 @@ class MasterDataMergeService {
     async assertRevertSafe(client, operation, snapshots) {
         if (operation.status !== 'active' || new Date(operation.undo_expires_at) <= new Date()) {
             throw conflict('This merge is outside its revert window.');
+        }
+        if (operation.decisions?.tombstoneRedirectsNotSnapshotted === true) {
+            throw conflict('This merge predates complete tombstone snapshots; use a forward correction.');
         }
         if (operation.decisions?.afterImagesCaptured !== true || !snapshots.length ||
             Number(operation.decisions.snapshotCount) !== snapshots.length ||
@@ -777,7 +805,13 @@ class MasterDataMergeService {
         for (const table of unions) for (const row of byTable(table).filter(item => item.before_image === null)) {
             await this.restoreSnapshotRow(client, row);
         }
-        for (const row of byTable(this.entity)) await this.restoreSnapshotRow(client, row);
+        const selectedMasters = new Set(ids);
+        for (const row of byTable(this.entity).filter(item => selectedMasters.has(item.before_image?.[this.config.id]))) {
+            await this.restoreSnapshotRow(client, row);
+        }
+        for (const row of byTable(this.entity).filter(item => !selectedMasters.has(item.before_image?.[this.config.id]))) {
+            await this.restoreSnapshotRow(client, row);
+        }
         for (const row of byTable('customer_wallet').filter(item => item.after_image === null)) {
             await this.restoreSnapshotRow(client, row);
         }
@@ -892,6 +926,14 @@ class MasterDataMergeService {
         await this.moveReferences(client, review);
         await this.rewriteDrafts(client, review);
         const suggestions = await this.archiveSuggestions(client, review, selected, actorEmployeeId);
+        if (review.incoming.length) {
+            const result = await client.query(
+                'UPDATE public.' + this.config.table + ' SET merged_into_' + this.config.id +
+                ' = $1 WHERE ' + this.config.id + ' = ANY($2::int[]) AND is_merged AND merged_into_' +
+                this.config.id + ' = ANY($3::int[])',
+                [review.keepId, review.incoming.map(row => row[this.config.id]), review.mergeIds]);
+            if (result.rowCount !== review.incoming.length) throw conflict('Retired source references changed.');
+        }
         await client.query(
             'UPDATE public.' + this.config.table + ' SET is_merged = TRUE, is_active = FALSE, merged_into_' +
             this.config.id + ' = $1 WHERE ' + this.config.id + ' = ANY($2::int[])',

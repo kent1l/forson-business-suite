@@ -10,6 +10,7 @@ const draftGuardMigration = fs.readFileSync(path.resolve(__dirname, '../../../da
 const previewHistoryMigration = fs.readFileSync(path.resolve(__dirname, '../../../database/migrations/20261005_04_master_data_merge_preview_history.sql'), 'utf8');
 const revertMigration = fs.readFileSync(path.resolve(__dirname, '../../../database/migrations/20261005_05_master_data_merge_revert.sql'), 'utf8');
 const immutableOwnersMigration = fs.readFileSync(path.resolve(__dirname, '../../../database/migrations/20261005_06_master_data_merge_immutable_owners.sql'), 'utf8');
+const tombstoneTargetsMigration = fs.readFileSync(path.resolve(__dirname, '../../../database/migrations/20261006_01_master_data_merge_tombstone_targets.sql'), 'utf8');
 
 describe('MasterDataMergeService against PostgreSQL', () => {
     let client;
@@ -22,8 +23,8 @@ describe('MasterDataMergeService against PostgreSQL', () => {
         await client.query(draftGuardMigration);
         await client.query(previewHistoryMigration);
         await client.query(revertMigration);
-        await client.query(revertMigration);
         await client.query(immutableOwnersMigration);
+        await client.query(tombstoneTargetsMigration);
         const { rows } = await client.query('SELECT employee_id FROM employee ORDER BY employee_id LIMIT 1');
         actorId = rows[0]?.employee_id;
         if (!actorId) {
@@ -138,6 +139,108 @@ describe('MasterDataMergeService against PostgreSQL', () => {
             .rejects.toMatchObject({ statusCode: 409 });
     });
 
+    test.each([
+        ['supplier', 'supplier_name', null],
+        ['customer', 'first_name', null],
+        ['brand', 'brand_name', 'brand_code'],
+        ['group', 'group_name', 'group_code'],
+    ])('%s merge redirects older tombstones and guarded revert restores them', async (entity, nameColumn, codeColumn) => {
+        await client.query('SAVEPOINT redirect_tombstones');
+        try {
+            const table = `"${entity}"`;
+            const idColumn = `${entity}_id`;
+            const targetColumn = `merged_into_${idColumn}`;
+            const stamp = `${Date.now()}${++revertFixtureNumber}`;
+            const create = async label => {
+                const columns = codeColumn ? `"${nameColumn}", "${codeColumn}"` : `"${nameColumn}"`;
+                const values = codeColumn ? [`${label} ${stamp}`, `${label[0]}${stamp.slice(-7)}`] : [`${label} ${stamp}`];
+                const placeholders = values.map((_, index) => `$${index + 1}`).join(', ');
+                const { rows: [row] } = await client.query(
+                    `INSERT INTO public.${table} (${columns}) VALUES (${placeholders}) RETURNING "${idColumn}"`, values);
+                return row[idColumn];
+            };
+            const keepId = await create('Keep');
+            const sourceId = await create('Source');
+            const olderId = await create('Older');
+            await client.query(
+                `UPDATE public.${table} SET is_merged = TRUE, is_active = FALSE, "${targetColumn}" = $1 WHERE "${idColumn}" = $2`,
+                [sourceId, olderId]);
+            await client.query('SAVEPOINT reject_direct_chain');
+            await expect(client.query(
+                `UPDATE public.${table} SET is_merged = TRUE, is_active = FALSE, "${targetColumn}" = $1 WHERE "${idColumn}" = $2`,
+                [keepId, sourceId])).rejects.toMatchObject({ code: '23514' });
+            await client.query('ROLLBACK TO SAVEPOINT reject_direct_chain');
+            await client.query('SAVEPOINT reject_inactive_target');
+            await expect(client.query(
+                `UPDATE public.${table} SET is_active = FALSE WHERE "${idColumn}" = $1`,
+                [sourceId])).rejects.toMatchObject({ code: '23514' });
+            await client.query('ROLLBACK TO SAVEPOINT reject_inactive_target');
+            await client.query('SAVEPOINT reject_unsnapshotted_redirect');
+            await expect(client.query(
+                `UPDATE public.${table} SET "${targetColumn}" = $1 WHERE "${idColumn}" = $2`,
+                [keepId, olderId])).rejects.toMatchObject({ code: '23514' });
+            await client.query('ROLLBACK TO SAVEPOINT reject_unsnapshotted_redirect');
+
+            const service = new MasterDataMergeService(db, entity);
+            const request = { keepId, mergeIds: [sourceId] };
+            const review = await service.review(client, request);
+            expect(review.impact.retired_sources_redirected).toBe(1);
+            const result = await service.executeWithClient(client,
+                { ...request, previewFingerprint: review.fingerprint }, actorId);
+            const { rows: [redirected] } = await client.query(
+                `SELECT "${targetColumn}" AS target FROM public.${table} WHERE "${idColumn}" = $1`, [olderId]);
+            expect(redirected.target).toBe(keepId);
+            const { rows: [snapshot] } = await client.query(
+                "SELECT before_image, after_image FROM master_data_merge_snapshot WHERE operation_id = $1 AND table_name = $2 AND record_id = $3",
+                [result.operationId, entity, JSON.stringify([olderId])]);
+            expect(snapshot.before_image[targetColumn]).toBe(sourceId);
+            expect(snapshot.after_image[targetColumn]).toBe(keepId);
+            await service.revertWithClient(client, result.operationId, actorId, 'Restore direct tombstone target');
+            const { rows: [restored] } = await client.query(
+                `SELECT "${targetColumn}" AS target FROM public.${table} WHERE "${idColumn}" = $1`, [olderId]);
+            expect(restored.target).toBe(sourceId);
+        } finally {
+            await client.query('ROLLBACK TO SAVEPOINT redirect_tombstones');
+        }
+    });
+
+    test('migration flattens a legacy chain and disables unsafe pre-fix revert', async () => {
+        await client.query('SAVEPOINT repair_legacy_chain');
+        try {
+            const stamp = `${Date.now()}${++revertFixtureNumber}`;
+            const { rows: brands } = await client.query(
+                'INSERT INTO brand (brand_name, brand_code) VALUES ($1, $2), ($3, $4), ($5, $6) RETURNING brand_id',
+                [`Repair keep ${stamp}`, `RK${stamp.slice(-7)}`,
+                    `Repair middle ${stamp}`, `RM${stamp.slice(-7)}`,
+                    `Repair older ${stamp}`, `RO${stamp.slice(-7)}`]);
+            const [keep, middle, older] = brands.map(row => row.brand_id);
+            await client.query('ALTER TABLE brand DISABLE TRIGGER master_merge_master_guard');
+            await client.query(
+                'UPDATE brand SET is_merged = TRUE, is_active = FALSE, merged_into_brand_id = $1 WHERE brand_id = $2',
+                [middle, older]);
+            await client.query(
+                'UPDATE brand SET is_merged = TRUE, is_active = FALSE, merged_into_brand_id = $1 WHERE brand_id = $2',
+                [keep, middle]);
+            await client.query('ALTER TABLE brand ENABLE TRIGGER master_merge_master_guard');
+            const { rows: [operation] } = await client.query(
+                "INSERT INTO master_data_merge_operation (entity_type, canonical_id, source_ids, actor_employee_id, " +
+                "undo_expires_at, status, completed_at, decisions) VALUES ('brand', $1, $2::int[], $3, " +
+                "NOW() + INTERVAL '24 hours', 'active', NOW(), '{\"afterImagesCaptured\":true,\"snapshotCount\":1}') " +
+                'RETURNING operation_id', [keep, [middle], actorId]);
+            await client.query(tombstoneTargetsMigration);
+            const { rows: [repaired] } = await client.query(
+                'SELECT merged_into_brand_id FROM brand WHERE brand_id = $1', [older]);
+            expect(repaired.merged_into_brand_id).toBe(keep);
+            const { rows: [marked] } = await client.query(
+                'SELECT decisions FROM master_data_merge_operation WHERE operation_id = $1', [operation.operation_id]);
+            expect(marked.decisions.tombstoneRedirectsNotSnapshotted).toBe(true);
+            const history = await new MasterDataMergeService(db, 'brand').history(100, client);
+            expect(history.find(row => row.operation_id === operation.operation_id).revertEligible).toBe(false);
+        } finally {
+            await client.query('ROLLBACK TO SAVEPOINT repair_legacy_chain');
+        }
+    });
+
     test('read-only rollout audit checks the migrated schema and policy registry', async () => {
         const report = await auditMasterDataMerge(client);
         expect(report.policyDrift).toEqual([]);
@@ -145,6 +248,7 @@ describe('MasterDataMergeService against PostgreSQL', () => {
         expect(report.findings['customer.walletMismatches']).toEqual(expect.any(Array));
         expect(['pending', 'applied']).toContain(report.migrations['20261005_05_master_data_merge_revert.sql']);
         expect(['pending', 'applied']).toContain(report.migrations['20261005_06_master_data_merge_immutable_owners.sql']);
+        expect(['pending', 'applied']).toContain(report.migrations['20261006_01_master_data_merge_tombstone_targets.sql']);
     });
 
     test('rollout audit reports document collisions in pending duplicate suggestions', async () => {

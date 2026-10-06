@@ -1,7 +1,7 @@
 # Master Data Merge Integrity — Supplier, Customer, Brand, and Group
 
 > **Forson Business Suite** | **Date:** 2026-10-05 | **Branch:** `master`
-> **Status:** Phases 1–4 and phase 5 implementation are committed. The persistent development database has all merge migrations, a clean audit, and `execute` enabled after the operator explicitly set that flag. Staging/production rollout remains pending.
+> **Status:** Phases 1–4 and phase 5 implementation are complete in development. All 213 migrations and the read-only audit pass there with `execute` enabled. Staging/production rollout remains pending.
 
 ## 0. Status at a Glance
 
@@ -13,7 +13,7 @@
 | Transactional merge engine | Committed | Shared engine handles collisions, wallets, tags, aliases, drafts, snapshots, outbox, and atomic postconditions |
 | API and review UI | Phase 3 committed | Impact matrix, ten-minute signed token, acknowledgment, history, retired-row conflicts, and stale-write checks; see §8 limits |
 | Guarded revert | Committed | Exact after-image safety checks, atomic restoration, history action, catalog requeue, and snapshot retention; see §9 |
-| Tests and rollout | Development execution enabled; target rollout pending | Full FK fixtures, concurrent writer, browser flows, and audit passed; all migrations are applied in development, while staging/production rollout remains pending |
+| Tests and rollout | Development verified; target rollout pending | Full FK fixtures, concurrent writer, browser flows, and audit passed; 213 migrations applied in development; staging/production rollout remains pending |
 
 ## 1. For a New Session or Agent Picking This Up
 
@@ -246,6 +246,8 @@ Follow the part merge model with a limited undo window, but validate entity-spec
 
 **Development follow-up on 2026-10-06:** Opening the four cleanup pages exposed a pending-schema error (`brand/group.is_active`) and a default-off route gate. A temporary development backup was taken, all seven pending migrations were applied, and `migrate status`/`verify` plus the read-only audit passed with no findings or policy drift. The development backend was initially recreated with `ENABLE_SAFE_MASTER_DATA_MERGE=preview`; directory, suggestions, and history reads passed for all four entities. The pages now keep available directory data when a merge request fails and show the rollout stage; merge and revert controls are disabled in preview. The operator subsequently set `execute` explicitly in `.env`. A duplicate later `preview` entry initially took precedence; it was removed, the backend was recreated, and the running process and health check confirmed `execute`. No merge or revert was performed during this setup.
 
+**Post-merge integrity correction on 2026-10-06:** Two operator-confirmed brand merges exposed one legacy tombstone chain: brand `419` still pointed to `413` after `413` was merged into `412`. No operational ownership remained on retired brands. Migration `20261006_01_master_data_merge_tombstone_targets.sql` flattened the chain, marks affected older operations ineligible for unsafe automatic revert, and adds a database guard against retiring a master while an older tombstone still points to it. The shared engine now snapshots and redirects inbound tombstones to the chosen canonical record in the merge transaction, includes them in the preview fingerprint and impact, checks for chains before commit, and restores them on guarded revert. Real PostgreSQL tests cover all four entities and the legacy repair. The full API suite passed on an isolated migrated database: 92 suites, 1,176 tests passed, one skipped. A fresh development backup was taken before migration; development migration status is 213 applied/zero pending, checksums verify, and the audit exits `0` with no findings. The first brand operation that retired `413` cannot be automatically reverted because its original snapshot did not include brand `419`; use a reviewed forward correction if it must be undone. No operator merge was run by Codex.
+
 **Still required before enabling execution:** Apply migrations in staging, run the read-only audit and fixture merges for all four entities there, then repeat the read-only audit in production before setting `preview` and later `execute`. The isolated test database is not a substitute for staging or production evidence. Any audit finding needs a dedicated reviewed correction before enabling merge execution. Staging and production connection details are not available in this workspace.
 
 ### 10.1 Required automated coverage
@@ -338,3 +340,4 @@ Roll out with `ENABLE_SAFE_MASTER_DATA_MERGE`. Apply migrations and run the exis
 | 2026-10-06 | Codex | Completed isolated phase 5 verification: added full operational relationship fixtures, concurrency and browser tests, immutable financial owner migration, broader stale-ID checks, and pending-pair collision audit. All 212 migrations, full API suite, web checks, and audit passed in a disposable database. Staging/production rollout remains pending. |
 | 2026-10-06 | Codex | Fixed development cleanup pages after seven pending migrations caused 500 errors and the default-off gate caused 503 errors. Applied and verified development migrations, ran a clean audit, enabled preview-only access, and added clear rollout-stage UI behavior with browser checks. Execute was left disabled pending explicit operator choice. |
 | 2026-10-06 | Codex + operator | Operator explicitly set the development rollout flag to `execute`. Removed a duplicate later `preview` entry, recreated the backend, and verified its process has `execute` loaded and is healthy. No merge was run by Codex. |
+| 2026-10-06 | Codex | Audited the operator's brand merges, repaired a legacy tombstone chain, added transactional tombstone redirection and exact-snapshot revert across all four entities, and prevented future chain creation at the database layer. Development audit and the full isolated API suite pass; staging/production rollout remains pending. |
