@@ -621,6 +621,7 @@ router.get('/ap/payments', protect, hasPermission('ap:view'), async (req, res) =
 // payments are routinely recorded after the fact. Changing it afterwards requires
 // transaction:change_date and a written reason (see transactionDateRoutes.js).
 router.post('/ap/payments', protect, hasPermission('ap:manage'), async (req, res) => {
+    const cashDrawer = require('../services/cashDrawerService');
     const {
         supplier_id, method_id, amount, settlement_date, reference_number,
         bank_account_id, notes, allocations, override_payment_hold,
@@ -629,6 +630,12 @@ router.post('/ap/payments', protect, hasPermission('ap:manage'), async (req, res
     const client = await db.getClient();
     try {
         await client.query('BEGIN');
+        await cashDrawer.reserveSourceSession(client, req.body.cash_session_id);
+        const sourceRequest = await cashDrawer.beginSourceRequest(client, req);
+        if (req.body.funding_source === 'ADVANCE') {
+            if (Number(req.user.permission_level_id) !== 10 && !req.user.permissions?.includes('cash_drawer:settle_advance')) cashDrawer.fail(403, 'ADVANCE_PERMISSION_REQUIRED', 'Advance settlement permission is required.');
+            await cashDrawer.reserveAdvance(client, req.body.advance_id);
+        }
         const result = await apPaymentService.recordDirectPayment(client, {
             supplierId: supplier_id,
             methodId: method_id,
@@ -641,10 +648,16 @@ router.post('/ap/payments', protect, hasPermission('ap:manage'), async (req, res
             userId: req.user?.employee_id,
             overridePaymentHold: Boolean(override_payment_hold),
         });
+        await cashDrawer.postSourcePayment(client, { kind: 'ap', sourceId: result.paymentId, sessionId: req.body.cash_session_id, actorId: req.user.employee_id, fundingSource: req.body.funding_source, canPost: cashDrawer.userCanPost(req.user) });
+        if (req.body.funding_source === 'ADVANCE') await cashDrawer.consumeAdvance(client, { advanceId: req.body.advance_id,
+            kind: 'ap', sourceId: result.paymentId, actorId: req.user.employee_id });
+        const responseBody = { success: true, message: 'Supplier payment recorded', data: result };
+        await cashDrawer.finishSourceRequest(client, sourceRequest, 201, responseBody);
         await client.query('COMMIT');
-        res.status(201).json({ success: true, message: 'Supplier payment recorded', data: result });
+        res.status(201).json(responseBody);
     } catch (err) {
         await client.query('ROLLBACK');
+        if (err.replay) return res.status(err.replay.status).json(err.replay.body);
         console.error('AP Record Payment Error:', err.message);
         if (err.status) {
             return res.status(err.status).json({ message: err.message, code: err.code });

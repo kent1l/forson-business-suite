@@ -8,6 +8,11 @@ const expenseLexicon = require('../services/expenseLexiconService');
 const periodLockService = require('../services/periodLockService');
 
 const router = express.Router();
+async function expenseHasDrawerMovement(expenseId) {
+    if (process.env.ENABLE_CASH_DRAWER !== 'true') return false;
+    const { rowCount } = await db.query('SELECT 1 FROM cash_drawer_movement WHERE expense_id=$1 LIMIT 1', [expenseId]);
+    return rowCount > 0;
+}
 
 // Helper to select and join expense details
 const EXPENSE_SELECT_FIELDS = `
@@ -359,6 +364,7 @@ router.get('/expenses/:id', protect, hasPermission('expenses:view'), async (req,
 
 // POST /api/expenses - Record expense
 router.post('/expenses', protect, hasPermission('expenses:create'), async (req, res) => {
+    const cashDrawer = require('../services/cashDrawerService');
     const {
         expense_date,
         category_id,
@@ -446,7 +452,18 @@ router.post('/expenses', protect, hasPermission('expenses:create'), async (req, 
             RETURNING expense_id
         `;
 
-        const insertRes = await db.query(insertQuery, [
+        const client = await db.getClient();
+        let insertRes;
+        let savedExpense;
+        try {
+            await client.query('BEGIN');
+            await cashDrawer.reserveSourceSession(client, req.body.cash_session_id);
+            const sourceRequest = await cashDrawer.beginSourceRequest(client, req);
+            if (req.body.funding_source === 'ADVANCE') {
+                if (Number(req.user.permission_level_id) !== 10 && !req.user.permissions?.includes('cash_drawer:settle_advance')) cashDrawer.fail(403, 'ADVANCE_PERMISSION_REQUIRED', 'Advance settlement permission is required.');
+                await cashDrawer.reserveAdvance(client, req.body.advance_id);
+            }
+            insertRes = await client.query(insertQuery, [
             expense_date,
             parseInt(category_id, 10),
             numericAmount,
@@ -456,7 +473,21 @@ router.post('/expenses', protect, hasPermission('expenses:create'), async (req, 
             reference_no ? String(reference_no).trim().substring(0, 100) : null,
             notes ? String(notes).trim() : null,
             employeeId
-        ]);
+            ]);
+            await cashDrawer.postSourcePayment(client, { kind: 'expense', sourceId: insertRes.rows[0].expense_id,
+                sessionId: req.body.cash_session_id, actorId: employeeId, fundingSource: req.body.funding_source, canPost: cashDrawer.userCanPost(req.user) });
+            if (req.body.funding_source === 'ADVANCE') await cashDrawer.consumeAdvance(client, { advanceId: req.body.advance_id,
+                kind: 'expense', sourceId: insertRes.rows[0].expense_id, actorId: employeeId });
+            const savedResult = await client.query(`SELECT ${EXPENSE_SELECT_FIELDS} ${EXPENSE_JOIN_TABLES} WHERE e.expense_id = $1`, [insertRes.rows[0].expense_id]);
+            savedExpense = savedResult.rows[0];
+            await cashDrawer.finishSourceRequest(client, sourceRequest, 201, savedExpense);
+            await client.query('COMMIT');
+        } catch (error) {
+            await client.query('ROLLBACK');
+            throw error;
+        } finally {
+            client.release();
+        }
 
         const newExpenseId = insertRes.rows[0].expense_id;
 
@@ -528,15 +559,10 @@ router.post('/expenses', protect, hasPermission('expenses:create'), async (req, 
             }
         }
 
-        // Fetch full inserted record
-        const getQuery = `
-            SELECT ${EXPENSE_SELECT_FIELDS}
-            ${EXPENSE_JOIN_TABLES}
-            WHERE e.expense_id = $1
-        `;
-        const result = await db.query(getQuery, [newExpenseId]);
-        res.status(201).json(result.rows[0]);
+        res.status(201).json(savedExpense);
     } catch (error) {
+        if (error.replay) return res.status(error.replay.status).json(error.replay.body);
+        if (error.status) return res.status(error.status).json({ code: error.code, message: error.message });
         if (error.statusCode === 423) {
             return res.status(423).json({ message: error.message });
         }
@@ -577,6 +603,7 @@ router.put('/expenses/:id', protect, hasPermission('expenses:edit'), async (req,
         if (existing.rows[0].is_void) {
             return res.status(409).json({ message: 'Cannot edit a voided expense record' });
         }
+        if (await expenseHasDrawerMovement(expenseId)) return res.status(409).json({ message: 'Drawer funded expense requires an audited cash correction.' });
 
         if (!expense_date || !/^\d{4}-\d{2}-\d{2}$/.test(expense_date)) {
             return res.status(400).json({ message: 'Valid expense date is required (YYYY-MM-DD)' });
@@ -713,6 +740,7 @@ router.put('/expenses/:id/void', protect, hasPermission('expenses:void'), async 
         if (existing.rows[0].is_void) {
             return res.status(409).json({ message: 'Expense record is already voided' });
         }
+        if (await expenseHasDrawerMovement(expenseId)) return res.status(409).json({ message: 'Drawer funded expense requires an audited cash correction.' });
 
         // Voiding retroactively changes a closed period's totals just as much as
         // editing does.

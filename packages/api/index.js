@@ -110,6 +110,7 @@ registerRoute('/api', './routes/taxReportRoutes');
 registerRoute('/api', './routes/withholdingRoutes');
 
 // Finance & Expense Modules
+registerRoute('/api', './routes/cashDrawerRoutes');
 registerRoute('/api', './routes/expenseCategoryRoutes');
 registerRoute('/api', './routes/expenseRoutes');
 registerRoute('/api', './routes/expenseLexiconRoutes');

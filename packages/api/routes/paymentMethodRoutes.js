@@ -314,6 +314,7 @@ router.delete('/payment-methods/:id', protect, async (req, res) => {
 // POST /api/invoices/:id/payments - Add payments to an invoice (split payment support)
 const invoicePaymentsMiddlewares = [protect, hasPermission('invoicing:create')];
 router.post('/invoices/:id/payments', ...invoicePaymentsMiddlewares, async (req, res) => {
+    const cashDrawer = require('../services/cashDrawerService');
     const { id: invoice_id } = req.params;
     const { payments, physical_receipt_no } = req.body;
     // Allow dev requests without auth by defaulting to employee_id 1 when req.user is missing
@@ -326,6 +327,8 @@ router.post('/invoices/:id/payments', ...invoicePaymentsMiddlewares, async (req,
     const client = await db.getClient();
     try {
         await client.query('BEGIN');
+        await cashDrawer.reserveSourceSession(client, req.body.cash_session_id);
+        const sourceRequest = await cashDrawer.beginSourceRequest(client, req);
 
         // Validate invoice exists and get total
         const invoice = await client.query(
@@ -509,6 +512,8 @@ router.post('/invoices/:id/payments', ...invoicePaymentsMiddlewares, async (req,
             }
 
             insertedPayments.push(paymentResult.rows[0]);
+            await cashDrawer.postSourcePayment(client, { kind: 'invoice', sourceId: paymentResult.rows[0].payment_id, sessionId: req.body.cash_session_id, actorId: employee_id,
+                notebookReceiptId: payment.notebook_receipt_id, coveredAmount: payment.notebook_covered_amount, canPost: cashDrawer.userCanPost(req.user) });
         }
 
         // Update physical receipt number if provided
@@ -526,16 +531,19 @@ router.post('/invoices/:id/payments', ...invoicePaymentsMiddlewares, async (req,
             [invoice_id]
         );
 
-        await client.query('COMMIT');
-
-        res.status(201).json({
+        const responseBody = {
             payments: insertedPayments,
             invoice: updatedInvoice.rows[0],
             total_payments: totalPayments
-        });
+        };
+        await cashDrawer.finishSourceRequest(client, sourceRequest, 201, responseBody);
+        await client.query('COMMIT');
+        res.status(201).json(responseBody);
 
     } catch (err) {
         await client.query('ROLLBACK');
+        if (err.replay) return res.status(err.replay.status).json(err.replay.body);
+        if (err.status) return res.status(err.status).json({ code: err.code, message: err.message });
         console.error('Error adding payments to invoice:', err.message);
         res.status(500).json({ message: 'Server error processing payments.' });
     } finally {

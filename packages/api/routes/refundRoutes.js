@@ -3,6 +3,7 @@ const db = require('../db');
 const { getNextDocumentNumber } = require('../helpers/documentNumberGenerator');
 const { protect, hasPermission } = require('../middleware/authMiddleware');
 const arLedger = require('../services/arLedgerService');
+const cashDrawer = require('../services/cashDrawerService');
 const { computeTaxForBase } = require('../services/taxCalculationService');
 const router = express.Router();
 
@@ -17,6 +18,8 @@ router.post('/refunds', protect, hasPermission('invoicing:create'), async (req, 
     const client = await db.getClient();
     try {
         await client.query('BEGIN');
+        await cashDrawer.reserveSourceSession(client, req.body.cash_session_id);
+        const sourceRequest = await cashDrawer.beginSourceRequest(client, req);
 
         // A refund and a void are mutually exclusive corrections.  Holding the
         // invoice lock also serializes two refund requests, so each validation
@@ -216,11 +219,28 @@ router.post('/refunds', protect, hasPermission('invoicing:create'), async (req, 
 
         // 4. Update the original invoice status is handled automatically by the update_invoice_balance_after_payment trigger on credit_note table
 
+        if (cashDrawer.enabled() && /^cash$/i.test(refund_payment_method) && cnTotalAmount > 0) {
+            if (!cashDrawer.userCanPost(req.user)) cashDrawer.fail(403, 'DRAWER_PERMISSION_REQUIRED', 'Cash drawer posting permission is required.');
+            if (!req.body.cash_session_id) cashDrawer.fail(422, 'DRAWER_SESSION_REQUIRED', 'Select a drawer for the physical refund.');
+            const method = await client.query("SELECT method_id FROM payment_methods WHERE type='cash' AND enabled=true ORDER BY method_id LIMIT 1");
+            if (!method.rowCount) cashDrawer.fail(422, 'CASH_METHOD_REQUIRED', 'No active cash method is configured.');
+            const movement = await cashDrawer.postMovement(client, { sessionId: req.body.cash_session_id,
+                direction: 'OUT', amount: cnTotalAmount.toFixed(2), category: 'CASH_REFUND',
+                description: `Cash refund ${creditNoteNumber}`, actorId: req.user.employee_id,
+                sourceEventKey: `refund:${newCnId}`, source: { creditNoteId: newCnId, methodId: method.rows[0].method_id } });
+            await client.query(`INSERT INTO refund_disbursement(credit_note_id,amount,method_id,movement_id,actor_id,request_id)
+                VALUES($1,$2,$3,$4,$5,gen_random_uuid())`,
+            [newCnId, cnTotalAmount.toFixed(2), method.rows[0].method_id, movement.movement_id, req.user.employee_id]);
+        }
+        const responseBody = { message: 'Refund processed successfully', creditNoteNumber, total_refunded: cnTotalAmount };
+        await cashDrawer.finishSourceRequest(client, sourceRequest, 201, responseBody);
         await client.query('COMMIT');
-        res.status(201).json({ message: 'Refund processed successfully', creditNoteNumber, total_refunded: cnTotalAmount });
+        res.status(201).json(responseBody);
 
     } catch (err) {
         await client.query('ROLLBACK');
+        if (err.replay) return res.status(err.replay.status).json(err.replay.body);
+        if (err.status) return res.status(err.status).json({ code: err.code, message: err.message });
         console.error('Refund Transaction Error:', err.message);
         res.status(500).json({ message: 'Server error during refund transaction.', error: err.message });
     } finally {

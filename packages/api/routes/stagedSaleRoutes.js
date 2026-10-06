@@ -353,6 +353,7 @@ router.get('/sales/staging/:id', protect, hasPermission('pos:use'), async (req, 
 
 // POST /sales/staging/:id/approve-post - Approve staged sale (accepts updated physical_receipt_no and tendered_amount)
 router.post('/sales/staging/:id/approve-post', protect, hasPermission('invoicing:create'), async (req, res) => {
+    const cashDrawer = require('../services/cashDrawerService');
     const { id } = req.params;
     const { physical_receipt_no, tendered_amount, customer_id } = req.body; // accept optional edits from approval modal
     const reviewerId = req.user.employee_id;
@@ -360,6 +361,8 @@ router.post('/sales/staging/:id/approve-post', protect, hasPermission('invoicing
     const client = await db.getClient();
     try {
         await client.query('BEGIN');
+        await cashDrawer.reserveSourceSession(client, req.body.cash_session_id);
+        const sourceRequest = await cashDrawer.beginSourceRequest(client, req);
 
         // Fetch staged sale
         const stagedRes = await client.query('SELECT * FROM staged_sale WHERE staged_sale_id = $1 FOR UPDATE', [id]);
@@ -572,6 +575,7 @@ router.post('/sales/staging/:id/approve-post', protect, hasPermission('invoicing
                 staged.employee_id,
                 paymentStatus
             ]);
+            await cashDrawer.postSourcePayment(client, { kind: 'invoice', sourceId: stagedPaymentRes.rows[0].payment_id, sessionId: req.body.cash_session_id, actorId: reviewerId, canPost: cashDrawer.userCanPost(req.user) });
 
             if (paymentStatus === 'settled' && payAmount > 0) {
                 await arLedger.appendEntry(client, {
@@ -596,14 +600,18 @@ router.post('/sales/staging/:id/approve-post', protect, hasPermission('invoicing
             WHERE staged_sale_id = $1
         `, [id, reviewerId, prn, tendered_amount !== undefined ? tendered_amount : staged.tendered_amount, finalCustomerId]);
 
-        await client.query('COMMIT');
-        res.status(200).json({
+        const responseBody = {
             message: 'Staged sale approved and recorded successfully.',
             invoice_id: invoiceId,
             invoice_number
-        });
+        };
+        await cashDrawer.finishSourceRequest(client, sourceRequest, 200, responseBody);
+        await client.query('COMMIT');
+        res.status(200).json(responseBody);
     } catch (err) {
         await client.query('ROLLBACK');
+        if (err.replay) return res.status(err.replay.status).json(err.replay.body);
+        if (err.status) return res.status(err.status).json({ code: err.code, message: err.message });
         console.error('Error approving staged sale:', err.message);
         res.status(500).json({ message: 'Server error during approval.', error: err.message });
     } finally {
