@@ -1,6 +1,7 @@
 const express = require('express');
 const db = require('../db');
 const { protect, hasPermission, userHasPermission } = require('../middleware/authMiddleware');
+const { masterStatus, retiredConflict } = require('../helpers/masterDataStatus');
 const { parsePaginationQuery, paginatedResponse } = require('../helpers/pagination');
 const apPaymentService = require('../services/apPaymentService');
 const grnCosting = require('../services/grnCostingService');
@@ -283,6 +284,11 @@ router.patch('/ap/suppliers/:supplierId/payment-hold', protect, hasPermission('a
         res.json({ success: true, data: row });
     } catch (err) {
         console.error('AP Payment Hold Toggle Error:', err.message);
+        if (err.code === '23514') {
+            const status = await masterStatus(db, 'supplier', supplierId);
+            return res.status(409).json(status?.is_merged ? retiredConflict('supplier', status) :
+                { message: 'The selected supplier is inactive. Refresh the selection.' });
+        }
         res.status(500).json({ message: 'Failed to update payment hold' });
     }
 });

@@ -1,4 +1,6 @@
 const JevClient = require('./jevClient');
+const MasterDataMergeService = require('./masterDataMergeService');
+const MERGE_POLICY = require('./masterDataMergePolicy');
 
 const PARTIES = {
     customer: {
@@ -6,23 +8,11 @@ const PARTIES = {
         suggestion: 'customer_duplicate_suggestion', permission: 'customers:edit',
         name: "COALESCE(NULLIF(c.company_name, ''), NULLIF(BTRIM(CONCAT_WS(' ', c.first_name, c.last_name)), ''), c.customer_code)",
         duplicateName: "COALESCE(NULLIF(d.company_name, ''), NULLIF(BTRIM(CONCAT_WS(' ', d.first_name, d.last_name)), ''), d.customer_code)",
-        references: [
-            ['invoice', 'customer_id'], ['customer_payment', 'customer_id'], ['staged_sale', 'customer_id'],
-            ['ar_adjustment', 'customer_id'], ['ar_ledger', 'customer_id'], ['withholding_tax_certificate', 'customer_id'],
-            ['withholding_tax_line', 'customer_id'], ['cheque_clearance_log', 'customer_id'],
-        ],
-        tagTable: 'customer_tag', draftKey: 'customer_id', walletTable: 'customer_wallet', walletTransactionTable: 'customer_wallet_transaction',
     },
     supplier: {
         table: 'supplier', id: 'supplier_id', code: 'supplier_code', mergedInto: 'merged_into_supplier_id',
         suggestion: 'supplier_duplicate_suggestion', permission: 'suppliers:edit',
         name: 'c.supplier_name', duplicateName: 'd.supplier_name',
-        references: [
-            ['goods_receipt', 'supplier_id'], ['goods_receipt', 'freight_supplier_id'], ['goods_receipt_freight', 'supplier_id'],
-            ['purchase_order', 'supplier_id'], ['supplier_bill', 'supplier_id'], ['ap_ledger', 'supplier_id'],
-            ['ap_payment', 'supplier_id'], ['cheque_clearance_log', 'supplier_id'],
-        ],
-        draftKey: 'supplier_id',
     },
 };
 
@@ -36,8 +26,8 @@ class PartyMergeService {
 
     async list() {
         const p = this.party;
-        const usage = p.references.map(([table, column]) => `(SELECT COUNT(*) FROM ${table} r WHERE r.${column} = c.${p.id})`).join(' + ');
-        const { rows } = await this.db.query(`SELECT c.*, ${p.name} AS display_name, (${usage})::int AS reference_count FROM ${p.table} c WHERE NOT c.is_merged ORDER BY display_name`);
+        const usage = MERGE_POLICY[p.table].references.filter(([, , action]) => action !== 'provenance' && action !== 'workflow').map(([table, column]) => `(SELECT COUNT(*) FROM ${table} r WHERE r.${column} = c.${p.id})`).join(' + ');
+        const { rows } = await this.db.query(`SELECT c.*, ${p.name} AS display_name, (${usage})::int AS reference_count FROM ${p.table} c WHERE NOT c.is_merged AND c.is_active ORDER BY display_name`);
         return rows;
     }
 
@@ -99,63 +89,20 @@ class PartyMergeService {
         return [keep, ...merge];
     }
 
-    async preview({ keepId, mergeIds }) {
-        const ids = this.validateIds(keepId, mergeIds), p = this.party;
-        const { rows } = await this.db.query(`SELECT ${p.id}, ${p.code}, ${p.name} AS display_name, is_merged, ${p.mergedInto} FROM ${p.table} c WHERE ${p.id} = ANY($1::int[])`, [ids]);
-        this.assertMergeable(rows, keepId, mergeIds);
-        const conflicts = await this.findConflicts(this.db, keepId, mergeIds);
-        const impact = await this.impact(this.db, mergeIds);
-        return { keep: rows.find(row => row[p.id] === Number(keepId)), merge: rows.filter(row => mergeIds.includes(row[p.id])), impact, conflicts };
+    async preview(request, employeeId) {
+        return new MasterDataMergeService(this.db, this.party.table).preview(request, employeeId);
     }
 
-    async findConflicts(db, keepId, mergeIds) {
-        const p = this.party;
-        const ids = [Number(keepId), ...mergeIds.map(Number)];
-        const expression = `"${p.draftKey}"\\s*:\\s*(${ids.join('|')})([^0-9]|$)`;
-        const { rows: drafts } = await db.query(`SELECT COUNT(*)::int AS count FROM draft_transaction WHERE expires_at > CURRENT_TIMESTAMP AND draft_data::text ~ $1`, [expression]);
-        const conflicts = [];
-        if (drafts[0].count) conflicts.push(`${drafts[0].count} active draft${drafts[0].count === 1 ? ' references' : 's reference'} a selected record.`);
-        if (p.walletTable) {
-            const { rows } = await db.query(`SELECT customer_id FROM ${p.walletTable} WHERE customer_id = ANY($1::int[])`, [ids]);
-            if (rows.length) conflicts.push('Selected customers have wallet records; consolidate wallet balances before merging.');
-        }
-        return conflicts;
+    async history(limit) {
+        return new MasterDataMergeService(this.db, this.party.table).history(limit);
     }
 
-    async impact(db, mergeIds) {
-        const p = this.party;
-        const result = {};
-        for (const [table, column] of p.references) {
-            const { rows } = await db.query(`SELECT COUNT(*)::int AS count FROM ${table} WHERE ${column} = ANY($1::int[])`, [mergeIds]);
-            result[`${table}.${column}`] = rows[0].count;
-        }
-        return result;
+    async revert(operationId, employeeId, reason) {
+        return new MasterDataMergeService(this.db, this.party.table).revert(operationId, employeeId, reason);
     }
 
-    async execute({ keepId, mergeIds, suggestionIds = [] }, employeeId) {
-        const ids = this.validateIds(keepId, mergeIds), p = this.party;
-        if (!Array.isArray(suggestionIds)) throw Object.assign(new Error('Suggestion IDs must be an array'), { statusCode: 400 });
-        const client = await this.db.getClient();
-        try {
-            await client.query('BEGIN');
-            for (const id of [...ids].sort((a, b) => a - b)) await client.query('SELECT pg_advisory_xact_lock($1::bigint)', [id]);
-            const { rows } = await client.query(`SELECT ${p.id}, ${p.code}, ${p.name} AS display_name, is_merged, ${p.mergedInto} FROM ${p.table} c WHERE ${p.id} = ANY($1::int[]) FOR UPDATE`, [ids]);
-            this.assertMergeable(rows, keepId, mergeIds);
-            const conflicts = await this.findConflicts(client, keepId, mergeIds);
-            if (conflicts.length) throw Object.assign(new Error(conflicts.join(' ')), { statusCode: 409 });
-            const impact = await this.impact(client, mergeIds);
-            if (p.tagTable) {
-                await client.query(`INSERT INTO ${p.tagTable} (customer_id, tag_id) SELECT $1, tag_id FROM ${p.tagTable} WHERE customer_id = ANY($2::int[]) ON CONFLICT DO NOTHING`, [keepId, mergeIds]);
-                await client.query(`DELETE FROM ${p.tagTable} WHERE customer_id = ANY($1::int[])`, [mergeIds]);
-            }
-            for (const [table, column] of p.references) await client.query(`UPDATE ${table} SET ${column} = $1 WHERE ${column} = ANY($2::int[])`, [keepId, mergeIds]);
-            await client.query(`UPDATE ${p.table} SET is_merged = TRUE, ${p.mergedInto} = $1 WHERE ${p.id} = ANY($2::int[])`, [keepId, mergeIds]);
-            const selected = [...new Set(suggestionIds.map(Number).filter(Number.isInteger))];
-            if (selected.length) await client.query(`UPDATE public.${p.suggestion} SET status = 'merged', merged_at = NOW(), merged_by = $1, updated_at = NOW() WHERE suggestion_id = ANY($2::bigint[]) AND status = 'pending'`, [employeeId, selected]);
-            await client.query(`UPDATE public.${p.suggestion} SET status = 'dismissed', dismissed_at = NOW(), dismissed_by = $1, updated_at = NOW() WHERE status = 'pending' AND (${p.id} = ANY($2::int[]) OR duplicate_${p.id} = ANY($2::int[]))`, [employeeId, mergeIds]);
-            await client.query('COMMIT');
-            return { keepId: Number(keepId), mergedIds: mergeIds.map(Number), impact };
-        } catch (error) { await client.query('ROLLBACK'); throw error; } finally { client.release(); }
+    async execute(request, employeeId) {
+        return new MasterDataMergeService(this.db, this.party.table).execute(request, employeeId);
     }
 
     async dismiss(suggestionId, employeeId) {

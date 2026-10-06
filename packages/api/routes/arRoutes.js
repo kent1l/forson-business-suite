@@ -2,6 +2,7 @@ const express = require('express');
 const fs = require('fs');
 const db = require('../db');
 const { protect, hasPermission } = require('../middleware/authMiddleware');
+const { masterStatus, retiredConflict } = require('../helpers/masterDataStatus');
 const { parsePaginationQuery, paginatedResponse } = require('../helpers/pagination');
 const arLedger = require('../services/arLedgerService');
 const pdcService = require('../services/pdcService');
@@ -629,6 +630,11 @@ router.post('/ar/ledger/:customerId/adjustment', protect, hasPermission('ar:mana
     } catch (err) {
         await client.query('ROLLBACK');
         console.error('AR Adjustment error:', err.message);
+        if (err.code === '23514') {
+            const status = await masterStatus(db, 'customer', customerId);
+            return res.status(409).json(status?.is_merged ? retiredConflict('customer', status) :
+                { message: 'The selected customer is inactive. Refresh the selection.' });
+        }
         res.status(500).json({ message: 'Server error recording adjustment.' });
     } finally {
         client.release();
@@ -1450,4 +1456,3 @@ router.get('/ar/payments/:paymentId/receipt/pdf', protect, hasPermission('ar:vie
 });
 
 module.exports = router;
-

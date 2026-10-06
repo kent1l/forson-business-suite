@@ -18,6 +18,7 @@ const { startLedgerReconciliationEngine } = require('./services/ledgerReconcilia
 const { startNotificationGroomer } = require('./services/notificationGroomer');
 const { startAnalyticsAlertEngine } = require('./services/analyticsAlertService');
 const { startPartMergeSnapshotCleanup } = require('./services/partMergeMaintenanceService');
+const { startMasterDataMergeSnapshotCleanup } = require('./services/masterDataMergeMaintenanceService');
 
 // Set default timezone to Philippine Time
 process.env.TZ = 'Asia/Manila';
@@ -26,6 +27,21 @@ const app = express();
 
 app.use(cors());
 app.use(express.json());
+
+// Reject retired master IDs before any API workflow can post a new document.
+const { protect: protectMasterWrite } = require('./middleware/authMiddleware');
+const { requireActiveMasters, hasMasterIds } = require('./helpers/masterDataStatus');
+const checkMasterWrite = requireActiveMasters(require('./db'), {
+  supplier_id: 'supplier', freight_supplier_id: 'supplier',
+  customer_id: 'customer', brand_id: 'brand', group_id: 'group',
+  supplierId: 'supplier', freightSupplierId: 'supplier', selectedSupplier: 'supplier',
+  customerId: 'customer', selectedCustomer: 'customer',
+  brandId: 'brand', groupId: 'group',
+});
+app.use('/api', (req, res, next) => {
+  if (!['POST', 'PUT', 'PATCH'].includes(req.method) || !hasMasterIds(req.body)) return next();
+  protectMasterWrite(req, res, error => error ? next(error) : checkMasterWrite(req, res, next));
+});
 
 // --- Register all API routes ---
 // --- Register all API routes ---
@@ -185,6 +201,7 @@ app.listen(PORT, async () => {
   }
 
   startPartMergeSnapshotCleanup();
+  startMasterDataMergeSnapshotCleanup();
 
 
   if (process.env.DISABLE_SEARCH_REPAIR_WORKER !== 'true') {

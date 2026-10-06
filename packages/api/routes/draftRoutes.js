@@ -45,6 +45,7 @@ router.post('/drafts/:type', protect, async (req, res) => {
         res.status(200).json({ message: 'Draft saved.', draft_id: result.rows[0].draft_id });
     } catch (err) {
         console.error(err.message);
+        if (err.code === '23514') return res.status(409).json({ message: 'Draft references an inactive or merged master record. Refresh the selection.' });
         res.status(500).send('Server Error');
     }
 });

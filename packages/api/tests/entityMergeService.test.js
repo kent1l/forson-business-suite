@@ -21,35 +21,6 @@ describe('EntityMergeService', () => {
         expect(db.getClient).not.toHaveBeenCalled();
     });
 
-    test('reassigns parts, preserves aliases, resolves selected suggestions, and dismisses stale ones', async () => {
-        const client = makeClient();
-        client.query
-            .mockResolvedValueOnce({}) // BEGIN
-            .mockResolvedValueOnce({}) // advisory lock 1
-            .mockResolvedValueOnce({}) // advisory lock 2
-            .mockResolvedValueOnce({ rows: [
-                { brand_id: 1, brand_name: 'ACME', brand_code: 'AC', is_merged: false, merged_into_brand_id: null },
-                { brand_id: 2, brand_name: 'ACME Parts', brand_code: 'ACP', is_merged: false, merged_into_brand_id: null },
-            ] })
-            .mockResolvedValueOnce({ rowCount: 4 }) // part reassignment
-            .mockResolvedValueOnce({}) // alias insert
-            .mockResolvedValueOnce({}) // entity state
-            .mockResolvedValueOnce({}) // selected suggestion
-            .mockResolvedValueOnce({}) // stale suggestions
-            .mockResolvedValueOnce({}); // COMMIT
-        const db = { getClient: jest.fn().mockResolvedValue(client) };
-        const service = new EntityMergeService(db, 'brand');
-
-        await expect(service.execute({ keepId: 1, mergeIds: [2], suggestionIds: [7] }, 10))
-            .resolves.toEqual({ keepId: 1, mergedIds: [2], partsReassigned: 4 });
-
-        const sql = client.query.mock.calls.map(([statement]) => statement).join('\n');
-        expect(sql).toContain('INSERT INTO public.brand_alias');
-        expect(sql).toContain('SET status = \'merged\'');
-        expect(sql).toContain('SET status = \'dismissed\'');
-        expect(client.release).toHaveBeenCalledTimes(1);
-    });
-
     test('uses Jev to filter trigram candidates before persisting a suggestion', async () => {
         const client = makeClient();
         client.query

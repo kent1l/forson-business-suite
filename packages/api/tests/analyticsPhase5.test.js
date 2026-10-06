@@ -196,16 +196,24 @@ describe('Phase 5: Alert and Digest Formatting', () => {
 
 describe('Phase 5: Custom Boards and Saved Views DB Integration', () => {
     let testEmployeeId = null;
+    let createdEmployee = false;
     const testBoardId = `test_custom_board_${Date.now()}`;
 
     beforeAll(async () => {
         const emp = await db.query('SELECT employee_id FROM employee ORDER BY employee_id LIMIT 1');
-        testEmployeeId = emp.rows[0]?.employee_id || 1;
+        testEmployeeId = emp.rows[0]?.employee_id;
+        if (!testEmployeeId) {
+            const { rows: [actor] } = await db.query(
+                "INSERT INTO employee (first_name, last_name) VALUES ('Analytics', 'Integration') RETURNING employee_id");
+            testEmployeeId = actor.employee_id;
+            createdEmployee = true;
+        }
     });
 
     afterAll(async () => {
         await db.query('DELETE FROM analytics_saved_view WHERE board_id = $1 OR board_id = $2', [testBoardId, 'overview']);
         await db.query('DELETE FROM analytics_board WHERE board_id = $1', [testBoardId]);
+        if (createdEmployee) await db.query('DELETE FROM employee WHERE employee_id = $1', [testEmployeeId]);
     });
 
     test('refuses creating a custom board whose ID collides with a built-in board', async () => {
