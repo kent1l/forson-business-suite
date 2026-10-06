@@ -1,7 +1,7 @@
 # Master Data Merge Integrity — Supplier, Customer, Brand, and Group
 
 > **Forson Business Suite** | **Date:** 2026-10-05 | **Branch:** `master`
-> **Status:** Phases 1–4 committed. Phase 5 implementation and isolated verification are complete in the current working tree. The persistent development database and staging/production have not been migrated or enabled.
+> **Status:** Phases 1–4 and phase 5 implementation are committed. The persistent development database has all merge migrations and a clean audit; preview is enabled there. Merge execution in development and all staging/production rollout remain pending.
 
 ## 0. Status at a Glance
 
@@ -13,7 +13,7 @@
 | Transactional merge engine | Committed | Shared engine handles collisions, wallets, tags, aliases, drafts, snapshots, outbox, and atomic postconditions |
 | API and review UI | Phase 3 committed | Impact matrix, ten-minute signed token, acknowledgment, history, retired-row conflicts, and stale-write checks; see §8 limits |
 | Guarded revert | Committed | Exact after-image safety checks, atomic restoration, history action, catalog requeue, and snapshot retention; see §9 |
-| Tests and rollout | Local verification complete; target rollout pending | Full FK fixtures, concurrent writer, browser flows, migration verification, and read-only audit passed in an isolated database; staging and production still require migration, audit, and staged enablement |
+| Tests and rollout | Development preview enabled; target rollout pending | Full FK fixtures, concurrent writer, browser flows, and audit passed; all migrations are applied in development, while execution and staging/production rollout remain pending |
 
 ## 1. For a New Session or Agent Picking This Up
 
@@ -244,6 +244,8 @@ Follow the part merge model with a limited undo window, but validate entity-spec
 
 **Verification on 2026-10-06:** All 212 repository migrations were applied to disposable PostgreSQL database `codex_merge_integrity_test`; `migrate status` reported zero pending, `migrate verify` passed, and the read-only audit exited `0` with no findings or policy drift. The complete API suite passed there: 92 suites, 1,171 tests passed, one skipped. API/web lint, seven web test files, web production build, and browser merge flows for supplier, customer, brand, and group passed. The browser check used a temporary copy of the host's missing Chromium audio library under `/tmp`. No migration was applied or merge executed against a persistent database in this phase.
 
+**Development follow-up on 2026-10-06:** Opening the four cleanup pages exposed a pending-schema error (`brand/group.is_active`) and a default-off route gate. A temporary development backup was taken, all seven pending migrations were applied, and `migrate status`/`verify` plus the read-only audit passed with no findings or policy drift. The development backend was recreated with `ENABLE_SAFE_MASTER_DATA_MERGE=preview`; directory, suggestions, and history reads passed for all four entities. The pages now keep available directory data when a merge request fails and show the rollout stage; merge and revert controls are disabled in preview. Automatic approval review rejected enabling `execute` in development, so no merge/revert operation was enabled or run there.
+
 **Still required before enabling execution:** Apply migrations in staging, run the read-only audit and fixture merges for all four entities there, then repeat the read-only audit in production before setting `preview` and later `execute`. The isolated test database is not a substitute for staging or production evidence. Any audit finding needs a dedicated reviewed correction before enabling merge execution. Staging and production connection details are not available in this workspace.
 
 ### 10.1 Required automated coverage
@@ -334,3 +336,4 @@ Roll out with `ENABLE_SAFE_MASTER_DATA_MERGE`. Apply migrations and run the exis
 | 2026-10-05 | Codex | Implemented phase 4 guarded revert with after-images, strict safety checks, atomic restoration, catalog requeue, history UI, and retention cleanup. Rollback-only PostgreSQL tests passed; migration 05 was not deployed. |
 | 2026-10-05 | Codex | Began phase 5: added staged route gate, read-only audit, route authorization tests, explicit policy-wide zero-reference assertions, and a tested rollout handoff. Local merge migrations remain pending; staging and production verification plus concurrent-writer/full-FK fixtures remain. |
 | 2026-10-06 | Codex | Completed isolated phase 5 verification: added full operational relationship fixtures, concurrency and browser tests, immutable financial owner migration, broader stale-ID checks, and pending-pair collision audit. All 212 migrations, full API suite, web checks, and audit passed in a disposable database. Staging/production rollout remains pending. |
+| 2026-10-06 | Codex | Fixed development cleanup pages after seven pending migrations caused 500 errors and the default-off gate caused 503 errors. Applied and verified development migrations, ran a clean audit, enabled preview-only access, and added clear rollout-stage UI behavior with browser checks. Execute was rejected by automatic approval review and remains disabled. |

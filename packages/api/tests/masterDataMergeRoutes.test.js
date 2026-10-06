@@ -52,8 +52,10 @@ describe('master-data merge route rollout and authorization', () => {
     test('preview stage permits review but blocks merge and revert', async () => {
         process.env.ENABLE_SAFE_MASTER_DATA_MERGE = 'preview';
         const auth = { Authorization: 'Bearer test', 'x-test-permissions': 'suppliers:edit' };
-        await request(app).post('/api/suppliers/merge-preview').set(auth).send({}).expect(200);
-        await request(app).post('/api/suppliers/merge').set(auth).send({}).expect(503);
+        await request(app).post('/api/suppliers/merge-preview').set(auth).send({}).expect(200)
+            .expect('X-Master-Data-Merge-Stage', 'preview');
+        await request(app).post('/api/suppliers/merge').set(auth).send({}).expect(503)
+            .expect('X-Master-Data-Merge-Stage', 'preview');
         await request(app).post('/api/suppliers/merge-history/123/revert').set(auth).send({ reason: 'test' }).expect(503);
         expect(PartyMergeService.mock.results[0].value.execute).not.toHaveBeenCalled();
     });
@@ -74,7 +76,8 @@ describe('master-data merge route rollout and authorization', () => {
     ])('%s routes enforce permission and rollout stage', async (plural, permission) => {
         const auth = { Authorization: 'Bearer test', 'x-test-permissions': permission };
         process.env.ENABLE_SAFE_MASTER_DATA_MERGE = 'off';
-        await request(app).post(`/api/${plural}/merge-preview`).set(auth).send({}).expect(503);
+        await request(app).post(`/api/${plural}/merge-preview`).set(auth).send({}).expect(503)
+            .expect('X-Master-Data-Merge-Stage', 'off');
         process.env.ENABLE_SAFE_MASTER_DATA_MERGE = 'preview';
         await request(app).post(`/api/${plural}/merge-preview`).set('Authorization', 'Bearer test')
             .send({}).expect(403);

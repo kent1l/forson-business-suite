@@ -36,7 +36,7 @@ async function clickText(page, label) {
     assert.ok(clicked, `button ${label} was present`);
 }
 
-async function runCase(kind) {
+async function runCase(kind, stage = 'execute') {
     const cfg = config(kind);
     const page = await browser.newPage();
     const requests = [];
@@ -74,10 +74,20 @@ async function runCase(kind) {
             if (staleOnce) { staleOnce = false; status = 409; result = { message: 'Review changed' }; }
             else result = { result: { mergedIds: [2], partsReassigned: 1 } };
         } else if (route === `${cfg.plural}/merge-history/9/revert`) result = { ok: true };
-        request.respond({ status, contentType: 'application/json', body: JSON.stringify(result) });
+        if (stage === 'off' && route !== cfg.plural) {
+            status = 503;
+            result = { message: 'Master-data merge is not enabled at this rollout stage.' };
+        }
+        request.respond({ status, contentType: 'application/json', headers: { 'X-Master-Data-Merge-Stage': stage }, body: JSON.stringify(result) });
     });
     try {
         await page.goto(`http://127.0.0.1:${address.port}/tests/fixtures/mergeHarness.html?kind=${kind}`);
+        if (stage === 'off') {
+            await page.waitForFunction(() => document.body.textContent.includes('Duplicate cleanup is not enabled') && !document.body.textContent.includes('Loading directory'));
+            assert.equal(await page.evaluate(() => [...document.querySelectorAll('input')].some(input => input.value === 'Canonical')), kind === 'brand' || kind === 'group');
+            assert.equal(await page.evaluate(() => [...document.querySelectorAll('button')].find(node => node.textContent.trim() === 'Scan for duplicates')?.disabled), true);
+            return;
+        }
         await clickText(page, 'Review merge');
         await page.waitForFunction(() => document.body.textContent.includes('The merge checks that no operational references remain'));
         const confirmLabel = kind === 'supplier' || kind === 'customer' ? 'Confirm merge' : 'Merge 1 into canonical';
@@ -94,9 +104,19 @@ async function runCase(kind) {
         const disabledBeforeAck = await page.evaluate(label => [...document.querySelectorAll('button')].find(node => node.textContent.trim() === label)?.disabled, confirmLabel);
         assert.equal(disabledBeforeAck, true, 'acknowledgment required');
         await page.evaluate(() => [...document.querySelectorAll('label')].find(node => node.textContent.includes('I understand that historical documents'))?.querySelector('input').click());
+        if (stage === 'preview') {
+            const disabled = await page.evaluate(label => [...document.querySelectorAll('button')].find(node => node.textContent.trim() === label)?.disabled, confirmLabel);
+            assert.equal(disabled, true, 'preview stage keeps execution disabled after acknowledgment');
+            assert.equal(await page.evaluate(() => document.body.textContent.includes('Preview mode: you can review duplicates')), true);
+            assert.equal(requests.some(item => item.route === `${cfg.plural}/merge`), false);
+            return;
+        }
         await clickText(page, confirmLabel);
         if (kind === 'customer') {
-            await page.waitForFunction(() => document.body.textContent.includes('The merge checks that no operational references remain'));
+            await page.waitForFunction(label => {
+                const button = [...document.querySelectorAll('button')].find(node => node.textContent.trim() === label);
+                return button?.disabled && document.body.textContent.includes('The merge checks that no operational references remain');
+            }, {}, confirmLabel);
             assert.ok(previewCount >= 2, 'stale conflict caused a fresh preview');
             const disabledAfterStale = await page.evaluate(label => [...document.querySelectorAll('button')].find(node => node.textContent.trim() === label)?.disabled, confirmLabel);
             assert.equal(disabledAfterStale, true, 'stale preview resets acknowledgment');
@@ -125,6 +145,14 @@ try {
     for (const kind of kinds) {
         await runCase(kind);
         process.stdout.write(`${kind} merge browser flow passed\n`);
+    }
+    for (const kind of ['supplier', 'brand']) {
+        await runCase(kind, 'preview');
+        process.stdout.write(`${kind} preview-only browser flow passed\n`);
+    }
+    for (const kind of ['supplier', 'brand']) {
+        await runCase(kind, 'off');
+        process.stdout.write(`${kind} disabled-stage browser flow passed\n`);
     }
 } finally {
     await browser.close();
