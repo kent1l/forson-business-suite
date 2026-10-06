@@ -1,23 +1,22 @@
 # Cash Drawer & Reconciliation — Final Module Plan and Developer Handoff
 
 > **Forson Business Suite** | **Date:** 2026-10-07 (Asia/Manila) | **Branch inspected:** `cash-count-module`
-> **Status:** Product/architecture/UI design complete; local mockups browser-tested. Application implementation is NOT established by this handoff; the planned migrations, posting service, connected screens and store rollout remain unstarted/unverified. Documentation only; no application code, migrations or live financial records changed.
+> **Status (2026-10-07):** Schema, atomic posting/API, and connected web workspace are implemented on `cash-count-module`. Disposable real-PostgreSQL tests pass. Deployment, pilot, complete source-path test matrix, card-batch gate, and performance targets remain unverified. `ENABLE_CASH_DRAWER` defaults off.
 
 ## 0. Status at a Glance
 
-| Phase / item | Status | Evidence / next step | Detail |
-|---|---|---|---|
-| Product, custody and count rules | Design complete | Owner clarification incorporated | §2–5 |
-| Existing integration discovery | Partially done | Repository sources inspected; live schema and complete writer inventory still pending | §3, §6 |
-| Phase 1: schema, permissions and invariants | Not started by this work | Implement after live catalog/source audit | §6 |
-| Phase 2: atomic posting, source integration and API | Not started by this work | Cover every physical cash writer | §7 |
-| Phase 3: connected UI | Design complete; production implementation not started | Local demo != application | §8 |
-| Phase 4: runtime tests, reports and cutover | Not started | Real PostgreSQL/concurrency/store-day gates | §9 |
-| Prototype browser verification | Passed locally; scope limited | No live integration or completed visual-AI review | §12, UI handoff |
-| Live DB, base-branch diff, graph update, deployment | Not verified / not run | No remote executor exposed | §3, §12 |
-| Full treasury, offline financial posting, native mobile | Explicitly deferred | Revisit triggers recorded | §10 |
+| Phase / item | Status | Evidence / next step |
+|---|---|---|
+| Product and custody rules | Design complete | §2–5 and UI companion doc |
+| Source discovery | Repository audit done | Operational pilot must verify every cash path |
+| Phase 1: schema and invariants | Implemented; disposable DB verified | Three migrations; baseline consolidation pending |
+| Phase 2: posting, integrations, API | Implemented; partially verified | Atomic source hooks and custody API; extend route/concurrency matrix |
+| Phase 3: connected web UI | Implemented; build verified | Live browser, accessibility and small-screen walkthrough pending |
+| Phase 4: verification and cutover | Partial | Real DB tests and reports pass; store pilot and release gates pending |
+| Production rollout | Not started | Keep feature flag off until §9 gates pass |
+| Full treasury, offline posting, native mobile | Deferred | §10 |
 
-Status reflects bounded repository inspection, not an exhaustive assertion that no related feature exists under other names. Revalidate before implementing.
+Commits: `c554039` (schema), `3e6dcc9` (posting guards), `68d8cca` (backend), `701c9a8` (web). Verify against current Git history before proceeding.
 
 ## 1. For a New Session or Agent Picking This Up
 
@@ -61,14 +60,13 @@ Initial rollout: **one Main Counter drawer, normally one daily session**, multip
 - [x] Live repository reads earlier in this discussion inspected paymentRoutes, expenseRoutes, refundRoutes, AP payment migration, payment tables, MainLayout/App/navigation. These are source/schema-file findings, not queries of running PostgreSQL.
 - [x] Current `SalesHistoryPage.jsx` inspection found `expectedNetCashDrawer = Math.max(cashCollectedNet - refundsApprox, 0)`, derived from payment list with method-name/current-invoice filters and approximated refunds. This is a sales-derived estimate, NOT opening+custody+movement truth. Do not inherit its zero-clamp or refund approximation into the drawer ledger. Actual source of the owner's copied CASH SALES figure still needs report mapping confirmation.
 
-### Still required / inaccessible here
-- [ ] Verified-base `git diff <base>...HEAD --stat`; MCP exposes bounded current working-tree diff only.
-- [ ] Live database migration ledger, catalog constraints, cash/refund/disbursement APIs and real application behavior.
-- [ ] Exhaustive all-route/trigger/service source-write inventory and mirror deduplication plan.
-- [ ] Real runtime tests, applied migrations, benchmark and store pilot.
-- [ ] Remote `graphify update .`, commit and push. No remote execution tool exists in the exposed MCP. Local terminal is agent host; earlier SSH attempt could not resolve dev-server.
-
-No cash-drawer feature is claimed committed, applied or deployed. These docs are durable repo files, not necessarily Git-committed records.
+### Current outstanding verification
+- [x] Inspected the running development catalog and migration ledger before implementation.
+- [x] Audited repository payment, refund, expense and AP source writers and integrated the identified physical cash paths.
+- [x] Applied new migrations to a disposable schema clone and ran real PostgreSQL tests.
+- [ ] Verify a full day of operational source routes and any DB triggers against the live pilot workflow, including wallet, PDC and card batching.
+- [ ] Apply migrations to the intended environment and verify schema checksum/status there.
+- [ ] Complete performance, backup restore, browser/accessibility, and owner signoff gates in §9.
 
 ## 4. Decisions Already Taken
 
@@ -111,13 +109,14 @@ Advance: release once -> link verified expense/AP/GRN consumption -> return unus
 
 Corrections: same/open-session posting errors corrected with authorized linked reversal/replacement. Historical closed-day data-only correction is an immutable explanatory addendum with explicit reviewed custody bridge where necessary, not fictitious current cash-in/out. Original report unchanged. Refund/return of actual cash is a new real event, distinguishable from clerical correction.
 
-## 6. Phase 1 — Schema, Catalog Audit and Invariants — Not Started
+## 6. Phase 1 — Schema, Catalog Audit and Invariants — Implemented, Consolidation Pending
 
-### Next steps
-- [ ] Query running catalog and all pending migrations. Verify original report, source payment/refund/Expense/AP/wallet/deposit writer ownership. Document canonical source event and mirror policy before hooks.
-- [ ] Add forward idempotent SQL migrations using repository filename/sequence convention; update `database/initial_schema.sql` in lockstep. No ORM.
-- [ ] Seed new permissions and explicit role assignments; do not grant every existing role automatically.
-- [ ] Add immutable-row protections, FK/index/unique checks and transactional tests against real PostgreSQL.
+### As built and remaining work
+- [x] Query running catalog and all pending migrations. Verify original report, source payment/refund/Expense/AP/wallet/deposit writer ownership. Document canonical source event and mirror policy before hooks.
+- [x] Add forward SQL migrations `20261007_01` through `_03` with no ORM.
+- [ ] Consolidate `database/initial_schema.sql` only after dependency-safe replay.
+- [x] Seed new permissions and explicit role assignments; do not grant every existing role automatically.
+- [x] Add immutable-row protections, FK/index/unique checks and transactional tests against disposable real PostgreSQL.
 
 ### Proposed schema contract
 New names below are proposals; existing source IDs/types must be confirmed against current schema. New record IDs bigserial; employee references -> employee(employee_id), method -> payment_methods(method_id), source deletions RESTRICT, soft-disable entities.
@@ -145,14 +144,14 @@ Add indexes for session+sequence, drawer+business_date, timestamps, source FKs a
 - Inspected refund route creates credit_note with refund_payment_method, ledger/inventory effects and commit. It does not establish a distinct physical payout in that inspected segment. Inventory all paths first; reuse actual disbursement record if present, otherwise add it. Partial payouts bounded by finance-authorized refundable amount.
 - Native source FK/mirror policy must cover overpayments, advance customer deposits, wallet consumption and mixed tenders without trusting allocation sums or deprecated invoice_payment_allocation balances.
 
-## 7. Phase 2 — Posting Service, Integrations and API — Not Started
+## 7. Phase 2 — Posting Service, Integrations and API — Implemented, Wider Verification Pending
 
-### Next steps
-- [ ] Implement proposed `packages/api/services/cashDrawerService.js` and `packages/api/routes/cashDrawerRoutes.js`, registered via existing registerRoute/protect/hasPermission conventions.
-- [ ] Inventory ALL actual payment, refund, AP, Expense, advance/deposit, void/edit and retry entry paths, including invoiceRoutes/paymentMethodRoutes/stagedSaleRoutes/paymentRoutes and DB triggers. Implement single canonical posting service; derived allocation/mirror never posts twice.
-- [ ] Require explicit drawer/session funding for new physical events after cutover; nullable migrated history is not retro-posted.
-- [ ] Integrate real source writes and drawer ledger in same transaction; no success if cash is accepted but ledger rejects.
-- [ ] Implement counts/pause, close-context handovers, approvals, advances, transfer stages, reversals/addenda and notebook coverage.
+### As built and remaining work
+- [x] Implement `packages/api/services/cashDrawerService.js` and `packages/api/routes/cashDrawerRoutes.js`, registered via existing registerRoute/protect/hasPermission conventions.
+- [x] Inventory repository payment, refund, AP, Expense, advance/deposit, void/edit and retry entry paths, including invoiceRoutes/paymentMethodRoutes/stagedSaleRoutes/paymentRoutes and DB triggers. Implement single canonical posting service; derived allocation/mirror never posts twice.
+- [x] Require explicit drawer/session funding for new physical events after cutover; nullable migrated history is not retro-posted.
+- [x] Integrate real source writes and drawer ledger in same transaction; no success if cash is accepted but ledger rejects.
+- [x] Implement counts/pause, close-context handovers, approvals, advances, transfer stages, reversals/addenda and notebook coverage.
 
 ### Proposed API contract
 Base `/api/cash-drawers`. Authenticated actor server-derived. UUID Idempotency-Key required for financial/lifecycle writes: same key/body replay original response, different body ->409. Existing object/store scope enforced; do not invent tenancy parallel to current model. Money decimal strings, ISO8601 offset times, allowlisted enums and bounded text, SQL parameterized. Mutations carry expected_version where touching session.
@@ -188,22 +187,24 @@ Errors:400 input;401 auth;403 scope/permission;404 absent;409 paused/closed/vers
 ### Notebook receipt coverage
 Capture an unrepresented physical notebook receipt once with page/reference. Later source sale/payment workflow MUST select prior receipt before canonical posting; source link consumes partial/full coverage under lock and posts only actually additional cash. Multiple mappings cannot exceed original receipt. Sale/inventory/tax recording belongs to owning sale process, not generic drawer ledger. If duplicate posting already committed, manager correction is transparent; closed-day documentary correction never fabricates physical cash today. Preserve original variance/report and explicit custody bridge.
 
-## 8. Phase 3 — Production UI — Design Complete; Implementation Not Started
+## 8. Phase 3 — Production UI — Implemented, Browser Verification Pending
 
 Follow [final UI handoff](./2026-10-07_cash-drawer-ui-design.md). Recommended cashier workspace, not dense alternate.
 
-- [ ] Add proposed `packages/web/src/pages/CashDrawerPage.jsx` and components under `packages/web/src/components/cashDrawer/`.
-- [ ] Register `cash_drawer` in MainLayout switch and config/navigation.js under Finance & Expenses. Reuse App currentPage/pageState, API client/AuthContext, existing tokens/Modal/Drawer/Tabs; no router/state-library additions.
-- [ ] Build header/status/expected+count+variance+outflow cards, register and side rail; tabs Today/Counts/Handover & Advances/History.
-- [ ] Build opening source/count, category-led IN/OUT, count pause/recount, server manager approval, closing wizard, custody/advance events, source detail/history/export.
-- [ ] Show count cutoff/age, not live actual after later activity. Opening separate from cash-in total. Over/Short signed/text. Draft/failed/stale/forbidden/closed/offline states truthful.
+- [x] Add `packages/web/src/pages/CashDrawerPage.jsx` and components under `packages/web/src/components/cashDrawer/`.
+- [x] Register `cash_drawer` in MainLayout switch and config/navigation.js under Finance & Expenses. Reuse App currentPage/pageState, API client/AuthContext, existing tokens/Modal/Drawer/Tabs; no router/state-library additions.
+- [x] Build header/status and expected/count/variance cards, register, counts, custody and history sections.
+- [x] Build opening, movements, count submission, manager approval, close, custody/advance events and PDF/CSV export.
+- [ ] Walk through source drill-down and closing flow in a browser with real roles and network failures.
+- [x] Show count cutoff and separate opening amount from receipt totals.
+- [ ] Verify stale, forbidden, offline, failed-write and closed states in the live UI.
 - [ ] Responsive web with mobile full-screen forms/count, 44px targets, focus management, keyboard support, AA contrast, dark mode. Browser-derived preview never final posted truth.
 
 The prototype's manager-review checkbox is explicitly simulated; never implement production approval as an untrusted checkbox.
 
-## 9. Phase 4 — Real Verification, Reports and Cutover — Not Started
+## 9. Phase 4 — Real Verification, Reports and Cutover — Partial
 
-### Test matrix and release gates
+### Test matrix and release gates (unchecked items are still required)
 - [ ] Source completeness: all physical cash write routes and mirrors; mixed tenders/change/deposits/overpayments/wallet use/withholding/discounts/PDC; actual refund versus credit note; exactly once under retries/concurrency.
 - [ ] Real DB: migrations/checks/FKs, immutable guards, rollback, double-open, lock order, close/write races, count expiry/pause/resume, stale approval, final handover bounds.
 - [ ] Custody: partial acknowledgments/deposits/returns, named external custodian, outstanding advances, consumption funded from advance, extra reimbursement/employee excess.
@@ -211,7 +212,7 @@ The prototype's manager-review checkbox is explicitly simulated; never implement
 - [ ] Notebook: partial/full/multiple source coverage, late sale encoding after close, duplicate remediation without invented cash.
 - [ ] Security: scope/permissions, independent reviewer, spoofed actor, idempotency conflicts, SQL/text/CSV injection, stale/offline unknown write and attachment authorization.
 - [ ] UI real app: desktop/tablet/mobile, keyboard/touch, light/dark, network/auth failures, source drill-down and immutable history.
-- [ ] Immutable closing PDF/print/CSV includes opening, receipts/releases/category, pre-handover expected/count/variance, handovers and ledger/actual retained, custodian/reviewer and timestamps. Later custody progress separate.
+- [x] Immutable closing PDF/CSV includes opening, receipts/releases/category, pre-handover expected/count/variance, handovers and ledger/actual retained, custodian/reviewer and timestamps. Later custody progress separate.
 - [ ] If terminal card payments occurred: physical batch settlement and centavo reconciliation before daily close, separate from drawer denomination totals; authorized evidenced exception only.
 - [ ] Benchmark local deployment targets: summary/register <=300ms at ninety-fifth percentile; atomic posting added overhead <=50ms; total write <=500ms excluding human approval/upload; refresh <=5s + on focus. These are targets NOT measurements. Bounded lock waits and no long human-held transaction.
 - [ ] Restore backup including immutable history; owner/manager signs off full store-day pilot with notebook/office-expense/advance/transfer/discrepancy cases.
@@ -231,47 +232,34 @@ Archive Google Sheets. Verify and approve physical opening with canonical source
 | Native mobile drawer app / analytics charts | Web pilot and specific operational need established |
 | Full semantic doc indexing | Verified remote semantic runner available; best effort, no forced shrink-guard bypass |
 
-Not-started phases §6–9 are next implementation work, not deliberately deferred features.
+The remaining §6–9 checks are release work, not deferred features.
 
 ## 11. Files Touched So Far
 
-This handoff publishes docs only:
-- `docs/plans/2026-10-07_cash-drawer-reconciliation.md`.
-- `docs/plans/2026-10-07_cash-drawer-ui-design.md`.
-
-No application/migration files modified by this work. Proposed schema/API/UI paths above are NOT shipped files. Local design/prototype/test assets in `/opt/data/output/cash-drawer/` exist only on agent host and were not uploaded to repo; essential contracts are transcribed here and companion UI doc.
-
-MCP plan_write creates repo files atomically and refuses overwrite; it does not establish Git commit, push, migration or deployment. Fresh remote state/diff and readback are required after publication.
+- `database/migrations/20261007_01_cash_drawer_core.sql`, `_02_cash_drawer_posting_guards.sql`, `_03_cash_request_complete.sql`: schema, guards, roles, request completion.
+- `packages/api/services/cashDrawerService.js`, `packages/api/routes/cashDrawerRoutes.js`, `packages/api/index.js`: ledger, custody and API.
+- Source hooks in invoice, payment, payment method, staged sale, exchange, refund, AP, and expense routes/services.
+- `packages/web/src/pages/CashDrawerPage.jsx`, `components/cashDrawer/CashSessionBar.jsx`, `api.js`, `MainLayout.jsx`, navigation, expense and AP forms: connected workspace and source funding.
+- `packages/api/tests/cashDrawer_db_test.js`, `cashDrawerRoutes_db_test.js`: disposable PostgreSQL tests.
+- `.env.example`: opt-in rollout flag.
 
 ## 12. Verification Commands, Results and Access Limits
 
-### Actually inspected
-MCP project_status/project_log(limit20)/project_diff/plan_list, plan_read and bounded project_read/search, graph_query. Empty working-tree diff before doc publication. Selected source/schema files inspected; live DB not queried. Graph result surfaced generic Drawer UI, so source search/read was used instead of assuming module implementation. Date obtained via `TZ=Asia/Manila date` on agent host.
+Passing on 2026-10-07: API lint (0 errors, 16 existing warnings), web lint (0 errors, 843 existing warnings), web production build, Node syntax checks, `git diff --check`. The three migrations applied to a schema-only clone named `codex_cash_drawer_verify_20261007`; two direct real-PostgreSQL tests passed:
 
-Local prototype execution trace reports:
 ```
-/opt/data/output/cash-drawer/.venv/bin/python /opt/data/output/cash-drawer/verify.py
+DB_HOST=localhost CASH_DRAWER_TEST_DB=codex_cash_drawer_verify_20261007 node packages/api/tests/cashDrawer_db_test.js
+DB_HOST=localhost CASH_DRAWER_TEST_DB=codex_cash_drawer_verify_20261007 node packages/api/tests/cashDrawerRoutes_db_test.js
 ```
-Exit0; PASS workspace/compact desktop1440px/mobile390px, denomination/count/dialog/tab/keyboard/simulated close/dark-mode/overflow/JS-error checks. JSON and screenshots generated. These are mockup tests only. Visual-AI image review failed due provider text-only input restriction. Local spec sanity script earlier blocked by approval timeout; not counted as executed verification.
 
-### Commands for next verified dev-server session — NOT run here
-```
-git status --short --branch
-git log --oneline -20
-git diff <verified-base-branch>...HEAD --stat
-git diff --check
-npm run -w packages/api migrate:status -- --host localhost
-npm run -w packages/api migrate:verify -- --host localhost
-npm run -w packages/api lint
-npm run -w packages/web lint
-npm run -w packages/web build
-graphify update .
-```
-Replace verified base and DB host with target-environment configuration; do not use localhost blindly inside Docker. Migration commands above verify only; applying migrations requires explicit target authorization/runbook. Real Jest PostgreSQL tests proposed under `packages/api/tests/cashDrawer*.test.js`; after files exist use project's Jest config and exact paths. No invented API success responses/test pass counts. No cash runtime API smoke check can succeed before endpoints exist.
+The disposable database has test records and may be dropped after review. Migrations were **not** applied to the normal development or production database. The tests cover centavos, cash/card exclusion, notebook coverage, count cutoff, immutability, source retry conflict, HTTP idempotency, independent review, close, report export and retained opening. They do **not** establish the full §9 matrix, a store-day pilot, card terminal batch gate, benchmark, backup restore, or owner signoff.
 
-Remote graph update and commit/push NOT run: MCP exposes read-only graph tools + plan file creation, no remote shell. Record actual results once access exists; documentation publication is not blocked by optional graph indexing.
+`database/initial_schema.sql` was not changed: it predates later source-table migrations on which the new FK schema depends. Consolidate the baseline after a full migration replay rather than inserting tables before their dependencies. Production deployment and feature enablement remain pending.
 
 ## 13. Change Log
+
+- 2026-10-07: Implemented schema, posting/API and connected web phases in separate commits; verified disposable PostgreSQL tests and build; recorded remaining rollout gates.
+
 
 | Date | Author / Session | Change |
 |---|---|---|
