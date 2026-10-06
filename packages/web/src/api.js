@@ -10,11 +10,22 @@ const api = axios.create({
         'Content-Type': 'application/json'
     }
 });
+const pendingCashSourceKeys = new Map();
 
 api.interceptors.request.use(config => {
     const sessionData = JSON.parse(localStorage.getItem('userSession'));
     if (sessionData && sessionData.token) {
         config.headers.Authorization = `Bearer ${sessionData.token}`;
+    }
+    const sourceWrite = config.method?.toLowerCase() === 'post' &&
+        /^\/(invoices(?:\/\d+\/payments|\/exchange)?|payments|sales\/staging\/\d+\/approve-post|ap\/payments|expenses|refunds)$/.test(config.url || '');
+    if (sourceWrite && config.data && typeof config.data === 'object' && !Array.isArray(config.data)) {
+        const cashSessionId = sessionStorage.getItem('forson_cash_drawer_session');
+        if (cashSessionId && !config.data.cash_session_id) config.data.cash_session_id = cashSessionId;
+        const signature = `${config.method}:${config.url}:${JSON.stringify(config.data)}`;
+        if (!pendingCashSourceKeys.has(signature)) pendingCashSourceKeys.set(signature, crypto.randomUUID());
+        config.headers['Idempotency-Key'] ||= pendingCashSourceKeys.get(signature);
+        config.cashSourceSignature = signature;
     }
     return config;
 }, error => {
@@ -23,7 +34,10 @@ api.interceptors.request.use(config => {
 
 // UPDATED: Response interceptor to dispatch an event instead of reloading
 api.interceptors.response.use(
-    (response) => response,
+    (response) => {
+        if (response.config?.cashSourceSignature) pendingCashSourceKeys.delete(response.config.cashSourceSignature);
+        return response;
+    },
     (error) => {
         if (error.response && error.response.status === 401) {
             // Don't handle the logout here directly.
