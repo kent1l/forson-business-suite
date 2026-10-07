@@ -8,10 +8,11 @@ const expenseLexicon = require('../services/expenseLexiconService');
 const periodLockService = require('../services/periodLockService');
 
 const router = express.Router();
-async function expenseHasDrawerMovement(expenseId) {
+async function expenseHasCashCustodyLink(expenseId) {
     if (process.env.ENABLE_CASH_DRAWER !== 'true') return false;
-    const { rowCount } = await db.query('SELECT 1 FROM cash_drawer_movement WHERE expense_id=$1 LIMIT 1', [expenseId]);
-    return rowCount > 0;
+    const { rows } = await db.query(`SELECT EXISTS(SELECT 1 FROM cash_drawer_movement WHERE expense_id=$1)
+        OR EXISTS(SELECT 1 FROM cash_advance_event WHERE expense_id=$1) AS linked`, [expenseId]);
+    return rows[0].linked;
 }
 
 // Helper to select and join expense details
@@ -603,7 +604,7 @@ router.put('/expenses/:id', protect, hasPermission('expenses:edit'), async (req,
         if (existing.rows[0].is_void) {
             return res.status(409).json({ message: 'Cannot edit a voided expense record' });
         }
-        if (await expenseHasDrawerMovement(expenseId)) return res.status(409).json({ message: 'Drawer funded expense requires an audited cash correction.' });
+        if (await expenseHasCashCustodyLink(expenseId)) return res.status(409).json({ message: 'Cash linked expense requires an audited correction.' });
 
         if (!expense_date || !/^\d{4}-\d{2}-\d{2}$/.test(expense_date)) {
             return res.status(400).json({ message: 'Valid expense date is required (YYYY-MM-DD)' });
@@ -740,7 +741,7 @@ router.put('/expenses/:id/void', protect, hasPermission('expenses:void'), async 
         if (existing.rows[0].is_void) {
             return res.status(409).json({ message: 'Expense record is already voided' });
         }
-        if (await expenseHasDrawerMovement(expenseId)) return res.status(409).json({ message: 'Drawer funded expense requires an audited cash correction.' });
+        if (await expenseHasCashCustodyLink(expenseId)) return res.status(409).json({ message: 'Cash linked expense requires an audited correction.' });
 
         // Voiding retroactively changes a closed period's totals just as much as
         // editing does.

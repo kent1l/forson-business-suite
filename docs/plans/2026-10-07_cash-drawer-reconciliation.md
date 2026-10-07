@@ -9,7 +9,7 @@
 |---|---|---|
 | Product and custody rules | Design complete | §2–5 and UI companion doc |
 | Source discovery | Repository audit done | Operational pilot must verify every cash path |
-| Phase 1: schema and invariants | Implemented; dev DB migrated | Four migrations applied and verified locally; baseline consolidation pending |
+| Phase 1: schema and invariants | Implemented; dev DB migrated | Six migrations applied and verified locally; baseline consolidation pending |
 | Phase 2: posting, integrations, API | Implemented; partially verified | Atomic source hooks; custody, concurrent opening, and count expiry tested |
 | Phase 3: connected web UI | Implemented; build verified | Live browser, accessibility and small-screen walkthrough pending |
 | Phase 4: verification and cutover | Partial | Real DB tests, backup restore and local timing pass; store pilot and remaining release gates pending |
@@ -116,7 +116,7 @@ Corrections: same/open-session posting errors corrected with authorized linked r
 
 ### As built and remaining work
 - [x] Query running catalog and all pending migrations. Verify original report, source payment/refund/Expense/AP/wallet/deposit writer ownership. Document canonical source event and mirror policy before hooks.
-- [x] Add forward SQL migrations `20261007_01` through `_03` with no ORM.
+- [x] Add forward SQL migrations `20261007_01` through `_06` with no ORM, including manual box mode and source immutability guards. `_06` preserves ordinary updates to sources with no cash link.
 - [ ] Consolidate `database/initial_schema.sql` only after dependency-safe replay. Expense/AP source tables are introduced by later migrations, so directly appending the cash schema to the old baseline would break fresh installs; all four forward migrations are the installation path today.
 - [x] Seed new permissions and explicit role assignments; do not grant every existing role automatically.
 - [x] Add immutable-row protections, FK/index/unique checks and transactional tests against disposable real PostgreSQL.
@@ -210,7 +210,7 @@ The prototype's manager-review checkbox is explicitly simulated; never implement
 
 ### Test matrix and release gates (unchecked items are still required)
 - [ ] Source completeness: all physical cash write routes and mirrors; mixed tenders/change/deposits/overpayments/wallet use/withholding/discounts/PDC; actual refund versus credit note; exactly once under retries/concurrency. Basic cash/card exclusion and source retry are tested; full end-to-end store-day source mix remains unverified.
-- [ ] Real DB: migrations/checks/FKs, immutable guards, rollback, double-open, lock order, close/write races, count expiry/pause/resume, stale approval, final handover bounds. Migration checksums, rollback, immutable guards, concurrent double-open, count expiry/restart, independent review, and bounded handover have passed; close/write races and full lock-order matrix remain.
+- [ ] Real DB: migrations/checks/FKs, immutable guards, rollback, double-open, lock order, close/write races, count expiry/pause/resume, stale approval, final handover bounds. Migration checksums, rollback, immutable movement/source guards, concurrent double-open, count expiry/restart, independent review, and bounded handover have passed; close/write races and full lock-order matrix remain.
 - [ ] Custody: partial acknowledgments/deposits/returns, named external custodian, outstanding advances, consumption funded from advance, extra reimbursement/employee excess. Transfer ACK/return/deposit bounds and verified separate cash reimbursement passed; full employee excess workflow and physical custodian evidence remain.
 - [ ] Monetary/count cases: zero float/count, centavos, blank/negative/fractional/overflow, denomination change history, nonzero retained bridge/supplemental session, late historical event/addendum, no hidden zero clamp. Centavos, zero count and invalid amounts passed; denomination-history and historical addendum walkthrough remain.
 - [ ] Notebook: partial/full/multiple source coverage, late sale encoding after close, duplicate remediation without invented cash. Partial/full/multiple source coverage passed; closed-day source encoding and real duplicate remediation remain.
@@ -241,7 +241,7 @@ The remaining §6–9 checks are release work, not deferred features.
 
 ## 11. Files Touched So Far
 
-- `database/migrations/20261007_01_cash_drawer_core.sql`, `_02_cash_drawer_posting_guards.sql`, `_03_cash_request_complete.sql`, `_04_cash_drawer_hardware_mode.sql`: schema, guards, roles, request completion and optional hardware mode.
+- `database/migrations/20261007_01_cash_drawer_core.sql`, `_02_cash_drawer_posting_guards.sql`, `_03_cash_request_complete.sql`, `_04_cash_drawer_hardware_mode.sql`, `_05_cash_source_correction_guards.sql`, `_06_cash_source_guard_update_passthrough.sql`: schema, guards, roles, request completion, manual hardware mode, and linked-source immutability with unlinked update passthrough.
 - `packages/api/services/cashDrawerService.js`, `packages/api/routes/cashDrawerRoutes.js`, `packages/api/index.js`: ledger, custody and API.
 - Source hooks in invoice, payment, payment method, staged sale, exchange, refund, AP, and expense routes/services.
 - `packages/web/src/pages/CashDrawerPage.jsx`, `components/cashDrawer/CashSessionBar.jsx`, `api.js`, `MainLayout.jsx`, navigation, expense and AP forms: connected workspace and source funding.
@@ -257,7 +257,7 @@ DB_HOST=localhost CASH_DRAWER_TEST_DB=codex_cash_drawer_verify_20261007 node pac
 DB_HOST=localhost CASH_DRAWER_TEST_DB=codex_cash_drawer_verify_20261007 node packages/api/tests/cashDrawerRoutes_db_test.js
 ```
 
-The disposable database has test records and may be dropped after review. On 2026-10-07, a 2.9 MB backup was saved to ignored `backups/cash-drawer-pretest-20261007.dump`, then the first three migrations were applied to the normal **development** database. A second 3.0 MB backup at `backups/cash-box-hardware-pretest-20261007.dump` preceded migration `_04`. Development has 217 applied migrations, no pending migrations and verified checksums; `MAIN_COUNTER` is `MANUAL_CASH_BOX`. Production was not migrated. The tests cover centavos, cash/card exclusion, notebook partial/full/multiple-source coverage, count cutoff/expiry/restart, immutability, source retry conflict, concurrent opening, HTTP idempotency, independent review, close, transfer custody limits, reimbursement accounting, report export, retained opening and the manual hardware default. A dump of the disposable test DB restored successfully into `codex_cash_drawer_verify_restore_20261007`; counts and guards were verified there. The small local p95 measurements above meet read/posting targets but do not establish production performance. The tests do **not** establish the full §9 matrix, a physical store-day pilot or owner signoff.
+The disposable database has test records and may be dropped after review. On 2026-10-07, a 2.9 MB backup was saved to ignored `backups/cash-drawer-pretest-20261007.dump`, then the first three migrations were applied to the normal **development** database. A second 3.0 MB backup at `backups/cash-box-hardware-pretest-20261007.dump` preceded migration `_04`; a third 3.0 MB backup at `backups/cash-source-guards-pretest-20261007.dump` preceded `_05`; a fourth backup at `backups/cash-source-passthrough-pretest-20261007.dump` preceded `_06`. Development has 219 applied migrations, no pending migrations and verified checksums; `MAIN_COUNTER` is `MANUAL_CASH_BOX`. Production was not migrated. The tests cover centavos, cash/card exclusion, notebook partial/full/multiple-source coverage, count cutoff/expiry/restart, immutable movements and linked invoice/expense sources, editable unlinked expenses, source retry conflict, concurrent opening, HTTP idempotency, independent review, close, transfer custody limits, reimbursement and advance consumption, report export, retained opening and the manual hardware default. A dump of the disposable test DB restored successfully into `codex_cash_drawer_verify_restore_20261007`; counts and guards were verified there before migrations `_05`–`_06`. The small local p95 measurements above meet read/posting targets but do not establish production performance. The tests do **not** establish the full §9 matrix, a physical store-day pilot or owner signoff.
 
 An attempted authenticated desktop/mobile Puppeteer walkthrough did not start because the host Chrome binary requires missing `libasound.so.2`. It created no cash transactions and cleaned up its temporary development employee. Browser interaction and accessibility remain release checks before declaring the full module pilot complete.
 
@@ -265,6 +265,7 @@ An attempted authenticated desktop/mobile Puppeteer walkthrough did not start be
 
 ## 13. Change Log
 
+- 2026-10-07: Added source correction guards for cash-linked payments/expenses, tested expense reimbursement and advance consumption immutability plus ordinary unlinked edits, backed up and migrated development through `_06`, and verified migration checksums.
 - 2026-10-07: Corrected reimbursement custody accounting, tested transfer and approval bounds, recovered expired counts, expanded notebook and concurrent-open tests, restored a disposable cash-history dump, measured local read/posting latency, and recorded the host browser limitation plus remaining physical pilot gates.
 - 2026-10-07: Backed up and migrated the development database, enabled the ignored local flag, and verified authenticated API reads and the web proxy.
 - 2026-10-07: Confirmed the store uses a manual cash box; reserved electronic drawer mode for future integration, updated UI language, and verified migration `_04` in disposable and development databases.

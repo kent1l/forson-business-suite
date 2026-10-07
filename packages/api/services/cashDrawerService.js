@@ -274,7 +274,7 @@ async function consumeAdvance(client, { advanceId, kind, sourceId, actorId }) {
   const idColumn = kind === 'expense' ? 'expense_id' : 'payment_id';
   const { rows } = await client.query(`SELECT s.amount,pm.type AS method_type,${kind === 'expense' ? 's.payment_method_text' : 'NULL::text AS payment_method_text'}
     FROM ${table} s LEFT JOIN payment_methods pm ON pm.method_id=s.${kind === 'expense' ? 'payment_method_id' : 'method_id'}
-    WHERE s.${idColumn}=$1`, [sourceId]);
+    WHERE s.${idColumn}=$1 FOR UPDATE OF s`, [sourceId]);
   const source = rows[0];
   if (!source || (source.method_type !== 'cash' && !(kind === 'expense' && /^cash$/i.test(source.payment_method_text || '')))) {
     fail(422, 'INVALID_ADVANCE_SOURCE', 'Advance consumption must link a physical cash payment.');

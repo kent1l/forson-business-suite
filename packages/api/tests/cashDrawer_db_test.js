@@ -23,7 +23,7 @@ async function run() {
   const client = await db.getClient();
   try {
     await client.query('BEGIN');
-    const role = await client.query("INSERT INTO permission_level(level_name) VALUES('Drawer Test') RETURNING permission_level_id");
+    const role = await client.query("INSERT INTO permission_level(permission_level_id,level_name) VALUES(10,'Admin') ON CONFLICT(permission_level_id) DO UPDATE SET level_name=excluded.level_name RETURNING permission_level_id");
     const actor = await client.query(`INSERT INTO employee
       (first_name,last_name,permission_level_id,username,password_hash,password_salt)
       VALUES('Cash','Test',$1,$2,'test','test') RETURNING employee_id`,
@@ -73,6 +73,10 @@ async function run() {
       sessionId, actorId, canPost: true });
     assert.equal(postedCash.amount, '10.00');
     assert.equal(postedCash.balance_after, '101.26');
+    await client.query('SAVEPOINT source_immutable');
+    await assert.rejects(() => client.query("UPDATE invoice_payments SET amount_paid='11.00' WHERE payment_id=$1", [cashPayment.rows[0].payment_id]),
+      error => error.code === '23514');
+    await client.query('ROLLBACK TO SAVEPOINT source_immutable');
     const card = await cash.postSourcePayment(client, { kind: 'invoice', sourceId: cardPayment.rows[0].payment_id,
       sessionId, actorId, canPost: true });
     assert.equal(card, null);

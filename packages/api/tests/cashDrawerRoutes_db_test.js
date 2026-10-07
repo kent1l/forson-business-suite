@@ -127,8 +127,11 @@ async function run() {
   const cashMethod = await db.query("INSERT INTO payment_methods(code,name,type) VALUES($1,'Drawer test cash','cash') RETURNING method_id", [`drawer_cash_${Date.now()}`]);
   const cardMethod = await db.query("INSERT INTO payment_methods(code,name,type) VALUES($1,'Drawer test card','card') RETURNING method_id", [`drawer_card_${Date.now()}`]);
   const expense = await db.query(`INSERT INTO expense(expense_date,category_id,amount,payment_method_id,created_by)
-    VALUES(CURRENT_DATE,$1,'5.00',$2,$3),(CURRENT_DATE,$1,'5.00',$4,$3) RETURNING expense_id`,
+    VALUES(CURRENT_DATE,$1,'5.00',$2,$3),(CURRENT_DATE,$1,'5.00',$4,$3),
+      (CURRENT_DATE,$1,'5.00',$2,$3) RETURNING expense_id`,
   [category.rows[0].category_id, cashMethod.rows[0].method_id, actor.employee_id, cardMethod.rows[0].method_id]);
+  const unrelatedEdit = await db.query("UPDATE expense SET amount='6.00' WHERE expense_id=$1 RETURNING amount", [expense.rows[1].expense_id]);
+  assert.equal(unrelatedEdit.rows[0].amount, '6.00', 'unlinked expenses must remain editable');
   const reimbursementApproval = await approvedRelease('REIMBURSEMENT', '5.00', 1);
   const invalidReimbursement = await request(app).post(`/api/cash-drawers/advances/${advance.body.data.advance_id}/events`)
     .set(auth(actorToken)).send({ kind: 'REIMBURSEMENT', amount: '5.00', expense_id: expense.rows[1].expense_id,
@@ -139,6 +142,13 @@ async function run() {
       receiving_session_id: activeSessionId, approval_id: reimbursementApproval });
   assert.equal(reimbursement.status, 201, JSON.stringify(reimbursement.body));
   assert.equal(reimbursement.body.outstanding, '10.00', 'employee-paid expense must not inflate advance custody');
+  await assert.rejects(() => db.query("UPDATE expense SET amount='6.00' WHERE expense_id=$1", [expense.rows[0].expense_id]),
+    error => error.code === '23514');
+  const consumption = await request(app).post(`/api/cash-drawers/advances/${advance.body.data.advance_id}/events`)
+    .set(auth(actorToken)).send({ kind: 'CONSUMPTION', amount: '5.00', expense_id: expense.rows[2].expense_id });
+  assert.equal(consumption.status, 201, JSON.stringify(consumption.body));
+  await assert.rejects(() => db.query("UPDATE expense SET is_void=true WHERE expense_id=$1", [expense.rows[2].expense_id]),
+    error => error.code === '23514');
   const duplicateReimbursement = await request(app).post(`/api/cash-drawers/advances/${advance.body.data.advance_id}/events`)
     .set(auth(actorToken)).send({ kind: 'REIMBURSEMENT', amount: '5.00', expense_id: expense.rows[0].expense_id,
       receiving_session_id: activeSessionId, approval_id: reimbursementApproval });
