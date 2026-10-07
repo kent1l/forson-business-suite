@@ -161,6 +161,7 @@ Base `/api/cash-drawers`. Authenticated actor server-derived. UUID Idempotency-K
 | Method / relative path | Request -> response | New permission |
 |---|---|---|
 | GET / | active drawers/current sessions | cash_drawer:view |
+| GET /custodians | active employees eligible to count cash; names for opening selector | cash_drawer:open |
 | GET /sessions | drawer/date/state/page/limit filters -> paginated snapshots | cash_drawer:view |
 | POST /:drawerId/sessions | date,custodian,opening lines/sources,prior session,reason/authorization ->201 session/summary | cash_drawer:open |
 | GET /sessions/:id | state/version/expected/count staleness/custody totals | cash_drawer:view |
@@ -262,6 +263,7 @@ The disposable database has test records and may be dropped after review. On 202
 
 - 2026-10-07: Backed up and migrated the development database, enabled the ignored local flag, and verified authenticated API reads and the web proxy.
 - 2026-10-07: Confirmed the store uses a manual cash box; reserved electronic drawer mode for future integration, updated UI language, and verified migration `_04` in disposable and development databases.
+- 2026-10-07: Replaced the opening form's raw custodian ID with eligible employee names, showed the responsible person's name on sessions, shortened on-screen guidance, and verified the development API plus disposable PostgreSQL workflow test.
 - 2026-10-07: Implemented schema, posting/API and connected web phases in separate commits; verified disposable PostgreSQL tests and build; recorded remaining rollout gates.
 
 

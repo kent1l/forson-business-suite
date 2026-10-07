@@ -40,6 +40,10 @@ async function run() {
   const drawer = await db.query("INSERT INTO cash_drawer(code,name) VALUES($1,'HTTP Test Drawer') RETURNING drawer_id,hardware_mode", [`HTTP_TEST_${Date.now()}`]);
   assert.equal(drawer.rows[0].hardware_mode, 'MANUAL_CASH_BOX');
   const drawerId = drawer.rows[0].drawer_id;
+  const people = await request(app).get('/api/cash-drawers/custodians')
+    .set({ Authorization: `Bearer ${actorToken}` });
+  assert.equal(people.status, 200);
+  assert(people.body.data.some(person => person.employee_id === actor.employee_id && person.name === 'Drawer Operator'));
   const date = manilaDateString();
   const opening = { business_date: date, custodian_id: actor.employee_id,
     opening_lines: [{ code: 'PHP_100', quantity: 1 }],
@@ -48,6 +52,10 @@ async function run() {
   const opened = await request(app).post(`/api/cash-drawers/${drawerId}/sessions`)
     .set({ Authorization: `Bearer ${actorToken}`, 'Idempotency-Key': openingKey }).send(opening);
   assert.equal(opened.status, 201, JSON.stringify(opened.body));
+  const openedDetail = await request(app).get(`/api/cash-drawers/sessions/${opened.body.data.session_id}`)
+    .set({ Authorization: `Bearer ${actorToken}` });
+  assert.equal(openedDetail.status, 200);
+  assert.equal(openedDetail.body.data.custodian_name, 'Drawer Operator');
   const replay = await request(app).post(`/api/cash-drawers/${drawerId}/sessions`)
     .set({ Authorization: `Bearer ${actorToken}`, 'Idempotency-Key': openingKey }).send(opening);
   assert.equal(replay.status, 201);

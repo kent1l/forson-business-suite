@@ -107,6 +107,8 @@ export default function CashDrawerPage({ user, onNavigate }) {
     const [error, setError] = useState('');
     const [lastRefresh, setLastRefresh] = useState(null);
     const [openDate, setOpenDate] = useState(today());
+    const [custodians, setCustodians] = useState([]);
+    const [custodianLoadError, setCustodianLoadError] = useState(false);
     const [custodianId, setCustodianId] = useState(String(user?.employee_id || ''));
     const [openingSource, setOpeningSource] = useState('FRESH_FLOAT');
     const [openingAmount, setOpeningAmount] = useState('0.00');
@@ -162,6 +164,18 @@ export default function CashDrawerPage({ user, onNavigate }) {
     }, [drawerId, registerPage, registerSearch, registerDirection]);
 
     useEffect(() => { reload(); }, [reload]);
+    useEffect(() => {
+        let live = true;
+        api.get('/cash-drawers/custodians').then(response => {
+            if (live) {
+                const people = response.data?.data || [];
+                setCustodians(people);
+                setCustodianId(current => people.some(person => String(person.employee_id) === current) ? current : '');
+                setCustodianLoadError(false);
+            }
+        }).catch(() => { if (live) setCustodianLoadError(true); });
+        return () => { live = false; };
+    }, []);
     useEffect(() => {
         if (session?.status === 'CLOSED') {
             setOpeningSource('PRIOR_RETAINED');
@@ -237,6 +251,7 @@ export default function CashDrawerPage({ user, onNavigate }) {
     };
 
     const latest = session?.latest_count;
+    const canOpen = Number(user?.permission_level_id) === 10 || user?.permissions?.includes('cash_drawer:open');
     const selectedDrawer = drawers.find(item => String(item.drawer_id) === String(drawerId));
     const stale = latest && Number(session.last_sequence) > Number(latest.cutoff_sequence);
     const outflow = session?.total_out || '0.00';
@@ -247,43 +262,31 @@ export default function CashDrawerPage({ user, onNavigate }) {
 
     return <div className="mx-auto max-w-7xl space-y-5 text-slate-900 dark:text-slate-100">
         <div className="flex flex-wrap items-start justify-between gap-3">
-            <div><h1 className="text-2xl font-bold">Cash Box</h1><p className="text-sm text-slate-500 dark:text-slate-400">Track the notes and coins held at the counter · {lastRefresh ? `Refreshed ${formatTime(lastRefresh)}` : 'Waiting for server'}</p></div>
+            <div><h1 className="text-2xl font-bold">Cash Box</h1><p className="text-sm text-slate-500 dark:text-slate-400">{lastRefresh ? `Updated ${formatTime(lastRefresh)}` : 'Loading'}</p></div>
             <div className="flex gap-2"><select aria-label="Drawer" className={field} value={drawerId} onChange={event => reload(event.target.value)}>{drawers.map(drawer => <option key={drawer.drawer_id} value={drawer.drawer_id}>{drawer.name}</option>)}</select><button className={button} onClick={() => reload()} disabled={busy}>Refresh</button></div>
         </div>
         {error && <div role="alert" className="rounded border border-red-300 bg-red-50 p-3 text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-200">{error}</div>}
-        {selectedDrawer && <div className="rounded-lg border border-slate-200 bg-white p-3 text-sm dark:border-slate-800 dark:bg-slate-900">
-            <strong>Current setup: {selectedDrawer.hardware_mode === 'ELECTRONIC_DRAWER' ? 'Electronic drawer' : 'Manual cash box'}</strong>
-            <p className="mt-1 text-slate-600 dark:text-slate-300">{selectedDrawer.hardware_mode === 'ELECTRONIC_DRAWER'
-                ? 'Electronic drawer mode is reserved for future device integration. Continue to count physical cash manually until a connected device is installed and verified.'
-                : 'FBS records cash movements and compares them with your manual denomination counts. No electronic drawer hardware is connected; that option is reserved for a future setup.'}</p>
-        </div>}
-        {!session && drawerId && <Panel title="Start here: open the counter drawer">
-            <ol className="list-inside list-decimal space-y-2 text-sm text-slate-700 dark:text-slate-200">
-                <li>Count the notes and coins currently in the drawer below. Enter the same total as the opening source amount.</li>
-                <li>Verify and open the session. This opening cash becomes the starting balance; it is not recorded as a sale.</li>
-                <li>On a sales or payment screen, select this open session in the cash payment destination bar. Cash receipts then appear here automatically. Count again later to compare the physical cash with the expected balance.</li>
-            </ol>
-            <p className="mt-3 text-sm text-slate-600 dark:text-slate-300">Use manual Cash In or Cash Out only for physical cash events that do not already have their own sale, supplier payment, expense or refund form.</p>
-        </Panel>}
+        {selectedDrawer && <p className="text-sm text-slate-600 dark:text-slate-300">{selectedDrawer.hardware_mode === 'ELECTRONIC_DRAWER' ? 'Electronic drawer mode; count cash manually until a device is connected.' : 'Manual cash box · Electronic drawer support can be added later.'}</p>}
+        {!session && drawerId && <p className="text-sm text-slate-600 dark:text-slate-300">Count the cash in the box, then open the session. Cash payments will appear here automatically.</p>}
         {session && <>
-            <p className="text-sm">{session.session_code} · {session.business_date} · Custodian #{session.custodian_id} · <strong>{session.status}</strong></p>
+            <p className="text-sm">{session.session_code} · {session.business_date} · Responsible: {session.custodian_name} · <strong>{session.status}</strong></p>
             <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
                 {[["Expected cash", money(session.expected)], ["Latest count", latest ? money(latest.counted) : 'Not counted'],
                     ["Over / short at count", latest ? money(latest.variance) : '—'], ["Cash out", money(outflow)]].map(([label, value]) =>
                     <div key={label} className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900"><p className="text-sm text-slate-500 dark:text-slate-400">{label}</p><p className="mt-1 text-xl font-bold tabular-nums">{value}</p></div>)}
             </div>
             <p className="text-sm text-slate-600 dark:text-slate-300">Opening {money(session.opening_amount)} · Count cutoff {latest ? `#${latest.cutoff_sequence} at ${formatTime(latest.submitted_at)}` : 'none'}{stale ? ` · ${Number(session.last_sequence) - Number(latest.cutoff_sequence)} movements since count; recount to verify current cash` : ''}</p>
-            {session.status === 'OPEN' && <p className="rounded-lg border border-sky-200 bg-sky-50 p-3 text-sm text-sky-950 dark:border-sky-900 dark:bg-sky-950/30 dark:text-sky-100">The denomination count is a snapshot. Cash sales and payments add to the expected balance automatically after you select this session on the payment screen. Use Count cash to check the drawer again; use the manual form only for cash events without another FBS transaction.</p>}
         </>}
-        {session?.status === 'CLOSED' && <button className={button} onClick={() => setShowOpen(value => !value)}>{showOpen ? 'Hide opening form' : 'Open a new session'}</button>}
-        {(!session || (session.status === 'CLOSED' && showOpen)) && drawerId && <Panel title="Verify and open drawer"><form onSubmit={open} className="space-y-4">
-            <div className="grid gap-3 sm:grid-cols-2"><label>Business date<input type="date" value={openDate} onChange={event => setOpenDate(event.target.value)} className={field} required /></label><label>Custodian employee ID<input type="number" min="1" value={custodianId} onChange={event => setCustodianId(event.target.value)} className={field} required /></label></div>
+        {session?.status === 'CLOSED' && canOpen && <button className={button} onClick={() => setShowOpen(value => !value)}>{showOpen ? 'Hide opening form' : 'Open a new session'}</button>}
+        {(!session || (session.status === 'CLOSED' && showOpen)) && drawerId && canOpen && <Panel title="Open cash box"><form onSubmit={open} className="space-y-4">
+            <div className="grid gap-3 sm:grid-cols-2"><label>Business date<input type="date" value={openDate} onChange={event => setOpenDate(event.target.value)} className={field} required /></label><label>Person responsible for the cash<select value={custodianId} onChange={event => setCustodianId(event.target.value)} className={field} required><option value="">Select employee</option>{custodians.map(person => <option key={person.employee_id} value={person.employee_id}>{person.name}</option>)}</select></label></div>
+            {custodianLoadError && <p role="alert" className="text-sm text-red-700 dark:text-red-300">Could not load employees. Reload this page.</p>}
             <DenominationEditor value={quantities} onChange={setQuantities} />
-            <div className="grid gap-3 sm:grid-cols-2"><label>Opening source<select className={field} value={openingSource} onChange={event => setOpeningSource(event.target.value)}><option value="FRESH_FLOAT">Fresh verified float</option><option value="PRIOR_RETAINED">Prior retained custody</option></select></label><label>Source amount<input type="text" inputMode="decimal" value={openingAmount} onChange={event => setOpeningAmount(event.target.value)} className={field} required /></label></div>
-            {openingSource === 'PRIOR_RETAINED' && <label>Additional fresh float<input className={field} inputMode="decimal" value={freshAmount} onChange={event => setFreshAmount(event.target.value)} required /></label>}
+            <div className="grid gap-3 sm:grid-cols-2"><label>Opening cash came from<select className={field} value={openingSource} onChange={event => setOpeningSource(event.target.value)}><option value="FRESH_FLOAT">Initial cash in box</option><option value="PRIOR_RETAINED">Cash kept from last close</option></select></label><label>Opening cash amount<input type="text" inputMode="decimal" value={openingAmount} onChange={event => setOpeningAmount(event.target.value)} className={field} required /></label></div>
+            {openingSource === 'PRIOR_RETAINED' && <label>Additional cash added<input className={field} inputMode="decimal" value={freshAmount} onChange={event => setFreshAmount(event.target.value)} required /></label>}
             <label>Reason or source reference<input value={openingReason} onChange={event => setOpeningReason(event.target.value)} className={field} /></label>
             {openingSource === 'PRIOR_RETAINED' && session?.status === 'CLOSED' && openingDifference !== 0n && <div className="rounded border border-amber-300 p-3"><p>Prior retained actual: {money(session.close_snapshot?.retained_actual)} · Difference: {money(Number(openingDifference) / 100)}. Independent review is required.</p><input className={field} placeholder="Approved bridge ID" value={openingApprovalId} onChange={event => setOpeningApprovalId(event.target.value)} /><button type="button" className={`${button} mt-2`} disabled={busy || !openingReason} onClick={async () => { const result = await post('/cash-drawers/approvals', { action: 'OPENING_BRIDGE', session_id: session.session_id, expected_version: session.version, amount: (Number(openingDifference) / 100).toFixed(2), reason: openingReason }, 'opening-bridge'); if (result) setOpeningApprovalId(String(result.data.approval_id)); }}>Request bridge review</button></div>}
-            <button disabled={busy} className={button}>Verify and open drawer</button>
+            <button disabled={busy || custodianLoadError || !custodians.length} className={button}>Open cash box</button>
         </form></Panel>}
         {session && <>
             <div role="tablist" aria-label="Cash drawer sections" className="flex flex-wrap gap-2">{['Today','Counts','Handover & Advances','History'].map(name => <button key={name} type="button" role="tab" aria-selected={tab === name} onClick={() => setTab(name)} className={`min-h-11 rounded-lg px-4 ${tab === name ? 'bg-slate-900 text-white dark:bg-amber-600' : 'bg-white dark:bg-slate-800'}`}>{name}</button>)}</div>
@@ -301,9 +304,9 @@ export default function CashDrawerPage({ user, onNavigate }) {
                 <button className="min-h-11 rounded border px-3" disabled={registerPage * 50 >= registerTotal} onClick={() => setRegisterPage(page => page + 1)}>Next</button>
             </div>}
             {tab === 'Today' && <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(18rem,1fr)]">
-                <Panel title="Movement register"><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="border-b text-left"><th className="py-2"># / time</th><th>Type / source</th><th>Cash in</th><th>Cash out</th><th>Balance after entry</th></tr></thead><tbody>{movements.map(item => <tr key={item.movement_id} className="border-b border-slate-100 dark:border-slate-800"><td className="py-2">#{item.sequence}<br />{formatTime(item.recorded_at)}</td><td>{item.category}<br /><span className="text-slate-500">{item.description}</span></td><td>{item.direction === 'IN' ? money(item.amount) : '—'}</td><td>{item.direction === 'OUT' ? money(item.amount) : '—'}</td><td className="tabular-nums">{money(item.balance_after)}</td></tr>)}</tbody></table>{movements.length === 0 && <p className="py-4 text-slate-500">No movements. Opening float is shown separately above.</p>}</div></Panel>
+                <Panel title="Movement register"><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="border-b text-left"><th className="py-2"># / time</th><th>Type / source</th><th>Cash in</th><th>Cash out</th><th>Balance after entry</th></tr></thead><tbody>{movements.map(item => <tr key={item.movement_id} className="border-b border-slate-100 dark:border-slate-800"><td className="py-2">#{item.sequence}<br />{formatTime(item.recorded_at)}</td><td>{item.category}<br /><span className="text-slate-500">{item.description}</span></td><td>{item.direction === 'IN' ? money(item.amount) : '—'}</td><td>{item.direction === 'OUT' ? money(item.amount) : '—'}</td><td className="tabular-nums">{money(item.balance_after)}</td></tr>)}</tbody></table>{movements.length === 0 && <p className="py-4 text-slate-500">No cash movements yet.</p>}</div></Panel>
                 <div className="space-y-4">
-                    {session.status === 'OPEN' && <Panel title="Cash in / cash out"><form onSubmit={saveMovement} className="space-y-3"><select className={field} value={movementForm.direction} onChange={event => setMovementForm({ ...movementForm, direction: event.target.value })}><option>IN</option><option>OUT</option></select><select className={field} value={movementForm.category} onChange={event => setMovementForm({ ...movementForm, category: event.target.value })}>{['NOTEBOOK_RECEIPT','OTHER_RECEIPT','OWNER_DRAW','OTHER_RELEASE'].map(category => <option key={category}>{category}</option>)}</select><input className={field} placeholder="Amount" inputMode="decimal" value={movementForm.amount} onChange={event => setMovementForm({ ...movementForm, amount: event.target.value })} required /><input className={field} placeholder="Purpose / reference" value={movementForm.description} onChange={event => setMovementForm({ ...movementForm, description: event.target.value })} required /><input className={field} placeholder="Payer or recipient" value={movementForm.counterparty} onChange={event => setMovementForm({ ...movementForm, counterparty: event.target.value })} /><button className={button} disabled={busy}>Post physical cash</button></form><p className="mt-2 text-xs text-slate-500">Supplier payments and expenses belong in their owning forms; select drawer funding there.</p></Panel>}
+                    {session.status === 'OPEN' && <Panel title="Other cash in / out"><form onSubmit={saveMovement} className="space-y-3"><select className={field} value={movementForm.direction} onChange={event => setMovementForm({ ...movementForm, direction: event.target.value })}><option>IN</option><option>OUT</option></select><select className={field} value={movementForm.category} onChange={event => setMovementForm({ ...movementForm, category: event.target.value })}>{['NOTEBOOK_RECEIPT','OTHER_RECEIPT','OWNER_DRAW','OTHER_RELEASE'].map(category => <option key={category}>{category}</option>)}</select><input className={field} placeholder="Amount" inputMode="decimal" value={movementForm.amount} onChange={event => setMovementForm({ ...movementForm, amount: event.target.value })} required /><input className={field} placeholder="Purpose / reference" value={movementForm.description} onChange={event => setMovementForm({ ...movementForm, description: event.target.value })} required /><input className={field} placeholder="Payer or recipient" value={movementForm.counterparty} onChange={event => setMovementForm({ ...movementForm, counterparty: event.target.value })} /><button className={button} disabled={busy}>Post physical cash</button></form></Panel>}
                     {session.status === 'OPEN' && <button className={button} disabled={busy} onClick={() => beginCount('MIDDAY')}>Count cash</button>}
                     {session.status === 'OPEN' && <button className={button} disabled={busy} onClick={() => post(`/cash-drawers/sessions/${session.session_id}/start-closing`, { expected_version: session.version }, 'start-closing')}>Start closing</button>}
                     {session.status === 'CLOSING' && <button className={button} disabled={busy} onClick={() => beginCount('CLOSING')}>Start final count</button>}
@@ -347,7 +350,7 @@ export default function CashDrawerPage({ user, onNavigate }) {
             {tab === 'History' && <Panel title="Session history"><div className="space-y-2">{history.map(item => <div key={item.session_id} className="flex flex-wrap items-center justify-between gap-2 rounded border border-slate-200 p-3 dark:border-slate-700"><span>{item.session_code} · {item.business_date} · {item.status} · expected {money(item.expected)}</span>{item.status === 'CLOSED' && <span className="flex gap-2"><button className="min-h-11 underline" onClick={() => downloadReport(item.session_id, 'pdf')}>PDF</button><button className="min-h-11 underline" onClick={() => downloadReport(item.session_id, 'csv')}>CSV</button></span>}</div>)}</div></Panel>}
             {session.status === 'CLOSING' && closingCount && <Panel title="Close drawer"><p className="mb-3">Final count {money(closingCount.counted)} · expected {money(closingCount.expected)} · variance {money(closingCount.variance)}. This comparison stays tied to cutoff #{closingCount.cutoff_sequence}.</p>{Number(closingCount.variance) !== 0 && <div className="mb-3 space-y-2"><input className={field} placeholder="Reason for difference" value={reviewReason} onChange={event => setReviewReason(event.target.value)} /><button className={button} disabled={busy || !reviewReason} onClick={async () => { const result = await post('/cash-drawers/approvals', { session_id: session.session_id, count_id: closingCount.count_id, reason: reviewReason, expected_version: session.version }, 'approval'); if (result) setApprovalId(String(result.data.approval_id)); }}>Request independent review</button><input className={field} placeholder="Approved review ID" value={approvalId} onChange={event => setApprovalId(event.target.value)} /></div>}<div className="grid gap-2 sm:grid-cols-2"><input className={field} placeholder="Final handover amount (optional)" value={handover.amount} onChange={event => setHandover({ ...handover, amount: event.target.value })} /><input className={field} placeholder="Destination" value={handover.destination} onChange={event => setHandover({ ...handover, destination: event.target.value })} /><input className={field} type="number" placeholder="Recipient employee ID" value={handover.recipient_id} onChange={event => setHandover({ ...handover, recipient_id: event.target.value })} /><input className={field} placeholder="Acknowledgment evidence" value={handover.evidence} onChange={event => setHandover({ ...handover, evidence: event.target.value })} /></div><button className={`${button} mt-3`} disabled={busy} onClick={() => post(`/cash-drawers/sessions/${session.session_id}/close`, { count_id: closingCount.count_id, expected_version: session.version, approval_id: approvalId || null, handovers: handover.amount ? [handover] : [] }, 'close')}>Confirm close</button></Panel>}
             {session.status === 'CLOSING' && handover.amount && <label className="block rounded border border-amber-300 p-3">Recipient password for handover acknowledgment<input type="password" autoComplete="off" className={field} value={handover.recipient_password} onChange={event => setHandover({ ...handover, recipient_password: event.target.value })} /></label>}
-            {session.status === 'CLOSED' && <p className="text-sm">Closed reports are immutable. Later custody events appear in the handover history.</p>}
+            {session.status === 'CLOSED' && <p className="text-sm">Closed report is final.</p>}
         </>}
         {!session && !drawerId && <p>No cash drawer is configured.</p>}
     </div>;

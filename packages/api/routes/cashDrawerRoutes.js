@@ -81,13 +81,27 @@ router.get('/cash-drawers', protect, hasPermission('cash_drawer:view'), async (_
   } catch (error) { errorResponse(res, error); }
 });
 
+router.get('/cash-drawers/custodians', protect, hasPermission('cash_drawer:open'), async (_req, res) => {
+  try {
+    const { rows } = await db.query(`SELECT e.employee_id, concat_ws(' ', e.first_name, e.last_name) AS name
+      FROM employee e WHERE e.is_active=true AND (
+        e.permission_level_id=10 OR EXISTS (
+          SELECT 1 FROM role_permission rp JOIN permission p ON p.permission_id=rp.permission_id
+          WHERE rp.permission_level_id=e.permission_level_id AND p.permission_key='cash_drawer:count'
+        )
+      ) ORDER BY e.first_name,e.last_name,e.employee_id`);
+    res.json({ data: rows });
+  } catch (error) { errorResponse(res, error); }
+});
+
 router.get('/cash-drawers/sessions', protect, hasPermission('cash_drawer:view'), async (req, res) => {
   try {
     const limit = Math.min(Math.max(Number(req.query.limit) || 25, 1), 100);
     const page = Math.max(Number(req.query.page) || 1, 1);
     const { rows } = await db.query(`SELECT s.*,d.name AS drawer_name,
+      concat_ws(' ', e.first_name, e.last_name) AS custodian_name,
       COALESCE((SELECT m.balance_after FROM cash_drawer_movement m WHERE m.session_id=s.session_id ORDER BY m.sequence DESC LIMIT 1),s.opening_amount) AS expected
-      FROM cash_drawer_session s JOIN cash_drawer d USING(drawer_id)
+      FROM cash_drawer_session s JOIN cash_drawer d USING(drawer_id) JOIN employee e ON e.employee_id=s.custodian_id
       WHERE ($1::bigint IS NULL OR s.drawer_id=$1) AND ($2::date IS NULL OR s.business_date=$2)
       AND ($3::text IS NULL OR s.status=$3)
       ORDER BY s.opened_at DESC LIMIT $4 OFFSET $5`,
@@ -106,6 +120,12 @@ router.post('/cash-drawers/:drawerId/sessions', protect, hasPermission('cash_dra
   }
   const sourceTotal = sources.reduce((sum, item) => sum + cash.cents(item.amount), 0n);
   if (sourceTotal !== cash.cents(opening.total)) cash.fail(422, 'OPENING_MISMATCH', 'Opening sources must equal the physical count.');
+  const custodian = await client.query(`SELECT 1 FROM employee e WHERE e.employee_id=$1 AND e.is_active=true AND (
+    e.permission_level_id=10 OR EXISTS (
+      SELECT 1 FROM role_permission rp JOIN permission p ON p.permission_id=rp.permission_id
+      WHERE rp.permission_level_id=e.permission_level_id AND p.permission_key='cash_drawer:count'
+    ))`, [custodian_id]);
+  if (!custodian.rowCount) cash.fail(422, 'INVALID_CUSTODIAN', 'Select an active employee who can count cash.');
   const drawer = await client.query('SELECT drawer_id FROM cash_drawer WHERE drawer_id=$1 AND active=true FOR UPDATE', [req.params.drawerId]);
   if (!drawer.rowCount) cash.fail(404, 'DRAWER_NOT_FOUND', 'Drawer not found.');
   const latestClose = await client.query(`SELECT s.session_id FROM cash_session_close c
@@ -147,12 +167,13 @@ router.post('/cash-drawers/:drawerId/sessions', protect, hasPermission('cash_dra
 router.get('/cash-drawers/sessions/:id', protect, hasPermission('cash_drawer:view'), async (req, res) => {
   try {
     const { rows } = await db.query(`SELECT s.*,d.name AS drawer_name,
+      concat_ws(' ', e.first_name, e.last_name) AS custodian_name,
       COALESCE((SELECT m.balance_after FROM cash_drawer_movement m WHERE m.session_id=s.session_id ORDER BY m.sequence DESC LIMIT 1),s.opening_amount) AS expected,
       (SELECT COALESCE(SUM(amount) FILTER(WHERE direction='IN'),0) FROM cash_drawer_movement m WHERE m.session_id=s.session_id) AS total_in,
       (SELECT COALESCE(SUM(amount) FILTER(WHERE direction='OUT'),0) FROM cash_drawer_movement m WHERE m.session_id=s.session_id) AS total_out,
       (SELECT row_to_json(c) FROM cash_count c WHERE c.session_id=s.session_id AND c.status='SUBMITTED' ORDER BY c.count_id DESC LIMIT 1) AS latest_count,
       (SELECT report_snapshot FROM cash_session_close x WHERE x.session_id=s.session_id) AS close_snapshot
-      FROM cash_drawer_session s JOIN cash_drawer d USING(drawer_id) WHERE s.session_id=$1`, [req.params.id]);
+      FROM cash_drawer_session s JOIN cash_drawer d USING(drawer_id) JOIN employee e ON e.employee_id=s.custodian_id WHERE s.session_id=$1`, [req.params.id]);
     if (!rows.length) return res.status(404).json({ message: 'Session not found.' });
     res.json({ data: rows[0] });
   } catch (error) { errorResponse(res, error); }
