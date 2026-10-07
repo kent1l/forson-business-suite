@@ -1,7 +1,7 @@
 # Cash Drawer & Reconciliation — Final Module Plan and Developer Handoff
 
 > **Forson Business Suite** | **Date:** 2026-10-07 (Asia/Manila) | **Branch inspected:** `cash-count-module`
-> **Status (2026-10-07):** Schema, atomic posting/API, and connected web workspace are implemented on `cash-count-module`. Disposable real-PostgreSQL tests pass. Deployment, pilot, complete source-path test matrix, card-batch gate, and performance targets remain unverified. `ENABLE_CASH_DRAWER` is enabled only in the ignored local development `.env`; `.env.example` and production remain off.
+> **Status (2026-10-07):** Schema, atomic posting/API, and connected web workspace are implemented on `cash-count-module`. Disposable real-PostgreSQL tests, backup restore, and a small local performance check pass. Production rollout and physical store-day pilot remain pending. The store currently has no card terminal, so terminal batch reconciliation is conditional on adding one. `ENABLE_CASH_DRAWER` is enabled only in the ignored local development `.env`; `.env.example` and production remain off.
 
 ## 0. Status at a Glance
 
@@ -10,14 +10,14 @@
 | Product and custody rules | Design complete | §2–5 and UI companion doc |
 | Source discovery | Repository audit done | Operational pilot must verify every cash path |
 | Phase 1: schema and invariants | Implemented; dev DB migrated | Four migrations applied and verified locally; baseline consolidation pending |
-| Phase 2: posting, integrations, API | Implemented; partially verified | Atomic source hooks and custody API; extend route/concurrency matrix |
+| Phase 2: posting, integrations, API | Implemented; partially verified | Atomic source hooks; custody, concurrent opening, and count expiry tested |
 | Phase 3: connected web UI | Implemented; build verified | Live browser, accessibility and small-screen walkthrough pending |
-| Phase 4: verification and cutover | Partial | Real DB tests and reports pass; store pilot and release gates pending |
+| Phase 4: verification and cutover | Partial | Real DB tests, backup restore and local timing pass; store pilot and remaining release gates pending |
 | Development testing | Ready for supervised test entries | Main Counter seeded, API/auth/proxy smoke passed; no sessions yet |
 | Production rollout | Not started | Keep production feature flag off until §9 gates pass |
 | Full treasury, offline posting, native mobile | Deferred | §10 |
 
-Commits: `c554039` (schema), `3e6dcc9` (posting guards), `68d8cca` (backend), `701c9a8` (web). Verify against current Git history before proceeding.
+Major commits: `c554039` (schema), `3e6dcc9` (posting guards), `68d8cca` (backend), `701c9a8` (web), `235a7ba` (reimbursement integrity). Verify against current Git history before proceeding.
 
 ## 1. For a New Session or Agent Picking This Up
 
@@ -82,6 +82,7 @@ Initial rollout: **one Main Counter drawer, normally one daily session**, multip
 9. Local drafts may survive offline; financial posting/approval/close requires server confirmation.
 10. Register-first cashier workspace, guided close and responsive web; no charts/full treasury expansion.
 11. **Current hardware is a manual cash box:** employees count notes and coins themselves. `cash_drawer` is a logical custody location, not a connected device. `MANUAL_CASH_BOX` is the default hardware mode; `ELECTRONIC_DRAWER` is reserved for a later integration and must not imply automatic counting today.
+12. **No current card terminal:** terminal settlement/batch reconciliation is not a rollout gate for this store today. Add that gate before accepting terminal card payments; it is separate from physical cash counts.
 
 ## 5. Architecture and Domain Model
 
@@ -107,7 +108,7 @@ Closing final count/approval binds count ID, cutoff/version and amounts. Authori
 ### Custody and correction boundaries
 Transfer: drawer decreases at actual release. Acknowledgment/deposit confirmation is subsequent custody evidence, not additional drawer money. Partial acknowledgment and deposit stages each bounded independently; do not add the two as receipts. Returned physical money creates an IN in an OPEN receiving session and cannot also be confirmed deposited for the same portion. Final closing handover requires named recipient acknowledgment, though bank deposit may still be pending.
 
-Advance: release once -> link verified expense/AP/GRN consumption -> return unused physical cash -> settle. Consumption does not change drawer again. Extra paid reimbursement is a separate actual OUT. Outstanding custody equals releases/reimbursements less documented consumption/returns; employee-funded excess needs review, not a hidden negative outstanding balance.
+Advance: release once -> link verified expense/AP/GRN consumption -> return unused physical cash -> settle. Consumption does not change drawer again. A separately employee-funded, verified cash expense or supplier payment may be reimbursed by an independently reviewed actual OUT; it must match the full source payment and must not already be drawer or advance funded. That reimbursement does not increase the original advance custody. Outstanding advance custody equals release less documented consumption and returns. An expense partly funded by an advance and partly by the employee is not yet represented as one split source; use distinct source payments or hold that case for an explicit split-funding design.
 
 Corrections: same/open-session posting errors corrected with authorized linked reversal/replacement. Historical closed-day data-only correction is an immutable explanatory addendum with explicit reviewed custody bridge where necessary, not fictitious current cash-in/out. Original report unchanged. Refund/return of actual cash is a new real event, distinguishable from clerical correction.
 
@@ -116,7 +117,7 @@ Corrections: same/open-session posting errors corrected with authorized linked r
 ### As built and remaining work
 - [x] Query running catalog and all pending migrations. Verify original report, source payment/refund/Expense/AP/wallet/deposit writer ownership. Document canonical source event and mirror policy before hooks.
 - [x] Add forward SQL migrations `20261007_01` through `_03` with no ORM.
-- [ ] Consolidate `database/initial_schema.sql` only after dependency-safe replay.
+- [ ] Consolidate `database/initial_schema.sql` only after dependency-safe replay. Expense/AP source tables are introduced by later migrations, so directly appending the cash schema to the old baseline would break fresh installs; all four forward migrations are the installation path today.
 - [x] Seed new permissions and explicit role assignments; do not grant every existing role automatically.
 - [x] Add immutable-row protections, FK/index/unique checks and transactional tests against disposable real PostgreSQL.
 
@@ -208,17 +209,18 @@ The prototype's manager-review checkbox is explicitly simulated; never implement
 ## 9. Phase 4 — Real Verification, Reports and Cutover — Partial
 
 ### Test matrix and release gates (unchecked items are still required)
-- [ ] Source completeness: all physical cash write routes and mirrors; mixed tenders/change/deposits/overpayments/wallet use/withholding/discounts/PDC; actual refund versus credit note; exactly once under retries/concurrency.
-- [ ] Real DB: migrations/checks/FKs, immutable guards, rollback, double-open, lock order, close/write races, count expiry/pause/resume, stale approval, final handover bounds.
-- [ ] Custody: partial acknowledgments/deposits/returns, named external custodian, outstanding advances, consumption funded from advance, extra reimbursement/employee excess.
-- [ ] Monetary/count cases: zero float/count, centavos, blank/negative/fractional/overflow, denomination change history, nonzero retained bridge/supplemental session, late historical event/addendum, no hidden zero clamp.
-- [ ] Notebook: partial/full/multiple source coverage, late sale encoding after close, duplicate remediation without invented cash.
+- [ ] Source completeness: all physical cash write routes and mirrors; mixed tenders/change/deposits/overpayments/wallet use/withholding/discounts/PDC; actual refund versus credit note; exactly once under retries/concurrency. Basic cash/card exclusion and source retry are tested; full end-to-end store-day source mix remains unverified.
+- [ ] Real DB: migrations/checks/FKs, immutable guards, rollback, double-open, lock order, close/write races, count expiry/pause/resume, stale approval, final handover bounds. Migration checksums, rollback, immutable guards, concurrent double-open, count expiry/restart, independent review, and bounded handover have passed; close/write races and full lock-order matrix remain.
+- [ ] Custody: partial acknowledgments/deposits/returns, named external custodian, outstanding advances, consumption funded from advance, extra reimbursement/employee excess. Transfer ACK/return/deposit bounds and verified separate cash reimbursement passed; full employee excess workflow and physical custodian evidence remain.
+- [ ] Monetary/count cases: zero float/count, centavos, blank/negative/fractional/overflow, denomination change history, nonzero retained bridge/supplemental session, late historical event/addendum, no hidden zero clamp. Centavos, zero count and invalid amounts passed; denomination-history and historical addendum walkthrough remain.
+- [ ] Notebook: partial/full/multiple source coverage, late sale encoding after close, duplicate remediation without invented cash. Partial/full/multiple source coverage passed; closed-day source encoding and real duplicate remediation remain.
 - [ ] Security: scope/permissions, independent reviewer, spoofed actor, idempotency conflicts, SQL/text/CSV injection, stale/offline unknown write and attachment authorization.
 - [ ] UI real app: desktop/tablet/mobile, keyboard/touch, light/dark, network/auth failures, source drill-down and immutable history.
 - [x] Immutable closing PDF/CSV includes opening, receipts/releases/category, pre-handover expected/count/variance, handovers and ledger/actual retained, custodian/reviewer and timestamps. Later custody progress separate.
-- [ ] If terminal card payments occurred: physical batch settlement and centavo reconciliation before daily close, separate from drawer denomination totals; authorized evidenced exception only.
-- [ ] Benchmark local deployment targets: summary/register <=300ms at ninety-fifth percentile; atomic posting added overhead <=50ms; total write <=500ms excluding human approval/upload; refresh <=5s + on focus. These are targets NOT measurements. Bounded lock waits and no long human-held transaction.
-- [ ] Restore backup including immutable history; owner/manager signs off full store-day pilot with notebook/office-expense/advance/transfer/discrepancy cases.
+- [ ] If terminal card payments are later introduced: physical batch settlement and centavo reconciliation before daily close, separate from drawer denomination totals; authorized evidenced exception only. The current store has no terminal, so this is not applicable to this rollout.
+- [ ] Benchmark local deployment targets: summary/register <=300ms at ninety-fifth percentile; atomic posting added overhead <=50ms; total write <=500ms excluding human approval/upload; refresh <=5s + on focus. Disposable DB 30-sample local p95: summary 15.3ms, register 10.7ms; 20-sample posting service p95 3.5ms inside a rolled-back transaction. Production load, complete write latency, and UI refresh remain unmeasured.
+- [x] Restore a disposable cash history backup. `pg_restore` reproduced 13 sessions, 15 movements, 7 closes, and 33 audit rows, with immutable and insert guard triggers present in `codex_cash_drawer_verify_restore_20261007`.
+- [ ] Owner/manager signs off a physical store-day pilot with notebook/office-expense/advance/transfer/discrepancy cases; this needs store staff and real counted cash.
 
 ### Cutover
 Archive Google Sheets. Verify and approve physical opening with canonical source reconciliation. Feature-flag rollout: test -> one Main Counter pilot -> daily signoff -> stop live Sheets entry. Never import past summaries as new live money; no old sale/expense reposting. Do not enable while a physical cash source path remains unhooked. Rollback disables new feature usage safely and preserves all ledger/audit data; it does not drop financial tables or erase posted effects.
@@ -255,7 +257,7 @@ DB_HOST=localhost CASH_DRAWER_TEST_DB=codex_cash_drawer_verify_20261007 node pac
 DB_HOST=localhost CASH_DRAWER_TEST_DB=codex_cash_drawer_verify_20261007 node packages/api/tests/cashDrawerRoutes_db_test.js
 ```
 
-The disposable database has test records and may be dropped after review. On 2026-10-07, a 2.9 MB backup was saved to ignored `backups/cash-drawer-pretest-20261007.dump`, then the first three migrations were applied to the normal **development** database. A second 3.0 MB backup at `backups/cash-box-hardware-pretest-20261007.dump` preceded migration `_04`. Development now has 217 applied migrations, no pending migrations and verified checksums; `MAIN_COUNTER` is `MANUAL_CASH_BOX`. Production was not migrated. The tests cover centavos, cash/card exclusion, notebook coverage, count cutoff, immutability, source retry conflict, HTTP idempotency, independent review, close, report export, retained opening and the manual hardware default. They do **not** establish the full §9 matrix, a store-day pilot, card terminal batch gate, benchmark, backup restore, or owner signoff.
+The disposable database has test records and may be dropped after review. On 2026-10-07, a 2.9 MB backup was saved to ignored `backups/cash-drawer-pretest-20261007.dump`, then the first three migrations were applied to the normal **development** database. A second 3.0 MB backup at `backups/cash-box-hardware-pretest-20261007.dump` preceded migration `_04`. Development has 217 applied migrations, no pending migrations and verified checksums; `MAIN_COUNTER` is `MANUAL_CASH_BOX`. Production was not migrated. The tests cover centavos, cash/card exclusion, notebook partial/full/multiple-source coverage, count cutoff/expiry/restart, immutability, source retry conflict, concurrent opening, HTTP idempotency, independent review, close, transfer custody limits, reimbursement accounting, report export, retained opening and the manual hardware default. A dump of the disposable test DB restored successfully into `codex_cash_drawer_verify_restore_20261007`; counts and guards were verified there. The small local p95 measurements above meet read/posting targets but do not establish production performance. The tests do **not** establish the full §9 matrix, a physical store-day pilot or owner signoff.
 
 `database/initial_schema.sql` was not changed: it predates later source-table migrations on which the new FK schema depends. Consolidate the baseline after a full migration replay rather than inserting tables before their dependencies. The ignored local development `.env` now has `ENABLE_CASH_DRAWER=true`; the backend was recreated and reports the flag loaded. Unauthenticated direct API and Vite proxy requests changed from 503 to 401. An authenticated read-only admin smoke returned HTTP 200 and one Main Counter drawer with zero sessions. Backend health passed. Production deployment and feature enablement remain pending.
 

@@ -40,6 +40,7 @@ async function run() {
   const drawer = await db.query("INSERT INTO cash_drawer(code,name) VALUES($1,'HTTP Test Drawer') RETURNING drawer_id,hardware_mode", [`HTTP_TEST_${Date.now()}`]);
   assert.equal(drawer.rows[0].hardware_mode, 'MANUAL_CASH_BOX');
   const drawerId = drawer.rows[0].drawer_id;
+  const raceDrawer = await db.query("INSERT INTO cash_drawer(code,name) VALUES($1,'Concurrent Open Test') RETURNING drawer_id", [`RACE_TEST_${Date.now()}`]);
   const people = await request(app).get('/api/cash-drawers/custodians')
     .set({ Authorization: `Bearer ${actorToken}` });
   assert.equal(people.status, 200);
@@ -49,6 +50,10 @@ async function run() {
     opening_lines: [{ code: 'PHP_100', quantity: 1 }],
     opening_sources: [{ kind: 'FRESH_FLOAT', amount: '100.00' }] };
   const openingKey = idempotency();
+  const concurrentOpen = await Promise.all([request(app).post(`/api/cash-drawers/${raceDrawer.rows[0].drawer_id}/sessions`)
+    .set(auth(actorToken)).send(opening), request(app).post(`/api/cash-drawers/${raceDrawer.rows[0].drawer_id}/sessions`)
+    .set(auth(actorToken)).send(opening)]);
+  assert.deepEqual(concurrentOpen.map(result => result.status).sort(), [201, 409]);
   const opened = await request(app).post(`/api/cash-drawers/${drawerId}/sessions`)
     .set({ Authorization: `Bearer ${actorToken}`, 'Idempotency-Key': openingKey }).send(opening);
   assert.equal(opened.status, 201, JSON.stringify(opened.body));
@@ -101,6 +106,8 @@ async function run() {
     opening_sources: [{ kind: 'PRIOR_RETAINED', amount: '40.00' }, { kind: 'FRESH_FLOAT', amount: '10.00' }] };
   const next = await request(app).post(`/api/cash-drawers/${drawerId}/sessions`).set(auth(actorToken)).send(nextOpening);
   assert.equal(next.status, 201, JSON.stringify(next.body));
+  const doubleOpen = await request(app).post(`/api/cash-drawers/${drawerId}/sessions`).set(auth(actorToken)).send(nextOpening);
+  assert.equal(doubleOpen.status, 409, JSON.stringify(doubleOpen.body));
   const activeSessionId = next.body.data.session_id;
   const approvedRelease = async (action, amount, version) => {
     const asked = await request(app).post('/api/cash-drawers/approvals').set(auth(actorToken))

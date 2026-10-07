@@ -354,7 +354,6 @@ router.post('/cash-drawers/advances/:id/events', protect, hasPermission('cash_dr
   }
   const sums = await client.query(`SELECT COALESCE(SUM(amount) FILTER(WHERE kind='CONSUMPTION'),0) AS consumed,
     COALESCE(SUM(amount) FILTER(WHERE kind='RETURN'),0) AS returned,
-    COALESCE(SUM(amount) FILTER(WHERE kind='REIMBURSEMENT'),0) AS reimbursed,
     COUNT(*) FILTER(WHERE kind='SETTLEMENT') AS settled FROM cash_advance_event WHERE advance_id=$1`, [advance.advance_id]);
   const totals = sums.rows[0];
   if (Number(totals.settled)) cash.fail(409, 'ADVANCE_SETTLED', 'Advance is already settled.');

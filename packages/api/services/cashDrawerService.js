@@ -111,7 +111,14 @@ async function startCount(client, { sessionId, kind, actorId, expectedVersion })
   if (!['MIDDAY', 'CLOSING'].includes(kind)) fail(400, 'INVALID_COUNT_KIND', 'Count kind must be MIDDAY or CLOSING.');
   const session = await lockSession(client, sessionId, { version: expectedVersion, states: kind === 'CLOSING' ? ['CLOSING'] : ['OPEN'] });
   const existing = await client.query("SELECT count_id FROM cash_count WHERE session_id=$1 AND status='DRAFT'", [sessionId]);
-  if (existing.rowCount) fail(409, 'COUNT_IN_PROGRESS', 'A count is already in progress.');
+  if (existing.rowCount) {
+    if (!session.count_window_expires_at || new Date(session.count_window_expires_at) > new Date()) {
+      fail(409, 'COUNT_IN_PROGRESS', 'A count is already in progress.');
+    }
+    await client.query("UPDATE cash_count SET status='INVALIDATED',invalidated_at=now() WHERE count_id=$1", [existing.rows[0].count_id]);
+    await audit(client, { sessionId, targetType: 'COUNT', targetId: existing.rows[0].count_id,
+      action: 'EXPIRED', actorId, reason: 'Count window expired before submission.' });
+  }
   const expected = money(await currentBalance(client, session));
   const { rows } = await client.query(
     `INSERT INTO cash_count(session_id,kind,cutoff_sequence,cutoff_version,expected,counter_id)
@@ -276,7 +283,6 @@ async function consumeAdvance(client, { advanceId, kind, sourceId, actorId }) {
   if (doublePost.rowCount) fail(409, 'ALREADY_DRAWER_FUNDED', 'Source was already paid from a drawer.');
   const totals = await client.query(`SELECT COALESCE(SUM(amount) FILTER(WHERE kind='CONSUMPTION'),0) AS consumed,
     COALESCE(SUM(amount) FILTER(WHERE kind='RETURN'),0) AS returned,
-    COALESCE(SUM(amount) FILTER(WHERE kind='REIMBURSEMENT'),0) AS reimbursed,
     COUNT(*) FILTER(WHERE kind='SETTLEMENT') AS settled FROM cash_advance_event WHERE advance_id=$1`, [advanceId]);
   const t = totals.rows[0];
   if (Number(t.settled)) fail(409, 'ADVANCE_SETTLED', 'Advance is already settled.');
