@@ -246,10 +246,18 @@ export default function CashDrawerPage({ user, onNavigate }) {
 
     return <div className="mx-auto max-w-7xl space-y-5 text-slate-900 dark:text-slate-100">
         <div className="flex flex-wrap items-start justify-between gap-3">
-            <div><h1 className="text-2xl font-bold">Cash Drawer</h1><p className="text-sm text-slate-500 dark:text-slate-400">Physical notes and coins · {lastRefresh ? `Refreshed ${formatTime(lastRefresh)}` : 'Waiting for server'}</p></div>
+            <div><h1 className="text-2xl font-bold">Cash Drawer</h1><p className="text-sm text-slate-500 dark:text-slate-400">Track the cash physically held at the counter · {lastRefresh ? `Refreshed ${formatTime(lastRefresh)}` : 'Waiting for server'}</p></div>
             <div className="flex gap-2"><select aria-label="Drawer" className={field} value={drawerId} onChange={event => reload(event.target.value)}>{drawers.map(drawer => <option key={drawer.drawer_id} value={drawer.drawer_id}>{drawer.name}</option>)}</select><button className={button} onClick={() => reload()} disabled={busy}>Refresh</button></div>
         </div>
         {error && <div role="alert" className="rounded border border-red-300 bg-red-50 p-3 text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-200">{error}</div>}
+        {!session && drawerId && <Panel title="Start here: open the counter drawer">
+            <ol className="list-inside list-decimal space-y-2 text-sm text-slate-700 dark:text-slate-200">
+                <li>Count the notes and coins currently in the drawer below. Enter the same total as the opening source amount.</li>
+                <li>Verify and open the session. This opening cash becomes the starting balance; it is not recorded as a sale.</li>
+                <li>On a sales or payment screen, select this open session in the cash payment destination bar. Cash receipts then appear here automatically. Count again later to compare the physical cash with the expected balance.</li>
+            </ol>
+            <p className="mt-3 text-sm text-slate-600 dark:text-slate-300">Use manual Cash In or Cash Out only for physical cash events that do not already have their own sale, supplier payment, expense or refund form.</p>
+        </Panel>}
         {session && <>
             <p className="text-sm">{session.session_code} · {session.business_date} · Custodian #{session.custodian_id} · <strong>{session.status}</strong></p>
             <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -258,6 +266,7 @@ export default function CashDrawerPage({ user, onNavigate }) {
                     <div key={label} className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900"><p className="text-sm text-slate-500 dark:text-slate-400">{label}</p><p className="mt-1 text-xl font-bold tabular-nums">{value}</p></div>)}
             </div>
             <p className="text-sm text-slate-600 dark:text-slate-300">Opening {money(session.opening_amount)} · Count cutoff {latest ? `#${latest.cutoff_sequence} at ${formatTime(latest.submitted_at)}` : 'none'}{stale ? ` · ${Number(session.last_sequence) - Number(latest.cutoff_sequence)} movements since count; recount to verify current cash` : ''}</p>
+            {session.status === 'OPEN' && <p className="rounded-lg border border-sky-200 bg-sky-50 p-3 text-sm text-sky-950 dark:border-sky-900 dark:bg-sky-950/30 dark:text-sky-100">The denomination count is a snapshot. Cash sales and payments add to the expected balance automatically after you select this session on the payment screen. Use Count cash to check the drawer again; use the manual form only for cash events without another FBS transaction.</p>}
         </>}
         {session?.status === 'CLOSED' && <button className={button} onClick={() => setShowOpen(value => !value)}>{showOpen ? 'Hide opening form' : 'Open a new session'}</button>}
         {(!session || (session.status === 'CLOSED' && showOpen)) && drawerId && <Panel title="Verify and open drawer"><form onSubmit={open} className="space-y-4">
