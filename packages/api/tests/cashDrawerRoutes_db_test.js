@@ -37,7 +37,8 @@ async function run() {
   const [actor, reviewer] = employee.rows;
   const actorToken = jwt.sign({ employee_id: actor.employee_id, username: actor.username, login_date: manilaDateString() }, process.env.JWT_SECRET);
   const reviewerToken = jwt.sign({ employee_id: reviewer.employee_id, username: reviewer.username, login_date: manilaDateString() }, process.env.JWT_SECRET);
-  const drawer = await db.query("INSERT INTO cash_drawer(code,name) VALUES($1,'HTTP Test Drawer') RETURNING drawer_id", [`HTTP_TEST_${Date.now()}`]);
+  const drawer = await db.query("INSERT INTO cash_drawer(code,name) VALUES($1,'HTTP Test Drawer') RETURNING drawer_id,hardware_mode", [`HTTP_TEST_${Date.now()}`]);
+  assert.equal(drawer.rows[0].hardware_mode, 'MANUAL_CASH_BOX');
   const drawerId = drawer.rows[0].drawer_id;
   const date = manilaDateString();
   const opening = { business_date: date, custodian_id: actor.employee_id,

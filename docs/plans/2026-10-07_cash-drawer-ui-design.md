@@ -1,22 +1,19 @@
 # Cash Drawer — Final UI Design and Developer Handoff
 
 > **Forson Business Suite** | **Date:** 2026-10-07 (Asia/Manila) | **Branch inspected:** `cash-count-module`
-> **Status:** UI design finalized; local disposable prototypes browser-tested. Production React screens, live API integration and store acceptance are NOT built/verified by this work. This is a documentation handoff, not an implementation completion claim.
+> **Status (2026-10-07):** Connected React workspace is implemented and enabled in local development; web lint/build pass. The store uses a manual cash box. Electronic drawer integration is reserved for future hardware. Browser role walkthrough and store acceptance remain pending; consult the companion implementation plan for current release gates.
 
 ## 0. Status at a Glance
 
 | Item | Status | Detail |
 |---|---|---|
-| Information architecture and cashier workspace | Design complete | §4 |
-| Local workspace and compact comparison mockups | Created; automated browser checks passed | §8 |
-| Opening, movement, count, closing and custody screen contracts | Design complete | §5 |
-| Production React page/components | Not started in this handoff | §6 |
-| Backend-connected state, permissions and posting | Not started | §6; module implementation plan |
-| Manual visual review | Not completed: provider image-input restriction | §8 |
-| Live database/application and store-day acceptance | Not verified | §7 |
-| Native mobile application and charts | Explicitly deferred | §9 |
-
-Only update this table after confirming the relevant repository and runtime evidence. A passing HTML prototype does not establish a working FBS feature.
+| Information architecture and cashier workspace | Implemented in React | §4–6; live navigation label is Cash Box |
+| Current hardware | Manual cash box | Staff physically count notes and coins; no connected drawer |
+| Future hardware option | Reserved | `ELECTRONIC_DRAWER` schema mode; no device integration or automatic count |
+| Opening, movement, count, closing and custody | Connected API screens | §5; wider browser/role walkthrough pending |
+| Local development | Enabled and migrated | Companion implementation plan §12 |
+| Store-day acceptance | Pending | §7 |
+| Native mobile application and charts | Deferred | §9 |
 
 ## 1. For a New Session or Agent Picking This Up
 
@@ -40,8 +37,10 @@ Replace the disconnected Google Sheets cash movement/denomination sheets with a 
 
 ## 3. Decisions Already Taken
 
+- The current store keeps cash in a manually counted cash box. The software term `cash_drawer` describes the custody ledger; it does not imply electronic hardware. Future electronic drawer integration remains a separate option and must never imply that physical counts are automatic.
+
 - Recommended design is the **cashier workspace**: register-first main panel with count/custody side rail. Compact prototype is a comparison only, not a second approved production layout.
-- Navigation: **Finance & Expenses -> Cash Drawer**, state key `cash_drawer`. Reuse FBS state-based navigation, not React Router.
+- Navigation: **Finance & Expenses -> Cash Box**, state key `cash_drawer`. Reuse FBS state-based navigation, not React Router.
 - No charts or decorative analytics. Cash control is an operational task, not a profit dashboard.
 - PHP physical notes/coins only. GCash/card/bank/cheques are not denomination rows or drawer receipts.
 - The owner's `CASH SALES` spreadsheet row is a copied FBS expected-cash result, not an additional independent receipt. Remove that manual summary field.
@@ -70,7 +69,7 @@ Actions: **Cash In**, **Cash Out**, **Transfer**, primary **Count Cash**, **Clos
 Tabs: **Today**, **Counts**, **Handover & Advances**, **History**.
 
 ```
-Cash Drawer / Main Counter       Business date / custodian / status
+Cash Box / Main Counter          Business date / custodian / status
 Expected Cash | Latest Count | Over / Short at cutoff | Cash Out
 Opening / Cash In / Cash Out
 Cash In / Cash Out / Transfer / COUNT CASH / Close Drawer
@@ -145,16 +144,16 @@ Release and acknowledgment/deposit are different custody stages. Acknowledgment 
 Counts: list type, counter, submission, cutoff, expected, counted, variance, validity and reviewer decision. Drill into original denominations and recount chain.
 History: date/session code/custodian, opening, receipts/releases, expected/count, variance, retained and state. Closed detail read-only with linked addenda and later custody events. Printable/PDF daily report and CSV; footer session/revision/generated time; protect exported CSV from formula injection.
 
-## 6. Production Work — Not Started
+## 6. Production Work — Implemented, Verification Pending
 
-- [ ] Add `packages/web/src/pages/CashDrawerPage.jsx` and focused `packages/web/src/components/cashDrawer/` components for opening, movement detail, count, closing, handover and advance flows.
-- [ ] Register `cash_drawer` in `packages/web/src/components/layout/MainLayout.jsx` and `packages/web/src/config/navigation.js`; Sidebar/CommandPalette consume navigation registry.
-- [ ] Reuse API client, AuthContext, FBS theme tokens and existing UI Modal/Drawer/Tabs/Pagination primitives where suitable. Confirm their current props with fresh graph/source reads.
-- [ ] Integrate server summary, pagination, count window, approval, lifecycle and idempotent write APIs from companion module plan.
-- [ ] Enforce backend permissions and object scope; frontend visibility is not security.
+- [x] Add `packages/web/src/pages/CashDrawerPage.jsx` and focused `packages/web/src/components/cashDrawer/` components for opening, movement detail, count, closing, handover and advance flows.
+- [x] Register `cash_drawer` in `packages/web/src/components/layout/MainLayout.jsx` and `packages/web/src/config/navigation.js`; Sidebar/CommandPalette consume navigation registry.
+- [x] Reuse API client, AuthContext, FBS theme tokens and existing UI Modal/Drawer/Tabs/Pagination primitives where suitable. Confirm their current props with fresh graph/source reads.
+- [x] Integrate server summary, pagination, count window, approval, lifecycle and idempotent write APIs from companion module plan.
+- [x] Enforce backend permissions and object scope; frontend visibility is not security.
 - [ ] Restore drafts through existing draft conventions only after confirming APIs. Do not add a new state library/router.
 - [ ] Preserve UI filters and handle navigation back to source records.
-- [ ] Ensure existing Sales History cash estimate is not used as canonical expected physical drawer balance.
+- [x] Ensure existing Sales History cash estimate is not used as canonical expected physical drawer balance.
 
 ### Responsive, accessibility and failure states
 

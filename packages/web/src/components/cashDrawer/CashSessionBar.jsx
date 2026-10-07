@@ -43,14 +43,14 @@ export default function CashSessionBar({ onNavigate, currentPage }) {
     if (loadError) return <div role="alert" className="border-b border-red-300 bg-red-50 px-4 py-2 text-sm text-red-900 dark:border-red-900 dark:bg-red-950 dark:text-red-100">Unable to check the open cash drawer. Refresh before recording a cash payment.</div>;
     if (drawers.length === 0) return (
         <div role="status" className="flex flex-wrap items-center justify-between gap-2 border-b border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-950 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-100">
-            <p><strong>No cash drawer session is open.</strong> Count the opening cash and open a session before recording a cash payment.</p>
-            <button type="button" className="min-h-11 rounded px-3 font-semibold underline" onClick={() => onNavigate('cash_drawer')}>Open Cash Drawer</button>
+            <p><strong>No cash box session is open.</strong> Count the opening notes and coins, then open a session before recording a cash payment. No electronic drawer is needed.</p>
+            <button type="button" className="min-h-11 rounded px-3 font-semibold underline" onClick={() => onNavigate('cash_drawer')}>Open Cash Box</button>
         </div>
     );
     return (
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-950 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-100">
             <label className="flex flex-wrap items-center gap-2 font-medium">
-                Cash payment destination
+                Cash payment location
                 <select aria-label="Open drawer session for cash payments" className="min-h-11 rounded border border-amber-400 bg-white px-2 text-slate-900 dark:border-amber-700 dark:bg-slate-900 dark:text-white"
                     value={selected} onChange={event => {
                         const value = event.target.value;
@@ -61,9 +61,9 @@ export default function CashSessionBar({ onNavigate, currentPage }) {
                     <option value="">Select an open drawer session</option>
                     {drawers.map(drawer => <option key={drawer.session_id} value={drawer.session_id}>{drawer.name} · {drawer.business_date}</option>)}
                 </select>
-                <span className="font-normal">Choose where cash goes before recording a cash sale or payment. Card and other noncash payments do not affect the drawer.</span>
+                <span className="font-normal">Choose the session for the store&apos;s manual cash box. This tracks cash in FBS; it does not connect to drawer hardware. Card and other noncash payments do not affect it.</span>
             </label>
-            <button type="button" className="min-h-11 rounded px-3 font-semibold underline" onClick={() => onNavigate('cash_drawer')}>View drawer balance</button>
+            <button type="button" className="min-h-11 rounded px-3 font-semibold underline" onClick={() => onNavigate('cash_drawer')}>View cash box balance</button>
         </div>
     );
 }

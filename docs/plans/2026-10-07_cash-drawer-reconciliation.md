@@ -9,7 +9,7 @@
 |---|---|---|
 | Product and custody rules | Design complete | §2–5 and UI companion doc |
 | Source discovery | Repository audit done | Operational pilot must verify every cash path |
-| Phase 1: schema and invariants | Implemented; dev DB migrated | Three migrations applied and verified locally; baseline consolidation pending |
+| Phase 1: schema and invariants | Implemented; dev DB migrated | Four migrations applied and verified locally; baseline consolidation pending |
 | Phase 2: posting, integrations, API | Implemented; partially verified | Atomic source hooks and custody API; extend route/concurrency matrix |
 | Phase 3: connected web UI | Implemented; build verified | Live browser, accessibility and small-screen walkthrough pending |
 | Phase 4: verification and cutover | Partial | Real DB tests and reports pass; store pilot and release gates pending |
@@ -81,6 +81,7 @@ Initial rollout: **one Main Counter drawer, normally one daily session**, multip
 8. One active OPEN/CLOSING session per drawer. CLOSED never reopens in release 1. Manager-authorized supplemental same-date session may follow a close, linked to retained custody.
 9. Local drafts may survive offline; financial posting/approval/close requires server confirmation.
 10. Register-first cashier workspace, guided close and responsive web; no charts/full treasury expansion.
+11. **Current hardware is a manual cash box:** employees count notes and coins themselves. `cash_drawer` is a logical custody location, not a connected device. `MANUAL_CASH_BOX` is the default hardware mode; `ELECTRONIC_DRAWER` is reserved for a later integration and must not imply automatic counting today.
 
 ## 5. Architecture and Domain Model
 
@@ -124,7 +125,7 @@ New names below are proposals; existing source IDs/types must be confirmed again
 
 | Table | Required fields / constraints |
 |---|---|
-| cash_drawer | drawer_id PK, unique code, name, active, created_by/at, modified_by/at |
+| cash_drawer | drawer_id PK, unique code, name, active, hardware_mode (`MANUAL_CASH_BOX` default or future `ELECTRONIC_DRAWER`), created_by/at, modified_by/at |
 | cash_drawer_session | session_id PK, unique session_code, drawer FK, business_date, custodian employee FK, OPEN/CLOSING/CLOSED, opening_amount/count/source metadata, prior_session FK, version, last_sequence, protected count window/expiry, opened/closing/closed actor/timestamps, final_count/reviewer; partial unique drawer WHERE OPEN or CLOSING |
 | cash_drawer_movement | movement_id PK, session FK, unique session+sequence, IN/OUT, positive amount, category, description, actor, counterparty, occurred_at/recorded_at, late_reason, canonical source_event_key unique, request_id unique, reversal_of nullable unique self-FK, typed customer_payment/invoice_payment/expense/AP/refund/transfer/advance links, method FK; typed-source consistency checks |
 | cash_count | count_id PK, session FK, OPENING/MIDDAY/CLOSING, DRAFT/SUBMITTED/INVALIDATED, cutoff sequence/version, server expected/counted/variance, counter, notes, started/submitted/invalidated timestamps; submitted snapshots immutable |
@@ -237,7 +238,7 @@ The remaining §6–9 checks are release work, not deferred features.
 
 ## 11. Files Touched So Far
 
-- `database/migrations/20261007_01_cash_drawer_core.sql`, `_02_cash_drawer_posting_guards.sql`, `_03_cash_request_complete.sql`: schema, guards, roles, request completion.
+- `database/migrations/20261007_01_cash_drawer_core.sql`, `_02_cash_drawer_posting_guards.sql`, `_03_cash_request_complete.sql`, `_04_cash_drawer_hardware_mode.sql`: schema, guards, roles, request completion and optional hardware mode.
 - `packages/api/services/cashDrawerService.js`, `packages/api/routes/cashDrawerRoutes.js`, `packages/api/index.js`: ledger, custody and API.
 - Source hooks in invoice, payment, payment method, staged sale, exchange, refund, AP, and expense routes/services.
 - `packages/web/src/pages/CashDrawerPage.jsx`, `components/cashDrawer/CashSessionBar.jsx`, `api.js`, `MainLayout.jsx`, navigation, expense and AP forms: connected workspace and source funding.
@@ -246,20 +247,21 @@ The remaining §6–9 checks are release work, not deferred features.
 
 ## 12. Verification Commands, Results and Access Limits
 
-Passing on 2026-10-07: API lint (0 errors, 16 existing warnings), web lint (0 errors, 843 existing warnings), web production build, Node syntax checks, `git diff --check`. The three migrations applied to a schema-only clone named `codex_cash_drawer_verify_20261007`; two direct real-PostgreSQL tests passed:
+Passing on 2026-10-07: API lint (0 errors, 16 existing warnings), web lint (0 errors, 843 existing warnings), web production build, Node syntax checks, `git diff --check`. The four migrations applied to a schema-only clone named `codex_cash_drawer_verify_20261007`; two direct real-PostgreSQL tests passed:
 
 ```
 DB_HOST=localhost CASH_DRAWER_TEST_DB=codex_cash_drawer_verify_20261007 node packages/api/tests/cashDrawer_db_test.js
 DB_HOST=localhost CASH_DRAWER_TEST_DB=codex_cash_drawer_verify_20261007 node packages/api/tests/cashDrawerRoutes_db_test.js
 ```
 
-The disposable database has test records and may be dropped after review. On 2026-10-07, a 2.9 MB backup was saved to ignored `backups/cash-drawer-pretest-20261007.dump`, then all three migrations were applied to the normal **development** database (216 applied, 0 pending; checksums verified). Production was not migrated. The tests cover centavos, cash/card exclusion, notebook coverage, count cutoff, immutability, source retry conflict, HTTP idempotency, independent review, close, report export and retained opening. They do **not** establish the full §9 matrix, a store-day pilot, card terminal batch gate, benchmark, backup restore, or owner signoff.
+The disposable database has test records and may be dropped after review. On 2026-10-07, a 2.9 MB backup was saved to ignored `backups/cash-drawer-pretest-20261007.dump`, then the first three migrations were applied to the normal **development** database. A second 3.0 MB backup at `backups/cash-box-hardware-pretest-20261007.dump` preceded migration `_04`. Development now has 217 applied migrations, no pending migrations and verified checksums; `MAIN_COUNTER` is `MANUAL_CASH_BOX`. Production was not migrated. The tests cover centavos, cash/card exclusion, notebook coverage, count cutoff, immutability, source retry conflict, HTTP idempotency, independent review, close, report export, retained opening and the manual hardware default. They do **not** establish the full §9 matrix, a store-day pilot, card terminal batch gate, benchmark, backup restore, or owner signoff.
 
 `database/initial_schema.sql` was not changed: it predates later source-table migrations on which the new FK schema depends. Consolidate the baseline after a full migration replay rather than inserting tables before their dependencies. The ignored local development `.env` now has `ENABLE_CASH_DRAWER=true`; the backend was recreated and reports the flag loaded. Unauthenticated direct API and Vite proxy requests changed from 503 to 401. An authenticated read-only admin smoke returned HTTP 200 and one Main Counter drawer with zero sessions. Backend health passed. Production deployment and feature enablement remain pending.
 
 ## 13. Change Log
 
 - 2026-10-07: Backed up and migrated the development database, enabled the ignored local flag, and verified authenticated API reads and the web proxy.
+- 2026-10-07: Confirmed the store uses a manual cash box; reserved electronic drawer mode for future integration, updated UI language, and verified migration `_04` in disposable and development databases.
 - 2026-10-07: Implemented schema, posting/API and connected web phases in separate commits; verified disposable PostgreSQL tests and build; recorded remaining rollout gates.
 
 

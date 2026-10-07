@@ -237,6 +237,7 @@ export default function CashDrawerPage({ user, onNavigate }) {
     };
 
     const latest = session?.latest_count;
+    const selectedDrawer = drawers.find(item => String(item.drawer_id) === String(drawerId));
     const stale = latest && Number(session.last_sequence) > Number(latest.cutoff_sequence);
     const outflow = session?.total_out || '0.00';
     const closingCount = counts.find(item => item.kind === 'CLOSING' && item.status === 'SUBMITTED');
@@ -246,10 +247,16 @@ export default function CashDrawerPage({ user, onNavigate }) {
 
     return <div className="mx-auto max-w-7xl space-y-5 text-slate-900 dark:text-slate-100">
         <div className="flex flex-wrap items-start justify-between gap-3">
-            <div><h1 className="text-2xl font-bold">Cash Drawer</h1><p className="text-sm text-slate-500 dark:text-slate-400">Track the cash physically held at the counter · {lastRefresh ? `Refreshed ${formatTime(lastRefresh)}` : 'Waiting for server'}</p></div>
+            <div><h1 className="text-2xl font-bold">Cash Box</h1><p className="text-sm text-slate-500 dark:text-slate-400">Track the notes and coins held at the counter · {lastRefresh ? `Refreshed ${formatTime(lastRefresh)}` : 'Waiting for server'}</p></div>
             <div className="flex gap-2"><select aria-label="Drawer" className={field} value={drawerId} onChange={event => reload(event.target.value)}>{drawers.map(drawer => <option key={drawer.drawer_id} value={drawer.drawer_id}>{drawer.name}</option>)}</select><button className={button} onClick={() => reload()} disabled={busy}>Refresh</button></div>
         </div>
         {error && <div role="alert" className="rounded border border-red-300 bg-red-50 p-3 text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-200">{error}</div>}
+        {selectedDrawer && <div className="rounded-lg border border-slate-200 bg-white p-3 text-sm dark:border-slate-800 dark:bg-slate-900">
+            <strong>Current setup: {selectedDrawer.hardware_mode === 'ELECTRONIC_DRAWER' ? 'Electronic drawer' : 'Manual cash box'}</strong>
+            <p className="mt-1 text-slate-600 dark:text-slate-300">{selectedDrawer.hardware_mode === 'ELECTRONIC_DRAWER'
+                ? 'Electronic drawer mode is reserved for future device integration. Continue to count physical cash manually until a connected device is installed and verified.'
+                : 'FBS records cash movements and compares them with your manual denomination counts. No electronic drawer hardware is connected; that option is reserved for a future setup.'}</p>
+        </div>}
         {!session && drawerId && <Panel title="Start here: open the counter drawer">
             <ol className="list-inside list-decimal space-y-2 text-sm text-slate-700 dark:text-slate-200">
                 <li>Count the notes and coins currently in the drawer below. Enter the same total as the opening source amount.</li>
