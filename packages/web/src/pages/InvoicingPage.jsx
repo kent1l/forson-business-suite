@@ -14,6 +14,7 @@ import Combobox from '../components/ui/Combobox';
 import CustomerForm from '../components/forms/CustomerForm';
 import PartForm from '../components/forms/PartForm';
 import SplitPaymentModal from '../components/ui/SplitPaymentModal';
+import NotebookCoverageFields from '../components/cashDrawer/NotebookCoverageFields';
 import MathExpressionInput from '../components/ui/MathExpressionInput';
 import SavedSalesPanel from '../components/pos/SavedSalesPanel';
 import { useSettings } from '../contexts/SettingsContext';
@@ -28,6 +29,8 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
     const [lines, setLines] = useState([]);
     const [selectedCustomer, setSelectedCustomer] = useState('');
     const [paymentMethod, setPaymentMethod] = useState('');
+    const [notebookReceiptId, setNotebookReceiptId] = useState('');
+    const [notebookCoveredAmount, setNotebookCoveredAmount] = useState('');
     const [physicalReceiptNo, setPhysicalReceiptNo] = useState('');
     const [isSplitPaymentModalOpen, setIsSplitPaymentModalOpen] = useState(false);
     const [terms, setTerms] = useState('');
@@ -446,12 +449,18 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
 
         // Set amount_paid based on payment method  
         const amount_paid = paymentMethod.toLowerCase() === 'cash' ? total : 0;
+        if (notebookReceiptId && (!(Number(notebookCoveredAmount) > 0) || Number(notebookCoveredAmount) > amount_paid)) {
+            toast.error('Enter valid notebook coverage no more than the cash payment.');
+            return;
+        }
 
         const payload = {
             customer_id: selectedCustomer,
             employee_id: user.employee_id,
             payment_method: paymentMethod,
             amount_paid: amount_paid,
+            ...(notebookReceiptId && amount_paid > 0 ? { notebook_receipt_id: notebookReceiptId,
+                notebook_covered_amount: Number(notebookCoveredAmount) } : {}),
             terms: terms,
             payment_terms_days: parsePaymentTermsDays(terms),
             physical_receipt_no: formatPhysicalReceiptNumber(physicalReceiptNo) || null,
@@ -472,6 +481,8 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
             loading: 'Posting invoice...',
             success: (response) => {
                 setLines([]);
+                setNotebookReceiptId('');
+                setNotebookCoveredAmount('');
                 setSelectedCustomer('');
                 setTerms(defaultPaymentTermsDays);
                 setLastSavedDraftSignature(null);
@@ -485,7 +496,7 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
                 return 'Failed to create invoice.';
             },
         });
-    }, [selectedCustomer, lines, customers, terms, settings, defaultPaymentTermsDays, paymentMethod, physicalReceiptNo, selectedTaxRate, user, total, showViewInvoiceToast]);
+    }, [selectedCustomer, lines, customers, terms, settings, defaultPaymentTermsDays, paymentMethod, physicalReceiptNo, selectedTaxRate, user, total, showViewInvoiceToast, notebookReceiptId, notebookCoveredAmount]);
 
     // Handle split payment confirmation for invoicing
     const handleConfirmSplitPayment = async (payments, physicalReceiptNo, { employeeId } = {}) => {
@@ -659,6 +670,9 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
                             <select value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)} className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 rounded-lg shadow-xs focus:ring-primary-500 focus:border-primary-500 text-sm">
                                 {paymentMethods.map(method => <option key={method} value={method}>{method}</option>)}
                             </select>
+                            {paymentMethod.toLowerCase() === 'cash' && <NotebookCoverageFields amount={total}
+                                receiptId={notebookReceiptId} coveredAmount={notebookCoveredAmount}
+                                onChange={(id, amount) => { setNotebookReceiptId(id); setNotebookCoveredAmount(amount); }} />}
                         </div>
                     )}
                     <div>

@@ -55,11 +55,13 @@ const AccountsPayablePage = ({ onNavigate, pageState }) => {
     const { hasPermission } = useAuth();
     const [activeTab, setActiveTab] = useState('overview');
     const [presetPaymentSupplier, setPresetPaymentSupplier] = useState(null);
+    const [focusPaymentId, setFocusPaymentId] = useState(pageState?.payment_id || null);
     // Lets a notification land on the tab where the alert is actionable, and lets
     // the expense guardrail hand a misfiled bill payment straight to the AP flow
     // that knows how to allocate it.
-    useDeepLink(pageState, ({ tab, recordPaymentFor }) => {
+    useDeepLink(pageState, ({ tab, recordPaymentFor, payment_id }) => {
         if (tab) setActiveTab(tab);
+        if (payment_id) { setActiveTab('payments'); setFocusPaymentId(payment_id); }
         if (recordPaymentFor?.supplier_id) {
             setPresetPaymentSupplier(recordPaymentFor);
             setIsRecordPaymentOpen(true);
@@ -105,6 +107,7 @@ const AccountsPayablePage = ({ onNavigate, pageState }) => {
 
     return (
         <div className="space-y-6">
+            {pageState?.cashBoxReturn && <button type="button" className="min-h-11 rounded border border-slate-300 px-3 text-sm dark:border-slate-700" onClick={() => onNavigate?.('cash_drawer', pageState.cashBoxReturn)}>Back to Cash Box</button>}
             <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div>
                     <h1 className="text-2xl md:text-3xl font-bold text-gray-900 dark:text-slate-100">Accounts Payable</h1>
@@ -159,7 +162,7 @@ const AccountsPayablePage = ({ onNavigate, pageState }) => {
                     <OverviewTab overview={overview} onOpenSupplier={handleOpenSupplier} />
                 )}
                 {activeTab === 'payments' && (
-                    <PaymentsRegisterTable refreshToken={paymentsRefreshToken} />
+                    <PaymentsRegisterTable refreshToken={paymentsRefreshToken} focusPaymentId={focusPaymentId} onClearFocus={() => setFocusPaymentId(null)} />
                 )}
             </ErrorBoundary>
 
