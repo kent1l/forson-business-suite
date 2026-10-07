@@ -73,7 +73,7 @@ async function currentBalance(client, session) {
 }
 
 async function postMovement(client, input) {
-  const { sessionId, direction, amount, category, description, counterparty, actorId, sourceEventKey,
+  const { sessionId, direction, amount, category, description, counterparty, physicalReference, actorId, sourceEventKey,
     requestId, occurredAt, lateReason, source = {}, expectedVersion, allowClosing = false, reversalOf } = input;
   if (!['IN', 'OUT'].includes(direction)) fail(400, 'INVALID_DIRECTION', 'Direction must be IN or OUT.');
   const amountCents = cents(amount, { positive: true });
@@ -94,14 +94,15 @@ async function postMovement(client, input) {
     `INSERT INTO cash_drawer_movement
        (session_id,sequence,direction,amount,balance_after,category,description,counterparty,actor_id,
         source_event_key,request_id,occurred_at,late_reason,customer_payment_id,invoice_payment_id,
-        expense_id,ap_payment_id,credit_note_id,method_id,reversal_of)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,COALESCE($12,now()),$13,$14,$15,$16,$17,$18,$19,$20)
+        expense_id,ap_payment_id,credit_note_id,method_id,reversal_of,physical_reference)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,COALESCE($12,now()),$13,$14,$15,$16,$17,$18,$19,$20,$21)
      RETURNING *`,
     [sessionId, Number(session.last_sequence) + 1, direction, amount, money(after),
       validText(category, 40, true), validText(description, 500, true), validText(counterparty, 200), actorId,
       sourceEventKey || null, requestId || null, occurredAt || null, validText(lateReason, 500),
       source.customerPaymentId || null, source.invoicePaymentId || null, source.expenseId || null,
-      source.apPaymentId || null, source.creditNoteId || null, source.methodId || null, reversalOf || null]
+      source.apPaymentId || null, source.creditNoteId || null, source.methodId || null, reversalOf || null,
+      validText(physicalReference, 120)]
   );
   await client.query('UPDATE cash_drawer_session SET last_sequence=last_sequence+1,version=version+1 WHERE session_id=$1', [sessionId]);
   return { ...rows[0], version: Number(session.version) + 1 };

@@ -94,6 +94,14 @@ router.get('/cash-drawers/custodians', protect, hasPermission('cash_drawer:open'
   } catch (error) { errorResponse(res, error); }
 });
 
+router.get('/cash-drawers/employees', protect, hasPermission('cash_drawer:view'), async (_req, res) => {
+  try {
+    const { rows } = await db.query(`SELECT employee_id,concat_ws(' ',first_name,last_name) AS name
+      FROM employee WHERE is_active=true ORDER BY first_name,last_name,employee_id`);
+    res.json({ data: rows });
+  } catch (error) { errorResponse(res, error); }
+});
+
 router.get('/cash-drawers/sessions', protect, hasPermission('cash_drawer:view'), async (req, res) => {
   try {
     const limit = Math.min(Math.max(Number(req.query.limit) || 25, 1), 100);
@@ -179,6 +187,24 @@ router.get('/cash-drawers/sessions/:id', protect, hasPermission('cash_drawer:vie
   } catch (error) { errorResponse(res, error); }
 });
 
+router.get('/cash-drawers/notebook-receipts', protect, hasPermission('cash_drawer:view'), async (_req, res) => {
+  try {
+    const { rows } = await db.query(`SELECT m.movement_id,m.session_id,m.sequence,m.physical_reference,m.description,
+      m.amount,m.recorded_at,s.business_date,d.name AS drawer_name,
+      (m.amount-COALESCE(SUM(l.amount_covered),0))::numeric(14,2) AS available_amount
+      FROM cash_drawer_movement m
+      JOIN cash_drawer_session s ON s.session_id=m.session_id
+      JOIN cash_drawer d ON d.drawer_id=s.drawer_id
+      LEFT JOIN cash_source_link l ON l.movement_id=m.movement_id
+      WHERE m.category='NOTEBOOK_RECEIPT' AND m.direction='IN' AND m.reversal_of IS NULL
+        AND NOT EXISTS (SELECT 1 FROM cash_drawer_movement r WHERE r.reversal_of=m.movement_id)
+      GROUP BY m.movement_id,s.business_date,d.name
+      HAVING m.amount-COALESCE(SUM(l.amount_covered),0)>0
+      ORDER BY m.recorded_at DESC LIMIT 200`);
+    res.json({ data: rows });
+  } catch (error) { errorResponse(res, error); }
+});
+
 router.get('/cash-drawers/sessions/:id/movements', protect, hasPermission('cash_drawer:view'), async (req, res) => {
   try {
     const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 100);
@@ -186,21 +212,36 @@ router.get('/cash-drawers/sessions/:id/movements', protect, hasPermission('cash_
     const direction = ['IN','OUT'].includes(req.query.direction) ? req.query.direction : null;
     const category = typeof req.query.category === 'string' && req.query.category.length <= 40 ? req.query.category : null;
     const search = typeof req.query.search === 'string' && req.query.search.length <= 100 ? req.query.search.trim() : null;
-    const { rows } = await db.query(`SELECT m.*,ip.invoice_id,cp.customer_id,ap.supplier_id
-      FROM cash_drawer_movement m
+    const operatorNumber = /^\d+$/.test(req.query.operator || '') ? Number(req.query.operator) : null;
+    const operator = Number.isSafeInteger(operatorNumber) && operatorNumber <= 2147483647 ? operatorNumber : null;
+    const source = ['AUTOMATIC','MANUAL','REVERSAL'].includes(req.query.source) ? req.query.source : null;
+    const timeField = req.query.time_field === 'occurred_at' ? 'occurred_at' : 'recorded_at';
+    const from = /^\d{4}-\d{2}-\d{2}$/.test(req.query.from || '') ? req.query.from : null;
+    const to = /^\d{4}-\d{2}-\d{2}$/.test(req.query.to || '') ? req.query.to : null;
+    const filters = `m.session_id=$1 AND ($2::text IS NULL OR m.direction=$2)
+      AND ($3::text IS NULL OR m.category=$3)
+      AND ($4::text IS NULL OR m.description ILIKE '%'||$4||'%' OR m.source_event_key ILIKE '%'||$4||'%'
+        OR m.physical_reference ILIKE '%'||$4||'%'
+        OR m.counterparty ILIKE '%'||$4||'%' OR concat_ws(' ',e.first_name,e.last_name) ILIKE '%'||$4||'%')
+      AND ($5::integer IS NULL OR m.actor_id=$5)
+      AND ($6::text IS NULL OR CASE $6 WHEN 'REVERSAL' THEN m.reversal_of IS NOT NULL
+        WHEN 'AUTOMATIC' THEN m.source_event_key IS NOT NULL AND m.reversal_of IS NULL
+        ELSE m.source_event_key IS NULL AND m.reversal_of IS NULL END)
+      AND ($7::date IS NULL OR (m.${timeField} AT TIME ZONE 'Asia/Manila')::date >= $7)
+      AND ($8::date IS NULL OR (m.${timeField} AT TIME ZONE 'Asia/Manila')::date <= $8)`;
+    const params = [req.params.id, direction, category, search, operator, source, from, to];
+    const joins = `FROM cash_drawer_movement m JOIN employee e ON e.employee_id=m.actor_id`;
+    const { rows } = await db.query(`SELECT m.*,COALESCE(ip.invoice_id,cn.invoice_id) AS invoice_id,i.invoice_number,i.invoice_date,cp.customer_id,ap.supplier_id,
+      concat_ws(' ',e.first_name,e.last_name) AS operator_name
+      ${joins}
       LEFT JOIN invoice_payments ip ON ip.payment_id=m.invoice_payment_id
+      LEFT JOIN credit_note cn ON cn.cn_id=m.credit_note_id
+      LEFT JOIN invoice i ON i.invoice_id=COALESCE(ip.invoice_id,cn.invoice_id)
       LEFT JOIN customer_payment cp ON cp.payment_id=m.customer_payment_id
       LEFT JOIN ap_payment ap ON ap.payment_id=m.ap_payment_id
-      WHERE m.session_id=$1 AND ($4::text IS NULL OR m.direction=$4)
-      AND ($5::text IS NULL OR m.category=$5)
-      AND ($6::text IS NULL OR m.description ILIKE '%'||$6||'%' OR m.source_event_key ILIKE '%'||$6||'%')
-      ORDER BY m.sequence DESC LIMIT $2 OFFSET $3`,
-      [req.params.id, limit, (page - 1) * limit, direction, category, search]);
-    const total = await db.query(`SELECT COUNT(*)::int AS count FROM cash_drawer_movement m
-      WHERE m.session_id=$1 AND ($2::text IS NULL OR m.direction=$2)
-      AND ($3::text IS NULL OR m.category=$3)
-      AND ($4::text IS NULL OR m.description ILIKE '%'||$4||'%' OR m.source_event_key ILIKE '%'||$4||'%')`,
-      [req.params.id, direction, category, search]);
+      WHERE ${filters}
+      ORDER BY m.sequence ASC LIMIT $9 OFFSET $10`, [...params, limit, (page - 1) * limit]);
+    const total = await db.query(`SELECT COUNT(*)::int AS count ${joins} WHERE ${filters}`, params);
     res.json({ data: rows, page, limit, total: total.rows[0].count });
   } catch (error) { errorResponse(res, error); }
 });
@@ -218,26 +259,31 @@ router.get('/cash-drawers/sessions/:id/counts', protect, hasPermission('cash_dra
 router.get('/cash-drawers/sessions/:id/custody', protect, hasPermission('cash_drawer:view'), async (req, res) => {
   try {
     const [transfers, advances] = await Promise.all([
-      db.query(`SELECT t.*,COALESCE((SELECT json_agg(e ORDER BY e.event_id) FROM cash_transfer_event e WHERE e.transfer_id=t.transfer_id),'[]'::json) AS events
-        FROM cash_transfer t WHERE t.session_id=$1 ORDER BY t.transfer_id DESC`, [req.params.id]),
-      db.query(`SELECT a.*,COALESCE((SELECT json_agg(e ORDER BY e.event_id) FROM cash_advance_event e WHERE e.advance_id=a.advance_id),'[]'::json) AS events
-        FROM cash_advance a WHERE a.session_id=$1 ORDER BY a.advance_id DESC`, [req.params.id]),
+      db.query(`SELECT t.*,concat_ws(' ',e.first_name,e.last_name) AS recipient_name,
+        COALESCE((SELECT json_agg(x ORDER BY x.event_id) FROM cash_transfer_event x WHERE x.transfer_id=t.transfer_id),'[]'::json) AS events
+        FROM cash_transfer t JOIN employee e ON e.employee_id=t.recipient_id WHERE t.session_id=$1 ORDER BY t.transfer_id DESC`, [req.params.id]),
+      db.query(`SELECT a.*,concat_ws(' ',e.first_name,e.last_name) AS employee_name,
+        COALESCE((SELECT json_agg(x ORDER BY x.event_id) FROM cash_advance_event x WHERE x.advance_id=a.advance_id),'[]'::json) AS events
+        FROM cash_advance a JOIN employee e ON e.employee_id=a.employee_id WHERE a.session_id=$1 ORDER BY a.advance_id DESC`, [req.params.id]),
     ]);
     res.json({ transfers: transfers.rows, advances: advances.rows });
   } catch (error) { errorResponse(res, error); }
 });
 
 router.post('/cash-drawers/sessions/:id/movements', protect, hasPermission('cash_drawer:move'), write(async (client, req) => {
-  const { direction, category, amount, description, counterparty, expected_version, occurred_at, late_reason } = req.body;
+  const { direction, category, amount, description, counterparty, physical_reference, expected_version, occurred_at, late_reason } = req.body;
   if (!['NOTEBOOK_RECEIPT','OTHER_RECEIPT','OWNER_DRAW','OTHER_RELEASE'].includes(category)) {
     cash.fail(400, 'INVALID_CATEGORY', 'Use an allowed manual cash category.');
   }
   if (['OWNER_DRAW','OTHER_RELEASE'].includes(category) && direction !== 'OUT') cash.fail(400, 'INVALID_DIRECTION', 'This category is an outflow.');
+  if (category === 'NOTEBOOK_RECEIPT' && !String(physical_reference || '').trim()) {
+    cash.fail(422, 'NOTEBOOK_REFERENCE_REQUIRED', 'Enter the notebook and page reference before recording cash.');
+  }
   const session = await cash.lockSession(client, req.params.id, { version: expected_version });
   if (direction === 'OUT') await requireApprovedRelease(client, { approvalId: req.body.approval_id, session, amount,
     action: 'MANUAL_RELEASE', actorId: req.user.employee_id });
   const movement = await cash.postMovement(client, { sessionId: req.params.id, direction, category, amount,
-    description, counterparty, actorId: req.user.employee_id, expectedVersion: expected_version,
+    description, counterparty, physicalReference: physical_reference, actorId: req.user.employee_id, expectedVersion: expected_version,
     occurredAt: occurred_at, lateReason: late_reason, requestId: req.get('Idempotency-Key') });
   if (direction === 'OUT') await useApproval(client, req.body.approval_id, movement.movement_id);
   await cash.audit(client, { sessionId: req.params.id, targetType: 'MOVEMENT', targetId: movement.movement_id, action: 'POST', actorId: req.user.employee_id, requestId: req.get('Idempotency-Key') });
@@ -599,15 +645,22 @@ router.post('/cash-drawers/sessions/:id/close', protect, hasPermission('cash_dra
 
 router.get('/cash-drawers/sessions/:id/report', protect, hasPermission('cash_drawer:export'), async (req, res) => {
   try {
-    const { rows } = await db.query('SELECT report_snapshot,closed_at,custodian_id,reviewer_id FROM cash_session_close WHERE session_id=$1', [req.params.id]);
+    const { rows } = await db.query(`SELECT c.report_snapshot,c.closed_at,
+      concat_ws(' ',owner.first_name,owner.last_name) AS custodian_name,
+      concat_ws(' ',reviewer.first_name,reviewer.last_name) AS reviewer_name
+      FROM cash_session_close c JOIN employee owner ON owner.employee_id=c.custodian_id
+      LEFT JOIN employee reviewer ON reviewer.employee_id=c.reviewer_id WHERE c.session_id=$1`, [req.params.id]);
     if (!rows.length) return res.status(404).json({ message: 'Closed report not found.' });
     const snapshot = rows[0].report_snapshot;
+    const generatedAt = new Date().toISOString();
     const filename = `cash-drawer-${req.params.id}`;
     if (req.query.format === 'csv') {
-      const movements = await db.query('SELECT sequence,recorded_at,category,description,direction,amount,balance_after FROM cash_drawer_movement WHERE session_id=$1 ORDER BY sequence', [req.params.id]);
+      const movements = await db.query('SELECT sequence,recorded_at,category,description,physical_reference,direction,amount,balance_after FROM cash_drawer_movement WHERE session_id=$1 ORDER BY sequence', [req.params.id]);
       const lines = [['Field','Value'], ...Object.entries(snapshot).map(([key, value]) => [key, value]),
-        [], ['Sequence','Recorded at','Category','Description','Direction','Amount','Balance after'],
-        ...movements.rows.map(m => [m.sequence, m.recorded_at?.toISOString(), m.category, m.description, m.direction, m.amount, m.balance_after])];
+        ['Custodian', rows[0].custodian_name], ['Reviewer', rows[0].reviewer_name || 'None'],
+        ['Closed at', rows[0].closed_at.toISOString()], ['Revision', '1'], ['Generated at', generatedAt],
+        [], ['Sequence','Recorded at','Category','Description','Physical reference','Direction','Amount','Balance after'],
+        ...movements.rows.map(m => [m.sequence, m.recorded_at?.toISOString(), m.category, m.description, m.physical_reference, m.direction, m.amount, m.balance_after])];
       res.set('Content-Type', 'text/csv; charset=utf-8');
       res.set('Content-Disposition', `attachment; filename="${filename}.csv"`);
       return res.send(`\uFEFF${lines.map(row => row.map(csvCell).join(',')).join('\r\n')}\r\n`);
@@ -618,9 +671,11 @@ router.get('/cash-drawers/sessions/:id/report', protect, hasPermission('cash_dra
       const page = pdf.addPage([595, 842]);
       page.drawText('Cash Drawer Daily Reconciliation', { x: 45, y: 790, size: 17, font });
       const lines = Object.entries(snapshot).map(([key, value]) => `${key.replaceAll('_', ' ')}: ${value}`);
-      lines.push(`Custodian ID: ${rows[0].custodian_id}`, `Reviewer ID: ${rows[0].reviewer_id || 'none'}`,
+      lines.push(`Custodian: ${rows[0].custodian_name}`, `Reviewer: ${rows[0].reviewer_name || 'none'}`,
         `Closed at: ${rows[0].closed_at.toISOString()}`);
       lines.forEach((line, index) => page.drawText(line.slice(0, 95), { x: 45, y: 755 - index * 23, size: 11, font }));
+      page.drawText(`${snapshot.session_code}  |  Revision 1  |  Generated ${generatedAt}`.slice(0, 100),
+        { x: 45, y: 34, size: 8, font });
       res.set('Content-Type', 'application/pdf');
       res.set('Content-Disposition', `attachment; filename="${filename}.pdf"`);
       return res.send(Buffer.from(await pdf.save()));

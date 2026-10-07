@@ -45,6 +45,10 @@ async function run() {
     .set({ Authorization: `Bearer ${actorToken}` });
   assert.equal(people.status, 200);
   assert(people.body.data.some(person => person.employee_id === actor.employee_id && person.name === 'Drawer Operator'));
+  const recipients = await request(app).get('/api/cash-drawers/employees')
+    .set({ Authorization: `Bearer ${actorToken}` });
+  assert.equal(recipients.status, 200);
+  assert(recipients.body.data.some(person => person.employee_id === reviewer.employee_id && person.name === 'Drawer Reviewer'));
   const date = manilaDateString();
   const opening = { business_date: date, custodian_id: actor.employee_id,
     opening_lines: [{ code: 'PHP_100', quantity: 1 }],
@@ -97,6 +101,7 @@ async function run() {
     .set({ Authorization: `Bearer ${actorToken}` });
   assert.equal(csv.status, 200);
   assert.match(csv.headers['content-type'], /text\/csv/);
+  assert.match(csv.text, /Generated at/);
   const pdf = await request(app).get(`/api/cash-drawers/sessions/${sessionId}/report?format=pdf`)
     .set({ Authorization: `Bearer ${actorToken}` });
   assert.equal(pdf.status, 200);
@@ -174,6 +179,29 @@ async function run() {
   const register = await request(app).get(`/api/cash-drawers/sessions/${next.body.data.session_id}/movements`)
     .set({ Authorization: `Bearer ${actorToken}` });
   assert.equal(register.body.data.length, 4, 'opening float must not appear as a receipt movement');
+  assert.deepEqual(register.body.data.map(row => Number(row.sequence)), [1, 2, 3, 4], 'register follows posting sequence');
+  const current = await request(app).get(`/api/cash-drawers/sessions/${activeSessionId}`)
+    .set({ Authorization: `Bearer ${actorToken}` });
+  const notebookBody = { direction: 'IN', category: 'NOTEBOOK_RECEIPT', amount: '1.00',
+    description: 'Notebook sale awaiting encoding', expected_version: current.body.data.version };
+  const missingReference = await request(app).post(`/api/cash-drawers/sessions/${activeSessionId}/movements`)
+    .set(auth(actorToken)).send(notebookBody);
+  assert.equal(missingReference.status, 422);
+  const physicalReference = `Notebook page ${Date.now()}`;
+  const notebookReceipt = await request(app).post(`/api/cash-drawers/sessions/${activeSessionId}/movements`)
+    .set(auth(actorToken)).send({ ...notebookBody, physical_reference: physicalReference });
+  assert.equal(notebookReceipt.status, 201, JSON.stringify(notebookReceipt.body));
+  assert.equal(notebookReceipt.body.data.physical_reference, physicalReference);
+  const notebookOptions = await request(app).get('/api/cash-drawers/notebook-receipts')
+    .set({ Authorization: `Bearer ${actorToken}` });
+  assert.equal(notebookOptions.status, 200, JSON.stringify(notebookOptions.body));
+  assert(notebookOptions.body.data.some(row => row.movement_id === notebookReceipt.body.data.movement_id &&
+    row.physical_reference === physicalReference && Number(row.available_amount) === 1));
+  const found = await request(app).get(`/api/cash-drawers/sessions/${activeSessionId}/movements`)
+    .query({ search: physicalReference, direction: 'IN', source: 'MANUAL', operator: actor.employee_id })
+    .set({ Authorization: `Bearer ${actorToken}` });
+  assert.equal(found.status, 200, JSON.stringify(found.body));
+  assert.deepEqual(found.body.data.map(row => row.movement_id), [notebookReceipt.body.data.movement_id]);
   process.stdout.write('PASS cash drawer HTTP idempotency, review, close, custody, reimbursement and retained opening\n');
 }
 

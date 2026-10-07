@@ -603,9 +603,11 @@ router.get('/ap/payment-methods', protect, hasPermission('ap:view'), async (req,
 // GET /ap/payments - Cross-supplier payment register
 router.get('/ap/payments', protect, hasPermission('ap:view'), async (req, res) => {
     try {
-        const { supplier_id, channel, limit } = req.query;
+        const { supplier_id, payment_id, channel, limit } = req.query;
+        if (payment_id && (!/^[1-9]\d*$/.test(payment_id) || Number(payment_id) > 2147483647)) return res.status(400).json({ message: 'Invalid supplier payment ID' });
         const payments = await apPaymentService.listPayments(db, {
             supplierId: supplier_id ? parseInt(supplier_id, 10) : null,
+            paymentId: payment_id ? parseInt(payment_id, 10) : null,
             channel,
             limit,
         });
