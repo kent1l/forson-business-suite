@@ -1,7 +1,7 @@
 # Cash Drawer & Reconciliation — Final Module Plan and Developer Handoff
 
 > **Forson Business Suite** | **Date:** 2026-10-07 (Asia/Manila) | **Branch inspected:** `cash-count-module`
-> **Status (2026-10-07):** Schema, atomic posting/API, and connected web workspace are implemented on `cash-count-module`. Disposable real-PostgreSQL tests pass. Deployment, pilot, complete source-path test matrix, card-batch gate, and performance targets remain unverified. `ENABLE_CASH_DRAWER` defaults off.
+> **Status (2026-10-07):** Schema, atomic posting/API, and connected web workspace are implemented on `cash-count-module`. Disposable real-PostgreSQL tests pass. Deployment, pilot, complete source-path test matrix, card-batch gate, and performance targets remain unverified. `ENABLE_CASH_DRAWER` is enabled only in the ignored local development `.env`; `.env.example` and production remain off.
 
 ## 0. Status at a Glance
 
@@ -9,11 +9,12 @@
 |---|---|---|
 | Product and custody rules | Design complete | §2–5 and UI companion doc |
 | Source discovery | Repository audit done | Operational pilot must verify every cash path |
-| Phase 1: schema and invariants | Implemented; disposable DB verified | Three migrations; baseline consolidation pending |
+| Phase 1: schema and invariants | Implemented; dev DB migrated | Three migrations applied and verified locally; baseline consolidation pending |
 | Phase 2: posting, integrations, API | Implemented; partially verified | Atomic source hooks and custody API; extend route/concurrency matrix |
 | Phase 3: connected web UI | Implemented; build verified | Live browser, accessibility and small-screen walkthrough pending |
 | Phase 4: verification and cutover | Partial | Real DB tests and reports pass; store pilot and release gates pending |
-| Production rollout | Not started | Keep feature flag off until §9 gates pass |
+| Development testing | Ready for supervised test entries | Main Counter seeded, API/auth/proxy smoke passed; no sessions yet |
+| Production rollout | Not started | Keep production feature flag off until §9 gates pass |
 | Full treasury, offline posting, native mobile | Deferred | §10 |
 
 Commits: `c554039` (schema), `3e6dcc9` (posting guards), `68d8cca` (backend), `701c9a8` (web). Verify against current Git history before proceeding.
@@ -252,12 +253,13 @@ DB_HOST=localhost CASH_DRAWER_TEST_DB=codex_cash_drawer_verify_20261007 node pac
 DB_HOST=localhost CASH_DRAWER_TEST_DB=codex_cash_drawer_verify_20261007 node packages/api/tests/cashDrawerRoutes_db_test.js
 ```
 
-The disposable database has test records and may be dropped after review. Migrations were **not** applied to the normal development or production database. The tests cover centavos, cash/card exclusion, notebook coverage, count cutoff, immutability, source retry conflict, HTTP idempotency, independent review, close, report export and retained opening. They do **not** establish the full §9 matrix, a store-day pilot, card terminal batch gate, benchmark, backup restore, or owner signoff.
+The disposable database has test records and may be dropped after review. On 2026-10-07, a 2.9 MB backup was saved to ignored `backups/cash-drawer-pretest-20261007.dump`, then all three migrations were applied to the normal **development** database (216 applied, 0 pending; checksums verified). Production was not migrated. The tests cover centavos, cash/card exclusion, notebook coverage, count cutoff, immutability, source retry conflict, HTTP idempotency, independent review, close, report export and retained opening. They do **not** establish the full §9 matrix, a store-day pilot, card terminal batch gate, benchmark, backup restore, or owner signoff.
 
-`database/initial_schema.sql` was not changed: it predates later source-table migrations on which the new FK schema depends. Consolidate the baseline after a full migration replay rather than inserting tables before their dependencies. Production deployment and feature enablement remain pending.
+`database/initial_schema.sql` was not changed: it predates later source-table migrations on which the new FK schema depends. Consolidate the baseline after a full migration replay rather than inserting tables before their dependencies. The ignored local development `.env` now has `ENABLE_CASH_DRAWER=true`; the backend was recreated and reports the flag loaded. Unauthenticated direct API and Vite proxy requests changed from 503 to 401. An authenticated read-only admin smoke returned HTTP 200 and one Main Counter drawer with zero sessions. Backend health passed. Production deployment and feature enablement remain pending.
 
 ## 13. Change Log
 
+- 2026-10-07: Backed up and migrated the development database, enabled the ignored local flag, and verified authenticated API reads and the web proxy.
 - 2026-10-07: Implemented schema, posting/API and connected web phases in separate commits; verified disposable PostgreSQL tests and build; recorded remaining rollout gates.
 
 
