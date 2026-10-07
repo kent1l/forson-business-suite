@@ -358,7 +358,9 @@ router.post('/cash-drawers/advances/:id/events', protect, hasPermission('cash_dr
     COUNT(*) FILTER(WHERE kind='SETTLEMENT') AS settled FROM cash_advance_event WHERE advance_id=$1`, [advance.advance_id]);
   const totals = sums.rows[0];
   if (Number(totals.settled)) cash.fail(409, 'ADVANCE_SETTLED', 'Advance is already settled.');
-  const outstanding = cash.cents(advance.amount) + cash.cents(totals.reimbursed) - cash.cents(totals.consumed) - cash.cents(totals.returned);
+  // A reimbursement repays a separately employee-funded source. It does not
+  // give the employee more of the original advance to account for.
+  const outstanding = cash.cents(advance.amount) - cash.cents(totals.consumed) - cash.cents(totals.returned);
   const eventAmount = kind === 'SETTLEMENT' ? 0n : cash.cents(amount, { positive: true });
   if (kind === 'SETTLEMENT' && outstanding !== 0n) cash.fail(422, 'ADVANCE_OUTSTANDING', 'Advance still has outstanding custody.');
   if (['CONSUMPTION','RETURN'].includes(kind) && eventAmount > outstanding) cash.fail(422, 'ADVANCE_OVER_SETTLED', 'Amount exceeds outstanding custody.');
@@ -366,9 +368,23 @@ router.post('/cash-drawers/advances/:id/events', protect, hasPermission('cash_dr
   if (kind === 'REIMBURSEMENT') {
     if (Number(Boolean(expense_id)) + Number(Boolean(ap_payment_id)) !== 1) cash.fail(422, 'SOURCE_REQUIRED', 'Reimbursement needs one verified expense or supplier payment.');
     const source = expense_id
-      ? await client.query('SELECT amount FROM expense WHERE expense_id=$1 AND is_void=false', [expense_id])
-      : await client.query("SELECT amount FROM ap_payment WHERE payment_id=$1 AND pdc_status='CLEARED'", [ap_payment_id]);
-    if (!source.rowCount || eventAmount > cash.cents(source.rows[0].amount)) cash.fail(422, 'INVALID_REIMBURSEMENT', 'Reimbursement exceeds the verified source payment.');
+      ? await client.query(`SELECT e.amount,pm.type AS method_type,e.payment_method_text FROM expense e
+          LEFT JOIN payment_methods pm ON pm.method_id=e.payment_method_id
+          WHERE e.expense_id=$1 AND e.is_void=false FOR UPDATE OF e`, [expense_id])
+      : await client.query(`SELECT p.amount,pm.type AS method_type,p.pdc_status FROM ap_payment p
+          LEFT JOIN payment_methods pm ON pm.method_id=p.method_id
+          WHERE p.payment_id=$1 FOR UPDATE OF p`, [ap_payment_id]);
+    const paid = source.rows[0];
+    const physicalCash = paid && (paid.method_type === 'cash' || (expense_id && !paid.method_type && /^cash$/i.test(paid.payment_method_text || '')));
+    if (!physicalCash || (ap_payment_id && paid.pdc_status !== 'CLEARED') || eventAmount !== cash.cents(paid.amount)) {
+      cash.fail(422, 'INVALID_REIMBURSEMENT', 'Reimbursement must match a verified employee-paid cash source.');
+    }
+    const alreadyDrawerFunded = await client.query(`SELECT 1 FROM cash_drawer_movement
+      WHERE ${expense_id ? 'expense_id' : 'ap_payment_id'}=$1`, [expense_id || ap_payment_id]);
+    if (alreadyDrawerFunded.rowCount) cash.fail(409, 'ALREADY_DRAWER_FUNDED', 'Source was already paid from a drawer.');
+    const alreadyAdvanceFunded = await client.query(`SELECT 1 FROM cash_advance_event
+      WHERE ${expense_id ? 'expense_id' : 'ap_payment_id'}=$1`, [expense_id || ap_payment_id]);
+    if (alreadyAdvanceFunded.rowCount) cash.fail(409, 'ALREADY_ADVANCE_FUNDED', 'Source is already linked to an advance.');
     const session = await cash.lockSession(client, targetSessionId);
     await requireApprovedRelease(client, { approvalId: req.body.approval_id, session, amount, action: 'REIMBURSEMENT', actorId: req.user.employee_id });
   }
@@ -385,7 +401,7 @@ router.post('/cash-drawers/advances/:id/events', protect, hasPermission('cash_dr
     VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
   [advance.advance_id, kind, cash.money(eventAmount), expense_id || null, ap_payment_id || null,
     movement?.movement_id || null, req.user.employee_id, req.get('Idempotency-Key'), cash.validText(notes, 500)]);
-  return [201, { data: rows[0], movement, outstanding: cash.money(kind === 'REIMBURSEMENT' ? outstanding + eventAmount : outstanding - eventAmount) }];
+  return [201, { data: rows[0], movement, outstanding: cash.money(kind === 'RETURN' ? outstanding - eventAmount : outstanding) }];
 }));
 
 router.post('/cash-drawers/movements/:id/reverse', protect, hasPermission('cash_drawer:correct'), write(async (client, req) => {

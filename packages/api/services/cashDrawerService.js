@@ -280,7 +280,7 @@ async function consumeAdvance(client, { advanceId, kind, sourceId, actorId }) {
     COUNT(*) FILTER(WHERE kind='SETTLEMENT') AS settled FROM cash_advance_event WHERE advance_id=$1`, [advanceId]);
   const t = totals.rows[0];
   if (Number(t.settled)) fail(409, 'ADVANCE_SETTLED', 'Advance is already settled.');
-  const available = cents(advance.rows[0].amount) + cents(t.reimbursed) - cents(t.consumed) - cents(t.returned);
+  const available = cents(advance.rows[0].amount) - cents(t.consumed) - cents(t.returned);
   if (cents(source.amount) > available) fail(422, 'ADVANCE_INSUFFICIENT', 'Advance has insufficient unspent cash.');
   const result = await client.query(`INSERT INTO cash_advance_event
     (advance_id,kind,amount,expense_id,ap_payment_id,actor_id,request_id,notes)

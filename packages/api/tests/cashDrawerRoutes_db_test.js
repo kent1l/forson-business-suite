@@ -101,10 +101,63 @@ async function run() {
     opening_sources: [{ kind: 'PRIOR_RETAINED', amount: '40.00' }, { kind: 'FRESH_FLOAT', amount: '10.00' }] };
   const next = await request(app).post(`/api/cash-drawers/${drawerId}/sessions`).set(auth(actorToken)).send(nextOpening);
   assert.equal(next.status, 201, JSON.stringify(next.body));
+  const activeSessionId = next.body.data.session_id;
+  const approvedRelease = async (action, amount, version) => {
+    const asked = await request(app).post('/api/cash-drawers/approvals').set(auth(actorToken))
+      .send({ session_id: activeSessionId, action, amount, expected_version: version, reason: 'Verified cash box release' });
+    assert.equal(asked.status, 201, JSON.stringify(asked.body));
+    const reviewed = await request(app).post(`/api/cash-drawers/approvals/${asked.body.data.approval_id}/decision`)
+      .set(auth(reviewerToken)).send({ decision: 'APPROVED' });
+    assert.equal(reviewed.status, 200, JSON.stringify(reviewed.body));
+    return asked.body.data.approval_id;
+  };
+  const advanceApproval = await approvedRelease('ADVANCE', '10.00', 0);
+  const advance = await request(app).post(`/api/cash-drawers/sessions/${activeSessionId}/advances`)
+    .set(auth(actorToken)).send({ employee_id: reviewer.employee_id, purpose: 'Office supplies', amount: '10.00',
+      expected_version: 0, approval_id: advanceApproval });
+  assert.equal(advance.status, 201, JSON.stringify(advance.body));
+  const category = await db.query('INSERT INTO expense_category(category_name) VALUES($1) RETURNING category_id', [`Drawer reimbursement ${Date.now()}`]);
+  const cashMethod = await db.query("INSERT INTO payment_methods(code,name,type) VALUES($1,'Drawer test cash','cash') RETURNING method_id", [`drawer_cash_${Date.now()}`]);
+  const cardMethod = await db.query("INSERT INTO payment_methods(code,name,type) VALUES($1,'Drawer test card','card') RETURNING method_id", [`drawer_card_${Date.now()}`]);
+  const expense = await db.query(`INSERT INTO expense(expense_date,category_id,amount,payment_method_id,created_by)
+    VALUES(CURRENT_DATE,$1,'5.00',$2,$3),(CURRENT_DATE,$1,'5.00',$4,$3) RETURNING expense_id`,
+  [category.rows[0].category_id, cashMethod.rows[0].method_id, actor.employee_id, cardMethod.rows[0].method_id]);
+  const reimbursementApproval = await approvedRelease('REIMBURSEMENT', '5.00', 1);
+  const invalidReimbursement = await request(app).post(`/api/cash-drawers/advances/${advance.body.data.advance_id}/events`)
+    .set(auth(actorToken)).send({ kind: 'REIMBURSEMENT', amount: '5.00', expense_id: expense.rows[1].expense_id,
+      receiving_session_id: activeSessionId, approval_id: reimbursementApproval });
+  assert.equal(invalidReimbursement.status, 422, JSON.stringify(invalidReimbursement.body));
+  const reimbursement = await request(app).post(`/api/cash-drawers/advances/${advance.body.data.advance_id}/events`)
+    .set(auth(actorToken)).send({ kind: 'REIMBURSEMENT', amount: '5.00', expense_id: expense.rows[0].expense_id,
+      receiving_session_id: activeSessionId, approval_id: reimbursementApproval });
+  assert.equal(reimbursement.status, 201, JSON.stringify(reimbursement.body));
+  assert.equal(reimbursement.body.outstanding, '10.00', 'employee-paid expense must not inflate advance custody');
+  const duplicateReimbursement = await request(app).post(`/api/cash-drawers/advances/${advance.body.data.advance_id}/events`)
+    .set(auth(actorToken)).send({ kind: 'REIMBURSEMENT', amount: '5.00', expense_id: expense.rows[0].expense_id,
+      receiving_session_id: activeSessionId, approval_id: reimbursementApproval });
+  assert.equal(duplicateReimbursement.status, 409, JSON.stringify(duplicateReimbursement.body));
+  const transferApproval = await approvedRelease('TRANSFER', '10.00', 2);
+  const transfer = await request(app).post(`/api/cash-drawers/sessions/${activeSessionId}/transfers`)
+    .set(auth(actorToken)).send({ amount: '10.00', destination: 'Store safe', recipient_id: reviewer.employee_id,
+      expected_version: 2, approval_id: transferApproval });
+  assert.equal(transfer.status, 201, JSON.stringify(transfer.body));
+  const event = (token, stage, amount, extra = {}) => request(app)
+    .post(`/api/cash-drawers/transfers/${transfer.body.data.transfer_id}/events`).set(auth(token))
+    .send({ stage, amount, evidence: 'Signed test receipt', ...extra });
+  const acknowledged = await event(reviewerToken, 'ACKNOWLEDGED', '10.00');
+  assert.equal(acknowledged.status, 201, JSON.stringify(acknowledged.body));
+  const returned = await event(actorToken, 'RETURNED', '4.00', { receiving_session_id: activeSessionId });
+  assert.equal(returned.status, 201, JSON.stringify(returned.body));
+  const deposited = await event(actorToken, 'DEPOSITED', '6.00');
+  assert.equal(deposited.status, 201, JSON.stringify(deposited.body));
+  const overDeposited = await event(actorToken, 'DEPOSITED', '0.01');
+  assert.equal(overDeposited.status, 422, JSON.stringify(overDeposited.body));
+  const overReturned = await event(actorToken, 'RETURNED', '0.01', { receiving_session_id: activeSessionId });
+  assert.equal(overReturned.status, 422, JSON.stringify(overReturned.body));
   const register = await request(app).get(`/api/cash-drawers/sessions/${next.body.data.session_id}/movements`)
     .set({ Authorization: `Bearer ${actorToken}` });
-  assert.equal(register.body.data.length, 0, 'opening float must not appear as a receipt movement');
-  process.stdout.write('PASS cash drawer HTTP idempotency, independent review, close, reports and retained opening\n');
+  assert.equal(register.body.data.length, 4, 'opening float must not appear as a receipt movement');
+  process.stdout.write('PASS cash drawer HTTP idempotency, review, close, custody, reimbursement and retained opening\n');
 }
 
 run().catch(error => { console.error(error); process.exitCode = 1; });
