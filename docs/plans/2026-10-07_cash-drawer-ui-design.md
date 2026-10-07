@@ -1,7 +1,7 @@
 # Cash Drawer — Final UI Design and Developer Handoff
 
 > **Forson Business Suite** | **Date:** 2026-10-07 (Asia/Manila) | **Branch inspected:** `cash-count-module`
-> **Status (2026-10-07):** Connected React workspace is implemented and enabled in local development; web lint/build pass. The store uses a manual cash box. Electronic drawer integration is reserved for future hardware. Browser role walkthrough and store acceptance remain pending; consult the companion implementation plan for current release gates.
+> **Status (2026-10-07):** Connected React workspace and API refinements are implemented in local development. Desktop/mobile browser smoke with isolated API fixtures, web lint/build, and disposable PostgreSQL integration checks pass. Live role walkthrough and store acceptance remain pending; consult the companion implementation plan for release gates.
 
 ## 0. Status at a Glance
 
@@ -10,7 +10,9 @@
 | Information architecture and cashier workspace | Implemented in React | §4–6; live navigation label is Cash Box |
 | Current hardware | Manual cash box | Staff physically count notes and coins; no connected drawer |
 | Future hardware option | Reserved | `ELECTRONIC_DRAWER` schema mode; no device integration or automatic count |
-| Opening, movement, count, closing and custody | Connected API screens | §5; wider browser/role walkthrough pending |
+| Opening, movement, count, closing and custody | Connected API screens with focused count and five-step close | §5; live role walkthrough pending |
+| Register, source drill-down and draft recovery | Implemented and smoke checked | §6, §8; owner workflow validation pending |
+| Notebook receipt reconciliation in sale/payment forms | Implemented; database checked | Invoice checkout and A/R cash lines select an original receipt and show new cash; live cashier walkthrough pending |
 | Local development | Enabled and migrated | Companion implementation plan §12 |
 | Store-day acceptance | Pending | §7 |
 | Native mobile application and charts | Deferred | §9 |
@@ -151,9 +153,10 @@ History: date/session code/custodian, opening, receipts/releases, expected/count
 - [x] Reuse API client, AuthContext, FBS theme tokens and existing UI Modal/Drawer/Tabs/Pagination primitives where suitable. Confirm their current props with fresh graph/source reads.
 - [x] Integrate server summary, pagination, count window, approval, lifecycle and idempotent write APIs from companion module plan.
 - [x] Enforce backend permissions and object scope; frontend visibility is not security.
-- [ ] Restore drafts through existing draft conventions only after confirming APIs. Do not add a new state library/router.
-- [ ] Preserve UI filters and handle navigation back to source records.
+- [x] Restore opening/count drafts from session storage; count drafts require the same server count/window/version/counter before restoration. Do not add a new state library/router.
+- [x] Preserve register filters in source navigation and provide return controls for Sales History, A/R, Expenses and A/P. Source document IDs drive the owning page lookup/filter.
 - [x] Ensure existing Sales History cash estimate is not used as canonical expected physical drawer balance.
+- [x] Expose available notebook receipts to invoice checkout (single and split payments) and A/R collections before payment posting; show covered amount and new cash. The source service enforces coverage under a row lock.
 
 ### Responsive, accessibility and failure states
 
@@ -161,7 +164,7 @@ Desktop >=1024px: register/right rail. Tablet 768–1023px: stacked rail. Mobile
 
 Use existing primary/slate/light/dark tokens; two-decimal PHP. Minimum 44px targets; visible labels and focus; trap/restore focus; keyboard/Escape behavior with safe cancellation; AA contrast; Over/Short text not color alone.
 
-Required states: no open session, opening draft, OPEN, count pause, CLOSING, pending approval, stale count, CLOSED, loading/empty/filter-empty, forbidden source, stale/offline data, unavailable document, known write failure and unknown network result. Keep last known data visibly stale. Local count drafts may persist offline, but no financial posting/approval/close until server confirmation. Retry unknown writes with same idempotency key.
+Required states: no open session, opening draft, OPEN, count pause, CLOSING, pending approval, stale count, CLOSED, loading/empty/filter-empty, forbidden source, stale/offline data, unavailable document, known write failure and unknown network result. Keep last known data visibly stale. Local count drafts may persist offline, but no financial posting/approval/close until server confirmation. Retry unknown writes with same idempotency key. The 2026-10-07 UI now persists the pending request path/body/key in session storage and offers an exact retry; live failure injection is still a release check.
 
 ## 7. Acceptance — Live FBS Still Pending
 
@@ -194,14 +197,13 @@ The trace reports exit code 0 and PASS for workspace/compact at 1440px desktop a
 
 Limits: automatic geometry checks are not complete visual/accessibility acceptance. Image-based review failed at provider input restriction; no visual-AI review completion claim. No live application/backend/database/browser integration test was run. Local prototypes do not prove actual approval enforcement, receipt correctness or safe closing.
 
-Remote shell checks NOT run here:
-```
-git diff --check
-npm run -w packages/web lint
-npm run -w packages/web build
-graphify update .
-```
-Run these on actual dev-server after implementation; record exact UI test runner invocation selected from package scripts, not an invented command. `graphify update .` unavailable through read-only graph MCP; no remote executor exposed.
+Production implementation checks on the actual dev-server (2026-10-07):
+
+- `npm run -w packages/web lint -- --quiet`, `npm run -w packages/api lint -- --quiet`, `npm run -w packages/web build`, `npm run -w packages/web test`, and `git diff --check` passed.
+- `docker compose exec -T backend node scripts/migrate.js verify` passed after applying `20261007_07_cash_movement_reference.sql` to local development.
+- The two cash drawer real-PostgreSQL scripts passed against a disposable database with the new migration: `CASH_DRAWER_TEST_DB=codex_cash_drawer_verify_ui_20261007 node tests/cashDrawer_db_test.js` and `node tests/cashDrawerRoutes_db_test.js` (run inside the backend container). The latter now checks notebook reference enforcement and available receipt lookup, register ordering/search, employee options, and CSV metadata.
+- Isolated Puppeteer smoke on local Vite with mocked API responses passed at 1440px and 390px: workspace/register render, full-screen mobile cash-in and count dialogs, no document overflow or page errors, and server-window-validated count draft restoration. The browser fixtures are not evidence of live store data, role enforcement, or real network failure behavior.
+- `graphify update .` is required after the final code/doc change and before handoff.
 
 ## 9. Explicitly Deferred
 
@@ -215,10 +217,12 @@ Run these on actual dev-server after implementation; record exact UI test runner
 
 ## 10. Files Touched So Far
 
-Remote deliverable of this work: `docs/plans/2026-10-07_cash-drawer-ui-design.md`. Companion module document is a separately published handoff in this directory. No application code changed by this design/doc work. Proposed production paths in §6 are NOT files already implemented. Local artifacts in §8 remain local. MCP file creation is not a Git commit/push/deployment.
+The production implementation touches `CashDrawerPage.jsx`, `CashSessionBar.jsx` (earlier phase), `MainLayout.jsx`, source pages for Sales History/A/R/Expenses/A/P, their focused payment register component, invoice checkout and A/R payment forms with `NotebookCoverageFields.jsx`, cash drawer/AP/A/R API routes and posting services, `20261007_07_cash_movement_reference.sql`, and `cashDrawerRoutes_db_test.js`. The local prototype assets in §8 remain outside the repository. Use Git history and a fresh graphify query for the exact current file graph.
 
 ## 11. Change Log
 
 | Date | Author / Session | Change |
 |---|---|---|
 | 2026-10-07 | Forson + Kent Pilar | Finalized cashier workspace and resumable UI contract; preserved prototype/live-implementation distinction and verification limits; published via project plan writer. |
+| 2026-10-07 | Codex | Completed register filtering/source links, reference capture, draft and unknown-write recovery, focused count, closing steps, custody summaries, employee selectors and report metadata; verified against disposable PostgreSQL and isolated desktop/mobile browser fixtures. Live store pilot remains a release gate. |
+| 2026-10-07 | Codex | Connected notebook receipt selection and covered/new cash display to invoice checkout and A/R cash payments; checked available-receipt API in disposable PostgreSQL. |

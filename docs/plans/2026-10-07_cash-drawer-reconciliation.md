@@ -1,7 +1,7 @@
 # Cash Drawer & Reconciliation — Final Module Plan and Developer Handoff
 
 > **Forson Business Suite** | **Date:** 2026-10-07 (Asia/Manila) | **Branch inspected:** `cash-count-module`
-> **Status (2026-10-07):** Schema, atomic posting/API, and connected web workspace are implemented on `cash-count-module`. Disposable real-PostgreSQL tests, backup restore, and a small local performance check pass. Production rollout and physical store-day pilot remain pending. The store currently has no card terminal, so terminal batch reconciliation is conditional on adding one. `ENABLE_CASH_DRAWER` is enabled only in the ignored local development `.env`; `.env.example` and production remain off.
+> **Status (2026-10-07):** Schema, atomic posting/API, and connected web workspace are implemented on `cash-count-module`. Disposable real-PostgreSQL tests, backup restore, a small local performance check, and isolated desktop/mobile browser smoke pass. Production rollout and physical store-day pilot remain pending. The store currently has no card terminal, so terminal batch reconciliation is conditional on adding one. `ENABLE_CASH_DRAWER` is enabled only in the ignored local development `.env`; `.env.example` and production remain off.
 
 ## 0. Status at a Glance
 
@@ -9,9 +9,9 @@
 |---|---|---|
 | Product and custody rules | Design complete | §2–5 and UI companion doc |
 | Source discovery | Repository audit done | Operational pilot must verify every cash path |
-| Phase 1: schema and invariants | Implemented; dev DB migrated | Six migrations applied and verified locally; baseline consolidation pending |
+| Phase 1: schema and invariants | Implemented; dev DB migrated | Seven migrations applied and verified locally; baseline consolidation pending |
 | Phase 2: posting, integrations, API | Implemented; partially verified | Atomic source hooks; custody, concurrent opening, and count expiry tested |
-| Phase 3: connected web UI | Implemented; build verified | Live browser, accessibility and small-screen walkthrough pending |
+| Phase 3: connected web UI | Implemented; fixture browser smoke passed | Live roles, accessibility and small-screen store walkthrough pending |
 | Phase 4: verification and cutover | Partial | Real DB tests, backup restore and local timing pass; store pilot and remaining release gates pending |
 | Development testing | Ready for supervised test entries | Main Counter seeded, API/auth/proxy smoke passed; no sessions yet |
 | Production rollout | Not started | Keep production feature flag off until §9 gates pass |
@@ -199,10 +199,10 @@ Follow [final UI handoff](./2026-10-07_cash-drawer-ui-design.md). Recommended ca
 - [x] Register `cash_drawer` in MainLayout switch and config/navigation.js under Finance & Expenses. Reuse App currentPage/pageState, API client/AuthContext, existing tokens/Modal/Drawer/Tabs; no router/state-library additions.
 - [x] Build header/status and expected/count/variance cards, register, counts, custody and history sections.
 - [x] Build opening, movements, count submission, manager approval, close, custody/advance events and PDF/CSV export.
-- [ ] Walk through source drill-down and closing flow in a browser with real roles and network failures.
+- [ ] Walk through source drill-down and closing flow in a browser with real roles and network failures. An isolated desktop/mobile browser smoke now passes, but it uses fixture API responses.
 - [x] Show count cutoff and separate opening amount from receipt totals.
-- [ ] Verify stale, forbidden, offline, failed-write and closed states in the live UI.
-- [ ] Responsive web with mobile full-screen forms/count, 44px targets, focus management, keyboard support, AA contrast, dark mode. Browser-derived preview never final posted truth.
+- [ ] Verify stale, forbidden, offline, failed-write and closed states in the live UI. Stale data labels, source permission errors and exact pending-write retries are implemented; live failure injection remains.
+- [ ] Responsive web with mobile full-screen forms/count, 44px targets, focus management, keyboard support, AA contrast, dark mode. Focused count dialog, mobile register cards, keyboard tabs and desktop/mobile fixture smoke pass; full accessibility/role walkthrough remains. Browser-derived preview never final posted truth.
 
 The prototype's manager-review checkbox is explicitly simulated; never implement production approval as an untrusted checkbox.
 
@@ -241,10 +241,10 @@ The remaining §6–9 checks are release work, not deferred features.
 
 ## 11. Files Touched So Far
 
-- `database/migrations/20261007_01_cash_drawer_core.sql`, `_02_cash_drawer_posting_guards.sql`, `_03_cash_request_complete.sql`, `_04_cash_drawer_hardware_mode.sql`, `_05_cash_source_correction_guards.sql`, `_06_cash_source_guard_update_passthrough.sql`: schema, guards, roles, request completion, manual hardware mode, and linked-source immutability with unlinked update passthrough.
+- `database/migrations/20261007_01_cash_drawer_core.sql`, `_02_cash_drawer_posting_guards.sql`, `_03_cash_request_complete.sql`, `_04_cash_drawer_hardware_mode.sql`, `_05_cash_source_correction_guards.sql`, `_06_cash_source_guard_update_passthrough.sql`, `_07_cash_movement_reference.sql`: schema, guards, roles, request completion, manual hardware mode, linked-source immutability and physical references.
 - `packages/api/services/cashDrawerService.js`, `packages/api/routes/cashDrawerRoutes.js`, `packages/api/index.js`: ledger, custody and API.
-- Source hooks in invoice, payment, payment method, staged sale, exchange, refund, AP, and expense routes/services.
-- `packages/web/src/pages/CashDrawerPage.jsx`, `components/cashDrawer/CashSessionBar.jsx`, `api.js`, `MainLayout.jsx`, navigation, expense and AP forms: connected workspace and source funding.
+- Source hooks in invoice, payment, payment method, staged sale, exchange, refund, AP, and expense routes/services; AP payment ID and A/R payment source reads added for Cash Box drill-down.
+- `packages/web/src/pages/CashDrawerPage.jsx`, `components/cashDrawer/CashSessionBar.jsx`, `api.js`, `MainLayout.jsx`, navigation, expense and AP forms, Sales History/A/R/Expenses/A/P source pages: connected workspace, source navigation/return, and funding.
 - `packages/api/tests/cashDrawer_db_test.js`, `cashDrawerRoutes_db_test.js`: disposable PostgreSQL tests.
 - `.env.example`: opt-in rollout flag.
 
@@ -257,9 +257,11 @@ DB_HOST=localhost CASH_DRAWER_TEST_DB=codex_cash_drawer_verify_20261007 node pac
 DB_HOST=localhost CASH_DRAWER_TEST_DB=codex_cash_drawer_verify_20261007 node packages/api/tests/cashDrawerRoutes_db_test.js
 ```
 
-The disposable database has test records and may be dropped after review. On 2026-10-07, a 2.9 MB backup was saved to ignored `backups/cash-drawer-pretest-20261007.dump`, then the first three migrations were applied to the normal **development** database. A second 3.0 MB backup at `backups/cash-box-hardware-pretest-20261007.dump` preceded migration `_04`; a third 3.0 MB backup at `backups/cash-source-guards-pretest-20261007.dump` preceded `_05`; a fourth backup at `backups/cash-source-passthrough-pretest-20261007.dump` preceded `_06`. Development has 219 applied migrations, no pending migrations and verified checksums; `MAIN_COUNTER` is `MANUAL_CASH_BOX`. Production was not migrated. The tests cover centavos, cash/card exclusion, notebook partial/full/multiple-source coverage, count cutoff/expiry/restart, immutable movements and linked invoice/expense sources, editable unlinked expenses, source retry conflict, concurrent opening, HTTP idempotency, independent review, close, transfer custody limits, reimbursement and advance consumption, report export, retained opening and the manual hardware default. A dump of the disposable test DB restored successfully into `codex_cash_drawer_verify_restore_20261007`; counts and guards were verified there before migrations `_05`–`_06`. The small local p95 measurements above meet read/posting targets but do not establish production performance. The tests do **not** establish the full §9 matrix, a physical store-day pilot or owner signoff.
+The disposable database has test records and may be dropped after review. On 2026-10-07, a 2.9 MB backup was saved to ignored `backups/cash-drawer-pretest-20261007.dump`, then the first three migrations were applied to the normal **development** database. A second 3.0 MB backup at `backups/cash-box-hardware-pretest-20261007.dump` preceded migration `_04`; a third 3.0 MB backup at `backups/cash-source-guards-pretest-20261007.dump` preceded `_05`; a fourth backup at `backups/cash-source-passthrough-pretest-20261007.dump` preceded `_06`. At that point development had 219 applied migrations and verified checksums; `MAIN_COUNTER` was `MANUAL_CASH_BOX`. Production was not migrated. The tests covered centavos, cash/card exclusion, notebook partial/full/multiple-source coverage, count cutoff/expiry/restart, immutable movements and linked invoice/expense sources, editable unlinked expenses, source retry conflict, concurrent opening, HTTP idempotency, independent review, close, transfer custody limits, reimbursement and advance consumption, report export, retained opening and the manual hardware default. A dump of the disposable test DB restored successfully into `codex_cash_drawer_verify_restore_20261007`; counts and guards were verified there before migrations `_05`–`_06`. The small local p95 measurements above meet read/posting targets but do not establish production performance. The tests do **not** establish the full §9 matrix, a physical store-day pilot or owner signoff.
 
-An attempted authenticated desktop/mobile Puppeteer walkthrough did not start because the host Chrome binary requires missing `libasound.so.2`. It created no cash transactions and cleaned up its temporary development employee. Browser interaction and accessibility remain release checks before declaring the full module pilot complete.
+The earlier authenticated Puppeteer walkthrough could not start because host Chrome lacked `libasound.so.2`; it created no cash transactions and cleaned up its temporary development employee. A later isolated Puppeteer run loaded the library into `/tmp` without modifying system packages, then passed workspace/count-dialog smoke at 1440px and 390px using mocked API responses. It checked no page errors or document overflow and restored a local count draft after re-reading the server window fixture. Authenticated live-role interaction and accessibility remain release checks.
+
+On 2026-10-07, `20261007_07_cash_movement_reference.sql` added an optional physical reference; notebook cash exceptions now require it. A disposable PostgreSQL clone passed both cash drawer suites with new reference/register and available-receipt assertions. The same additive migration was applied to the local development database and `node scripts/migrate.js verify` passed. Invoice checkout and A/R cash lines now select an available notebook receipt and show the covered amount and actual new cash before posting. The backend still locks and checks remaining coverage when the source is posted. Development now has 220 applied migrations; production was not migrated.
 
 `database/initial_schema.sql` was not changed: it predates later source-table migrations on which the new FK schema depends. Consolidate the baseline after a full migration replay rather than inserting tables before their dependencies. The ignored local development `.env` now has `ENABLE_CASH_DRAWER=true`; the backend was recreated and reports the flag loaded. Unauthenticated direct API and Vite proxy requests changed from 503 to 401. An authenticated read-only admin smoke returned HTTP 200 and one Main Counter drawer with zero sessions. Backend health passed. Production deployment and feature enablement remain pending.
 
@@ -271,6 +273,7 @@ An attempted authenticated desktop/mobile Puppeteer walkthrough did not start be
 - 2026-10-07: Confirmed the store uses a manual cash box; reserved electronic drawer mode for future integration, updated UI language, and verified migration `_04` in disposable and development databases.
 - 2026-10-07: Replaced the opening form's raw custodian ID with eligible employee names, showed the responsible person's name on sessions, shortened on-screen guidance, and verified the development API plus disposable PostgreSQL workflow test.
 - 2026-10-07: Implemented schema, posting/API and connected web phases in separate commits; verified disposable PostgreSQL tests and build; recorded remaining rollout gates.
+- 2026-10-07: Added physical reference migration and register/source/custody API refinements; completed count/closing UI and source return paths; verified disposable PostgreSQL, local dev migration checksums, web tests/build/lint, and isolated desktop/mobile browser smoke. Live store pilot is still pending.
 
 
 | Date | Author / Session | Change |
