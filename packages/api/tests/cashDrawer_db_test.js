@@ -106,6 +106,31 @@ async function run() {
     const sharedCoverage = await client.query('SELECT SUM(amount_covered) AS covered,COUNT(*) AS sources FROM cash_source_link WHERE movement_id=$1', [sharedNotebook.movement_id]);
     assert.equal(sharedCoverage.rows[0].covered, '5.00');
     assert.equal(Number(sharedCoverage.rows[0].sources), 2);
+    const reversedNotebook = await cash.postMovement(client, { sessionId, direction: 'IN', amount: '2.00',
+      category: 'NOTEBOOK_RECEIPT', description: 'Reversed notebook fixture', actorId });
+    await cash.postMovement(client, { sessionId, direction: 'OUT', amount: '2.00', category: 'CORRECTION',
+      description: 'Cancel notebook fixture', actorId, reversalOf: reversedNotebook.movement_id });
+    const reversedSale = await client.query(`INSERT INTO invoice(invoice_number,customer_id,employee_id,total_amount)
+      VALUES($1,$2,$3,'2.00') RETURNING invoice_id`, [`CASH-REVERSED-${Date.now()}`, customer.rows[0].customer_id, actorId]);
+    const reversedPayment = await client.query(`INSERT INTO invoice_payments(invoice_id,method_id,amount_paid,payment_status,created_by)
+      VALUES($1,$2,'2.00','settled',$3) RETURNING payment_id`, [reversedSale.rows[0].invoice_id, cashMethod.rows[0].method_id, actorId]);
+    await assert.rejects(() => cash.postSourcePayment(client, { kind: 'invoice', sourceId: reversedPayment.rows[0].payment_id,
+      actorId, canPost: true, notebookReceiptId: reversedNotebook.movement_id, coveredAmount: '2.00' }),
+    error => error.code === 'NOTEBOOK_REVERSED');
+    const advanceRelease = await cash.postMovement(client, { sessionId, direction: 'OUT', amount: '5.00',
+      category: 'EMPLOYEE_ADVANCE', description: 'Advance source validation fixture', actorId });
+    const advance = await client.query(`INSERT INTO cash_advance(session_id,release_movement_id,employee_id,amount,purpose)
+      VALUES($1,$2,$3,'5.00','Source validation') RETURNING advance_id`, [sessionId, advanceRelease.movement_id, actorId]);
+    const category = await client.query('INSERT INTO expense_category(category_name) VALUES($1) RETURNING category_id', [`Advance fixture ${Date.now()}`]);
+    const voidExpense = await client.query(`INSERT INTO expense(expense_date,category_id,amount,payment_method_id,created_by,is_void)
+      VALUES(CURRENT_DATE,$1,'2.00',$2,$3,true) RETURNING expense_id`, [category.rows[0].category_id, cashMethod.rows[0].method_id, actorId]);
+    await assert.rejects(() => cash.consumeAdvance(client, { advanceId: advance.rows[0].advance_id,
+      kind: 'expense', sourceId: voidExpense.rows[0].expense_id, actorId }), error => error.code === 'INVALID_ADVANCE_SOURCE');
+    const supplier = await client.query('INSERT INTO supplier(supplier_name) VALUES($1) RETURNING supplier_id', [`Advance supplier ${Date.now()}`]);
+    const unsettledAp = await client.query(`INSERT INTO ap_payment(supplier_id,amount,method_id,pdc_status)
+      VALUES($1,'2.00',$2,'ISSUED') RETURNING payment_id`, [supplier.rows[0].supplier_id, cashMethod.rows[0].method_id]);
+    await assert.rejects(() => cash.consumeAdvance(client, { advanceId: advance.rows[0].advance_id,
+      kind: 'ap', sourceId: unsettledAp.rows[0].payment_id, actorId }), error => error.code === 'INVALID_ADVANCE_SOURCE');
     const original = await client.query('SELECT expected,counted,variance,cutoff_sequence FROM cash_count WHERE count_id=$1', [count.count_id]);
     assert.deepEqual(original.rows[0], { expected: '90.25', counted: '90.25', variance: '0.00', cutoff_sequence: '2' });
     await client.query('SAVEPOINT immutable_check');

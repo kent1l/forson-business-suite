@@ -72,6 +72,21 @@ function write(handler) {
   };
 }
 
+router.get('/cash-drawers/requests/:id', protect, async (req, res) => {
+  if (!UUID.test(req.params.id)) return res.status(400).json({ code: 'INVALID_REQUEST_KEY' });
+  let client;
+  try {
+    client = await db.getClient();
+    await client.query('BEGIN');
+    await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [req.params.id]);
+    const result = await client.query('SELECT status_code,response FROM cash_request WHERE request_id=$1 AND actor_id=$2', [req.params.id, req.user.employee_id]);
+    await client.query('COMMIT');
+    if (!result.rowCount) return res.status(404).json({ code: 'REQUEST_NOT_FOUND' });
+    res.json({ data: result.rows[0] });
+  } catch (error) { if (client) await client.query('ROLLBACK'); errorResponse(res, error); }
+  finally { client?.release(); }
+});
+
 router.get('/cash-drawers', protect, hasPermission('cash_drawer:view'), async (_req, res) => {
   try {
     const { rows } = await db.query(`SELECT d.*,s.session_id,s.status,s.business_date,s.custodian_id,s.version
@@ -104,17 +119,42 @@ router.get('/cash-drawers/employees', protect, hasPermission('cash_drawer:view')
 
 router.get('/cash-drawers/sessions', protect, hasPermission('cash_drawer:view'), async (req, res) => {
   try {
+    const from = req.query.from || req.query.business_date || null;
+    const to = req.query.to || req.query.business_date || null;
+    for (const value of [from, to]) {
+      if (value && (!/^\d{4}-\d{2}-\d{2}$/.test(value) || Number.isNaN(Date.parse(`${value}T00:00:00Z`)) ||
+        new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) !== value)) {
+        cash.fail(400, 'INVALID_HISTORY_DATE', 'Use a valid YYYY-MM-DD history date.');
+      }
+    }
+    if (req.query.status && !['OPEN','CLOSING','CLOSED'].includes(req.query.status)) cash.fail(400, 'INVALID_HISTORY_STATUS', 'Unknown session status.');
+    if (req.query.custodian_id && !/^\d+$/.test(req.query.custodian_id)) cash.fail(400, 'INVALID_CUSTODIAN', 'Select a valid custodian.');
     const limit = Math.min(Math.max(Number(req.query.limit) || 25, 1), 100);
-    const page = Math.max(Number(req.query.page) || 1, 1);
+    const page = Math.min(Math.max(Number(req.query.page) || 1, 1), 100000);
+    const filters = `FROM cash_drawer_session s JOIN cash_drawer d USING(drawer_id) JOIN employee e ON e.employee_id=s.custodian_id
+      WHERE ($1::bigint IS NULL OR s.drawer_id=$1) AND ($2::date IS NULL OR s.business_date >= $2)
+      AND ($3::date IS NULL OR s.business_date <= $3) AND ($4::text IS NULL OR s.status=$4)
+      AND ($5::integer IS NULL OR s.custodian_id=$5)`;
+    const params = [req.query.drawer_id || null, from, to, req.query.status || null, req.query.custodian_id || null];
     const { rows } = await db.query(`SELECT s.*,d.name AS drawer_name,
       concat_ws(' ', e.first_name, e.last_name) AS custodian_name,
       COALESCE((SELECT m.balance_after FROM cash_drawer_movement m WHERE m.session_id=s.session_id ORDER BY m.sequence DESC LIMIT 1),s.opening_amount) AS expected
-      FROM cash_drawer_session s JOIN cash_drawer d USING(drawer_id) JOIN employee e ON e.employee_id=s.custodian_id
-      WHERE ($1::bigint IS NULL OR s.drawer_id=$1) AND ($2::date IS NULL OR s.business_date=$2)
-      AND ($3::text IS NULL OR s.status=$3)
-      ORDER BY s.opened_at DESC LIMIT $4 OFFSET $5`,
-    [req.query.drawer_id || null, req.query.business_date || null, req.query.status || null, limit, (page - 1) * limit]);
-    res.json({ data: rows, page, limit });
+      ${filters} ORDER BY s.opened_at DESC,s.session_id DESC LIMIT $6 OFFSET $7`, [...params, limit, (page - 1) * limit]);
+    const total = await db.query(`SELECT COUNT(*)::int AS count ${filters}`, params);
+    res.json({ data: rows, page, limit, total: total.rows[0].count });
+  } catch (error) { errorResponse(res, error); }
+});
+
+router.get('/cash-drawers/sessions/:id/activity', protect, hasPermission('cash_drawer:view'), async (req, res) => {
+  try {
+    const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 100);
+    const page = Math.min(Math.max(Number(req.query.page) || 1, 1), 100000);
+    const { rows } = await db.query(`SELECT a.audit_id,a.action,a.target_type,a.target_id,a.reason,a.metadata,a.recorded_at,
+      concat_ws(' ',e.first_name,e.last_name) AS actor_name
+      FROM cash_audit_event a JOIN employee e ON e.employee_id=a.actor_id
+      WHERE a.session_id=$1 ORDER BY a.audit_id LIMIT $2 OFFSET $3`, [req.params.id, limit, (page - 1) * limit]);
+    const total = await db.query('SELECT COUNT(*)::int AS count FROM cash_audit_event WHERE session_id=$1', [req.params.id]);
+    res.json({ data: rows, page, limit, total: total.rows[0].count });
   } catch (error) { errorResponse(res, error); }
 });
 
@@ -248,11 +288,15 @@ router.get('/cash-drawers/sessions/:id/movements', protect, hasPermission('cash_
 
 router.get('/cash-drawers/sessions/:id/counts', protect, hasPermission('cash_drawer:view'), async (req, res) => {
   try {
-    const { rows } = await db.query(`SELECT c.*,
+    const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 100);
+    const page = Math.min(Math.max(Number(req.query.page) || 1, 1), 100000);
+    const { rows } = await db.query(`SELECT c.*,concat_ws(' ',e.first_name,e.last_name) AS counter_name,
+      (SELECT row_to_json(a) FROM cash_approval a WHERE a.count_id=c.count_id ORDER BY a.approval_id DESC LIMIT 1) AS review,
       COALESCE((SELECT json_agg(json_build_object('code',l.denomination_code,'value',l.value_snapshot,'quantity',l.quantity) ORDER BY l.value_snapshot DESC)
        FROM cash_count_line l WHERE l.count_id=c.count_id),'[]'::json) AS lines
-      FROM cash_count c WHERE c.session_id=$1 ORDER BY c.count_id DESC`, [req.params.id]);
-    res.json({ data: rows });
+      FROM cash_count c JOIN employee e ON e.employee_id=c.counter_id WHERE c.session_id=$1 ORDER BY c.count_id DESC LIMIT $2 OFFSET $3`, [req.params.id, limit, (page - 1) * limit]);
+    const total = await db.query('SELECT COUNT(*)::int AS count FROM cash_count WHERE session_id=$1', [req.params.id]);
+    res.json({ data: rows, page, limit, total: total.rows[0].count });
   } catch (error) { errorResponse(res, error); }
 });
 
@@ -325,6 +369,8 @@ router.post('/cash-drawers/sessions/:id/transfers', protect, hasPermission('cash
     VALUES($1,$2,$3,$4,$5) RETURNING *`,
   [session.session_id, movement.movement_id, amount, cash.validText(destination, 200, true), recipient_id]);
   await useApproval(client, req.body.approval_id, movement.movement_id);
+  await cash.audit(client, { sessionId: session.session_id, targetType: 'TRANSFER', targetId: rows[0].transfer_id,
+    action: 'RELEASE', actorId: req.user.employee_id, requestId: req.get('Idempotency-Key') });
   return [201, { data: rows[0], movement }];
 }));
 
@@ -363,6 +409,8 @@ router.post('/cash-drawers/transfers/:id/events', protect, hasPermission('cash_d
     VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
   [transfer.transfer_id, stage, cash.money(eventAmount), cash.validText(evidence, 500, stage !== 'NOTE'),
     req.user.employee_id, movement?.movement_id || null, req.get('Idempotency-Key')]);
+  await cash.audit(client, { sessionId: transfer.session_id, targetType: 'TRANSFER', targetId: transfer.transfer_id,
+    action: stage, actorId: req.user.employee_id, requestId: req.get('Idempotency-Key'), metadata: { event_id: rows[0].event_id } });
   return [201, { data: rows[0], movement }];
 }));
 
@@ -380,6 +428,8 @@ router.post('/cash-drawers/sessions/:id/advances', protect, hasPermission('cash_
     VALUES($1,$2,$3,$4,$5,$6) RETURNING *`,
   [session.session_id, movement.movement_id, employee_id, amount, purpose, due_date || null]);
   await useApproval(client, req.body.approval_id, movement.movement_id);
+  await cash.audit(client, { sessionId: session.session_id, targetType: 'ADVANCE', targetId: rows[0].advance_id,
+    action: 'RELEASE', actorId: req.user.employee_id, requestId: req.get('Idempotency-Key') });
   return [201, { data: rows[0], movement }];
 }));
 
@@ -396,6 +446,8 @@ router.post('/cash-drawers/advances/:id/events', protect, hasPermission('cash_dr
     const event = await cash.consumeAdvance(client, { advanceId: advance.advance_id,
       kind: expense_id ? 'expense' : 'ap', sourceId: expense_id || ap_payment_id, actorId: req.user.employee_id });
     if (cash.cents(amount, { positive: true }) !== cash.cents(event.amount)) cash.fail(422, 'CONSUMPTION_MISMATCH', 'Consumption must equal the linked source payment.');
+    await cash.audit(client, { sessionId: advance.session_id, targetType: 'ADVANCE', targetId: advance.advance_id,
+      action: 'CONSUMPTION', actorId: req.user.employee_id, requestId: req.get('Idempotency-Key'), metadata: { event_id: event.event_id } });
     return [201, { data: event }];
   }
   const sums = await client.query(`SELECT COALESCE(SUM(amount) FILTER(WHERE kind='CONSUMPTION'),0) AS consumed,
@@ -412,6 +464,9 @@ router.post('/cash-drawers/advances/:id/events', protect, hasPermission('cash_dr
   let movement = null;
   if (kind === 'REIMBURSEMENT') {
     if (Number(Boolean(expense_id)) + Number(Boolean(ap_payment_id)) !== 1) cash.fail(422, 'SOURCE_REQUIRED', 'Reimbursement needs one verified expense or supplier payment.');
+    if (Number(req.body.payer_employee_id) !== Number(advance.employee_id) || !cash.validText(req.body.payer_evidence, 500)) {
+      cash.fail(422, 'PAYER_PROVENANCE_REQUIRED', 'Provide evidence that the named advance holder personally paid this source.');
+    }
     const source = expense_id
       ? await client.query(`SELECT e.amount,pm.type AS method_type,e.payment_method_text FROM expense e
           LEFT JOIN payment_methods pm ON pm.method_id=e.payment_method_id
@@ -442,10 +497,13 @@ router.post('/cash-drawers/advances/:id/events', protect, hasPermission('cash_dr
     if (kind === 'REIMBURSEMENT') await useApproval(client, req.body.approval_id, movement.movement_id);
   }
   const { rows } = await client.query(`INSERT INTO cash_advance_event
-    (advance_id,kind,amount,expense_id,ap_payment_id,movement_id,actor_id,request_id,notes)
-    VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+    (advance_id,kind,amount,expense_id,ap_payment_id,movement_id,actor_id,request_id,notes,payer_employee_id,payer_evidence)
+    VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
   [advance.advance_id, kind, cash.money(eventAmount), expense_id || null, ap_payment_id || null,
-    movement?.movement_id || null, req.user.employee_id, req.get('Idempotency-Key'), cash.validText(notes, 500)]);
+    movement?.movement_id || null, req.user.employee_id, req.get('Idempotency-Key'), cash.validText(notes, 500),
+    kind === 'REIMBURSEMENT' ? advance.employee_id : null, kind === 'REIMBURSEMENT' ? req.body.payer_evidence.trim() : null]);
+  await cash.audit(client, { sessionId: advance.session_id, targetType: 'ADVANCE', targetId: advance.advance_id,
+    action: kind, actorId: req.user.employee_id, requestId: req.get('Idempotency-Key'), metadata: { event_id: rows[0].event_id } });
   return [201, { data: rows[0], movement, outstanding: cash.money(kind === 'RETURN' ? outstanding - eventAmount : outstanding) }];
 }));
 
@@ -456,6 +514,13 @@ router.post('/cash-drawers/movements/:id/reverse', protect, hasPermission('cash_
   const session = await cash.lockSession(client, originalRef.rows[0].session_id, { version: req.body.expected_version });
   const original = await client.query('SELECT * FROM cash_drawer_movement WHERE movement_id=$1 FOR UPDATE', [req.params.id]);
   const row = original.rows[0];
+  const custodyLink = await client.query(`SELECT 1 FROM cash_transfer_event WHERE receiving_movement_id=$1
+    UNION ALL SELECT 1 FROM cash_advance_event WHERE movement_id=$1
+    UNION ALL SELECT 1 FROM cash_transfer WHERE release_movement_id=$1
+    UNION ALL SELECT 1 FROM cash_advance WHERE release_movement_id=$1 LIMIT 1`, [req.params.id]);
+  if (custodyLink.rowCount) cash.fail(422, 'CUSTODY_CORRECTION_REQUIRED', 'This movement is linked to custody. Use a coordinated correction; standalone reversal would leave custody totals wrong.');
+  const covered = await client.query('SELECT 1 FROM cash_source_link WHERE movement_id=$1 LIMIT 1', [req.params.id]);
+  if (covered.rowCount) cash.fail(422, 'NOTEBOOK_COVERED', 'This receipt covers source payments. Standalone reversal would break their cash links.');
   if (row.customer_payment_id || row.invoice_payment_id || row.expense_id || row.ap_payment_id || row.credit_note_id || ['TRANSFER','EMPLOYEE_ADVANCE'].includes(row.category)) {
     cash.fail(422, 'SOURCE_CORRECTION_REQUIRED', 'Correct this movement through its source and custody workflow.');
   }
@@ -482,6 +547,8 @@ router.post('/cash-drawers/sessions/:id/addenda', protect, hasPermission('cash_d
 router.post('/cash-drawers/sessions/:id/start-closing', protect, hasPermission('cash_drawer:close'), write(async (client, req) => {
   const session = await cash.lockSession(client, req.params.id, { version: req.body.expected_version });
   await client.query("UPDATE cash_drawer_session SET status='CLOSING',closing_by=$2,closing_at=now(),version=version+1 WHERE session_id=$1", [session.session_id, req.user.employee_id]);
+  await cash.audit(client, { sessionId: session.session_id, targetType: 'SESSION', targetId: session.session_id,
+    action: 'START_CLOSING', actorId: req.user.employee_id, requestId: req.get('Idempotency-Key') });
   return [200, { data: { session_id: session.session_id, status: 'CLOSING', version: Number(session.version) + 1 } }];
 }));
 
@@ -497,11 +564,15 @@ router.post('/cash-drawers/sessions/:id/cancel-closing', protect, hasPermission(
 
 router.post('/cash-drawers/sessions/:id/counts/start', protect, hasPermission('cash_drawer:count'), write(async (client, req) => {
   const count = await cash.startCount(client, { sessionId: req.params.id, kind: req.body.kind, actorId: req.user.employee_id, expectedVersion: req.body.expected_version });
+  await cash.audit(client, { sessionId: req.params.id, targetType: 'COUNT', targetId: count.count_id,
+    action: 'START', actorId: req.user.employee_id, requestId: req.get('Idempotency-Key') });
   return [201, { data: count }];
 }));
 
 router.post('/cash-drawers/counts/:id/submit', protect, hasPermission('cash_drawer:count'), write(async (client, req) => {
   const count = await cash.submitCount(client, { countId: req.params.id, lines: req.body.lines, notes: req.body.notes, actorId: req.user.employee_id });
+  await cash.audit(client, { sessionId: count.session_id, targetType: 'COUNT', targetId: count.count_id,
+    action: 'SUBMIT', actorId: req.user.employee_id, requestId: req.get('Idempotency-Key') });
   return [201, { data: count }];
 }));
 
@@ -535,6 +606,8 @@ router.post('/cash-drawers/approvals', protect, hasPermission(['cash_drawer:clos
       (session_id,action,bound_version,bound_amount,reason,requester_id)
       VALUES($1,$2,$3,$4,$5,$6) RETURNING *`,
     [session_id, action, session.version, amount, cash.validText(reason, 1000, true), req.user.employee_id]);
+    await cash.audit(client, { sessionId: session_id, targetType: 'APPROVAL', targetId: rows[0].approval_id,
+      action: 'REQUEST', actorId: req.user.employee_id, requestId: req.get('Idempotency-Key'), reason });
     return [201, { data: rows[0] }];
   }
   if (action === 'OPENING_BRIDGE') {
@@ -547,6 +620,8 @@ router.post('/cash-drawers/approvals', protect, hasPermission(['cash_drawer:clos
       (session_id,action,bound_version,bound_amount,reason,requester_id)
       VALUES($1,'OPENING_BRIDGE',$2,$3,$4,$5) RETURNING *`,
     [session_id, prior.rows[0].version, cash.money(signedAmount), cash.validText(reason, 1000, true), req.user.employee_id]);
+    await cash.audit(client, { sessionId: session_id, targetType: 'APPROVAL', targetId: rows[0].approval_id,
+      action: 'REQUEST', actorId: req.user.employee_id, requestId: req.get('Idempotency-Key'), reason });
     return [201, { data: rows[0] }];
   }
   const session = await cash.lockSession(client, session_id, { version: expected_version, states: ['CLOSING'] });
@@ -559,6 +634,8 @@ router.post('/cash-drawers/approvals', protect, hasPermission(['cash_drawer:clos
     (session_id,action,count_id,bound_version,bound_amount,reason,requester_id)
     VALUES($1,'CLOSING_VARIANCE',$2,$3,$4,$5,$6) RETURNING *`,
   [session_id, count_id, session.version, count.rows[0].variance, cash.validText(reason, 1000, true), req.user.employee_id]);
+  await cash.audit(client, { sessionId: session_id, targetType: 'APPROVAL', targetId: rows[0].approval_id,
+    action: 'REQUEST', actorId: req.user.employee_id, requestId: req.get('Idempotency-Key'), reason });
   return [201, { data: rows[0] }];
 }));
 
@@ -579,6 +656,35 @@ router.post('/cash-drawers/approvals/:id/decision', protect, hasPermission('cash
   await cash.audit(client, { sessionId: session.session_id, targetType: 'APPROVAL', targetId: req.params.id, action: decision, actorId: req.user.employee_id, reason: req.body.reason });
   return [200, { data: rows[0] }];
 }));
+
+router.post('/cash-drawers/sessions/:id/handover-ack', protect, hasPermission('cash_drawer:close'), async (req, res) => {
+  let client;
+  try {
+    const { recipient_id, recipient_password, count_id, expected_version, amount, destination } = req.body;
+    cash.cents(amount, { positive: true });
+    const target = cash.validText(destination, 200, true);
+    if (typeof recipient_password !== 'string' || !recipient_password) cash.fail(400, 'RECIPIENT_AUTH_REQUIRED', 'Recipient password is required.');
+    client = await db.getClient();
+    await client.query('BEGIN');
+    const session = await cash.lockSession(client, req.params.id, { version: expected_version, states: ['CLOSING'] });
+    const count = await client.query("SELECT count_id FROM cash_count WHERE count_id=$1 AND session_id=$2 AND kind='CLOSING' AND status='SUBMITTED'", [count_id, session.session_id]);
+    if (!count.rowCount) cash.fail(409, 'STALE_COUNT', 'A submitted closing count is required.');
+    const recipient = await client.query('SELECT employee_id,password_hash,is_active FROM employee WHERE employee_id=$1', [recipient_id]);
+    const account = recipient.rows[0];
+    if (!account?.is_active || !account.password_hash || !(await bcrypt.compare(recipient_password, account.password_hash))) {
+      cash.fail(403, 'RECIPIENT_AUTH_FAILED', 'Recipient credentials could not confirm custody.');
+    }
+    const token = crypto.randomBytes(32).toString('hex');
+    await client.query(`INSERT INTO cash_handover_ack
+      (token_hash,session_id,recipient_id,actor_id,count_id,bound_version,amount,destination,expires_at)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8,now()+interval '5 minutes')`,
+    [crypto.createHash('sha256').update(token).digest('hex'), session.session_id, recipient_id,
+      req.user.employee_id, count_id, session.version, amount, target]);
+    await client.query('COMMIT');
+    res.json({ data: { token, expires_in_seconds: 300 } });
+  } catch (error) { if (client) await client.query('ROLLBACK'); errorResponse(res, error); }
+  finally { client?.release(); }
+});
 
 router.post('/cash-drawers/sessions/:id/close', protect, hasPermission('cash_drawer:close'), write(async (client, req) => {
   const session = await cash.lockSession(client, req.params.id, { version: req.body.expected_version, states: ['CLOSING'] });
@@ -605,12 +711,14 @@ router.post('/cash-drawers/sessions/:id/close', protect, hasPermission('cash_dra
   for (const item of finalHandovers) {
     const amount = cash.cents(item.amount, { positive: true });
     handovers += amount;
-    if (!Number.isSafeInteger(Number(item.recipient_id)) || !item.destination || typeof item.recipient_password !== 'string') cash.fail(400, 'INVALID_HANDOVER', 'Each handover needs a destination and recipient acknowledgment.');
-    const recipient = await client.query('SELECT employee_id,password_hash,is_active FROM employee WHERE employee_id=$1', [item.recipient_id]);
-    const account = recipient.rows[0];
-    if (!account?.is_active || !account.password_hash || !(await bcrypt.compare(item.recipient_password, account.password_hash))) {
-      cash.fail(403, 'RECIPIENT_AUTH_FAILED', 'Recipient credentials could not confirm custody.');
-    }
+    if (!Number.isSafeInteger(Number(item.recipient_id)) || !item.destination || !/^[0-9a-f]{64}$/.test(item.ack_token || '') || item.recipient_password !== undefined) cash.fail(400, 'INVALID_HANDOVER', 'Each handover needs a separate recipient acknowledgment.');
+    const tokenHash = crypto.createHash('sha256').update(item.ack_token).digest('hex');
+    const ack = await client.query(`UPDATE cash_handover_ack SET consumed_at=now()
+      WHERE token_hash=$1 AND session_id=$2 AND recipient_id=$3 AND actor_id=$4 AND count_id=$5
+      AND bound_version=$6 AND amount=$7 AND destination=$8 AND consumed_at IS NULL AND expires_at>now()
+      RETURNING ack_id`, [tokenHash, session.session_id, item.recipient_id, req.user.employee_id,
+      count.count_id, session.version, item.amount, item.destination]);
+    if (!ack.rowCount) cash.fail(422, 'ACK_INVALID', 'Recipient acknowledgment is expired, used, or does not match this close.');
   }
   const retainedActual = cash.cents(count.counted) - handovers;
   const retainedLedger = cash.cents(count.expected, { signed: true }) - handovers;

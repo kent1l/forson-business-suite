@@ -75,12 +75,12 @@ function TransferEventForm({ transfer, drawers, post, busy }) {
 }
 
 function AdvanceEventForm({ advance, drawers, post, busy }) {
-    const [form, setForm] = useState({ kind: 'RETURN', amount: '', expense_id: '', ap_payment_id: '', receiving_session_id: '', notes: '' });
+    const [form, setForm] = useState({ kind: 'RETURN', amount: '', expense_id: '', ap_payment_id: '', receiving_session_id: '', notes: '', payer_employee_id: '', payer_evidence: '' });
     const receiving = drawers.find(item => String(item.session_id) === String(form.receiving_session_id));
     return <form className="space-y-2 rounded border border-slate-200 p-3 dark:border-slate-700" onSubmit={async event => {
         event.preventDefault();
         const result = await post(`/cash-drawers/advances/${advance.advance_id}/events`, form, `advance-event-${advance.advance_id}`);
-        if (result) setForm({ kind: 'RETURN', amount: '', expense_id: '', ap_payment_id: '', receiving_session_id: '', notes: '' });
+        if (result) setForm({ kind: 'RETURN', amount: '', expense_id: '', ap_payment_id: '', receiving_session_id: '', notes: '', payer_employee_id: '', payer_evidence: '' });
     }}>
         <strong>Advance #{advance.advance_id} · {money(advance.amount)} · {advance.employee_name}</strong>
         <p className="text-xs">{advance.events.map(item => `${item.kind} ${money(item.amount)}`).join(' · ') || 'Outstanding'}</p>
@@ -90,6 +90,7 @@ function AdvanceEventForm({ advance, drawers, post, busy }) {
         {form.kind === 'REIMBURSEMENT' && <div className="grid gap-2 sm:grid-cols-2"><input className={field} type="number" placeholder="Expense ID" required={!form.ap_payment_id} value={form.expense_id} onChange={event => setForm({ ...form, expense_id: event.target.value, ap_payment_id: '' })} /><input className={field} type="number" placeholder="Supplier payment ID" required={!form.expense_id} value={form.ap_payment_id} onChange={event => setForm({ ...form, ap_payment_id: event.target.value, expense_id: '' })} /></div>}
         {['RETURN','REIMBURSEMENT'].includes(form.kind) && <select className={field} required value={form.receiving_session_id} onChange={event => setForm({ ...form, receiving_session_id: event.target.value })}><option value="">Open session for physical cash</option>{drawers.filter(item => item.status === 'OPEN').map(item => <option key={item.session_id} value={item.session_id}>{item.name}</option>)}</select>}
         <input className={field} placeholder="Notes" value={form.notes} onChange={event => setForm({ ...form, notes: event.target.value })} />
+        {form.kind === 'REIMBURSEMENT' && <div className="space-y-2"><p className="text-sm">Document proof that this advance holder personally paid the source.</p><input className={field} type="number" placeholder="Payer employee ID" required value={form.payer_employee_id} onChange={event => setForm({ ...form, payer_employee_id: event.target.value })} /><input className={field} placeholder="Verified receipt or evidence reference" required value={form.payer_evidence} onChange={event => setForm({ ...form, payer_evidence: event.target.value })} /></div>}
         {form.kind === 'REIMBURSEMENT' && receiving?.status === 'OPEN' && <ReviewRequest action="REIMBURSEMENT" session={receiving} amount={form.amount} reason={form.notes}
             value={form.approval_id} onChange={approval_id => setForm({ ...form, approval_id })} post={post} busy={busy} />}
         <button className={button} disabled={busy}>Record advance event</button>
@@ -109,6 +110,7 @@ export default function CashDrawerPage({ user, onNavigate, pageState }) {
     const [drawers, setDrawers] = useState([]);
     const [drawerId, setDrawerId] = useState(String(returnState.drawerId || ''));
     const [session, setSession] = useState(null);
+    const [drawerLoading, setDrawerLoading] = useState(true);
     const [movements, setMovements] = useState([]);
     const [registerPage, setRegisterPage] = useState(returnState.registerPage || 1);
     const [registerTotal, setRegisterTotal] = useState(0);
@@ -126,15 +128,43 @@ export default function CashDrawerPage({ user, onNavigate, pageState }) {
     const [custody, setCustody] = useState({ transfers: [], advances: [] });
     const [custodyFilter, setCustodyFilter] = useState('PENDING');
     const [history, setHistory] = useState([]);
+    const [historyPage, setHistoryPage] = useState(1);
+    const [historyTotal, setHistoryTotal] = useState(0);
+    const [historyFilters, setHistoryFilters] = useState({ from: '', to: '', status: '', custodian_id: '' });
+    const [historyState, setHistoryState] = useState('loading');
+    const [historyRefresh, setHistoryRefresh] = useState(0);
+    const [historyError, setHistoryError] = useState('');
     const [historyDetail, setHistoryDetail] = useState(null);
+    const [historyMovements, setHistoryMovements] = useState([]);
+    const [historyCounts, setHistoryCounts] = useState([]);
+    const [historyCountPage, setHistoryCountPage] = useState(1);
+    const [historyCountTotal, setHistoryCountTotal] = useState(0);
+    const [historyActivity, setHistoryActivity] = useState([]);
+    const [historyActivityPage, setHistoryActivityPage] = useState(1);
+    const [historyActivityTotal, setHistoryActivityTotal] = useState(0);
+    const [historyCustody, setHistoryCustody] = useState({ transfers: [], advances: [] });
+    const [historyDetailState, setHistoryDetailState] = useState('idle');
+    const [historyMovementPage, setHistoryMovementPage] = useState(1);
+    const [historyMovementTotal, setHistoryMovementTotal] = useState(0);
     const [tab, setTab] = useState(returnState.tab || 'Today');
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState('');
     const [pendingWrite, setPendingWrite] = useState(() => {
+        try {
         const prefix = `cash-box-write:${user?.employee_id}:`;
+        for (const key of Object.keys(sessionStorage).filter(item => item.startsWith('cash-box-write:'))) {
+            try {
+                const saved = JSON.parse(sessionStorage.getItem(key));
+                if (JSON.stringify(saved).includes('recipient_password') || JSON.stringify(saved).includes('ack_token')) {
+                    // Older close drafts contain credentials. Reconcile by key only.
+                    sessionStorage.setItem(key, JSON.stringify({ key: saved.key, path: saved.path, reconcileOnly: true }));
+                }
+            } catch { sessionStorage.removeItem(key); }
+        }
         const key = Object.keys(sessionStorage).find(item => item.startsWith(prefix));
         try { return key ? { storageKey: key, ...JSON.parse(sessionStorage.getItem(key)) } : null; }
         catch { if (key) sessionStorage.removeItem(key); return null; }
+        } catch { return { storageUnavailable: true }; }
     });
     const [lastRefresh, setLastRefresh] = useState(null);
     const [openDate, setOpenDate] = useState(openingSaved.openDate || today());
@@ -163,7 +193,10 @@ export default function CashDrawerPage({ user, onNavigate, pageState }) {
     const [sourcesChecked, setSourcesChecked] = useState(false);
     const [closeNotes, setCloseNotes] = useState('');
     const [handover, setHandover] = useState({ amount: '', destination: '', recipient_id: '', recipient_password: '', evidence: '' });
+    const [ack, setAck] = useState(null);
     const keys = useRef(new Map());
+    const reloadId = useRef(0);
+    const detailId = useRef(0);
     const draftKey = draftCount && `cash-box-count:${user?.employee_id}:${draftCount.session_id}:${draftCount.count_id}`;
     const countWindowValid = !!draftCount && !!session?.count_window_expires_at &&
         new Date(session.count_window_expires_at).getTime() > nowTick &&
@@ -172,42 +205,83 @@ export default function CashDrawerPage({ user, onNavigate, pageState }) {
         Number(user?.employee_id) === Number(draftCount.counter_id);
 
     const reload = useCallback(async (desiredDrawerId = drawerId) => {
+        const requestId = ++reloadId.current;
+        const current = () => requestId === reloadId.current;
+        setDrawerLoading(true);
+        setError('');
         try {
             const drawerResponse = await api.get('/cash-drawers');
+            if (!current()) return;
             const drawerRows = drawerResponse.data?.data || [];
             setDrawers(drawerRows);
-            const chosen = desiredDrawerId || String(drawerRows[0]?.drawer_id || '');
+            const chosen = String(desiredDrawerId || drawerRows[0]?.drawer_id || '');
+            setDrawerId(chosen);
+            setSession(null);
+            setMovements([]);
+            setCounts([]);
+            setCustody({ transfers: [], advances: [] });
+            setApprovals([]);
+            setHistoryDetail(null);
             if (!chosen) return;
-            setDrawerId(String(chosen));
-            const sessionsResponse = await api.get('/cash-drawers/sessions', { params: { drawer_id: chosen, limit: 50 } });
-            const sessions = sessionsResponse.data?.data || [];
-            setHistory(sessions);
-            const active = sessions.find(item => item.status !== 'CLOSED');
-            const current = active || sessions[0];
-            if (!current) { setSession(null); setMovements([]); setCounts([]); return; }
-            const id = current.session_id;
-            const [detail, register, savedCounts, savedCustody, savedApprovals] = await Promise.all([
-                api.get(`/cash-drawers/sessions/${id}`), api.get(`/cash-drawers/sessions/${id}/movements`,
-                    { params: { page: registerPage, limit: 50, search: registerSearch || undefined, direction: registerDirection || undefined,
-                        category: registerCategory || undefined, source: registerSource || undefined, operator: registerOperator || undefined,
-                        time_field: registerTimeField, from: registerFrom || undefined, to: registerTo || undefined } }),
-                api.get(`/cash-drawers/sessions/${id}/counts`), api.get(`/cash-drawers/sessions/${id}/custody`),
+            const activeId = drawerRows.find(row => String(row.drawer_id) === chosen)?.session_id;
+            const recent = activeId ? null : await api.get('/cash-drawers/sessions', { params: { drawer_id: chosen, limit: 1 } });
+            if (!current()) return;
+            const id = activeId || recent?.data?.data?.[0]?.session_id;
+            if (!id) { setLastRefresh(new Date()); setHistoryRefresh(value => value + 1); return; }
+            const results = await Promise.allSettled([
+                api.get(`/cash-drawers/sessions/${id}`),
+                api.get(`/cash-drawers/sessions/${id}/movements`, { params: { page: registerPage, limit: 50,
+                    search: registerSearch || undefined, direction: registerDirection || undefined,
+                    category: registerCategory || undefined, source: registerSource || undefined,
+                    operator: registerOperator || undefined, time_field: registerTimeField,
+                    from: registerFrom || undefined, to: registerTo || undefined } }),
+                api.get(`/cash-drawers/sessions/${id}/counts`),
+                api.get(`/cash-drawers/sessions/${id}/custody`),
                 api.get(`/cash-drawers/sessions/${id}/approvals`),
             ]);
-            setSession(detail.data.data);
-            setMovements(register.data?.data || []);
-            setRegisterTotal(register.data?.total || 0);
-            setSelectedMovement(selected => (register.data?.data || []).find(item => item.movement_id === selected?.movement_id) || null);
-            setCounts(savedCounts.data?.data || []);
-            setDraftCount((savedCounts.data?.data || []).find(item => item.status === 'DRAFT') || null);
-            setCustody(savedCustody.data || { transfers: [], advances: [] });
-            setApprovals(savedApprovals.data?.data || []);
+            if (!current()) return;
+            if (results[0].status !== 'fulfilled') throw results[0].reason;
+            setSession(results[0].value.data.data);
+            if (results[1].status === 'fulfilled') {
+                const register = results[1].value.data;
+                setMovements(register?.data || []);
+                setRegisterTotal(register?.total || 0);
+            }
+            if (results[2].status === 'fulfilled') {
+                const saved = results[2].value.data?.data || [];
+                setCounts(saved);
+                setDraftCount(saved.find(item => item.status === 'DRAFT') || null);
+            }
+            if (results[3].status === 'fulfilled') setCustody(results[3].value.data);
+            if (results[4].status === 'fulfilled') setApprovals(results[4].value.data?.data || []);
+            if (results.some(result => result.status === 'rejected')) setError('Some cash box data could not load. Refresh before a financial action.');
             setLastRefresh(new Date());
-            setError('');
+            setHistoryRefresh(value => value + 1);
         } catch (requestError) {
-            setError(requestError.response?.data?.message || 'Unable to refresh the cash drawer.');
+            if (current()) setError(requestError.response?.data?.message || 'Unable to refresh the cash drawer.');
+        } finally {
+            if (current()) setDrawerLoading(false);
         }
     }, [drawerId, registerPage, registerSearch, registerDirection, registerCategory, registerSource, registerOperator, registerTimeField, registerFrom, registerTo]);
+
+    useEffect(() => {
+        if (!drawerId) return;
+        let live = true;
+        setHistoryState('loading');
+        api.get('/cash-drawers/sessions', { params: { drawer_id: drawerId, page: historyPage, limit: 25, ...historyFilters } })
+            .then(response => {
+                if (!live) return;
+                setHistory(response.data?.data || []);
+                setHistoryTotal(response.data?.total || 0);
+                setHistoryState('ready');
+                setHistoryError('');
+            }).catch(error => {
+                if (!live) return;
+                setHistoryState('error');
+                setHistoryError(error.response?.data?.message || 'Session history could not load.');
+            });
+        return () => { live = false; };
+    }, [drawerId, historyPage, historyFilters, historyRefresh]);
 
     useEffect(() => {
         if (!draftKey) return;
@@ -271,6 +345,7 @@ export default function CashDrawerPage({ user, onNavigate, pageState }) {
     const post = async (path, payload, action = path) => {
         const body = JSON.stringify(payload);
         const storageKey = `cash-box-write:${user?.employee_id}:${action}`;
+        if (pendingWrite?.storageUnavailable) { setError('Browser storage is unavailable. Financial submission was not sent.'); return null; }
         if (pendingWrite && pendingWrite.storageKey !== storageKey) {
             setError('Resolve the earlier cash write before starting another.');
             return null;
@@ -278,16 +353,17 @@ export default function CashDrawerPage({ user, onNavigate, pageState }) {
         let saved = null;
         try { saved = JSON.parse(sessionStorage.getItem(storageKey) || 'null'); } catch { sessionStorage.removeItem(storageKey); }
         const pending = keys.current.get(action) || saved;
-        if (pending && pending.body !== body) {
+        if (pending && pending.body && pending.body !== body) {
             setError('A previous write has an unknown result. Retry that exact request before changing this form.');
             setPendingWrite({ storageKey, ...pending });
             return null;
         }
         let key;
-        try { key = pending?.body === body ? pending.key : createUuid(); }
+        try { key = pending?.body === body || (action === 'close' && pending?.key) ? pending.key : createUuid(); }
         catch { setError('This browser cannot generate a request key. Please use a supported browser.'); return null; }
-        keys.current.set(action, { body, key, path });
-        sessionStorage.setItem(storageKey, JSON.stringify({ body, key, path }));
+        keys.current.set(action, { body: action === 'close' ? undefined : body, key, path });
+        try { sessionStorage.setItem(storageKey, JSON.stringify(action === 'close' ? { key, path, reconcileOnly: true } : { body, key, path })); }
+        catch { setError('Browser storage is unavailable. Financial submission was not sent.'); return null; }
         setBusy(true);
         setError('');
         try {
@@ -299,8 +375,10 @@ export default function CashDrawerPage({ user, onNavigate, pageState }) {
             window.dispatchEvent(new Event('cash-drawer-updated'));
             return response.data;
         } catch (requestError) {
-            if (requestError.response) { keys.current.delete(action); sessionStorage.removeItem(storageKey); setPendingWrite(null); }
-            else setPendingWrite({ storageKey, body, key, path });
+            const definitive = requestError.response?.status >= 400 && requestError.response?.status < 500 &&
+                requestError.response?.data?.code !== 'IDEMPOTENCY_CONFLICT';
+            if (definitive) { keys.current.delete(action); sessionStorage.removeItem(storageKey); setPendingWrite(null); }
+            else setPendingWrite(action === 'close' ? { storageKey, key, path, reconcileOnly: true } : { storageKey, body, key, path });
             setError(requestError.response?.data?.message || 'Action failed. Retry with the same request key.');
             return null;
         } finally { setBusy(false); }
@@ -310,15 +388,47 @@ export default function CashDrawerPage({ user, onNavigate, pageState }) {
         if (!pendingWrite?.path) return;
         setBusy(true);
         try {
-            await api.post(pendingWrite.path, JSON.parse(pendingWrite.body), { headers: { 'Idempotency-Key': pendingWrite.key } });
+            if (pendingWrite.reconcileOnly) {
+                const result = await api.get(`/cash-drawers/requests/${pendingWrite.key}`);
+                if (result.data?.data?.status_code === 202) throw new Error('Request is still pending.');
+            } else {
+                await api.post(pendingWrite.path, JSON.parse(pendingWrite.body), { headers: { 'Idempotency-Key': pendingWrite.key } });
+            }
             sessionStorage.removeItem(pendingWrite.storageKey);
             setPendingWrite(null);
             setError('');
             await reload();
         } catch (requestError) {
-            if (requestError.response) { sessionStorage.removeItem(pendingWrite.storageKey); setPendingWrite(null); }
-            setError(requestError.response?.data?.message || 'Result still unknown. Retry this request with its original key.');
+            if (requestError.response?.status === 404 && pendingWrite.reconcileOnly) {
+                sessionStorage.removeItem(pendingWrite.storageKey);
+                keys.current.set('close', { key: pendingWrite.key, path: pendingWrite.path });
+                setPendingWrite(null);
+                setAck(null);
+                setCloseStep(4);
+                setError('Close was not committed. Authenticate the recipient again; the original request key is reserved.');
+            } else {
+                setError(requestError.response?.data?.message || 'Result still unknown. Retry reconciliation with the original key.');
+            }
         } finally { setBusy(false); }
+    };
+
+    const authenticateRecipient = async () => {
+        try {
+            const response = await api.post(`/cash-drawers/sessions/${session.session_id}/handover-ack`, {
+                recipient_id: handover.recipient_id, recipient_password: handover.recipient_password,
+                count_id: closingCount.count_id, expected_version: session.version,
+                amount: handover.amount, destination: handover.destination,
+            });
+            setAck({ token: response.data.data.token, sessionId: session.session_id,
+                version: session.version, countId: closingCount.count_id, amount: handover.amount,
+                destination: handover.destination, recipientId: handover.recipient_id });
+            setError('');
+        } catch (requestError) {
+            setAck(null);
+            setError(requestError.response?.data?.message || 'Recipient authentication failed.');
+        } finally {
+            setHandover(current => ({ ...current, recipient_password: '' }));
+        }
     };
 
     const open = async event => {
@@ -371,11 +481,46 @@ export default function CashDrawerPage({ user, onNavigate, pageState }) {
         } catch (requestError) { setError(requestError.response?.data?.message || 'Unable to export the closed report.'); }
     };
 
-    const loadHistoryDetail = async sessionId => {
-        try {
-            const response = await api.get(`/cash-drawers/sessions/${sessionId}`);
-            setHistoryDetail(response.data.data);
-        } catch (requestError) { setError(requestError.response?.data?.message || 'Unable to open this session.'); }
+    const loadHistoryDetail = async (sessionId, page = 1, countPage = 1, activityPage = 1) => {
+        const requestId = ++detailId.current;
+        setHistoryDetailState('loading');
+        if (page === 1) {
+            setHistoryDetail(null);
+            setHistoryMovements([]);
+            setHistoryCounts([]);
+            setHistoryActivity([]);
+            setHistoryCustody({ transfers: [], advances: [] });
+        }
+        const results = await Promise.allSettled([
+            api.get(`/cash-drawers/sessions/${sessionId}`),
+            api.get(`/cash-drawers/sessions/${sessionId}/movements`, { params: { page, limit: 50 } }),
+            api.get(`/cash-drawers/sessions/${sessionId}/counts`, { params: { page: countPage, limit: 50 } }),
+            api.get(`/cash-drawers/sessions/${sessionId}/custody`),
+            api.get(`/cash-drawers/sessions/${sessionId}/activity`, { params: { page: activityPage, limit: 50 } }),
+        ]);
+        if (requestId !== detailId.current) return;
+        if (results[0].status !== 'fulfilled') {
+            setHistoryDetailState('error');
+            return;
+        }
+        setHistoryDetail(results[0].value.data.data);
+        if (results[1].status === 'fulfilled') {
+            setHistoryMovements(results[1].value.data?.data || []);
+            setHistoryMovementTotal(results[1].value.data?.total || 0);
+            setHistoryMovementPage(page);
+        }
+        if (results[2].status === 'fulfilled') {
+            setHistoryCounts(results[2].value.data?.data || []);
+            setHistoryCountPage(countPage);
+            setHistoryCountTotal(results[2].value.data?.total || 0);
+        }
+        if (results[3].status === 'fulfilled') setHistoryCustody(results[3].value.data);
+        if (results[4].status === 'fulfilled') {
+            setHistoryActivity(results[4].value.data?.data || []);
+            setHistoryActivityPage(activityPage);
+            setHistoryActivityTotal(results[4].value.data?.total || 0);
+        }
+        setHistoryDetailState(results.some(result => result.status === 'rejected') ? 'partial' : 'ready');
     };
 
     const latest = session?.latest_count;
@@ -394,7 +539,7 @@ export default function CashDrawerPage({ user, onNavigate, pageState }) {
     const closingCount = counts.find(item => item.kind === 'CLOSING' && item.status === 'SUBMITTED');
     const approvedClosingReview = approvals.some(item => String(item.approval_id) === String(approvalId) &&
         String(item.count_id) === String(closingCount?.count_id) && item.decision === 'APPROVED');
-    const handoverReady = !handover.amount || (Number(handover.amount) > 0 && !!handover.destination && !!handover.recipient_id && !!handover.recipient_password && !!handover.evidence);
+    const handoverReady = !handover.amount || (Number(handover.amount) > 0 && !!handover.destination && !!handover.recipient_id && !!ack?.token && ack.sessionId === session?.session_id && ack.version === session?.version && ack.countId === closingCount?.count_id && ack.amount === handover.amount && ack.destination === handover.destination && ack.recipientId === handover.recipient_id && !!handover.evidence);
     const handoverWithinCash = !handover.amount || (validMoney(handover.amount) && Number(handover.amount) <= Number(closingCount?.counted || 0) && Number(handover.amount) <= Number(closingCount?.expected || 0));
     const transferRemaining = item => Number(item.amount) - item.events.filter(event => ['DEPOSITED','RETURNED'].includes(event.stage)).reduce((sum, event) => sum + Number(event.amount), 0);
     const advanceRemaining = item => Number(item.amount) - item.events.filter(event => ['CONSUMPTION','RETURN'].includes(event.kind)).reduce((sum, event) => sum + Number(event.amount), 0);
@@ -452,14 +597,14 @@ export default function CashDrawerPage({ user, onNavigate, pageState }) {
 
     return <div className="mx-auto max-w-7xl space-y-5 text-slate-900 dark:text-slate-100">
         <div className="flex flex-wrap items-start justify-between gap-3">
-            <div><h1 className="text-2xl font-bold">Cash Box</h1><p className="text-sm text-slate-500 dark:text-slate-400">{error && lastRefresh ? `Stale data · last updated ${formatTime(lastRefresh)}` : lastRefresh ? `Updated ${formatTime(lastRefresh)}` : 'Loading'}</p></div>
-            <div className="flex gap-2"><select aria-label="Drawer" className={field} value={drawerId} onChange={event => reload(event.target.value)}>{drawers.map(drawer => <option key={drawer.drawer_id} value={drawer.drawer_id}>{drawer.name}</option>)}</select><button className={button} onClick={() => reload()} disabled={busy}>Refresh</button></div>
+            <div><h1 className="text-2xl font-bold">Cash Box</h1><p className="text-sm text-slate-500 dark:text-slate-400">{drawerLoading ? 'Loading drawer…' : error && lastRefresh ? `Stale data · last updated ${formatTime(lastRefresh)}` : lastRefresh ? `Updated ${formatTime(lastRefresh)}` : 'Loading'}</p></div>
+            <div className="flex gap-2"><select aria-label="Drawer" className={field} value={drawerId} onChange={event => { const next = event.target.value; ++detailId.current; setDrawerId(next); setSession(null); setRegisterPage(1); setMovements([]); setCounts([]); setCustody({ transfers: [], advances: [] }); setApprovals([]); setDrawerLoading(true); setHistory([]); setHistoryDetail(null); setHistoryPage(1); setHistoryState('loading'); reload(next); }}>{drawers.map(drawer => <option key={drawer.drawer_id} value={drawer.drawer_id}>{drawer.name}</option>)}</select><button className={button} onClick={() => reload()} disabled={busy}>Refresh</button></div>
         </div>
         {error && <div role="alert" className="rounded border border-red-300 bg-red-50 p-3 text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-200">{error}</div>}
         {pendingWrite?.path && <button className={button} disabled={busy} onClick={retryPending}>Retry pending request with original key</button>}
         {selectedDrawer && <p className="text-sm text-slate-600 dark:text-slate-300">{selectedDrawer.hardware_mode === 'ELECTRONIC_DRAWER' ? 'Electronic drawer mode; count cash manually until a device is connected.' : 'Manual cash box · Electronic drawer support can be added later.'}</p>}
-        {!session && drawerId && <p className="text-sm text-slate-600 dark:text-slate-300">Count the cash in the box, then open the session. Cash payments will appear here automatically.</p>}
-        {session && <>
+        {!drawerLoading && !error && drawerId && !['OPEN','CLOSING'].includes(session?.status) && <p className="text-sm text-slate-600 dark:text-slate-300"><strong>No session open.</strong> Review previous sessions in History, or count the cash and choose Open cash box to start a session.</p>}
+        {!drawerLoading && !error && session && <>
             <p className="text-sm">{session.session_code} · {session.business_date} · Responsible: {session.custodian_name} · <strong>{session.status}</strong></p>
             <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
                 {[["Expected cash", money(session.expected)], ["Latest count", latest ? money(latest.counted) : 'Not counted'],
@@ -476,8 +621,8 @@ export default function CashDrawerPage({ user, onNavigate, pageState }) {
                 {canClose && <button className={button} disabled={busy || !!draftCount} onClick={() => post(`/cash-drawers/sessions/${session.session_id}/start-closing`, { expected_version: session.version }, 'start-closing')}>Close drawer</button>}
             </div>}
         </>}
-        {session?.status === 'CLOSED' && canOpen && <button className={button} onClick={() => setShowOpen(value => !value)}>{showOpen ? 'Hide opening form' : 'Open a new session'}</button>}
-        {(!session || (session.status === 'CLOSED' && showOpen)) && drawerId && canOpen && <Panel title="Open cash box"><form onSubmit={open} className="space-y-4">
+        {!drawerLoading && !error && drawerId && !['OPEN','CLOSING'].includes(session?.status) && canOpen && <button className={button} onClick={() => setShowOpen(value => !value)}>{showOpen ? 'Hide opening form' : 'Open cash box'}</button>}
+        {!drawerLoading && !error && showOpen && !['OPEN','CLOSING'].includes(session?.status) && drawerId && canOpen && <Panel title="Open cash box"><form onSubmit={open} className="space-y-4">
             <div className="grid gap-3 sm:grid-cols-2"><label>Business date<input type="date" value={openDate} onChange={event => setOpenDate(event.target.value)} className={field} required /></label><label>Person responsible for the cash<select value={custodianId} onChange={event => setCustodianId(event.target.value)} className={field} required><option value="">Select employee</option>{custodians.map(person => <option key={person.employee_id} value={person.employee_id}>{person.name}</option>)}</select></label></div>
             {custodianLoadError && <p role="alert" className="text-sm text-red-700 dark:text-red-300">Could not load employees. Reload this page.</p>}
             <DenominationEditor value={quantities} onChange={setQuantities} />
@@ -488,7 +633,7 @@ export default function CashDrawerPage({ user, onNavigate, pageState }) {
             {!openingMatches && <p role="alert" className="text-sm text-red-700 dark:text-red-300">Opening sources must equal the denomination count before opening.</p>}
             <button disabled={busy || custodianLoadError || !custodians.length || !openingMatches} className={button}>Verify and open cash box</button>
         </form></Panel>}
-        {session && <>
+        {!drawerLoading && !error && session && <>
             <Dialog open={movementOpen && session.status === 'OPEN' && !draftCount && canMove} onClose={() => setMovementOpen(false)} className="relative z-50 md:hidden">
                 <div className="fixed inset-0 bg-slate-950/70" aria-hidden="true" />
                 <div className="fixed inset-0 overflow-y-auto bg-white dark:bg-slate-900">
@@ -498,7 +643,9 @@ export default function CashDrawerPage({ user, onNavigate, pageState }) {
                     </DialogPanel>
                 </div>
             </Dialog>
+        </>}
             <div role="tablist" aria-label="Cash drawer sections" className="flex flex-wrap gap-2">{['Today','Counts','Handover & Advances','History'].map((name, index, names) => <button key={name} type="button" role="tab" aria-selected={tab === name} tabIndex={tab === name ? 0 : -1} onClick={() => setTab(name)} onKeyDown={event => { if (['ArrowLeft','ArrowRight'].includes(event.key)) { event.preventDefault(); const next = (index + (event.key === 'ArrowRight' ? 1 : -1) + names.length) % names.length; setTab(names[next]); event.currentTarget.parentElement.children[next].focus(); } }} className={`min-h-11 rounded-lg px-4 ${tab === name ? 'bg-slate-900 text-white dark:bg-amber-600' : 'bg-white dark:bg-slate-800'}`}>{name}</button>)}</div>
+            {!drawerLoading && !error && session && <>
             {tab === 'Today' && <div className="flex flex-wrap items-center gap-2">
                 <input aria-label="Search cash movements" className={`${field} max-w-xs`} placeholder="Search reference, purpose or operator" value={registerSearch}
                     onChange={event => { setRegisterPage(1); setRegisterSearch(event.target.value); }} />
@@ -587,17 +734,42 @@ export default function CashDrawerPage({ user, onNavigate, pageState }) {
                 <div className="space-y-3">{canTransfer && visibleTransfers.map(item => <TransferEventForm key={item.transfer_id} transfer={item} drawers={drawers} post={post} busy={busy} />)}</div>
                 <div className="space-y-3">{canSettleAdvance && visibleAdvances.map(item => <AdvanceEventForm key={item.advance_id} advance={item} drawers={drawers} post={post} busy={busy} />)}</div>
             </div>}
-            {tab === 'History' && <Panel title="Session history"><div className="space-y-2">{history.map(item => <div key={item.session_id} className="flex flex-wrap items-center justify-between gap-2 rounded border border-slate-200 p-3 dark:border-slate-700"><span>{item.session_code} · {item.business_date} · {item.custodian_name} · {item.status} · expected {money(item.expected)}</span><span className="flex gap-2"><button className="min-h-11 underline" onClick={() => loadHistoryDetail(item.session_id)}>View</button>{item.status === 'CLOSED' && <><button className="min-h-11 underline" onClick={() => downloadReport(item.session_id, 'pdf')}>PDF</button><button className="min-h-11 underline" onClick={() => downloadReport(item.session_id, 'csv')}>CSV</button></>}</span></div>)}</div>{historyDetail && <div className="mt-4 rounded border border-slate-200 p-3 dark:border-slate-700"><h3 className="font-semibold">{historyDetail.session_code} · {historyDetail.status}</h3><p>Opening {money(historyDetail.opening_amount)} · receipts {money(historyDetail.total_in)} · releases {money(historyDetail.total_out)}</p>{historyDetail.close_snapshot ? <p>Final expected {money(historyDetail.close_snapshot.expected)} · counted {money(historyDetail.close_snapshot.counted)} · over / short {money(historyDetail.close_snapshot.variance)} · retained actual {money(historyDetail.close_snapshot.retained_actual)} · retained ledger {money(historyDetail.close_snapshot.retained_ledger)}.</p> : <p>Session remains active.</p>}<p className="text-sm">This financial snapshot is read only. Later custody events are shown separately.</p></div>}</Panel>}
+
             {session.status === 'CLOSING' && <Panel title="Close cash box">
                 <p className="mb-3 text-sm">Step {closeStep} of 5 · cash writes are paused. Cancelling closing requires a reason and a fresh final count later.</p>
                 {closeStep === 1 && <div className="space-y-3"><h3 className="font-semibold">1. Verify source completeness</h3><p>Check physical cash sales, refunds, expenses, supplier payments, transfers, and advances before the final count.</p><label className="flex items-start gap-2"><input type="checkbox" className="mt-1 size-5" checked={sourcesChecked} onChange={event => setSourcesChecked(event.target.checked)} /><span>I checked the source records for this session.</span></label><button className={button} disabled={!sourcesChecked} onClick={() => setCloseStep(2)}>Continue to final count</button></div>}
                 {closeStep === 2 && <div className="space-y-3"><h3 className="font-semibold">2. Final count</h3>{closingCount && <p>Latest final count #{closingCount.count_id}: {money(closingCount.counted)} against {money(closingCount.expected)} at cutoff #{closingCount.cutoff_sequence}.</p>}<div className="flex flex-wrap gap-2">{canCount && !draftCount && <button className={button} disabled={busy} onClick={() => beginCount('CLOSING')}>{closingCount ? 'Recount cash' : 'Count cash'}</button>}<button className={button} disabled={!closingCount || !!draftCount} onClick={() => setCloseStep(3)}>Continue to variance review</button></div></div>}
                 {closeStep === 3 && <div className="space-y-3"><h3 className="font-semibold">3. Review variance</h3><p>Expected {money(closingCount?.expected)} · counted {money(closingCount?.counted)} · over / short {money(closingCount?.variance)} at cutoff #{closingCount?.cutoff_sequence}.</p>{Number(closingCount?.variance) !== 0 && <><label className="block">Reason for variance<input className={field} value={reviewReason} onChange={event => setReviewReason(event.target.value)} /></label><button className={button} disabled={busy || !reviewReason || !closingCount} onClick={async () => { const result = await post('/cash-drawers/approvals', { session_id: session.session_id, count_id: closingCount.count_id, reason: reviewReason, expected_version: session.version }, 'approval'); if (result) setApprovalId(String(result.data.approval_id)); }}>Request independent review</button><label className="block">Review ID<input className={field} value={approvalId} onChange={event => setApprovalId(event.target.value)} /></label>{!approvedClosingReview && <p className="text-sm">Waiting for independent manager approval. Refresh after the manager decides.</p>}</>}<div className="flex gap-2"><button className={button} onClick={() => setCloseStep(2)}>Back</button><button className={button} disabled={!closingCount || (Number(closingCount.variance) !== 0 && !approvedClosingReview)} onClick={() => setCloseStep(4)}>Continue to handover</button></div></div>}
-                {closeStep === 4 && <div className="space-y-3"><h3 className="font-semibold">4. Handover and retain</h3><p>Leave the amount blank to retain all counted cash in the box.</p><div className="grid gap-2 sm:grid-cols-2"><label>Final handover amount<input className={field} inputMode="decimal" value={handover.amount} onChange={event => setHandover({ ...handover, amount: event.target.value })} /></label><label>Destination<input className={field} value={handover.destination} onChange={event => setHandover({ ...handover, destination: event.target.value })} /></label><label>Recipient<select className={field} value={handover.recipient_id} onChange={event => setHandover({ ...handover, recipient_id: event.target.value })}><option value="">Select employee</option>{employees.map(person => <option key={person.employee_id} value={person.employee_id}>{person.name}</option>)}</select></label><label>Acknowledgment evidence<input className={field} value={handover.evidence} onChange={event => setHandover({ ...handover, evidence: event.target.value })} /></label>{handover.amount && <label>Recipient password<input type="password" autoComplete="off" className={field} value={handover.recipient_password} onChange={event => setHandover({ ...handover, recipient_password: event.target.value })} /></label>}</div><p>Retained actual {money(Number(closingCount?.counted || 0) - Number(handover.amount || 0))} · retained ledger {money(Number(closingCount?.expected || 0) - Number(handover.amount || 0))} (preview).</p>{!handoverWithinCash && <p role="alert" className="text-red-700 dark:text-red-300">Handover cannot exceed counted or expected cash.</p>}<div className="flex gap-2"><button className={button} onClick={() => setCloseStep(3)}>Back</button><button className={button} disabled={!handoverReady || !handoverWithinCash} onClick={() => setCloseStep(5)}>Review close</button></div></div>}
-                {closeStep === 5 && <div className="space-y-3"><h3 className="font-semibold">5. Review and confirm</h3><p>Session {session.session_code} · custodian {session.custodian_name}</p><p>Opening {money(session.opening_amount)} · cash in {money(session.total_in)} · cash out before final handover {money(session.total_out)}</p><p>Expected at cutoff {money(closingCount?.expected)} · counted {money(closingCount?.counted)} · variance {money(closingCount?.variance)}</p><p>Handover {money(handover.amount)} · retained actual {money(Number(closingCount?.counted || 0) - Number(handover.amount || 0))} · retained ledger {money(Number(closingCount?.expected || 0) - Number(handover.amount || 0))} (preview).</p><label className="block">Closing notes<textarea className={field} maxLength={2000} value={closeNotes} onChange={event => setCloseNotes(event.target.value)} /></label><div className="flex gap-2"><button className={button} onClick={() => setCloseStep(4)}>Back</button><button className={button} disabled={busy || !canClose || !closingCount || !handoverReady || !handoverWithinCash || (Number(closingCount?.variance) !== 0 && !approvedClosingReview)} onClick={() => post(`/cash-drawers/sessions/${session.session_id}/close`, { count_id: closingCount.count_id, expected_version: session.version, approval_id: approvalId || null, handovers: handover.amount ? [handover] : [], notes: closeNotes }, 'close')}>Confirm close</button></div></div>}
+                {closeStep === 4 && <div className="space-y-3"><h3 className="font-semibold">4. Handover and retain</h3><p>Leave the amount blank to retain all counted cash in the box.</p><div className="grid gap-2 sm:grid-cols-2"><label>Final handover amount<input className={field} inputMode="decimal" value={handover.amount} onChange={event => { setHandover({ ...handover, amount: event.target.value }); setAck(null); }} /></label><label>Destination<input className={field} value={handover.destination} onChange={event => { setHandover({ ...handover, destination: event.target.value }); setAck(null); }} /></label><label>Recipient<select className={field} value={handover.recipient_id} onChange={event => { setHandover({ ...handover, recipient_id: event.target.value }); setAck(null); }}><option value="">Select employee</option>{employees.map(person => <option key={person.employee_id} value={person.employee_id}>{person.name}</option>)}</select></label><label>Acknowledgment evidence<input className={field} value={handover.evidence} onChange={event => setHandover({ ...handover, evidence: event.target.value })} /></label>{handover.amount && <label>Recipient password<input type="password" autoComplete="off" className={field} value={handover.recipient_password} onChange={event => setHandover({ ...handover, recipient_password: event.target.value })} /></label>}{handover.amount && <button type="button" className={button} disabled={busy || !handover.recipient_password || !handover.recipient_id || !handover.destination || !validMoney(handover.amount)} onClick={authenticateRecipient}>{ack ? 'Reauthenticate recipient' : 'Authenticate recipient'}</button>}</div><p>Retained actual {money(Number(closingCount?.counted || 0) - Number(handover.amount || 0))} · retained ledger {money(Number(closingCount?.expected || 0) - Number(handover.amount || 0))} (preview).</p>{!handoverWithinCash && <p role="alert" className="text-red-700 dark:text-red-300">Handover cannot exceed counted or expected cash.</p>}<div className="flex gap-2"><button className={button} onClick={() => setCloseStep(3)}>Back</button><button className={button} disabled={!handoverReady || !handoverWithinCash} onClick={() => setCloseStep(5)}>Review close</button></div></div>}
+                {closeStep === 5 && <div className="space-y-3"><h3 className="font-semibold">5. Review and confirm</h3><p>Session {session.session_code} · custodian {session.custodian_name}</p><p>Opening {money(session.opening_amount)} · cash in {money(session.total_in)} · cash out before final handover {money(session.total_out)}</p><p>Expected at cutoff {money(closingCount?.expected)} · counted {money(closingCount?.counted)} · variance {money(closingCount?.variance)}</p><p>Handover {money(handover.amount)} · retained actual {money(Number(closingCount?.counted || 0) - Number(handover.amount || 0))} · retained ledger {money(Number(closingCount?.expected || 0) - Number(handover.amount || 0))} (preview).</p><label className="block">Closing notes<textarea className={field} maxLength={2000} value={closeNotes} onChange={event => setCloseNotes(event.target.value)} /></label><div className="flex gap-2"><button className={button} onClick={() => setCloseStep(4)}>Back</button><button className={button} disabled={busy || !canClose || !closingCount || !handoverReady || !handoverWithinCash || (Number(closingCount?.variance) !== 0 && !approvedClosingReview)} onClick={() => post(`/cash-drawers/sessions/${session.session_id}/close`, { count_id: closingCount.count_id, expected_version: session.version, approval_id: approvalId || null, handovers: handover.amount ? [{ amount: handover.amount, destination: handover.destination, recipient_id: handover.recipient_id, evidence: handover.evidence, ack_token: ack.token }] : [], notes: closeNotes }, 'close')}>Confirm close</button></div></div>}
             </Panel>}
             {session.status === 'CLOSED' && <p className="text-sm">Closed report is final.</p>}
         </>}
-        {!session && !drawerId && <p>No cash drawer is configured.</p>}
+        {tab === 'History' && <Panel title="Session history">
+            <div className="grid gap-2 sm:grid-cols-4">
+                <label>From<input type="date" className={field} value={historyFilters.from} onChange={event => { setHistoryPage(1); setHistoryFilters({ ...historyFilters, from: event.target.value }); }} /></label>
+                <label>To<input type="date" className={field} value={historyFilters.to} onChange={event => { setHistoryPage(1); setHistoryFilters({ ...historyFilters, to: event.target.value }); }} /></label>
+                <label>Status<select className={field} value={historyFilters.status} onChange={event => { setHistoryPage(1); setHistoryFilters({ ...historyFilters, status: event.target.value }); }}><option value="">All</option><option>OPEN</option><option>CLOSING</option><option>CLOSED</option></select></label>
+                <label>Custodian<select className={field} value={historyFilters.custodian_id} onChange={event => { setHistoryPage(1); setHistoryFilters({ ...historyFilters, custodian_id: event.target.value }); }}><option value="">All</option>{employees.map(person => <option key={person.employee_id} value={person.employee_id}>{person.name}</option>)}</select></label>
+            </div>
+            {historyState === 'loading' && <p role="status">Loading session history…</p>}
+            {historyState === 'error' && <p role="alert">{historyError}{history.length > 0 ? ' Previously loaded results may be stale.' : ''}</p>}
+            {historyState === 'ready' && history.length === 0 && <p>No sessions match these filters. Opening cash is not required to view history.</p>}
+            <div className="mt-3 space-y-2">{history.map(item => <div key={item.session_id} className="flex flex-wrap items-center justify-between gap-2 rounded border p-3"><span>{item.session_code} · {item.business_date} · {item.custodian_name} · {item.status} · expected {money(item.expected)}</span><span className="flex gap-2"><button className="min-h-11 underline" onClick={() => loadHistoryDetail(item.session_id)}>View</button>{item.status === 'CLOSED' && <><button className="min-h-11 underline" onClick={() => downloadReport(item.session_id, 'pdf')}>PDF</button><button className="min-h-11 underline" onClick={() => downloadReport(item.session_id, 'csv')}>CSV</button></>}</span></div>)}</div>
+            <div className="mt-3 flex items-center gap-3"><button className={button} disabled={historyPage <= 1 || historyState === 'loading'} onClick={() => setHistoryPage(historyPage - 1)}>Previous</button><span>Page {historyPage} of {Math.max(1, Math.ceil(historyTotal / 25))}</span><button className={button} disabled={historyPage * 25 >= historyTotal || historyState === 'loading'} onClick={() => setHistoryPage(historyPage + 1)}>Next</button></div>
+            {historyDetailState === 'loading' && <p role="status">Loading session detail…</p>}
+            {historyDetailState === 'error' && <p role="alert">Unable to load session detail.</p>}
+            {historyDetailState === 'partial' && <p role="alert">Some detail could not load. Displayed sections may be incomplete.</p>}
+            {historyDetail && <div className="mt-4 space-y-4 rounded border p-3">
+                <h3 className="font-semibold">{historyDetail.session_code} · {historyDetail.status}</h3>
+                <p>Opening {money(historyDetail.opening_amount)} · receipts {money(historyDetail.total_in)} · releases {money(historyDetail.total_out)}</p>
+                {historyDetail.close_snapshot ? <p>Immutable close: expected {money(historyDetail.close_snapshot.expected)} · counted {money(historyDetail.close_snapshot.counted)} · variance {money(historyDetail.close_snapshot.variance)} · retained actual {money(historyDetail.close_snapshot.retained_actual)} · retained ledger {money(historyDetail.close_snapshot.retained_ledger)}.</p> : <p>Session remains active.</p>}
+                <section><h4 className="font-semibold">Movements</h4><p className="text-sm">Cash entering or leaving the box; recorded order determines the running balance.</p><div className="space-y-2">{historyMovements.map(item => <div key={item.movement_id} className="rounded border p-2 text-sm">#{item.sequence} · {item.direction} {money(item.amount)} · balance {money(item.balance_after)} · {item.category} · {item.description} · {item.physical_reference || item.source_event_key || 'Manual'} · {item.operator_name} · occurred {formatTime(item.occurred_at)} · recorded {formatTime(item.recorded_at)}{item.invoice_id && <button className="ml-2 underline" onClick={() => navigateSource('sales_history', { invoice_id: item.invoice_id })}>Open invoice</button>}</div>)}</div>{historyMovements.length === 0 && <p>No movements recorded.</p>}<div className="flex gap-2"><button className={button} disabled={historyMovementPage <= 1} onClick={() => loadHistoryDetail(historyDetail.session_id, historyMovementPage - 1, historyCountPage, historyActivityPage)}>Previous</button><span>Page {historyMovementPage} of {Math.max(1, Math.ceil(historyMovementTotal / 50))}</span><button className={button} disabled={historyMovementPage * 50 >= historyMovementTotal} onClick={() => loadHistoryDetail(historyDetail.session_id, historyMovementPage + 1, historyCountPage, historyActivityPage)}>Next</button></div></section>
+                <section><h4 className="font-semibold">Counts</h4>{historyCounts.map(item => <div key={item.count_id} className="rounded border p-2 text-sm">{item.kind} · {item.status} · cutoff #{item.cutoff_sequence} · expected {money(item.expected)} · counted {money(item.counted)} · variance {money(item.variance)} · counter {item.counter_name} · {formatTime(item.submitted_at)} · review {item.review?.decision || 'None'}<p>{item.lines?.map(line => `${line.code}: ${line.quantity}`).join(' · ')}</p></div>)}{!historyCounts.length && <p>No counts recorded.</p>}<div className="flex gap-2"><button className={button} disabled={historyCountPage <= 1} onClick={() => loadHistoryDetail(historyDetail.session_id, historyMovementPage, historyCountPage - 1, historyActivityPage)}>Previous counts</button><span>Page {historyCountPage} of {Math.max(1, Math.ceil(historyCountTotal / 50))}</span><button className={button} disabled={historyCountPage * 50 >= historyCountTotal} onClick={() => loadHistoryDetail(historyDetail.session_id, historyMovementPage, historyCountPage + 1, historyActivityPage)}>Next counts</button></div></section>
+                <section><h4 className="font-semibold">Activity</h4><p className="text-sm">Lifecycle and review events do not change cash.</p>{historyActivity.map(item => <div key={item.audit_id} className="text-sm">{item.action} · {item.target_type} #{item.target_id} · {item.actor_name} · {formatTime(item.recorded_at)} · {item.reason || '—'}</div>)}{!historyActivity.length && <p>No activity events recorded for this session.</p>}<div className="flex gap-2"><button className={button} disabled={historyActivityPage <= 1} onClick={() => loadHistoryDetail(historyDetail.session_id, historyMovementPage, historyCountPage, historyActivityPage - 1)}>Previous activity</button><span>Page {historyActivityPage} of {Math.max(1, Math.ceil(historyActivityTotal / 50))}</span><button className={button} disabled={historyActivityPage * 50 >= historyActivityTotal} onClick={() => loadHistoryDetail(historyDetail.session_id, historyMovementPage, historyCountPage, historyActivityPage + 1)}>Next activity</button></div></section>
+                <section><h4 className="font-semibold">Custody after the closing snapshot</h4><p className="text-sm">Recorded later; the original close remains unchanged.</p>{historyActivity.filter(item => item.action === 'ADDENDUM').map(item => <div key={item.audit_id} className="text-sm">Addendum · {formatTime(item.recorded_at)} · {item.reason} · {item.metadata?.note || ''}</div>)}{historyCustody.transfers.map(item => <div key={item.transfer_id} className="text-sm">Transfer #{item.transfer_id} · {item.events.filter(event => !historyDetail.closed_at || new Date(event.recorded_at) > new Date(historyDetail.closed_at)).map(event => `${event.stage} ${money(event.amount)} ${formatTime(event.recorded_at)}`).join(' · ')}</div>)}{historyCustody.advances.map(item => <div key={item.advance_id} className="text-sm">Advance #{item.advance_id} · {item.events.filter(event => !historyDetail.closed_at || new Date(event.created_at) > new Date(historyDetail.closed_at)).map(event => `${event.kind} ${money(event.amount)} ${formatTime(event.created_at)}`).join(' · ')}</div>)}</section>
+            </div>}
+        </Panel>}
+        {!drawerLoading && !error && !session && !drawerId && <p>No cash drawer is configured.</p>}
     </div>;
 }

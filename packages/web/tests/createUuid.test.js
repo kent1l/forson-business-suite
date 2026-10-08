@@ -16,3 +16,7 @@ test('creates a valid version 4 UUID when randomUUID is unavailable', () => {
 test('uses the browser UUID implementation when available', () => {
     assert.equal(createUuid({ randomUUID: () => 'native-uuid' }), 'native-uuid');
 });
+
+test('fails closed when secure randomness is unavailable', () => {
+    assert.throws(() => createUuid({}), /Secure random number generation is unavailable/);
+});

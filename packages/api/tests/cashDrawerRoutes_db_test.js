@@ -15,12 +15,15 @@ const request = require('supertest');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
 const db = require('../db');
+const cash = require('../services/cashDrawerService');
 const { manilaDateString } = require('../helpers/manilaDate');
 const router = require('../routes/cashDrawerRoutes');
+const paymentRouter = require('../routes/paymentRoutes');
 
 const app = express();
 app.use(express.json());
 app.use('/api', router);
+app.use('/api', paymentRouter);
 
 const idempotency = () => require('node:crypto').randomUUID();
 const auth = token => ({ Authorization: `Bearer ${token}`, 'Idempotency-Key': idempotency() });
@@ -90,13 +93,43 @@ async function run() {
   const decision = await request(app).post(`/api/cash-drawers/approvals/${approval.body.data.approval_id}/decision`)
     .set(auth(reviewerToken)).send({ decision: 'APPROVED' });
   assert.equal(decision.status, 200, JSON.stringify(decision.body));
-  const closed = await request(app).post(`/api/cash-drawers/sessions/${sessionId}/close`).set(auth(actorToken))
-    .send({ count_id: countId, expected_version: 3, approval_id: approval.body.data.approval_id,
+  const closeAck = await request(app).post(`/api/cash-drawers/sessions/${sessionId}/handover-ack`)
+    .set({ Authorization: `Bearer ${actorToken}` }).send({ count_id: started.body.data.count_id,
+      expected_version: 3, amount: '50.00', destination: 'Safe', recipient_id: reviewer.employee_id,
+      recipient_password: password });
+  assert.equal(closeAck.status, 200, JSON.stringify(closeAck.body));
+  const closeKey = idempotency();
+  const closeBody = { count_id: countId, expected_version: 3, approval_id: approval.body.data.approval_id,
       handovers: [{ amount: '50.00', destination: 'Safe', recipient_id: reviewer.employee_id,
-        recipient_password: password, evidence: 'Signed handover' }] });
+        ack_token: closeAck.body.data.token, evidence: 'Signed handover' }] };
+  const closed = await request(app).post(`/api/cash-drawers/sessions/${sessionId}/close`)
+    .set({ Authorization: `Bearer ${actorToken}`, 'Idempotency-Key': closeKey }).send(closeBody);
   assert.equal(closed.status, 201, JSON.stringify(closed.body));
+  const replayClose = await request(app).post(`/api/cash-drawers/sessions/${sessionId}/close`)
+    .set({ Authorization: `Bearer ${actorToken}`, 'Idempotency-Key': closeKey }).send(closeBody);
+  assert.equal(replayClose.status, 201);
+  assert.equal(replayClose.body.data.session_id, sessionId);
+  const closeResult = await request(app).get(`/api/cash-drawers/requests/${closeKey}`)
+    .set({ Authorization: `Bearer ${actorToken}` });
+  assert.equal(closeResult.status, 200);
+  assert.equal(closeResult.body.data.status_code, 201);
+  const deniedResult = await request(app).get(`/api/cash-drawers/requests/${closeKey}`)
+    .set({ Authorization: `Bearer ${reviewerToken}` });
+  assert.equal(deniedResult.status, 404);
   assert.equal(closed.body.data.retained_actual, '40.00');
   assert.equal(closed.body.data.retained_ledger, '50.00');
+  const originalSnapshot = closed.body.data.report_snapshot;
+  const finalTransfer = await db.query('SELECT transfer_id FROM cash_transfer WHERE session_id=$1', [sessionId]);
+  const laterDeposit = await request(app).post(`/api/cash-drawers/transfers/${finalTransfer.rows[0].transfer_id}/events`)
+    .set(auth(actorToken)).send({ stage: 'DEPOSITED', amount: '50.00', evidence: 'Bank slip after close' });
+  assert.equal(laterDeposit.status, 201, JSON.stringify(laterDeposit.body));
+  const stillClosed = await db.query('SELECT report_snapshot FROM cash_session_close WHERE session_id=$1', [sessionId]);
+  assert.deepEqual(stillClosed.rows[0].report_snapshot, originalSnapshot, 'later custody cannot change the closing snapshot');
+  const activity = await request(app).get(`/api/cash-drawers/sessions/${sessionId}/activity`)
+    .set({ Authorization: `Bearer ${actorToken}` });
+  assert.equal(activity.status, 200, JSON.stringify(activity.body));
+  assert(activity.body.data.some(item => item.action === 'CLOSE'));
+  assert(activity.body.data.some(item => item.action === 'DEPOSITED'));
   const csv = await request(app).get(`/api/cash-drawers/sessions/${sessionId}/report?format=csv`)
     .set({ Authorization: `Bearer ${actorToken}` });
   assert.equal(csv.status, 200);
@@ -140,11 +173,13 @@ async function run() {
   const reimbursementApproval = await approvedRelease('REIMBURSEMENT', '5.00', 1);
   const invalidReimbursement = await request(app).post(`/api/cash-drawers/advances/${advance.body.data.advance_id}/events`)
     .set(auth(actorToken)).send({ kind: 'REIMBURSEMENT', amount: '5.00', expense_id: expense.rows[1].expense_id,
-      receiving_session_id: activeSessionId, approval_id: reimbursementApproval });
+      receiving_session_id: activeSessionId, approval_id: reimbursementApproval,
+      payer_employee_id: reviewer.employee_id, payer_evidence: 'Signed employee cash receipt' });
   assert.equal(invalidReimbursement.status, 422, JSON.stringify(invalidReimbursement.body));
   const reimbursement = await request(app).post(`/api/cash-drawers/advances/${advance.body.data.advance_id}/events`)
     .set(auth(actorToken)).send({ kind: 'REIMBURSEMENT', amount: '5.00', expense_id: expense.rows[0].expense_id,
-      receiving_session_id: activeSessionId, approval_id: reimbursementApproval });
+      receiving_session_id: activeSessionId, approval_id: reimbursementApproval,
+      payer_employee_id: reviewer.employee_id, payer_evidence: 'Signed employee cash receipt' });
   assert.equal(reimbursement.status, 201, JSON.stringify(reimbursement.body));
   assert.equal(reimbursement.body.outstanding, '10.00', 'employee-paid expense must not inflate advance custody');
   await assert.rejects(() => db.query("UPDATE expense SET amount='6.00' WHERE expense_id=$1", [expense.rows[0].expense_id]),
@@ -156,7 +191,8 @@ async function run() {
     error => error.code === '23514');
   const duplicateReimbursement = await request(app).post(`/api/cash-drawers/advances/${advance.body.data.advance_id}/events`)
     .set(auth(actorToken)).send({ kind: 'REIMBURSEMENT', amount: '5.00', expense_id: expense.rows[0].expense_id,
-      receiving_session_id: activeSessionId, approval_id: reimbursementApproval });
+      receiving_session_id: activeSessionId, approval_id: reimbursementApproval,
+      payer_employee_id: reviewer.employee_id, payer_evidence: 'Signed employee cash receipt' });
   assert.equal(duplicateReimbursement.status, 409, JSON.stringify(duplicateReimbursement.body));
   const transferApproval = await approvedRelease('TRANSFER', '10.00', 2);
   const transfer = await request(app).post(`/api/cash-drawers/sessions/${activeSessionId}/transfers`)
@@ -191,6 +227,12 @@ async function run() {
   const notebookReceipt = await request(app).post(`/api/cash-drawers/sessions/${activeSessionId}/movements`)
     .set(auth(actorToken)).send({ ...notebookBody, physical_reference: physicalReference });
   assert.equal(notebookReceipt.status, 201, JSON.stringify(notebookReceipt.body));
+  for (const movementId of [returned.body.movement.movement_id, reimbursement.body.movement.movement_id]) {
+    const correction = await request(app).post(`/api/cash-drawers/movements/${movementId}/reverse`)
+      .set(auth(actorToken)).send({ reason: 'Safety regression: custody linked movement', expected_version: notebookReceipt.body.data.version });
+    assert.equal(correction.status, 422, JSON.stringify(correction.body));
+    assert.equal(correction.body.code, 'CUSTODY_CORRECTION_REQUIRED');
+  }
   assert.equal(notebookReceipt.body.data.physical_reference, physicalReference);
   const notebookOptions = await request(app).get('/api/cash-drawers/notebook-receipts')
     .set({ Authorization: `Bearer ${actorToken}` });
@@ -202,6 +244,84 @@ async function run() {
     .set({ Authorization: `Bearer ${actorToken}` });
   assert.equal(found.status, 200, JSON.stringify(found.body));
   assert.deepEqual(found.body.data.map(row => row.movement_id), [notebookReceipt.body.data.movement_id]);
+  const historyPrefix = `HIST-${idempotency()}`;
+  await db.query(`INSERT INTO cash_drawer_session(session_code,drawer_id,business_date,custodian_id,opening_amount,opened_by,status)
+    SELECT $1||'-'||g,$2,$3,$4,'0.00',$4,'CLOSED' FROM generate_series(1,51) g`,
+  [historyPrefix, drawerId, date, actor.employee_id]);
+  const historyPage = await request(app).get('/api/cash-drawers/sessions')
+    .query({ drawer_id: drawerId, from: date, to: date, status: 'CLOSED', custodian_id: actor.employee_id, page: 3, limit: 25 })
+    .set({ Authorization: `Bearer ${actorToken}` });
+  assert.equal(historyPage.status, 200, JSON.stringify(historyPage.body));
+  assert(historyPage.body.total > 50 && historyPage.body.data.length > 0, 'history must reach sessions beyond page two');
+  const raceCustomer = await db.query("INSERT INTO customer(first_name,last_name) VALUES('Race','Coverage') RETURNING customer_id");
+  const paymentFor = async () => {
+    const invoice = await db.query(`INSERT INTO invoice(invoice_number,customer_id,employee_id,total_amount)
+      VALUES($1,$2,$3,'1.00') RETURNING invoice_id`,
+    [`RACE-COVER-${idempotency()}`, raceCustomer.rows[0].customer_id, actor.employee_id]);
+    const payment = await db.query(`INSERT INTO invoice_payments(invoice_id,method_id,amount_paid,payment_status,created_by)
+      VALUES($1,$2,'1.00','settled',$3) RETURNING payment_id`,
+    [invoice.rows[0].invoice_id, cashMethod.rows[0].method_id, actor.employee_id]);
+    return payment.rows[0].payment_id;
+  };
+  const coveredPaymentId = await paymentFor();
+  const coverageClient = await db.getClient();
+  await coverageClient.query('BEGIN');
+  try {
+    const fullyCovered = await cash.postSourcePayment(coverageClient, { kind: 'invoice', sourceId: coveredPaymentId,
+      actorId: actor.employee_id, canPost: true, notebookReceiptId: notebookReceipt.body.data.movement_id,
+      coveredAmount: '1.00' });
+    assert.equal(fullyCovered, null, 'full coverage posts no new drawer movement without a session id');
+    const competingReverse = request(app).post(`/api/cash-drawers/movements/${notebookReceipt.body.data.movement_id}/reverse`)
+      .set(auth(actorToken)).send({ reason: 'Concurrent correction check', expected_version: notebookReceipt.body.data.version });
+    const reverseResult = competingReverse.then(response => response);
+    await new Promise(resolve => setTimeout(resolve, 30));
+    await coverageClient.query('COMMIT');
+    const deniedReverse = await reverseResult;
+    assert.equal(deniedReverse.status, 422, JSON.stringify(deniedReverse.body));
+    assert.equal(deniedReverse.body.code, 'NOTEBOOK_COVERED');
+  } catch (error) { await coverageClient.query('ROLLBACK'); throw error; }
+  finally { coverageClient.release(); }
+  const afterCoverage = await request(app).get(`/api/cash-drawers/sessions/${activeSessionId}`)
+    .set({ Authorization: `Bearer ${actorToken}` });
+  const reverseFirst = await request(app).post(`/api/cash-drawers/sessions/${activeSessionId}/movements`)
+    .set(auth(actorToken)).send({ ...notebookBody, expected_version: afterCoverage.body.data.version,
+      physical_reference: `Reverse first ${Date.now()}` });
+  assert.equal(reverseFirst.status, 201, JSON.stringify(reverseFirst.body));
+  const reversed = await request(app).post(`/api/cash-drawers/movements/${reverseFirst.body.data.movement_id}/reverse`)
+    .set(auth(actorToken)).send({ reason: 'Cancel before source coverage', expected_version: reverseFirst.body.data.version });
+  assert.equal(reversed.status, 201, JSON.stringify(reversed.body));
+  const latePaymentId = await paymentFor();
+  const lateClient = await db.getClient();
+  await lateClient.query('BEGIN');
+  try {
+    await assert.rejects(() => cash.postSourcePayment(lateClient, { kind: 'invoice', sourceId: latePaymentId,
+      actorId: actor.employee_id, canPost: true, notebookReceiptId: reverseFirst.body.data.movement_id,
+      coveredAmount: '1.00' }), error => error.code === 'NOTEBOOK_REVERSED');
+    await lateClient.query('ROLLBACK');
+  } finally { lateClient.release(); }
+
+  const beforeFullyCovered = await request(app).get(`/api/cash-drawers/sessions/${activeSessionId}`)
+    .set({ Authorization: `Bearer ${actorToken}` });
+  const freshNotebook = await request(app).post(`/api/cash-drawers/sessions/${activeSessionId}/movements`)
+    .set(auth(actorToken)).send({ ...notebookBody, expected_version: beforeFullyCovered.body.data.version,
+      physical_reference: `Fully covered retry ${Date.now()}` });
+  assert.equal(freshNotebook.status, 201, JSON.stringify(freshNotebook.body));
+  const sourceInvoice = await db.query(`INSERT INTO invoice(invoice_number,customer_id,employee_id,total_amount)
+    VALUES($1,$2,$3,'1.00') RETURNING invoice_id`,
+  [`FULL-COVER-${idempotency()}`, raceCustomer.rows[0].customer_id, actor.employee_id]);
+  const coveredBody = { customer_id: raceCustomer.rows[0].customer_id, amount: '1.00',
+    method_id: cashMethod.rows[0].method_id, allocations: [{ invoice_id: sourceInvoice.rows[0].invoice_id, amount_allocated: '1.00' }],
+    notebook_receipt_id: freshNotebook.body.data.movement_id, notebook_covered_amount: '1.00' };
+  const paymentKey = idempotency();
+  const sourcePayment = await request(app).post('/api/payments')
+    .set({ Authorization: `Bearer ${actorToken}`, 'Idempotency-Key': paymentKey }).send(coveredBody);
+  assert.equal(sourcePayment.status, 201, JSON.stringify(sourcePayment.body));
+  const samePayment = await request(app).post('/api/payments')
+    .set({ Authorization: `Bearer ${actorToken}`, 'Idempotency-Key': paymentKey }).send(coveredBody);
+  assert.equal(samePayment.status, 201, JSON.stringify(samePayment.body));
+  const sourceCount = await db.query('SELECT COUNT(*)::int AS count FROM cash_source_link WHERE movement_id=$1', [freshNotebook.body.data.movement_id]);
+  assert.equal(sourceCount.rows[0].count, 1, 'fully covered source retry must not create another receipt');
+
   process.stdout.write('PASS cash drawer HTTP idempotency, review, close, custody, reimbursement and retained opening\n');
 }
 

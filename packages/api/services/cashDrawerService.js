@@ -165,7 +165,7 @@ function enabled() { return process.env.ENABLE_CASH_DRAWER === 'true'; }
 function userCanPost(user) { return Number(user?.permission_level_id) === 10 || user?.permissions?.includes('cash_drawer:move'); }
 
 async function beginSourceRequest(client, req) {
-  if (!enabled() || (!req.body?.cash_session_id && req.body?.funding_source !== 'ADVANCE')) return null;
+  if (!enabled() || (!req.body?.cash_session_id && !req.body?.notebook_receipt_id && req.body?.funding_source !== 'ADVANCE')) return null;
   const requestId = req.get('Idempotency-Key');
   if (!requestId || !UUID.test(requestId)) fail(400, 'IDEMPOTENCY_KEY_REQUIRED', 'Send a UUID Idempotency-Key for this cash source write.');
   const hash = crypto.createHash('sha256').update(JSON.stringify({ method: req.method, path: req.path, body: req.body })).digest('hex');
@@ -236,9 +236,15 @@ async function postSourcePayment(client, { kind, sourceId, sessionId, actorId, f
   let uncovered = cents(normalized);
   if (notebookReceiptId) {
     if (!['invoice','customer'].includes(kind)) fail(422, 'INVALID_NOTEBOOK_LINK', 'Only customer receipts can cover notebook cash.');
+    // Coverage and reversal both lock the containing session before this movement.
+    const receiptSession = await client.query('SELECT session_id FROM cash_drawer_movement WHERE movement_id=$1', [notebookReceiptId]);
+    if (!receiptSession.rowCount) fail(422, 'INVALID_NOTEBOOK_LINK', 'Notebook receipt not found.');
+    await client.query('SELECT session_id FROM cash_drawer_session WHERE session_id=$1 FOR UPDATE', [receiptSession.rows[0].session_id]);
     const receiptResult = await client.query('SELECT * FROM cash_drawer_movement WHERE movement_id=$1 FOR UPDATE', [notebookReceiptId]);
     const receipt = receiptResult.rows[0];
     if (!receipt || receipt.category !== 'NOTEBOOK_RECEIPT' || receipt.direction !== 'IN') fail(422, 'INVALID_NOTEBOOK_LINK', 'Referenced movement is not a notebook receipt.');
+    const reversed = await client.query('SELECT 1 FROM cash_drawer_movement WHERE reversal_of=$1', [notebookReceiptId]);
+    if (reversed.rowCount) fail(409, 'NOTEBOOK_REVERSED', 'A reversed notebook receipt cannot cover a source payment.');
     const coverage = cents(coveredAmount, { positive: true });
     const used = await client.query('SELECT COALESCE(SUM(amount_covered),0) AS amount FROM cash_source_link WHERE movement_id=$1', [notebookReceiptId]);
     if (coverage > uncovered || coverage + cents(used.rows[0].amount) > cents(receipt.amount)) fail(422, 'NOTEBOOK_OVER_COVERED', 'Notebook coverage exceeds the original physical receipt.');
@@ -247,6 +253,8 @@ async function postSourcePayment(client, { kind, sourceId, sessionId, actorId, f
       VALUES($1,$2,$3,$4,$5,'NOTEBOOK_RECONCILIATION',$6)`,
     [sourceKey, notebookReceiptId, kind === 'customer' ? sourceId : null, kind === 'invoice' ? sourceId : null,
       money(coverage), actorId]);
+    await audit(client, { sessionId: receipt.session_id, targetType: 'MOVEMENT', targetId: notebookReceiptId,
+      action: 'NOTEBOOK_COVERAGE', actorId, metadata: { source_key: sourceKey, amount: money(coverage) } });
     uncovered -= coverage;
   } else if (coveredAmount !== undefined) {
     fail(422, 'NOTEBOOK_RECEIPT_REQUIRED', 'Select the notebook receipt being covered.');
@@ -273,13 +281,19 @@ async function consumeAdvance(client, { advanceId, kind, sourceId, actorId }) {
   if (!advance.rowCount) fail(404, 'ADVANCE_NOT_FOUND', 'Advance not found.');
   const table = kind === 'expense' ? 'expense' : 'ap_payment';
   const idColumn = kind === 'expense' ? 'expense_id' : 'payment_id';
-  const { rows } = await client.query(`SELECT s.amount,pm.type AS method_type,${kind === 'expense' ? 's.payment_method_text' : 'NULL::text AS payment_method_text'}
+  const { rows } = await client.query(`SELECT s.amount,pm.type AS method_type,${kind === 'expense' ? 's.payment_method_text,s.is_void' : 'NULL::text AS payment_method_text,s.pdc_status'}
     FROM ${table} s LEFT JOIN payment_methods pm ON pm.method_id=s.${kind === 'expense' ? 'payment_method_id' : 'method_id'}
     WHERE s.${idColumn}=$1 FOR UPDATE OF s`, [sourceId]);
   const source = rows[0];
   if (!source || (source.method_type !== 'cash' && !(kind === 'expense' && /^cash$/i.test(source.payment_method_text || '')))) {
     fail(422, 'INVALID_ADVANCE_SOURCE', 'Advance consumption must link a physical cash payment.');
   }
+  if ((kind === 'expense' && source.is_void) || (kind === 'ap' && source.pdc_status !== 'CLEARED')) {
+    fail(422, 'INVALID_ADVANCE_SOURCE', 'Advance consumption requires a valid settled cash source.');
+  }
+  cents(source.amount, { positive: true });
+  const priorSource = await client.query(`SELECT 1 FROM cash_advance_event WHERE ${kind === 'expense' ? 'expense_id' : 'ap_payment_id'}=$1`, [sourceId]);
+  if (priorSource.rowCount) fail(409, 'SOURCE_ALREADY_FUNDED', 'Source is already linked to an advance.');
   const doublePost = await client.query(`SELECT 1 FROM cash_drawer_movement WHERE ${kind === 'expense' ? 'expense_id' : 'ap_payment_id'}=$1`, [sourceId]);
   if (doublePost.rowCount) fail(409, 'ALREADY_DRAWER_FUNDED', 'Source was already paid from a drawer.');
   const totals = await client.query(`SELECT COALESCE(SUM(amount) FILTER(WHERE kind='CONSUMPTION'),0) AS consumed,
