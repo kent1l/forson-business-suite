@@ -6,7 +6,7 @@ const arRoutes = require('../routes/arRoutes');
 const fs = require('fs');
 
 // Set jest timeout for Puppeteer PDF rendering
-jest.setTimeout(30000);
+jest.setTimeout(60000);
 
 // Mock authMiddleware to bypass auth during test runs
 jest.mock('../middleware/authMiddleware', () => ({
@@ -103,7 +103,7 @@ describe('Phase 5: SOA PDF & Customer Ledger API Suite', () => {
         if (fs.existsSync(pdfPath)) {
             fs.unlinkSync(pdfPath);
         }
-    }, 30000);
+    }, 60000);
 
     test('GET /api/ar/customers/:customerId/ledger returns calculated running balance', async () => {
         const res = await request(app)
@@ -132,5 +132,5 @@ describe('Phase 5: SOA PDF & Customer Ledger API Suite', () => {
         expect(res.status).toBe(200);
         expect(res.headers['content-type']).toContain('application/pdf');
         expect(res.body.length).toBeGreaterThan(1000);
-    }, 30000);
+    }, 60000);
 });

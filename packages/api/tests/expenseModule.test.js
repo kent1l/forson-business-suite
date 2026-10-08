@@ -68,7 +68,10 @@ app.use('/api', expenseRouter);
 
 describe('Expense Recording Module Routes', () => {
     beforeEach(() => {
-        jest.clearAllMocks();
+        db.query.mockReset();
+        db.__client.query.mockReset();
+        db.getClient.mockClear();
+        db.__client.release.mockClear();
     });
 
     describe('GET /api/expense-categories', () => {
@@ -139,8 +142,9 @@ describe('Expense Recording Module Routes', () => {
             db.query.mockResolvedValueOnce({ rows: [] }); // period lock check (open)
             db.query.mockResolvedValueOnce({ rows: [{ category_id: 2 }] }); // check category
             db.query.mockResolvedValueOnce({ rows: [{ method_id: 1, name: 'Cash' }] }); // check payment method
-            db.query.mockResolvedValueOnce({ rows: [{ expense_id: 100 }] }); // insert
-            db.query.mockResolvedValueOnce({
+            db.__client.query.mockResolvedValueOnce({ rows: [] }); // BEGIN
+            db.__client.query.mockResolvedValueOnce({ rows: [{ expense_id: 100 }] }); // insert
+            db.__client.query.mockResolvedValueOnce({
                 rows: [{
                     expense_id: 100,
                     expense_date: '2026-07-23',
@@ -149,6 +153,7 @@ describe('Expense Recording Module Routes', () => {
                     category: { category_id: 2, category_name: 'Utilities' }
                 }]
             }); // fetch joined
+            db.__client.query.mockResolvedValueOnce({ rows: [] }); // COMMIT
 
             const res = await request(app)
                 .post('/api/expenses')
