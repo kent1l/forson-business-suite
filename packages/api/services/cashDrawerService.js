@@ -105,6 +105,16 @@ async function postMovement(client, input) {
       validText(physicalReference, 120)]
   );
   await client.query('UPDATE cash_drawer_session SET last_sequence=last_sequence+1,version=version+1 WHERE session_id=$1', [sessionId]);
+  // Every balance-changing write gets one activity row in the same transaction.
+  // The actor is always supplied by a route from req.user, never from a request
+  // body.  Keep the monetary facts in metadata so Activity can explain an
+  // automatic source posting without attempting to reconstruct it later.
+  await audit(client, { sessionId, targetType: 'MOVEMENT', targetId: rows[0].movement_id,
+    action: 'POST', actorId, requestId, reason: lateReason, metadata: {
+      direction, amount, category, description: validText(description, 500, true),
+      source_event_key: sourceEventKey || null, physical_reference: validText(physicalReference, 120),
+      reversal_of: reversalOf || null,
+    } });
   return { ...rows[0], version: Number(session.version) + 1 };
 }
 

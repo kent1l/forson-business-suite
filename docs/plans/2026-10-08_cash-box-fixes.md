@@ -11,6 +11,7 @@
 | Closing credentials and retry | Implemented; fixture and disposable DB verified | One-use bound acknowledgment; legacy drafts scrubbed; close replay after token consumption tested |
 | Notebook/custody/advance safety | Implemented; disposable DB verified | Reversed/covered receipt and custody reversal guards, settled sources, provenance, race test |
 | Source unknown-outcome retry | Implemented; fixture browser verified | Persisted actor-bound request identity, status reconciliation and failure handling |
+| Shared operator audit and Activity filters | Implemented; disposable DB verified | Any role-authorized staff member can post in the same session; every movement is atomically attributed and Activity filters by staff/action/date |
 | Deployment and physical pilot | Not started | Owner-controlled migration and role/physical store-day checks; feature flag remains unchanged |
 
 ## 1. For the Next Session
@@ -23,6 +24,8 @@
 ## 2. Business Objective and Acceptance
 
 Physical drawer cash must be accountable by source and custodian. An authorized person can see an empty or historical History tab without opening another financial session. Counts, approvals and custody acknowledgments remain separate from cash movements. Closing snapshots remain immutable when later deposit or custody evidence arrives. Network uncertainty never creates a replacement source receipt, and recipient passwords never enter browser retry data.
+
+The coordinator (`custodian_id`) is the designated reconciliation contact for a session, not an exclusive operator and not an attribution shortcut. Authorized cashiers may perform role-permitted actions in the same open session; each committed record identifies the authenticated operator that performed it.
 
 ## 3. Findings Revalidated Against HEAD
 
@@ -55,6 +58,14 @@ The existing History tab opens read-only session detail, independently paged mov
 
 Notebook coverage and reversal acquire the session then receipt movement lock and recheck reversed/covered state. Generic reversal rejects reverse links from transfer/advance event tables and release tables. Covered or custody-linked corrections require a coordinated workflow; standalone reversal returns a clear 422 and cannot silently change drawer balance. Fully covered source payment idempotency now starts even without a cash session ID. Direct advance consumption checks canonical positive amount, cash method, void expense or uncleared AP status, prior source event, available advance and settlement state. Reimbursement requires an amount-bound independent review plus an explicit payer employee matching the advance holder and recorded payer evidence; an unlinked drawer is not accepted as proof of employee funding.
 
+### Phase E — Shared operation, immutable attribution and Activity filters
+
+`postMovement` now creates the movement Activity row before the enclosing transaction commits. Its metadata records direction, amount, category, description, physical/reference key and reversal link; automatic source payments therefore have the same authenticated-operator trace as manual receipts, refunds, corrections, transfers, advances and handovers. Existing lifecycle records remain separate so requester, reviewer and recipient identities stay in their respective immutable records.
+
+The manual movement route no longer adds a second generic POST event. The legacy `/refunds` route now ignores the client `employee_id` for the credit note and ledger identity, using `req.user.employee_id` instead. `GET /api/cash-drawers/sessions/:id/activity` accepts bounded `employee_id`, uppercase `action`, and Manila-calendar `from`/`to` filters; malformed filters return 400. The History Activity panel exposes these filters and displays movement amount/reference from actual audit metadata.
+
+`20261008_04_cash_activity_filter_index.sql` adds session/operator/date and session/action/date indexes for the shared-session Activity filters. It was applied only to the disposable verification database.
+
 ## 5. Schema, Files and API Contract
 
 Forward migrations only:
@@ -62,8 +73,9 @@ Forward migrations only:
 - `20261008_01_cash_acknowledgment.sql`: one-use hashed acknowledgment table.
 - `20261008_02_cash_reimbursement_provenance.sql`: payer/evidence columns on advance events.
 - `20261008_03_cash_history_index.sql`: history and audit read indexes.
+- `20261008_04_cash_activity_filter_index.sql`: shared-session Activity filter indexes.
 
-Files touched: `packages/api/routes/cashDrawerRoutes.js`, `packages/api/services/cashDrawerService.js`, `packages/api/tests/cashDrawer_db_test.js`, `packages/api/tests/cashDrawerRoutes_db_test.js`, `packages/web/src/pages/CashDrawerPage.jsx`, `packages/web/src/api.js`, `packages/web/src/contexts/AuthContext.jsx`, `packages/web/tests/createUuid.test.js`, `packages/web/tests/cashDrawerBrowser.mjs`, `packages/web/tests/fixtures/cashDrawerBrowser.html`, and the three migrations above.
+Files touched: `packages/api/routes/cashDrawerRoutes.js`, `packages/api/routes/refundRoutes.js`, `packages/api/services/cashDrawerService.js`, `packages/api/tests/cashDrawer_db_test.js`, `packages/api/tests/cashDrawerRoutes_db_test.js`, `packages/web/src/pages/CashDrawerPage.jsx`, `packages/web/src/api.js`, `packages/web/src/contexts/AuthContext.jsx`, `packages/web/tests/createUuid.test.js`, `packages/web/tests/cashDrawerBrowser.mjs`, `packages/web/tests/fixtures/cashDrawerBrowser.html`, and the four migrations above.
 
 Compatibility: close requests with `recipient_password` now return 400; clients must obtain an acknowledgment token first. The new reimbursement evidence fields are required only for `REIMBURSEMENT`. The historical session endpoint retains its old `business_date` filter and adds a total count.
 
@@ -82,6 +94,10 @@ All database commands below targeted the **new disposable** `codex_cash_drawer_v
 | `npm run -w packages/web lint -- --quiet` and `npm run -w packages/api lint -- --quiet` | PASS |
 | `git diff --check`, `node --check` for changed API service/routes | PASS |
 | `graphify update .` | PASS after rerun with repository filesystem access; 6,513 nodes / 11,541 edges. Graphify reported 30 extraction warnings about an existing document node; the code graph was rebuilt. |
+| `DB_HOST=localhost CASH_DRAWER_TEST_DB=codex_cash_drawer_verify_20261008 node packages/api/tests/cashDrawerRoutes_db_test.js` | PASS after Phase E; verifies two authorized staff in one session, spoofed actor ignored, denied restricted user, replay, race and Activity employee/action/date filters. |
+| `DB_HOST=localhost CASH_DRAWER_TEST_DB=codex_cash_drawer_verify_20261008 node packages/api/tests/cashDrawer_db_test.js` | PASS after Phase E. |
+| `npm run -w packages/api lint -- --quiet`; `npm run -w packages/web test`; `npm run -w packages/web build` | PASS after Phase E; web test: 101 passed; build retains the existing chunk-size warning. |
+| `node -r dotenv/config packages/api/scripts/migrate.js` then `verify` with disposable DB host/name | PASS; applied `20261008_04_cash_activity_filter_index.sql` and reported `Checksums verified.` |
 
 The browser suite uses intercepted API fixtures, not an authenticated live store. The database scripts use real PostgreSQL, not mocks. The disposable database remains available for review and may be removed after review. No production readiness claim follows from either.
 
@@ -94,3 +110,4 @@ The browser suite uses intercepted API fixtures, not an authenticated live store
 ## 8. Change Log
 
 - 2026-10-08: Revalidated HEAD; implemented history, one-use close acknowledgment and reconciliation, source retry persistence, notebook/custody/advance guards, provenance, audit coverage, migrations and regression tests. Verified against disposable PostgreSQL and mocked Chromium fixtures; documented pending rollout gates.
+- 2026-10-08: Extended the committed cash-box baseline for shared daily operation: centralized atomic movement Activity entries, server-side refund actor identity, Activity employee/action/date filters and supporting indexes. Re-ran disposable PostgreSQL integration coverage plus API lint, web tests and production build; production data and feature flags unchanged.

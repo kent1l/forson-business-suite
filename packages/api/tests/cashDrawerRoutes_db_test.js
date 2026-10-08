@@ -29,17 +29,18 @@ const idempotency = () => require('node:crypto').randomUUID();
 const auth = token => ({ Authorization: `Bearer ${token}`, 'Idempotency-Key': idempotency() });
 
 async function run() {
-  const role = await db.query("INSERT INTO permission_level(permission_level_id,level_name) VALUES(10,'Admin') ON CONFLICT(permission_level_id) DO UPDATE SET level_name=excluded.level_name RETURNING permission_level_id");
+  const role = await db.query("INSERT INTO permission_level(permission_level_id,level_name) VALUES(10,'Admin'),(11,'Drawer test restricted') ON CONFLICT(permission_level_id) DO UPDATE SET level_name=excluded.level_name RETURNING permission_level_id");
   assert.equal(role.rows[0].permission_level_id, 10);
   const password = 'drawer-test-recipient';
   const hash = await bcrypt.hash(password, 10);
   const employee = await db.query(`INSERT INTO employee
     (first_name,last_name,permission_level_id,username,password_hash,password_salt)
-    VALUES('Drawer','Operator',10,$1,$2,'test'),('Drawer','Reviewer',10,$3,$2,'test')
-    RETURNING employee_id,username`, [`cash_route_actor_${Date.now()}`, hash, `cash_route_reviewer_${Date.now()}`]);
-  const [actor, reviewer] = employee.rows;
+    VALUES('Drawer','Operator',10,$1,$2,'test'),('Drawer','Reviewer',10,$3,$2,'test'),('Drawer','Restricted',11,$4,$2,'test')
+    RETURNING employee_id,username`, [`cash_route_actor_${Date.now()}`, hash, `cash_route_reviewer_${Date.now()}`, `cash_route_restricted_${Date.now()}`]);
+  const [actor, reviewer, restricted] = employee.rows;
   const actorToken = jwt.sign({ employee_id: actor.employee_id, username: actor.username, login_date: manilaDateString() }, process.env.JWT_SECRET);
   const reviewerToken = jwt.sign({ employee_id: reviewer.employee_id, username: reviewer.username, login_date: manilaDateString() }, process.env.JWT_SECRET);
+  const restrictedToken = jwt.sign({ employee_id: restricted.employee_id, username: restricted.username, login_date: manilaDateString() }, process.env.JWT_SECRET);
   const drawer = await db.query("INSERT INTO cash_drawer(code,name) VALUES($1,'HTTP Test Drawer') RETURNING drawer_id,hardware_mode", [`HTTP_TEST_${Date.now()}`]);
   assert.equal(drawer.rows[0].hardware_mode, 'MANUAL_CASH_BOX');
   const drawerId = drawer.rows[0].drawer_id;
@@ -322,7 +323,43 @@ async function run() {
   const sourceCount = await db.query('SELECT COUNT(*)::int AS count FROM cash_source_link WHERE movement_id=$1', [freshNotebook.body.data.movement_id]);
   assert.equal(sourceCount.rows[0].count, 1, 'fully covered source retry must not create another receipt');
 
-  process.stdout.write('PASS cash drawer HTTP idempotency, review, close, custody, reimbursement and retained opening\n');
+  // A shared session is role-controlled, not custodian-exclusive.  The server
+  // ignores an actor supplied by the browser, preserves the authenticated actor
+  // in both the register and activity, and serializes conflicting writes.
+  const beforeShared = await request(app).get(`/api/cash-drawers/sessions/${activeSessionId}`)
+    .set({ Authorization: `Bearer ${actorToken}` });
+  const sharedKey = idempotency();
+  const sharedBody = { direction: 'IN', category: 'OTHER_RECEIPT', amount: '1.00',
+    description: 'Second cashier shared-session receipt', actor_id: actor.employee_id,
+    expected_version: beforeShared.body.data.version };
+  const secondCashier = await request(app).post(`/api/cash-drawers/sessions/${activeSessionId}/movements`)
+    .set({ Authorization: `Bearer ${reviewerToken}`, 'Idempotency-Key': sharedKey }).send(sharedBody);
+  assert.equal(secondCashier.status, 201, JSON.stringify(secondCashier.body));
+  assert.equal(secondCashier.body.data.actor_id, reviewer.employee_id, 'server must ignore a spoofed actor');
+  const retrySecondCashier = await request(app).post(`/api/cash-drawers/sessions/${activeSessionId}/movements`)
+    .set({ Authorization: `Bearer ${reviewerToken}`, 'Idempotency-Key': sharedKey }).send(sharedBody);
+  assert.equal(retrySecondCashier.status, 201);
+  assert.equal(retrySecondCashier.body.data.movement_id, secondCashier.body.data.movement_id, 'retry must replay one movement');
+  const restrictedWrite = await request(app).post(`/api/cash-drawers/sessions/${activeSessionId}/movements`)
+    .set(auth(restrictedToken)).send({ ...sharedBody, expected_version: secondCashier.body.data.version });
+  assert.equal(restrictedWrite.status, 403, 'a signed-in but unauthorized account cannot operate the box');
+  const concurrentBody = { direction: 'IN', category: 'OTHER_RECEIPT', amount: '1.00',
+    description: 'Concurrent shared-session receipt', expected_version: secondCashier.body.data.version };
+  const concurrentWrites = await Promise.all([
+    request(app).post(`/api/cash-drawers/sessions/${activeSessionId}/movements`).set(auth(actorToken)).send(concurrentBody),
+    request(app).post(`/api/cash-drawers/sessions/${activeSessionId}/movements`).set(auth(reviewerToken)).send(concurrentBody),
+  ]);
+  assert.deepEqual(concurrentWrites.map(result => result.status).sort(), [201, 409]);
+  const reviewerActivity = await request(app).get(`/api/cash-drawers/sessions/${activeSessionId}/activity`)
+    .query({ employee_id: reviewer.employee_id, action: 'POST', from: date, to: date })
+    .set({ Authorization: `Bearer ${actorToken}` });
+  assert.equal(reviewerActivity.status, 200, JSON.stringify(reviewerActivity.body));
+  assert(reviewerActivity.body.data.some(item => item.target_id === secondCashier.body.data.movement_id && item.actor_name === 'Drawer Reviewer'));
+  const invalidActivityFilter = await request(app).get(`/api/cash-drawers/sessions/${activeSessionId}/activity`)
+    .query({ action: 'not valid' }).set({ Authorization: `Bearer ${actorToken}` });
+  assert.equal(invalidActivityFilter.status, 400);
+
+  process.stdout.write('PASS cash drawer HTTP idempotency, shared operators, review, close, custody, reimbursement and retained opening\n');
 }
 
 run().catch(error => { console.error(error); process.exitCode = 1; });

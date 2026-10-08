@@ -9,9 +9,12 @@ const router = express.Router();
 
 // POST /api/refunds - Process a new refund
 router.post('/refunds', protect, hasPermission('invoicing:create'), async (req, res) => {
-    const { invoice_id, invoice_number, employee_id, lines, refund_payment_method = 'Cash' } = req.body;
+    const { invoice_id, invoice_number, lines, refund_payment_method = 'Cash' } = req.body;
+    // A refund's credited employee must be the authenticated account.  The
+    // request may contain a legacy employee_id, but it is never authoritative.
+    const employee_id = req.user.employee_id;
 
-    if (!invoice_id || !employee_id || !lines || !Array.isArray(lines) || lines.length === 0) {
+    if (!invoice_id || !lines || !Array.isArray(lines) || lines.length === 0) {
         return res.status(400).json({ message: 'Missing required fields for refund.' });
     }
 

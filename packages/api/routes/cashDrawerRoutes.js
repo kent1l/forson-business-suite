@@ -149,11 +149,30 @@ router.get('/cash-drawers/sessions/:id/activity', protect, hasPermission('cash_d
   try {
     const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 100);
     const page = Math.min(Math.max(Number(req.query.page) || 1, 1), 100000);
+    const employeeId = /^\d+$/.test(req.query.employee_id || '') ? Number(req.query.employee_id) : null;
+    if (req.query.employee_id && (!Number.isSafeInteger(employeeId) || employeeId > 2147483647)) {
+      cash.fail(400, 'INVALID_ACTIVITY_EMPLOYEE', 'Select a valid activity employee.');
+    }
+    const action = typeof req.query.action === 'string' && req.query.action.trim() ? req.query.action.trim() : null;
+    if (action && !/^[A-Z_]{1,40}$/.test(action)) cash.fail(400, 'INVALID_ACTIVITY_ACTION', 'Select a valid activity action.');
+    const from = req.query.from || null;
+    const to = req.query.to || null;
+    for (const value of [from, to]) {
+      if (value && (!/^\d{4}-\d{2}-\d{2}$/.test(value) || Number.isNaN(Date.parse(`${value}T00:00:00Z`)) ||
+        new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) !== value)) {
+        cash.fail(400, 'INVALID_ACTIVITY_DATE', 'Use a valid YYYY-MM-DD activity date.');
+      }
+    }
+    const filters = `a.session_id=$1 AND ($2::integer IS NULL OR a.actor_id=$2)
+      AND ($3::text IS NULL OR a.action=$3)
+      AND ($4::date IS NULL OR (a.recorded_at AT TIME ZONE 'Asia/Manila')::date >= $4)
+      AND ($5::date IS NULL OR (a.recorded_at AT TIME ZONE 'Asia/Manila')::date <= $5)`;
+    const params = [req.params.id, employeeId, action, from, to];
     const { rows } = await db.query(`SELECT a.audit_id,a.action,a.target_type,a.target_id,a.reason,a.metadata,a.recorded_at,
       concat_ws(' ',e.first_name,e.last_name) AS actor_name
       FROM cash_audit_event a JOIN employee e ON e.employee_id=a.actor_id
-      WHERE a.session_id=$1 ORDER BY a.audit_id LIMIT $2 OFFSET $3`, [req.params.id, limit, (page - 1) * limit]);
-    const total = await db.query('SELECT COUNT(*)::int AS count FROM cash_audit_event WHERE session_id=$1', [req.params.id]);
+      WHERE ${filters} ORDER BY a.audit_id LIMIT $6 OFFSET $7`, [...params, limit, (page - 1) * limit]);
+    const total = await db.query(`SELECT COUNT(*)::int AS count FROM cash_audit_event a WHERE ${filters}`, params);
     res.json({ data: rows, page, limit, total: total.rows[0].count });
   } catch (error) { errorResponse(res, error); }
 });
@@ -330,7 +349,6 @@ router.post('/cash-drawers/sessions/:id/movements', protect, hasPermission('cash
     description, counterparty, physicalReference: physical_reference, actorId: req.user.employee_id, expectedVersion: expected_version,
     occurredAt: occurred_at, lateReason: late_reason, requestId: req.get('Idempotency-Key') });
   if (direction === 'OUT') await useApproval(client, req.body.approval_id, movement.movement_id);
-  await cash.audit(client, { sessionId: req.params.id, targetType: 'MOVEMENT', targetId: movement.movement_id, action: 'POST', actorId: req.user.employee_id, requestId: req.get('Idempotency-Key') });
   return [201, { data: movement }];
 }));
 
