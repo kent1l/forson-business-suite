@@ -74,11 +74,14 @@ async function processExchange(client, payload) {
         payment_terms_days,
         payments,
         downgrade_disposition,
+        cash_session_id,
         physical_receipt_no,
         notes,
         override_credit_limit = false,
         manager_override = false,
         requesting_permissions = [],
+        can_post_drawer = false,
+        cash_actor_id = employee_id,
     } = payload;
 
     if (!original_invoice_id || !employee_id) {
@@ -476,6 +479,10 @@ async function processExchange(client, payload) {
                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::varchar, CASE WHEN $9::varchar = 'settled' THEN CURRENT_TIMESTAMP ELSE NULL END, $10)
                 RETURNING payment_id
             `, [newInvoiceId, method.method_id, pAmt, tAmt, changeAmt, reference, JSON.stringify(paymentMetadata), employee_id, paymentStatus, pdcStatusValue]);
+            await require('./cashDrawerService').postSourcePayment(client, { kind: 'invoice', sourceId: ipRes.rows[0].payment_id,
+                sessionId: cash_session_id, actorId: cash_actor_id, notebookReceiptId: payment.notebook_receipt_id,
+                coveredAmount: payment.notebook_covered_amount,
+                canPost: can_post_drawer });
 
             if (paymentStatus === 'settled') {
                 await arLedger.appendEntry(client, {
@@ -499,9 +506,19 @@ async function processExchange(client, payload) {
             createdBy: employee_id,
         });
     }
-    // 'cash_payout' needs no further DB write: the credit_note.refund_payment_method
-    // label above records it, and the cashier dispenses the cash physically —
-    // exactly how refundRoutes.js already treats a Cash refund.
+    if (leftoverCredit > 0 && !isCreditSale && downgrade_disposition === 'cash_payout' && require('./cashDrawerService').enabled()) {
+        const cashDrawer = require('./cashDrawerService');
+        if (!can_post_drawer) cashDrawer.fail(403, 'DRAWER_PERMISSION_REQUIRED', 'Cash drawer posting permission is required.');
+        if (!cash_session_id) cashDrawer.fail(422, 'DRAWER_SESSION_REQUIRED', 'Select a drawer for the cash payout.');
+        const method = await client.query("SELECT method_id FROM payment_methods WHERE type='cash' AND enabled=true ORDER BY method_id LIMIT 1");
+        if (!method.rowCount) cashDrawer.fail(422, 'CASH_METHOD_REQUIRED', 'No active cash method is configured.');
+        const movement = await cashDrawer.postMovement(client, { sessionId: cash_session_id, direction: 'OUT',
+            amount: leftoverCredit.toFixed(2), category: 'CASH_REFUND', description: `Exchange cash payout ${creditNoteNumber}`,
+            actorId: cash_actor_id, sourceEventKey: `exchange_refund:${newCnId}`, source: { creditNoteId: newCnId, methodId: method.rows[0].method_id } });
+        await client.query(`INSERT INTO refund_disbursement(credit_note_id,amount,method_id,movement_id,actor_id,request_id)
+            VALUES($1,$2,$3,$4,$5,gen_random_uuid())`,
+        [newCnId, leftoverCredit.toFixed(2), method.rows[0].method_id, movement.movement_id, cash_actor_id]);
+    }
 
     await client.query('SELECT recompute_invoice_settlement($1)', [newInvoiceId]);
     await client.query('SELECT recompute_invoice_settlement($1)', [original_invoice_id]);

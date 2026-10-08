@@ -49,7 +49,7 @@ const getSalesHistoryStatus = (invoice) => {
 };
 
 
-const SalesHistoryPage = ({ pageState = null }) => {
+const SalesHistoryPage = ({ pageState = null, onNavigate }) => {
     const { settings } = useSettings();
     const [invoices, setInvoices] = useState([]);
     const [financialSummary, setFinancialSummary] = useState(null); // Backend-aggregated stats for the full filtered range
@@ -57,6 +57,8 @@ const SalesHistoryPage = ({ pageState = null }) => {
     const [paymentMethods, setPaymentMethods] = useState([]); // Configurable payment methods
     const [refundsApprox, setRefundsApprox] = useState(0); // TEMP approximate refunds treated as cash out
     const [loading, setLoading] = useState(false);
+    const [sourceError, setSourceError] = useState('');
+    const sourceOpenedRef = useRef(null);
     const [sortConfig, setSortConfig] = useState({ key: 'invoice_date', direction: 'DESC' });
     const [dates, setDates] = useState(() => {
         const now = toZonedTime(new Date(), 'Asia/Manila');
@@ -76,6 +78,10 @@ const SalesHistoryPage = ({ pageState = null }) => {
         if (!startDate || !endDate) return;
         setDates({ startDate, endDate });
         setPage(1);
+        if (pageState.invoice_id && pageState.invoice_number) {
+            setQuery(pageState.invoice_number);
+            setStatusFilter(ALL_STATUSES);
+        }
     }, [pageState]);
 
     const [query, setQuery] = useState('');
@@ -301,13 +307,18 @@ const SalesHistoryPage = ({ pageState = null }) => {
                 });
                 setInvoices(response.data.rows || []);
                 setTotal(response.data.total || 0);
+                if (pageState?.invoice_id && debouncedQuery === pageState.invoice_number) {
+                    const target = (response.data.rows || []).find(row => Number(row.invoice_id) === Number(pageState.invoice_id));
+                    setSourceError(target ? '' : `Invoice #${pageState.invoice_id} is unavailable in Sales History or you do not have access to it.`);
+                    if (target && sourceOpenedRef.current !== pageState) { sourceOpenedRef.current = pageState; setSelectedInvoice(target); setIsModalOpen(true); }
+                }
             } catch {
                 toast.error('Failed to fetch sales history.');
             } finally {
                 setLoading(false);
             }
         };
-    }, [dates, debouncedQuery, statusFilter, statusParam, page, pageSize]);
+    }, [dates, debouncedQuery, statusFilter, statusParam, page, pageSize, pageState]);
 
     const fetchSummary = useMemo(() => {
         return async () => {
@@ -487,6 +498,8 @@ const SalesHistoryPage = ({ pageState = null }) => {
     return (
         <div>
             <h1 className="text-2xl font-semibold text-gray-800 dark:text-slate-100 mb-6">Sales History</h1>
+            {pageState?.cashBoxReturn && <button type="button" className="mb-3 min-h-11 rounded border border-slate-300 px-3 text-sm dark:border-slate-700" onClick={() => onNavigate?.('cash_drawer', pageState.cashBoxReturn)}>Back to Cash Box</button>}
+            {sourceError && <p role="alert" className="mb-4 rounded border border-red-300 bg-red-50 p-3 text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-200">{sourceError}</p>}
 
             <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border border-gray-200 dark:border-slate-700 shadow-card mb-6">
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">

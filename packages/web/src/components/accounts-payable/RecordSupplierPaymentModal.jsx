@@ -12,6 +12,8 @@ const today = () => new Date().toISOString().slice(0, 10);
 const BLANK_FORM = {
     supplier_id: '',
     method_id: '',
+    funding_source: '',
+    advance_id: '',
     amount: '',
     settlement_date: today(),
     reference_number: '',
@@ -134,7 +136,9 @@ const RecordSupplierPaymentModal = ({ isOpen, onClose, onRecorded, presetSupplie
         [allocations]
     );
 
-    const handleChange = (field, value) => setForm(prev => ({ ...prev, [field]: value }));
+    const handleChange = (field, value) => setForm(prev => field === 'method_id'
+        ? { ...prev, method_id: value, funding_source: '', advance_id: '' }
+        : { ...prev, [field]: value });
 
     const applyOldestFirst = useCallback(() => {
         let remaining = parseFloat(form.amount) || 0;
@@ -181,6 +185,8 @@ const RecordSupplierPaymentModal = ({ isOpen, onClose, onRecorded, presetSupplie
         const payload = {
             supplier_id: form.supplier_id,
             method_id: form.method_id,
+            funding_source: form.funding_source || 'OTHER',
+            advance_id: form.funding_source === 'ADVANCE' ? form.advance_id : undefined,
             amount,
             settlement_date: form.settlement_date || undefined,
             reference_number: form.reference_number.trim() || undefined,
@@ -262,6 +268,19 @@ const RecordSupplierPaymentModal = ({ isOpen, onClose, onRecorded, presetSupplie
                             {methods.map(m => <option key={m.method_id} value={m.method_id}>{m.name}</option>)}
                         </select>
                     </div>
+                    {selectedMethod?.type === 'cash' && (
+                        <div>
+                            <label className={labelClass} htmlFor="ap-cash-funding">Cash funding source</label>
+                            <select id="ap-cash-funding" required value={form.funding_source || ''}
+                                onChange={event => handleChange('funding_source', event.target.value)} className={inputClass}>
+                                <option value="">Select funding source</option>
+                                <option value="DRAWER">Selected cash drawer</option>
+                                <option value="ADVANCE">Earlier employee advance</option>
+                                <option value="OTHER">Office or other cash</option>
+                            </select>
+                        </div>
+                    )}
+                    {selectedMethod?.type === 'cash' && form.funding_source === 'ADVANCE' && <div><label className={labelClass} htmlFor="ap-advance-id">Employee advance ID</label><input id="ap-advance-id" type="number" min="1" required value={form.advance_id || ''} onChange={event => handleChange('advance_id', event.target.value)} className={inputClass} /></div>}
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

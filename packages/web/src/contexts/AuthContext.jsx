@@ -42,6 +42,7 @@ export const AuthProvider = ({ children }) => {
     // options: { reload: boolean } - reload can be used for forced auto-logout to ensure UI shows login
     const logout = useCallback((options = {}) => {
         localStorage.removeItem('userSession');
+        sessionStorage.removeItem('forson_cash_drawer_session');
         lockPayReauth();
         setUser(null);
         setPermissions([]);
