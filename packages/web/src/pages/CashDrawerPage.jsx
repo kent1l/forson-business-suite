@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Dialog, DialogPanel, DialogTitle } from '@headlessui/react';
 import api from '../api';
+import { createUuid } from '../utils/createUuid';
 
 const DENOMS = [
     ['PHP_1000', '₱1,000', 100000], ['PHP_500', '₱500', 50000], ['PHP_200', '₱200', 20000],
@@ -282,7 +283,9 @@ export default function CashDrawerPage({ user, onNavigate, pageState }) {
             setPendingWrite({ storageKey, ...pending });
             return null;
         }
-        const key = pending?.body === body ? pending.key : crypto.randomUUID();
+        let key;
+        try { key = pending?.body === body ? pending.key : createUuid(); }
+        catch { setError('This browser cannot generate a request key. Please use a supported browser.'); return null; }
         keys.current.set(action, { body, key, path });
         sessionStorage.setItem(storageKey, JSON.stringify({ body, key, path }));
         setBusy(true);

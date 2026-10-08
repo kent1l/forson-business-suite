@@ -3,6 +3,7 @@ import api from '../../api';
 import toast from 'react-hot-toast';
 import Modal from '../ui/Modal';
 import { useAuth } from '../../contexts/AuthContext';
+import { createUuid } from '../../utils/createUuid';
 
 const SalesCorrectionModal = ({ isOpen, onClose, invoice, onCompleted }) => {
     const { hasPermission } = useAuth();
@@ -28,7 +29,7 @@ const SalesCorrectionModal = ({ isOpen, onClose, invoice, onCompleted }) => {
         try {
             const { data } = await api.post('/sales-corrections', {
                 invoice_id: invoice.invoice_id, reason_code: reasonCode, reason_text: reasonText,
-            }, { headers: { 'Idempotency-Key': crypto.randomUUID() } });
+            }, { headers: { 'Idempotency-Key': createUuid() } });
             setCaseRow(data.case);
             if (data.case.state === 'REQUIRES_MANUAL_REVIEW') {
                 toast('This case has been recorded for manager/accounting review.');

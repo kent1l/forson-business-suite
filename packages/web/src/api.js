@@ -1,5 +1,6 @@
 import axios from 'axios';
 import toast from 'react-hot-toast';
+import { createUuid } from './utils/createUuid';
 
 // Create a CustomEvent to notify the app of auth errors
 const authErrorEvent = (detail = {}) => new CustomEvent('auth-error', { detail });
@@ -23,7 +24,7 @@ api.interceptors.request.use(config => {
         const cashSessionId = sessionStorage.getItem('forson_cash_drawer_session');
         if (cashSessionId && !config.data.cash_session_id) config.data.cash_session_id = cashSessionId;
         const signature = `${config.method}:${config.url}:${JSON.stringify(config.data)}`;
-        if (!pendingCashSourceKeys.has(signature)) pendingCashSourceKeys.set(signature, crypto.randomUUID());
+        if (!pendingCashSourceKeys.has(signature)) pendingCashSourceKeys.set(signature, createUuid());
         config.headers['Idempotency-Key'] ||= pendingCashSourceKeys.get(signature);
         config.cashSourceSignature = signature;
     }
