@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Dialog, DialogPanel, DialogTitle } from '@headlessui/react';
 import api from '../api';
 import { createUuid } from '../utils/createUuid';
+import { formatMovementReference, formatDate, formatTimeOnly } from '../utils/cashDrawerFormatters';
 import KPICard from '../components/ui/KPICard';
 import Icon from '../components/ui/Icon';
 import StatusBadge from '../components/ui/StatusBadge';
@@ -874,9 +875,9 @@ export default function CashDrawerPage({ user, onNavigate, pageState }) {
         }
     };
 
-    const renderMovementForm = () => (
+    const renderMovementForm = (isModal = true) => (
         <form onSubmit={saveMovement} className="space-y-4">
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className={`grid gap-3 ${isModal ? 'sm:grid-cols-2' : 'grid-cols-1'}`}>
                 <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
                     Direction
                     <select
@@ -917,7 +918,7 @@ export default function CashDrawerPage({ user, onNavigate, pageState }) {
                 </div>
             )}
 
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className={`grid gap-3 ${isModal ? 'sm:grid-cols-2' : 'grid-cols-1'}`}>
                 <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
                     Amount
                     <input className={`${field} mt-1`} inputMode="decimal" placeholder="0.00" value={movementForm.amount} onChange={event => setMovementForm({ ...movementForm, amount: event.target.value })} required />
@@ -950,7 +951,7 @@ export default function CashDrawerPage({ user, onNavigate, pageState }) {
                 </p>
             )}
 
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className={`grid gap-3 ${isModal ? 'sm:grid-cols-2' : 'grid-cols-1'}`}>
                 <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
                     Occurred at (optional)
                     <input className={`${field} mt-1`} type="datetime-local" value={movementForm.occurred_at} onChange={event => setMovementForm({ ...movementForm, occurred_at: event.target.value })} />
@@ -986,12 +987,27 @@ export default function CashDrawerPage({ user, onNavigate, pageState }) {
                 />
             )}
 
-            <div className="sticky bottom-0 -mx-4 -mb-4 flex flex-wrap items-center justify-end gap-2 border-t border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
-                <button type="button" className={secondaryButton} onClick={() => setMovementOpen(false)}>Cancel</button>
-                <button className={primaryButton} disabled={busy || !movementAmountValid || (movementForm.direction === 'OUT' && !movementForm.approval_id)}>
-                    Post physical cash
-                </button>
-            </div>
+            {isModal ? (
+                <div className="sticky bottom-0 -mx-4 -mb-4 flex flex-wrap items-center justify-end gap-2 border-t border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
+                    <button type="button" className={secondaryButton} onClick={() => setMovementOpen(false)}>Cancel</button>
+                    <button className={primaryButton} disabled={busy || !movementAmountValid || (movementForm.direction === 'OUT' && !movementForm.approval_id)}>
+                        Post physical cash
+                    </button>
+                </div>
+            ) : (
+                <div className="flex flex-wrap items-center justify-end gap-2 border-t border-slate-200 pt-3 dark:border-slate-700">
+                    <button
+                        type="button"
+                        className={secondaryButton}
+                        onClick={() => setMovementForm({ direction: 'IN', category: 'NOTEBOOK_RECEIPT', amount: '', description: '', counterparty: '', physical_reference: '', occurred_at: '', late_reason: '', approval_id: '' })}
+                    >
+                        Clear
+                    </button>
+                    <button className={primaryButton} disabled={busy || !movementAmountValid || (movementForm.direction === 'OUT' && !movementForm.approval_id)}>
+                        Post physical cash
+                    </button>
+                </div>
+            )}
         </form>
     );
 
@@ -1538,312 +1554,415 @@ export default function CashDrawerPage({ user, onNavigate, pageState }) {
                         </Panel>
                     )}
 
-                    {/* Full-width Movement Register */}
-                    <Panel
-                        title="Movement register"
-                        action={
-                            <div className="text-xs text-slate-500 dark:text-slate-400">
-                                Showing {movements.length === 0 ? 0 : (registerPage - 1) * 50 + 1}–{Math.min(registerPage * 50, registerTotal)} of {registerTotal} entries
-                            </div>
-                        }
-                    >
-                        {/* Toolbar */}
-                        <div className="space-y-3 pb-4">
-                            <div className="flex flex-wrap items-center gap-2">
-                                <div className="relative min-w-[220px] flex-1 max-w-sm">
-                                    <input
-                                        aria-label="Search cash movements"
-                                        className={`${field} pr-8`}
-                                        placeholder="Search reference, purpose or operator"
-                                        value={searchInput}
-                                        onChange={event => setSearchInput(event.target.value)}
-                                        onKeyDown={event => {
-                                            if (event.key === 'Enter') {
-                                                event.preventDefault();
-                                                setRegisterPage(1);
-                                                setRegisterSearch(searchInput);
-                                            }
-                                        }}
-                                    />
-                                    {searchInput && (
+                    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_260px] xl:grid-cols-[minmax(0,1fr)_280px]">
+                        {/* Dominant Left Column: Movement Register */}
+                        <div className="min-w-0">
+                            <Panel
+                                title="Movement register"
+                                action={
+                                    <div className="text-xs text-slate-500 dark:text-slate-400">
+                                        Showing {movements.length === 0 ? 0 : (registerPage - 1) * 50 + 1}–{Math.min(registerPage * 50, registerTotal)} of {registerTotal} entries
+                                    </div>
+                                }
+                            >
+                                {/* Toolbar */}
+                                <div className="space-y-3 pb-4">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                        <div className="relative min-w-[220px] flex-1 max-w-sm">
+                                            <input
+                                                aria-label="Search cash movements"
+                                                className={`${field} pr-8`}
+                                                placeholder="Search reference, purpose or operator"
+                                                value={searchInput}
+                                                onChange={event => setSearchInput(event.target.value)}
+                                                onKeyDown={event => {
+                                                    if (event.key === 'Enter') {
+                                                        event.preventDefault();
+                                                        setRegisterPage(1);
+                                                        setRegisterSearch(searchInput);
+                                                    }
+                                                }}
+                                            />
+                                            {searchInput && (
+                                                <button
+                                                    type="button"
+                                                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                                                    onClick={() => { setSearchInput(''); setRegisterSearch(''); setRegisterPage(1); }}
+                                                    aria-label="Clear search"
+                                                >
+                                                    ✕
+                                                </button>
+                                            )}
+                                        </div>
+
+                                        <select
+                                            aria-label="Direction"
+                                            className={`${field} w-auto min-w-[130px]`}
+                                            value={registerDirection}
+                                            onChange={event => { setRegisterPage(1); setRegisterDirection(event.target.value); }}
+                                        >
+                                            <option value="">All directions</option>
+                                            <option value="IN">Cash in</option>
+                                            <option value="OUT">Cash out</option>
+                                        </select>
+
                                         <button
                                             type="button"
-                                            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
-                                            onClick={() => { setSearchInput(''); setRegisterSearch(''); setRegisterPage(1); }}
-                                            aria-label="Clear search"
+                                            className={`${secondaryButton} gap-1.5`}
+                                            onClick={() => setShowAdvancedFilters(v => !v)}
                                         >
-                                            ✕
+                                            <Icon path={ICONS.adjust} className="h-4 w-4" />
+                                            <span>Filters{activeFilterCount > 0 ? ` (${activeFilterCount})` : ''}</span>
                                         </button>
+
+                                        {activeFilterChips.length > 0 && (
+                                            <button
+                                                type="button"
+                                                className="text-xs font-semibold text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 cursor-pointer px-2 py-1"
+                                                onClick={clearAllRegisterFilters}
+                                            >
+                                                Clear all
+                                            </button>
+                                        )}
+                                    </div>
+
+                                    {/* Active Filter Chips */}
+                                    {activeFilterChips.length > 0 && (
+                                        <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                                            {activeFilterChips.map(chip => (
+                                                <span
+                                                    key={chip.key}
+                                                    className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700 dark:bg-slate-700 dark:text-slate-300"
+                                                >
+                                                    {chip.label}
+                                                    <button
+                                                        type="button"
+                                                        className="hover:text-slate-900 dark:hover:text-white cursor-pointer ml-1"
+                                                        onClick={chip.clear}
+                                                        aria-label={`Remove filter ${chip.label}`}
+                                                    >
+                                                        ✕
+                                                    </button>
+                                                </span>
+                                            ))}
+                                        </div>
+                                    )}
+
+                                    {/* Collapsible Advanced Filters */}
+                                    {showAdvancedFilters && (
+                                        <div className="grid gap-3 rounded-lg border border-slate-200 bg-slate-50/70 p-4 dark:border-slate-700 dark:bg-slate-900/40 sm:grid-cols-2 lg:grid-cols-4">
+                                            <div>
+                                                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">Category</label>
+                                                <select
+                                                    aria-label="Category"
+                                                    className={`${field} mt-1`}
+                                                    value={registerCategory}
+                                                    onChange={event => { setRegisterPage(1); setRegisterCategory(event.target.value); }}
+                                                >
+                                                    <option value="">All categories</option>
+                                                    {Object.entries(CATEGORY_LABELS).map(([catKey, catLabel]) => (
+                                                        <option key={catKey} value={catKey}>{catLabel}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">Source</label>
+                                                <select
+                                                    aria-label="Source"
+                                                    className={`${field} mt-1`}
+                                                    value={registerSource}
+                                                    onChange={event => { setRegisterPage(1); setRegisterSource(event.target.value); }}
+                                                >
+                                                    <option value="">All sources</option>
+                                                    <option value="AUTOMATIC">Automatic</option>
+                                                    <option value="MANUAL">Manual</option>
+                                                    <option value="REVERSAL">Reversal</option>
+                                                </select>
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">Operator</label>
+                                                <select
+                                                    aria-label="Operator"
+                                                    className={`${field} mt-1`}
+                                                    value={registerOperator}
+                                                    onChange={event => { setRegisterPage(1); setRegisterOperator(event.target.value); }}
+                                                >
+                                                    <option value="">All operators</option>
+                                                    {employees.map(person => (
+                                                        <option key={person.employee_id} value={person.employee_id}>{person.name}</option>
+                                                    ))}
+                                                    {registerOperator && !employees.some(person => String(person.employee_id) === String(registerOperator)) && (
+                                                        <option value={registerOperator}>Operator #{registerOperator}</option>
+                                                    )}
+                                                </select>
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">Time basis</label>
+                                                <select
+                                                    aria-label="Time basis"
+                                                    className={`${field} mt-1`}
+                                                    value={registerTimeField}
+                                                    onChange={event => { setRegisterPage(1); setRegisterTimeField(event.target.value); }}
+                                                >
+                                                    <option value="recorded_at">Recorded time</option>
+                                                    <option value="occurred_at">Occurred time</option>
+                                                </select>
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">From date</label>
+                                                <input
+                                                    type="date"
+                                                    className={`${field} mt-1`}
+                                                    value={registerFrom}
+                                                    onChange={event => { setRegisterPage(1); setRegisterFrom(event.target.value); }}
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">To date</label>
+                                                <input
+                                                    type="date"
+                                                    className={`${field} mt-1`}
+                                                    value={registerTo}
+                                                    onChange={event => { setRegisterPage(1); setRegisterTo(event.target.value); }}
+                                                />
+                                            </div>
+                                        </div>
                                     )}
                                 </div>
 
-                                <select
-                                    aria-label="Direction"
-                                    className={`${field} w-auto min-w-[130px]`}
-                                    value={registerDirection}
-                                    onChange={event => { setRegisterPage(1); setRegisterDirection(event.target.value); }}
-                                >
-                                    <option value="">All directions</option>
-                                    <option value="IN">Cash in</option>
-                                    <option value="OUT">Cash out</option>
-                                </select>
-
-                                <button
-                                    type="button"
-                                    className={`${secondaryButton} gap-1.5`}
-                                    onClick={() => setShowAdvancedFilters(v => !v)}
-                                >
-                                    <Icon path={ICONS.adjust} className="h-4 w-4" />
-                                    <span>Filters{activeFilterCount > 0 ? ` (${activeFilterCount})` : ''}</span>
-                                </button>
-
-                                {activeFilterChips.length > 0 && (
-                                    <button
-                                        type="button"
-                                        className="text-xs font-semibold text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 cursor-pointer px-2 py-1"
-                                        onClick={clearAllRegisterFilters}
-                                    >
-                                        Clear all
-                                    </button>
-                                )}
-                            </div>
-
-                            {/* Active Filter Chips */}
-                            {activeFilterChips.length > 0 && (
-                                <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                                    {activeFilterChips.map(chip => (
-                                        <span
-                                            key={chip.key}
-                                            className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700 dark:bg-slate-700 dark:text-slate-300"
-                                        >
-                                            {chip.label}
-                                            <button
-                                                type="button"
-                                                className="hover:text-slate-900 dark:hover:text-white cursor-pointer ml-1"
-                                                onClick={chip.clear}
-                                                aria-label={`Remove filter ${chip.label}`}
-                                            >
-                                                ✕
-                                            </button>
-                                        </span>
-                                    ))}
-                                </div>
-                            )}
-
-                            {/* Collapsible Advanced Filters */}
-                            {showAdvancedFilters && (
-                                <div className="grid gap-3 rounded-lg border border-slate-200 bg-slate-50/70 p-4 dark:border-slate-700 dark:bg-slate-900/40 sm:grid-cols-2 lg:grid-cols-4">
-                                    <div>
-                                        <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">Category</label>
-                                        <select
-                                            aria-label="Category"
-                                            className={`${field} mt-1`}
-                                            value={registerCategory}
-                                            onChange={event => { setRegisterPage(1); setRegisterCategory(event.target.value); }}
-                                        >
-                                            <option value="">All categories</option>
-                                            {Object.entries(CATEGORY_LABELS).map(([catKey, catLabel]) => (
-                                                <option key={catKey} value={catKey}>{catLabel}</option>
-                                            ))}
-                                        </select>
-                                    </div>
-                                    <div>
-                                        <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">Source</label>
-                                        <select
-                                            aria-label="Source"
-                                            className={`${field} mt-1`}
-                                            value={registerSource}
-                                            onChange={event => { setRegisterPage(1); setRegisterSource(event.target.value); }}
-                                        >
-                                            <option value="">All sources</option>
-                                            <option value="AUTOMATIC">Automatic</option>
-                                            <option value="MANUAL">Manual</option>
-                                            <option value="REVERSAL">Reversal</option>
-                                        </select>
-                                    </div>
-                                    <div>
-                                        <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">Operator</label>
-                                        <select
-                                            aria-label="Operator"
-                                            className={`${field} mt-1`}
-                                            value={registerOperator}
-                                            onChange={event => { setRegisterPage(1); setRegisterOperator(event.target.value); }}
-                                        >
-                                            <option value="">All operators</option>
-                                            {employees.map(person => (
-                                                <option key={person.employee_id} value={person.employee_id}>{person.name}</option>
-                                            ))}
-                                            {registerOperator && !employees.some(person => String(person.employee_id) === String(registerOperator)) && (
-                                                <option value={registerOperator}>Operator #{registerOperator}</option>
-                                            )}
-                                        </select>
-                                    </div>
-                                    <div>
-                                        <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">Time basis</label>
-                                        <select
-                                            aria-label="Time basis"
-                                            className={`${field} mt-1`}
-                                            value={registerTimeField}
-                                            onChange={event => { setRegisterPage(1); setRegisterTimeField(event.target.value); }}
-                                        >
-                                            <option value="recorded_at">Recorded time</option>
-                                            <option value="occurred_at">Occurred time</option>
-                                        </select>
-                                    </div>
-                                    <div>
-                                        <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">From date</label>
-                                        <input
-                                            type="date"
-                                            className={`${field} mt-1`}
-                                            value={registerFrom}
-                                            onChange={event => { setRegisterPage(1); setRegisterFrom(event.target.value); }}
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">To date</label>
-                                        <input
-                                            type="date"
-                                            className={`${field} mt-1`}
-                                            value={registerTo}
-                                            onChange={event => { setRegisterPage(1); setRegisterTo(event.target.value); }}
-                                        />
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-
-                        {/* Mobile Cards Layout */}
-                        <div className="space-y-2.5 md:hidden">
-                            {movements.map(item => (
-                                <div
-                                    key={item.movement_id}
-                                    className="rounded-lg border border-slate-200 bg-white p-3.5 shadow-sm dark:border-slate-700 dark:bg-slate-800"
-                                >
-                                    <div className="flex items-start justify-between gap-2">
-                                        <div className="space-y-1">
-                                            <div className="flex items-center gap-1.5 flex-wrap">
-                                                <span className="font-mono text-xs font-semibold text-slate-500">#{item.sequence}</span>
-                                                <StatusBadge
-                                                    tone={item.direction === 'IN' ? 'success' : 'neutral'}
-                                                    label={formatCategory(item.category)}
-                                                />
-                                                {item.reversal_of && <StatusBadge tone="danger" label="Reversal" />}
-                                            </div>
-                                            <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{item.description}</p>
-                                        </div>
-                                        <span className={`text-base font-bold tabular-nums ${item.direction === 'IN' ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-800 dark:text-slate-200'}`}>
-                                            {item.direction === 'OUT' ? '−' : '+'}{money(item.amount)}
-                                        </span>
-                                    </div>
-                                    <div className="mt-2.5 flex items-center justify-between border-t border-slate-100 pt-2 text-xs text-slate-500 dark:border-slate-700/60 dark:text-slate-400">
-                                        <span>{formatTime(item.recorded_at)} · {item.operator_name}</span>
-                                        <button
-                                            type="button"
-                                            className="font-semibold text-primary-600 underline hover:text-primary-700 dark:text-primary-400"
-                                            onClick={() => setSelectedMovement(item)}
-                                        >
-                                            View
-                                        </button>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-
-                        {/* Desktop Table View */}
-                        <div className="hidden overflow-x-auto md:block">
-                            <table className="w-full min-w-[760px] text-left text-sm">
-                                <thead>
-                                    <tr className="border-b border-slate-200 bg-slate-50/50 text-xs font-semibold uppercase tracking-wider text-slate-500 dark:border-slate-700 dark:bg-slate-900/30 dark:text-slate-400">
-                                        <th className="py-3 px-3"># / Recorded</th>
-                                        <th className="py-3 px-3">Type / Description / Reference</th>
-                                        <th className="py-3 px-3 text-right">Cash in</th>
-                                        <th className="py-3 px-3 text-right">Cash out</th>
-                                        <th className="py-3 px-3 text-right">Running balance</th>
-                                        <th className="py-3 px-3">Operator</th>
-                                        <th className="py-3 px-3 text-right">Action</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                                {/* Mobile Cards Layout */}
+                                <div className="space-y-2.5 md:hidden">
                                     {movements.map(item => (
-                                        <tr key={item.movement_id} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/50">
-                                            <td className="py-3 px-3 align-top font-mono text-xs">
-                                                <span className="font-semibold text-slate-700 dark:text-slate-300">#{item.sequence}</span>
-                                                <div className="text-[11px] text-slate-400">{formatTime(item.recorded_at)}</div>
-                                            </td>
-                                            <td className="py-3 px-3 align-top">
-                                                <div className="flex flex-wrap items-center gap-1.5">
-                                                    <StatusBadge
-                                                        tone={item.direction === 'IN' ? 'success' : 'neutral'}
-                                                        label={formatCategory(item.category)}
-                                                    />
-                                                    {item.reversal_of && <StatusBadge tone="danger" label="Reversal" />}
-                                                    {item.late_reason && <StatusBadge tone="warning" label="Late" />}
+                                        <div
+                                            key={item.movement_id}
+                                            className="rounded-lg border border-slate-200 bg-white p-3.5 shadow-sm dark:border-slate-700 dark:bg-slate-800"
+                                        >
+                                            <div className="flex items-start justify-between gap-2">
+                                                <div className="space-y-1">
+                                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                                        <span className="font-mono text-xs font-semibold text-slate-500">#{item.sequence}</span>
+                                                        <StatusBadge
+                                                            tone={item.direction === 'IN' ? 'success' : 'neutral'}
+                                                            label={formatCategory(item.category)}
+                                                        />
+                                                        {item.reversal_of && <StatusBadge tone="danger" label="Reversal" />}
+                                                    </div>
+                                                    <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{item.description}</p>
+                                                    <div className="text-xs text-slate-400 dark:text-slate-500">
+                                                        {formatMovementReference(item)}
+                                                    </div>
                                                 </div>
-                                                <div className="mt-1 font-medium text-slate-900 dark:text-slate-100">{item.description}</div>
-                                                <div className="text-xs text-slate-400 dark:text-slate-500">
-                                                    {item.physical_reference || item.source_event_key || `Movement #${item.movement_id}`}
-                                                </div>
-                                            </td>
-                                            <td className="py-3 px-3 align-top text-right tabular-nums font-semibold text-emerald-600 dark:text-emerald-400">
-                                                {item.direction === 'IN' ? money(item.amount) : '—'}
-                                            </td>
-                                            <td className="py-3 px-3 align-top text-right tabular-nums font-semibold text-slate-800 dark:text-slate-200">
-                                                {item.direction === 'OUT' ? money(item.amount) : '—'}
-                                            </td>
-                                            <td className="py-3 px-3 align-top text-right tabular-nums font-semibold text-slate-900 dark:text-slate-100">
-                                                {money(item.balance_after)}
-                                            </td>
-                                            <td className="py-3 px-3 align-top text-slate-600 dark:text-slate-300">
-                                                {item.operator_name}
-                                            </td>
-                                            <td className="py-3 px-3 align-top text-right">
+                                                <span className={`text-base font-bold tabular-nums ${item.direction === 'IN' ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-800 dark:text-slate-200'}`}>
+                                                    {item.direction === 'OUT' ? '−' : '+'}{money(item.amount)}
+                                                </span>
+                                            </div>
+                                            <div className="mt-2.5 flex items-center justify-between border-t border-slate-100 pt-2 text-xs text-slate-500 dark:border-slate-700/60 dark:text-slate-400">
+                                                <span>{formatTime(item.recorded_at)} · {item.operator_name}</span>
                                                 <button
                                                     type="button"
-                                                    className="inline-flex min-h-8 items-center rounded-md border border-slate-300 px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-700/60 cursor-pointer"
+                                                    className="font-semibold text-primary-600 underline hover:text-primary-700 dark:text-primary-400"
                                                     onClick={() => setSelectedMovement(item)}
                                                 >
                                                     View
                                                 </button>
-                                            </td>
-                                        </tr>
+                                            </div>
+                                        </div>
                                     ))}
-                                </tbody>
-                            </table>
+                                </div>
+
+                                {/* Desktop Table View */}
+                                <div className="hidden overflow-x-auto md:block">
+                                    <table className="w-full min-w-[660px] text-left text-sm">
+                                        <thead>
+                                            <tr className="border-b border-slate-200 bg-slate-50/50 text-xs font-semibold uppercase tracking-wider text-slate-500 dark:border-slate-700 dark:bg-slate-900/30 dark:text-slate-400">
+                                                <th className="py-2.5 px-2.5 w-20 sm:w-24 whitespace-nowrap"># / Recorded</th>
+                                                <th className="py-2.5 px-2.5">Type / Description / Reference</th>
+                                                <th className="py-2.5 px-2 text-right whitespace-nowrap w-24">Cash in</th>
+                                                <th className="py-2.5 px-2 text-right whitespace-nowrap w-24">Cash out</th>
+                                                <th className="py-2.5 px-2 text-right whitespace-nowrap w-28">Running balance</th>
+                                                <th className="py-2.5 px-2 whitespace-nowrap w-24">Operator</th>
+                                                <th className="py-2.5 px-2.5 text-right whitespace-nowrap w-16">Action</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                                            {movements.map(item => (
+                                                <tr key={item.movement_id} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/50">
+                                                    <td className="py-2.5 px-2.5 align-top font-mono text-xs whitespace-nowrap">
+                                                        <span className="font-semibold text-slate-700 dark:text-slate-300">#{item.sequence}</span>
+                                                        <div className="text-[11px] text-slate-400">
+                                                            <div>{formatDate(item.recorded_at)}</div>
+                                                            {item.recorded_at && <div>{formatTimeOnly(item.recorded_at)}</div>}
+                                                        </div>
+                                                    </td>
+                                                    <td className="py-2.5 px-2.5 align-top">
+                                                        <div className="flex flex-wrap items-center gap-1.5">
+                                                            <StatusBadge
+                                                                tone={item.direction === 'IN' ? 'success' : 'neutral'}
+                                                                label={formatCategory(item.category)}
+                                                            />
+                                                            {item.reversal_of && <StatusBadge tone="danger" label="Reversal" />}
+                                                            {item.late_reason && <StatusBadge tone="warning" label="Late" />}
+                                                        </div>
+                                                        <div className="mt-1 font-medium text-slate-900 dark:text-slate-100">{item.description}</div>
+                                                        <div className="text-xs text-slate-400 dark:text-slate-500">
+                                                            {formatMovementReference(item)}
+                                                        </div>
+                                                    </td>
+                                                    <td className="py-2.5 px-2 align-top text-right tabular-nums font-semibold whitespace-nowrap text-emerald-600 dark:text-emerald-400 text-xs">
+                                                        {item.direction === 'IN' ? money(item.amount) : '—'}
+                                                    </td>
+                                                    <td className="py-2.5 px-2 align-top text-right tabular-nums font-semibold whitespace-nowrap text-slate-800 dark:text-slate-200 text-xs">
+                                                        {item.direction === 'OUT' ? money(item.amount) : '—'}
+                                                    </td>
+                                                    <td className="py-2.5 px-2 align-top text-right tabular-nums font-semibold whitespace-nowrap text-slate-900 dark:text-slate-100 text-xs">
+                                                        {money(item.balance_after)}
+                                                    </td>
+                                                    <td className="py-2.5 px-2 align-top text-xs text-slate-600 dark:text-slate-300 whitespace-nowrap max-w-[110px] truncate" title={item.operator_name}>
+                                                        {item.operator_name}
+                                                    </td>
+                                                    <td className="py-2.5 px-2.5 align-top text-right whitespace-nowrap">
+                                                        <button
+                                                            type="button"
+                                                            className="inline-flex min-h-7 items-center rounded-md border border-slate-300 px-2 py-0.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-700/60 cursor-pointer"
+                                                            onClick={() => setSelectedMovement(item)}
+                                                        >
+                                                            View
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                                {movements.length === 0 && (
+                                    <div className="py-8 text-center text-sm text-slate-500 dark:text-slate-400">
+                                        {registerTotal === 0 && !registerSearch && !registerDirection && !registerCategory && !registerSource
+                                            ? 'No cash movements yet.'
+                                            : 'No movements match these filters.'}
+                                    </div>
+                                )}
+
+                                {/* Pagination Footer */}
+                                <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-4 dark:border-slate-800">
+                                    <span className="text-sm text-slate-600 dark:text-slate-400">
+                                        {registerTotal} entries · page {registerPage} of {Math.max(1, Math.ceil(registerTotal / 50))}
+                                    </span>
+                                    <div className="flex items-center gap-2">
+                                        <button
+                                            type="button"
+                                            className={secondaryButton}
+                                            disabled={registerPage <= 1}
+                                            onClick={() => setRegisterPage(page => page - 1)}
+                                        >
+                                            Previous
+                                        </button>
+                                        <button
+                                            type="button"
+                                            className={secondaryButton}
+                                            disabled={registerPage * 50 >= registerTotal}
+                                            onClick={() => setRegisterPage(page => page + 1)}
+                                        >
+                                            Next
+                                        </button>
+                                    </div>
+                                </div>
+                            </Panel>
                         </div>
 
-                        {movements.length === 0 && (
-                            <div className="py-8 text-center text-sm text-slate-500 dark:text-slate-400">
-                                {registerTotal === 0 && !registerSearch && !registerDirection && !registerCategory && !registerSource
-                                    ? 'No cash movements yet.'
-                                    : 'No movements match these filters.'}
-                            </div>
-                        )}
+                        {/* Narrowed Right Column: Latest count + Operational sections */}
+                        <div className="space-y-4">
+                            <Panel title="Latest count">
+                                <div className="space-y-3 text-xs">
+                                    <div>
+                                        <div className="text-lg font-bold tabular-nums text-slate-900 dark:text-slate-100">
+                                            {latest ? money(latest.counted) : 'Not counted'}
+                                        </div>
+                                        <p className="mt-0.5 text-slate-500 dark:text-slate-400">
+                                            {latest ? `Cutoff #${latest.cutoff_sequence} · ${formatTime(latest.submitted_at)}` : 'No submitted count yet.'}
+                                        </p>
+                                    </div>
 
-                        {/* Pagination Footer */}
-                        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-4 dark:border-slate-800">
-                            <span className="text-sm text-slate-600 dark:text-slate-400">
-                                {registerTotal} entries · page {registerPage} of {Math.max(1, Math.ceil(registerTotal / 50))}
-                            </span>
-                            <div className="flex items-center gap-2">
-                                <button
-                                    type="button"
-                                    className={secondaryButton}
-                                    disabled={registerPage <= 1}
-                                    onClick={() => setRegisterPage(page => page - 1)}
-                                >
-                                    Previous
-                                </button>
-                                <button
-                                    type="button"
-                                    className={secondaryButton}
-                                    disabled={registerPage * 50 >= registerTotal}
-                                    onClick={() => setRegisterPage(page => page + 1)}
-                                >
-                                    Next
-                                </button>
-                            </div>
+                                    {latest && (
+                                        <div className="flex items-center justify-between border-t border-slate-100 pt-2 dark:border-slate-800">
+                                            <span className="text-slate-500 dark:text-slate-400">Over / short:</span>
+                                            <span className={`font-semibold tabular-nums ${
+                                                Number(latest.variance) > 0 ? 'text-amber-600 dark:text-amber-400' :
+                                                Number(latest.variance) < 0 ? 'text-red-600 dark:text-red-400' :
+                                                'text-emerald-600 dark:text-emerald-400'
+                                            }`}>
+                                                {Number(latest.variance) > 0 ? `+${money(latest.variance)}` : money(latest.variance)}
+                                            </span>
+                                        </div>
+                                    )}
+
+                                    {stale && (
+                                        <div className="rounded-md border border-amber-200 bg-amber-50 p-2 text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-300">
+                                            <p className="font-medium">
+                                                {Number(session.last_sequence) - Number(latest.cutoff_sequence)} movements since count.
+                                            </p>
+                                            {canCount && !draftCount && (
+                                                <button
+                                                    type="button"
+                                                    className="mt-1.5 w-full rounded border border-amber-300 bg-white px-2 py-1 text-center font-semibold text-amber-900 hover:bg-amber-50 dark:border-amber-700 dark:bg-slate-800 dark:text-amber-200 cursor-pointer"
+                                                    onClick={() => beginCount('MIDDAY')}
+                                                >
+                                                    Recount cash
+                                                </button>
+                                            )}
+                                        </div>
+                                    )}
+
+                                    <div className="border-t border-slate-100 pt-2 text-slate-500 dark:border-slate-800 dark:text-slate-400 space-y-1">
+                                        <p>
+                                            {custody.transfers.filter(item => !item.events.some(event => event.stage === 'DEPOSITED')).length} transfers awaiting deposit
+                                        </p>
+                                        <p>
+                                            {custody.advances.filter(item => !item.events.some(event => event.kind === 'SETTLEMENT')).length} advances unsettled
+                                        </p>
+                                    </div>
+                                </div>
+                            </Panel>
+
+                            {session.status === 'OPEN' && !draftCount && canMove && (
+                                <div id="cash-movement-form" className="hidden md:block">
+                                    <Panel title="Cash in / out">
+                                        {renderMovementForm(false)}
+                                    </Panel>
+                                </div>
+                            )}
+
+                            {session.status === 'CLOSING' && (
+                                <Panel title="Closing">
+                                    <div className="space-y-2 text-xs">
+                                        <p className="text-slate-500 dark:text-slate-400">
+                                            Routine writes are paused while closing is active.
+                                        </p>
+                                        {canCount && !draftCount && (
+                                            <button
+                                                type="button"
+                                                className={`${primaryButton} w-full`}
+                                                disabled={busy}
+                                                onClick={() => beginCount('CLOSING')}
+                                            >
+                                                Start final count
+                                            </button>
+                                        )}
+                                        {canClose && (
+                                            <button
+                                                type="button"
+                                                className={`${secondaryButton} w-full`}
+                                                disabled={busy}
+                                                onClick={() => setCancelDialog({ open: true, type: 'CLOSING', reason: '' })}
+                                            >
+                                                Cancel closing
+                                            </button>
+                                        )}
+                                    </div>
+                                </Panel>
+                            )}
                         </div>
-                    </Panel>
+                    </div>
                 </div>
             )}
 
@@ -2222,10 +2341,10 @@ export default function CashDrawerPage({ user, onNavigate, pageState }) {
                                                 <span className="text-slate-500">{formatTime(item.recorded_at)}</span>
                                             </div>
                                             <p>{formatCategory(item.category)} — {item.description}</p>
-                                            <p className="text-slate-400">Operator: {item.operator_name} · Reference: {item.physical_reference || item.source_event_key || 'Manual'}</p>
+                                            <p className="text-slate-400">Operator: {item.operator_name} · Reference: {formatMovementReference(item)}</p>
                                             {item.invoice_id && (
-                                                <button type="button" className="text-primary-600 underline" onClick={() => navigateSource('sales_history', { invoice_id: item.invoice_id })}>
-                                                    Open invoice #{item.invoice_id}
+                                                <button type="button" className="text-primary-600 underline" onClick={() => navigateSource('sales_history', { invoice_id: item.invoice_id, invoice_number: item.invoice_number })}>
+                                                    Open invoice {item.invoice_number ? `#${item.invoice_number}` : `#${item.invoice_id}`}
                                                 </button>
                                             )}
                                         </div>
@@ -2393,7 +2512,10 @@ export default function CashDrawerPage({ user, onNavigate, pageState }) {
                                         <div><strong>Recorded at:</strong> {formatTime(selectedMovement.recorded_at)}</div>
                                         <div><strong>Occurred at:</strong> {formatTime(selectedMovement.occurred_at)}</div>
                                         <div><strong>Counterparty:</strong> {selectedMovement.counterparty || '—'}</div>
-                                        <div><strong>Physical reference:</strong> {selectedMovement.physical_reference || '—'}</div>
+                                        <div><strong>Reference:</strong> {formatMovementReference(selectedMovement)}</div>
+                                        {selectedMovement.physical_reference && selectedMovement.physical_reference !== formatMovementReference(selectedMovement) && (
+                                            <div><strong>Physical reference:</strong> {selectedMovement.physical_reference}</div>
+                                        )}
                                         <div><strong>Source key:</strong> {selectedMovement.source_event_key || 'Manual entry'}</div>
                                         {selectedMovement.late_reason && <div><strong>Late reason:</strong> {selectedMovement.late_reason}</div>}
                                         {selectedMovement.reversal_of && <div><strong>Reversal of:</strong> Movement #{selectedMovement.reversal_of}</div>}
@@ -2403,22 +2525,22 @@ export default function CashDrawerPage({ user, onNavigate, pageState }) {
                                     <div className="border-t border-slate-100 pt-3 dark:border-slate-800 flex flex-wrap gap-3">
                                         {selectedMovement.invoice_id && (
                                             <button type="button" className="text-xs font-semibold text-primary-600 underline hover:text-primary-700" onClick={() => navigateSource('sales_history', { invoice_id: selectedMovement.invoice_id, invoice_number: selectedMovement.invoice_number, startDate: String(selectedMovement.invoice_date).slice(0, 10), endDate: String(selectedMovement.invoice_date).slice(0, 10) })}>
-                                                Open invoice #{selectedMovement.invoice_id}
+                                                Open invoice {selectedMovement.invoice_number ? `#${selectedMovement.invoice_number}` : `#${selectedMovement.invoice_id}`}
                                             </button>
                                         )}
                                         {selectedMovement.customer_payment_id && (
                                             <button type="button" className="text-xs font-semibold text-primary-600 underline hover:text-primary-700" onClick={() => navigateSource('ar', { customer_id: selectedMovement.customer_id, customer_payment_id: selectedMovement.customer_payment_id })}>
-                                                Open A/R payment #{selectedMovement.customer_payment_id}
+                                                Open A/R payment {selectedMovement.customer_payment_reference || `#${selectedMovement.customer_payment_id}`}
                                             </button>
                                         )}
                                         {selectedMovement.expense_id && (
                                             <button type="button" className="text-xs font-semibold text-primary-600 underline hover:text-primary-700" onClick={() => navigateSource('expenses', { expense_id: selectedMovement.expense_id })}>
-                                                Open expense #{selectedMovement.expense_id}
+                                                Open expense {selectedMovement.expense_reference || `#${selectedMovement.expense_id}`}
                                             </button>
                                         )}
                                         {selectedMovement.ap_payment_id && (
                                             <button type="button" className="text-xs font-semibold text-primary-600 underline hover:text-primary-700" onClick={() => navigateSource('ap', { tab: 'payments', payment_id: selectedMovement.ap_payment_id })}>
-                                                Open supplier payment #{selectedMovement.ap_payment_id}
+                                                Open supplier payment {selectedMovement.ap_payment_reference || `#${selectedMovement.ap_payment_id}`}
                                             </button>
                                         )}
                                     </div>

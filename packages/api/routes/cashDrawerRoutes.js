@@ -281,6 +281,12 @@ router.get('/cash-drawers/sessions/:id/movements', protect, hasPermission('cash_
       AND ($3::text IS NULL OR m.category=$3)
       AND ($4::text IS NULL OR m.description ILIKE '%'||$4||'%' OR m.source_event_key ILIKE '%'||$4||'%'
         OR m.physical_reference ILIKE '%'||$4||'%'
+        OR i.invoice_number ILIKE '%'||$4||'%'
+        OR i.physical_receipt_no ILIKE '%'||$4||'%'
+        OR cn.cn_number ILIKE '%'||$4||'%'
+        OR cp.reference_number ILIKE '%'||$4||'%'
+        OR exp.reference_no ILIKE '%'||$4||'%'
+        OR ap.reference_number ILIKE '%'||$4||'%'
         OR m.counterparty ILIKE '%'||$4||'%' OR concat_ws(' ',e.first_name,e.last_name) ILIKE '%'||$4||'%')
       AND ($5::integer IS NULL OR m.actor_id=$5)
       AND ($6::text IS NULL OR CASE $6 WHEN 'REVERSAL' THEN m.reversal_of IS NOT NULL
@@ -289,15 +295,28 @@ router.get('/cash-drawers/sessions/:id/movements', protect, hasPermission('cash_
       AND ($7::date IS NULL OR (m.${timeField} AT TIME ZONE 'Asia/Manila')::date >= $7)
       AND ($8::date IS NULL OR (m.${timeField} AT TIME ZONE 'Asia/Manila')::date <= $8)`;
     const params = [req.params.id, direction, category, search, operator, source, from, to];
-    const joins = `FROM cash_drawer_movement m JOIN employee e ON e.employee_id=m.actor_id`;
-    const { rows } = await db.query(`SELECT m.*,COALESCE(ip.invoice_id,cn.invoice_id) AS invoice_id,i.invoice_number,i.invoice_date,cp.customer_id,ap.supplier_id,
-      concat_ws(' ',e.first_name,e.last_name) AS operator_name
-      ${joins}
+    const joins = `FROM cash_drawer_movement m JOIN employee e ON e.employee_id=m.actor_id
       LEFT JOIN invoice_payments ip ON ip.payment_id=m.invoice_payment_id
       LEFT JOIN credit_note cn ON cn.cn_id=m.credit_note_id
       LEFT JOIN invoice i ON i.invoice_id=COALESCE(ip.invoice_id,cn.invoice_id)
       LEFT JOIN customer_payment cp ON cp.payment_id=m.customer_payment_id
-      LEFT JOIN ap_payment ap ON ap.payment_id=m.ap_payment_id
+      LEFT JOIN expense exp ON exp.expense_id=m.expense_id
+      LEFT JOIN ap_payment ap ON ap.payment_id=m.ap_payment_id`;
+    const { rows } = await db.query(`SELECT m.*,
+      COALESCE(ip.invoice_id,cn.invoice_id) AS invoice_id,
+      i.invoice_number,
+      i.invoice_date,
+      i.physical_receipt_no AS invoice_physical_receipt_no,
+      COALESCE(m.physical_reference, i.physical_receipt_no, cp.physical_receipt_no) AS physical_reference,
+      cp.customer_id,
+      cp.reference_number AS customer_payment_reference,
+      cp.physical_receipt_no AS customer_payment_receipt_no,
+      cn.cn_number,
+      exp.reference_no AS expense_reference,
+      ap.supplier_id,
+      ap.reference_number AS ap_payment_reference,
+      concat_ws(' ',e.first_name,e.last_name) AS operator_name
+      ${joins}
       WHERE ${filters}
       ORDER BY m.sequence ASC LIMIT $9 OFFSET $10`, [...params, limit, (page - 1) * limit]);
     const total = await db.query(`SELECT COUNT(*)::int AS count ${joins} WHERE ${filters}`, params);
@@ -781,7 +800,15 @@ router.get('/cash-drawers/sessions/:id/report', protect, hasPermission('cash_dra
     const generatedAt = new Date().toISOString();
     const filename = `cash-drawer-${req.params.id}`;
     if (req.query.format === 'csv') {
-      const movements = await db.query('SELECT sequence,recorded_at,category,description,physical_reference,direction,amount,balance_after FROM cash_drawer_movement WHERE session_id=$1 ORDER BY sequence', [req.params.id]);
+      const movements = await db.query(`SELECT m.sequence,m.recorded_at,m.category,m.description,
+        COALESCE(m.physical_reference, i.physical_receipt_no, cp.physical_receipt_no) AS physical_reference,
+        m.direction,m.amount,m.balance_after
+        FROM cash_drawer_movement m
+        LEFT JOIN invoice_payments ip ON ip.payment_id=m.invoice_payment_id
+        LEFT JOIN credit_note cn ON cn.cn_id=m.credit_note_id
+        LEFT JOIN invoice i ON i.invoice_id=COALESCE(ip.invoice_id,cn.invoice_id)
+        LEFT JOIN customer_payment cp ON cp.payment_id=m.customer_payment_id
+        WHERE m.session_id=$1 ORDER BY m.sequence`, [req.params.id]);
       const lines = [['Field','Value'], ...Object.entries(snapshot).map(([key, value]) => [key, value]),
         ['Custodian', rows[0].custodian_name], ['Reviewer', rows[0].reviewer_name || 'None'],
         ['Closed at', rows[0].closed_at.toISOString()], ['Revision', '1'], ['Generated at', generatedAt],
