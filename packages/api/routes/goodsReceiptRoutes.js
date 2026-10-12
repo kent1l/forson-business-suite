@@ -760,27 +760,6 @@ router.delete('/goods-receipts/:id', protect, hasPermission('goods_receipt:void'
       return res.status(400).json({ message: 'This goods receipt has no line items to reverse.' });
     }
 
-    // Guard: voiding removes stock this receipt added, so it must not drive any
-    // part's current on-hand quantity negative (e.g. some of it was already sold
-    // or transferred out since receiving).
-    const insufficientStock = [];
-    for (const line of lines) {
-      const { rows: stockRows } = await client.query(
-        'SELECT COALESCE(SUM(quantity), 0) AS on_hand FROM inventory_transaction WHERE part_id = $1',
-        [line.part_id]
-      );
-      const onHand = parseFloat(stockRows[0].on_hand);
-      if (parseFloat(line.quantity) > 0 && onHand - parseFloat(line.quantity) < -0.0001) {
-        insufficientStock.push({ part_id: line.part_id, on_hand: onHand, needed: parseFloat(line.quantity) });
-      }
-    }
-    if (insufficientStock.length > 0) {
-      await client.query('ROLLBACK');
-      return res.status(400).json({
-        message: 'Cannot void: some of the received stock has already been used elsewhere, and reversing it would drive on-hand quantity negative.',
-        details: insufficientStock,
-      });
-    }
 
     // If linked to a bill, block the void when the bill already has payments applied —
     // reversing a paid bill's liability without also reversing the payment/allocation
