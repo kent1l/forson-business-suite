@@ -6,7 +6,6 @@ import Icon from '../ui/Icon';
 import InfoTip from '../ui/InfoTip';
 import MathExpressionInput from '../ui/MathExpressionInput';
 import { ICONS } from '../../constants';
-import { allocateCash, withheldFor as computeWithheld, cashCapFor as computeCashCap } from '../../utils/withholdingSettlement';
 import { isChequeMethod } from '../../utils/chequeMethod';
 import { maxDiscountFor, validateDiscounts, discountsPayload } from '../../utils/settlementDiscount';
 import ManagerAuthorizationModal from '../ui/ManagerAuthorizationModal';
@@ -35,8 +34,8 @@ const ReceivePaymentForm = ({ customer, onSave, onCancel }) => {
     const [allocations, setAllocations] = useState({});
     // Expected withholding per invoice, from the server. Keyed by invoice_id.
     const [withholdingByInvoice, setWithholdingByInvoice] = useState({});
-    // Only the amounts the clerk has typed over. Everything else stays derived, so a
-    // change to the allocation keeps flowing through to the deduction.
+    // Withholding is an observed amount from the customer's certificate, entered
+    // explicitly by the clerk for each invoice.
     const [withheldOverrides, setWithheldOverrides] = useState({});
 
     // ── Settlement concessions ────────────────────────────────────────────────
@@ -113,50 +112,17 @@ const ReceivePaymentForm = ({ customer, onSave, onCancel }) => {
         api.get('/payment-methods/enabled').then(res => {
             const methods = (res.data || []).filter(m => m.enabled);
             setEnabledMethods(methods);
-            setSplits((prev) => prev.map((s) => ({ ...s, method_id: s.method_id ?? methods[0]?.method_id ?? null })));
         }).catch(() => setEnabledMethods([]));
     }, []);
 
     const hasWithholding = useMemo(() => Object.keys(withholdingByInvoice).length > 0, [withholdingByInvoice]);
 
-    /**
-     * Tax deducted for one invoice, given the cash applied to it.
-     *
-     * Delegates to the shared rules in utils/withholdingSettlement.js so the form and
-     * its tests can never drift apart. Only the manual override lives here, because
-     * that is UI state rather than arithmetic.
-     */
+    // A blank tax-withheld field means no deduction has been recorded yet. Never
+    // derive this from the cash allocation: the Form 2307 is the source of truth.
     const withheldFor = useCallback((inv) => {
         const key = String(inv.invoice_id);
-        if (withheldOverrides[key] !== undefined) return parseFloat(withheldOverrides[key]) || 0;
-        return computeWithheld(inv, withholdingByInvoice[key], parseFloat(allocations[inv.invoice_id]) || 0);
-    }, [withholdingByInvoice, withheldOverrides, allocations]);
-
-    const autoAllocate = useCallback((amount) => {
-        const next = allocateCash(unpaidInvoices, amount, withholdingByInvoice);
-        setAllocations(Object.fromEntries(
-            Object.entries(next).map(([id, val]) => [id, val.toFixed(2)])
-        ));
-    }, [unpaidInvoices, withholdingByInvoice]);
-
-    useEffect(() => {
-        autoAllocate(totalSplitAmount);
-    }, [totalSplitAmount, autoAllocate]);
-
-    // The cash a withholding customer is expected to send: every open invoice
-    // settled, less the tax they will deduct.
-    //
-    // Shown as guidance only -- deliberately NOT written into the amount field. The
-    // amount received is an observation of the cheque in the clerk's hand, not
-    // something the system is entitled to assert. Prefilling it invites the figure to
-    // be accepted unread, and a wrong amount accepted unread is a receivable settled
-    // against money that never arrived.
-    const expectedNetCash = useMemo(
-        () => Math.round(unpaidInvoices.reduce(
-            (sum, inv) => sum + computeCashCap(inv, withholdingByInvoice[String(inv.invoice_id)]), 0
-        ) * 100) / 100,
-        [unpaidInvoices, withholdingByInvoice]
-    );
+        return parseFloat(withheldOverrides[key]) || 0;
+    }, [withheldOverrides]);
 
     const handleAllocationChange = (invoiceId, value) => {
         setAllocations(a => ({ ...a, [invoiceId]: value }));
@@ -255,8 +221,7 @@ const ReceivePaymentForm = ({ customer, onSave, onCancel }) => {
 
     const addSplit = () => {
         const nextId = (splits[splits.length - 1]?.id || 0) + 1;
-        const defaultMethod = enabledMethods[0]?.method_id ?? null;
-        setSplits([...splits, { id: nextId, method_id: defaultMethod, amount: '', reference: '', cheque_date: '' }]);
+        setSplits([...splits, { id: nextId, method_id: null, amount: '', reference: '', cheque_date: '' }]);
     };
     const removeSplit = (id) => setSplits(splits.filter(s => s.id !== id));
     const updateSplit = (id, patch) => setSplits(splits.map(s => s.id === id ? { ...s, ...patch } : s));
@@ -692,13 +657,6 @@ const ReceivePaymentForm = ({ customer, onSave, onCancel }) => {
                                 <button
                                     type="button"
                                     className="text-xs font-semibold px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg border border-slate-300 transition-all"
-                                    onClick={() => autoAllocate(totalSplitAmount)}
-                                >
-                                    Auto-fill
-                                </button>
-                                <button
-                                    type="button"
-                                    className="text-xs font-semibold px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg border border-slate-300 transition-all"
                                     onClick={() => setAllocations({})}
                                 >
                                     Clear
@@ -713,14 +671,11 @@ const ReceivePaymentForm = ({ customer, onSave, onCancel }) => {
                                         <div className="text-xs font-bold uppercase tracking-wider text-sky-800 flex items-center gap-1">
                                             Tax withheld at source
                                             <InfoTip label="Tax withheld at source">
-                                                This customer deducts tax from what they pay and remits it to BIR under our TIN. The invoice is still settled in full &mdash; partly by cash, partly by the BIR certificate they will issue. Each amount is prefilled from that invoice&rsquo;s VAT-exclusive base, and prorated if you are only settling part of the balance; adjust it to match what they actually deducted.
+                                                This customer may deduct tax from what they pay and remit it to BIR under our TIN. The invoice is settled partly by cash and partly by the BIR certificate they issue. Enter the amount actually withheld from the Form 2307.
                                             </InfoTip>
                                         </div>
                                         <p className="text-[11px] text-sky-700 mt-0.5 leading-snug">
-                                            Enter the cash you actually received; the deduction below follows from it.
-                                            {expectedNetCash > 0 && (
-                                                <> If they withhold in full, expect <span className="font-mono font-semibold">{currency(expectedNetCash)}</span>.</>
-                                            )}
+                                            Enter the cash received and the tax withheld for each invoice manually.
                                         </p>
                                     </div>
                                     <div className="text-right">
@@ -742,8 +697,7 @@ const ReceivePaymentForm = ({ customer, onSave, onCancel }) => {
                                 {totalAllocated > 0 && totalWithheld === 0 && (
                                     <div className="mt-2 pt-2 border-t border-sky-200 text-[11px] text-amber-800">
                                         <strong>No tax withheld on this payment.</strong> The cash entered covers the
-                                        balance in full, so no BIR certificate will be expected. Expected net cash if
-                                        they do withhold: <span className="font-mono">{currency(expectedNetCash)}</span>.
+                                        balance in full, so no BIR certificate will be expected.
                                     </div>
                                 )}
                             </div>
@@ -919,9 +873,7 @@ const ReceivePaymentForm = ({ customer, onSave, onCancel }) => {
                                                                         ? 'border-red-300 bg-red-50 text-red-900 focus:ring-red-400'
                                                                         : 'border-sky-300 bg-sky-50 text-sky-900 focus:ring-sky-500 focus:border-sky-500'
                                                                 }`}
-                                                                value={withheldOverrides[String(inv.invoice_id)] !== undefined
-                                                                    ? withheldOverrides[String(inv.invoice_id)]
-                                                                    : (withheldValue ? withheldValue.toFixed(2) : '')}
+                                                                value={withheldOverrides[String(inv.invoice_id)] ?? ''}
                                                                 onChange={(val) => handleWithheldChange(inv.invoice_id, val)}
                                                                 placeholder="0.00"
                                                             />
