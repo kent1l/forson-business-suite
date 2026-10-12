@@ -6,6 +6,7 @@ import SegmentedTabs from '../ui/SegmentedTabs';
 import StatusBadge from '../ui/StatusBadge';
 import LoadingState from '../ui/LoadingState';
 import MathExpressionInput from '../ui/MathExpressionInput';
+import CopyButton from '../ui/CopyButton';
 import { useAuth } from '../../contexts/AuthContext';
 
 /**
@@ -33,10 +34,15 @@ const peso = (value) => {
     return Number.isFinite(n) ? `₱${n.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—';
 };
 
-const DetailRow = ({ label, value }) => (
+const DetailRow = ({ label, value, copyable = false }) => (
     <div>
         <span className="text-xs text-gray-500 dark:text-slate-400">{label}</span>
-        <p className="text-sm text-gray-900 dark:text-slate-100">{value || '—'}</p>
+        <div className="flex items-center gap-1.5 min-h-[1.25rem]">
+            <p className="text-sm text-gray-900 dark:text-slate-100">{value || '—'}</p>
+            {copyable && Boolean(value) && (
+                <CopyButton text={value} label={label} />
+            )}
+        </div>
     </div>
 );
 
@@ -45,7 +51,7 @@ const DetailRow = ({ label, value }) => (
 const ProfileTab = ({ employee }) => (
     <div className="p-4 space-y-5">
         <div className="grid grid-cols-2 gap-3">
-            <DetailRow label="Employee Code" value={employee.employee_code} />
+            <DetailRow label="Employee Code" value={employee.employee_code} copyable />
             <DetailRow label="Birth Date" value={employee.birth_date} />
             <DetailRow label="Gender" value={employee.gender} />
             <DetailRow label="Civil Status" value={employee.civil_status} />
@@ -754,7 +760,7 @@ const GovernmentIdsTab = ({ employee }) => {
             ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {GOV_FIELDS.map(([key, label]) => (
-                        <DetailRow key={key} label={label} value={data?.[key]} />
+                        <DetailRow key={key} label={label} value={data?.[key]} copyable />
                     ))}
                 </div>
             )}

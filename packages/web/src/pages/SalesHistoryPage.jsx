@@ -8,6 +8,7 @@ import InvoiceDetailsModal from '../components/refunds/InvoiceDetailsModal';
 import SortableHeader from '../components/ui/SortableHeader';
 import InfoTip from '../components/ui/InfoTip';
 import StatusMultiSelect, { ALL_STATUSES, DEFAULT_STATUSES } from '../components/ui/StatusMultiSelect';
+import CopyButton from '../components/ui/CopyButton';
 
 // Some static analyzers occasionally report unused JSX imports; reference them here harmlessly
 // to avoid false-positive lint errors.
@@ -578,7 +579,16 @@ const SalesHistoryPage = ({ pageState = null, onNavigate }) => {
                     </div>
                     <div className="h-full p-2 bg-white dark:bg-slate-900/50 rounded-lg border border-gray-100 dark:border-slate-700 shadow-sm flex flex-col justify-between" title="Net sales cash = Cash Tendered - Change - Cash Refunds and Exchange Payouts">
                         <div className="text-[11px] text-gray-500 dark:text-slate-400">Expected Net Cash</div>
-                        <div className="text-sm font-semibold text-gray-800 dark:text-slate-100 truncate">{stats.expectedNetCashDrawer === null ? 'Unavailable' : `${settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}${stats.expectedNetCashDrawer.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</div>
+                        <div className="text-sm font-semibold text-gray-800 dark:text-slate-100 truncate flex items-center justify-between gap-1">
+                            <span>{stats.expectedNetCashDrawer === null ? 'Unavailable' : `${settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}${stats.expectedNetCashDrawer.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</span>
+                            {stats.expectedNetCashDrawer !== null && (
+                                <CopyButton
+                                    text={stats.expectedNetCashDrawer.toFixed(2)}
+                                    label="Expected Net Cash"
+                                    title="Copy expected cash to clipboard"
+                                />
+                            )}
+                        </div>
                     </div>
                     <div className="h-full p-2 bg-white dark:bg-slate-900/50 rounded-lg border border-gray-100 dark:border-slate-700 shadow-sm flex flex-col justify-between" title="Collection Rate = Collected / Total Net Invoiced (including VAT)">
                         <div className="text-[11px] text-gray-500 dark:text-slate-400">Collection Rate</div>
@@ -619,8 +629,15 @@ const SalesHistoryPage = ({ pageState = null, onNavigate }) => {
                                                             cash-box movements. It can be negative when paying refunds for earlier sales.
                                                         </InfoTip>
                                                     </div>
-                                                    <div className="font-semibold text-gray-800 dark:text-slate-100 text-base">
-                                                        {stats.expectedNetCashDrawer === null ? 'Unavailable' : `${settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}${stats.expectedNetCashDrawer.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                                                    <div className="font-semibold text-gray-800 dark:text-slate-100 text-base flex items-center gap-1.5">
+                                                        <span>{stats.expectedNetCashDrawer === null ? 'Unavailable' : `${settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}${stats.expectedNetCashDrawer.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</span>
+                                                        {stats.expectedNetCashDrawer !== null && (
+                                                            <CopyButton
+                                                                text={stats.expectedNetCashDrawer.toFixed(2)}
+                                                                label="Expected Net Cash"
+                                                                title="Copy expected cash to clipboard"
+                                                            />
+                                                        )}
                                                     </div>
                                                 </div>
                                                 <div>
