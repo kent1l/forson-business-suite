@@ -201,7 +201,10 @@ async function finishSourceRequest(client, requestId, status, body) {
 }
 
 async function reserveSourceSession(client, sessionId) {
-  if (!enabled() || !sessionId) return;
+  if (!sessionId) return;
+  // Never accept an explicitly drawer-funded document without its movement,
+  // including during a rollout/configuration change between form load and save.
+  if (!enabled()) fail(503, 'CASH_DRAWER_DISABLED', 'Cash drawer tracking is disabled. This drawer transaction was not saved.');
   // Lock before the source document: every integrated writer uses this order.
   const result = await client.query('SELECT session_id FROM cash_drawer_session WHERE session_id=$1 FOR UPDATE', [sessionId]);
   if (!result.rowCount) fail(404, 'SESSION_NOT_FOUND', 'Cash drawer session not found.');

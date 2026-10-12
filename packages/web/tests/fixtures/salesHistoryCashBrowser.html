@@ -1,0 +1,12 @@
+<!doctype html>
+<html><head><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body><div id="root"></div><script type="module">
+import React from 'react';
+import { createRoot } from 'react-dom/client';
+import { AuthProvider } from '../../src/contexts/AuthContext.jsx';
+import { SettingsProvider } from '../../src/contexts/SettingsContext.jsx';
+import SalesHistoryPage from '../../src/pages/SalesHistoryPage.jsx';
+import '../../src/index.css';
+createRoot(document.getElementById('root')).render(React.createElement(AuthProvider, null,
+    React.createElement(SettingsProvider, null, React.createElement(SalesHistoryPage))));
+</script></body></html>

@@ -467,17 +467,36 @@ router.get('/payments', protect, hasPermission('ar:view'), async (req, res) => {
     }
 });
 
-// TEMP: GET /api/payments/refunds-approx - credit note totals in date range (for approximate net cash)
+// Legacy URL retained for Sales History. These are cash payouts inferred from
+// credit notes, independent of whether the Cash Box rollout is enabled.
 router.get('/payments/refunds-approx', protect, hasPermission('ar:view'), async (req, res) => {
     const { startDate, endDate } = req.query;
     if (!startDate || !endDate) {
         return res.status(400).json({ message: 'Start date and end date are required.' });
     }
     try {
-        const q = `SELECT COALESCE(SUM(total_amount),0) AS total_refunds
-                   FROM credit_note
-                   WHERE (refund_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2
-                     AND refund_payment_method = 'Cash';`;
+        const q = `SELECT COALESCE(SUM(
+                     CASE WHEN cn.exchange_replacement_invoice_id IS NOT NULL THEN
+                       GREATEST(cn.total_amount - COALESCE((
+                         SELECT SUM(ip.amount_paid)
+                         FROM invoice_payments ip
+                         JOIN payment_methods pm ON pm.method_id=ip.method_id
+                         WHERE ip.invoice_id=cn.exchange_replacement_invoice_id
+                           AND pm.code='exchange_credit' AND ip.reference=cn.cn_number
+                       ), replacement.total_amount, 0), 0)
+                     ELSE cn.total_amount END
+                   ),0) AS total_refunds
+                   FROM credit_note cn
+                   LEFT JOIN invoice replacement ON replacement.invoice_id=cn.exchange_replacement_invoice_id
+                   WHERE (cn.refund_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2
+                     AND LOWER(TRIM(cn.refund_payment_method)) IN ('cash', 'cash payout')
+                     AND (cn.exchange_replacement_invoice_id IS NULL OR COALESCE(replacement.payment_terms_days,0)=0)
+                     AND NOT EXISTS (
+                       SELECT 1 FROM invoice_payments account_payment
+                       JOIN payment_methods account_method ON account_method.method_id=account_payment.method_id
+                       WHERE account_payment.invoice_id=cn.exchange_replacement_invoice_id
+                         AND (account_method.code='on_account' OR account_method.config->>'settlement_type'='on_account')
+                     );`;
         const { rows } = await db.query(q, [startDate, endDate]);
         res.json({ total_refunds: rows[0].total_refunds });
     } catch (err) {

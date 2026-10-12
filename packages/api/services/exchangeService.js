@@ -291,7 +291,7 @@ async function processExchange(client, payload) {
     // ── 5. Credit note for the returned items ─────────────────────────────
     const creditNoteNumber = await getNextDocumentNumber(client, 'CN');
     const refundPaymentMethodLabel = leftoverCredit > 0
-        ? (downgrade_disposition === 'wallet' ? 'Store Credit' : downgrade_disposition === 'cash_payout' ? 'Cash Payout' : 'Applied to Account')
+        ? (isCreditSale ? 'Applied to Account' : downgrade_disposition === 'wallet' ? 'Store Credit' : 'Cash Payout')
         : 'Exchange';
 
     const cnResult = await client.query(`

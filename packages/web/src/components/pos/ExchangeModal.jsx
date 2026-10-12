@@ -14,6 +14,8 @@ import { useSettings } from '../../contexts/SettingsContext';
 import { formatPhysicalReceiptNumber } from '../../utils/receiptNumberFormatter';
 import { parsePaymentTermsDays } from '../../utils/terms';
 import { computeTaxPreview } from '../../utils/taxPreview';
+import useCashDrawerSession from '../../hooks/useCashDrawerSession';
+import CashDrawerSessionField from '../refunds/CashDrawerSessionField';
 
 const round2 = (n) => Math.round(((Number(n) || 0) + Number.EPSILON) * 100) / 100;
 
@@ -339,6 +341,10 @@ const ExchangeModal = ({ isOpen, onClose, initialInvoice = null, onExchangeSucce
         setPaymentLine(prev => ({ ...prev, amount_paid: amountDue.toFixed(2) }));
     };
 
+    const needsCashDrawer = isOpen && ((showDowngradeChoice && downgradeDisposition === 'cash_payout') ||
+        (showTenderFields && selectedPaymentMethod?.type === 'cash'));
+    const drawer = useCashDrawerSession(needsCashDrawer);
+
     // ── Validation ───────────────────────────────────────────────────────────
     const validationError = useMemo(() => {
         if (!selectedInvoice) return 'Select the original invoice.';
@@ -368,10 +374,10 @@ const ExchangeModal = ({ isOpen, onClose, initialInvoice = null, onExchangeSucce
         if (chargeToAccount && !(parsePaymentTermsDays(termsDays) >= 0)) {
             return 'Enter valid payment terms (days).';
         }
-        return null;
+        return drawer.validationError;
     }, [selectedInvoice, loadingLines, selectedReturnLines, validReplacementLines, showTenderFields, paymentLine,
         tenderRequired, amountDue, currency, selectedPaymentMethod, isChequeMethod, showDowngradeChoice,
-        downgradeDisposition, chargeToAccount, termsDays]);
+        downgradeDisposition, chargeToAccount, termsDays, drawer.validationError]);
 
     // Mirrors POSPage.jsx's handlePrintReceipt: a dedicated print window keeps the
     // thermal-slip CSS isolated from the app's own stylesheet.
@@ -422,6 +428,7 @@ const ExchangeModal = ({ isOpen, onClose, initialInvoice = null, onExchangeSucce
         if (showDowngradeChoice) {
             payload.downgrade_disposition = downgradeDisposition;
         }
+        if (needsCashDrawer && drawer.enabled) payload.cash_session_id = drawer.sessionId;
 
         setSubmitting(true);
         try {
@@ -814,6 +821,8 @@ const ExchangeModal = ({ isOpen, onClose, initialInvoice = null, onExchangeSucce
                                         </div>
                                     </div>
                                 )}
+
+                                {needsCashDrawer && <CashDrawerSessionField drawer={drawer} />}
 
                                 {chargeToAccount && amountDue > 0 && !collectNow && (
                                     <p className="text-xs text-gray-500 dark:text-slate-400">
