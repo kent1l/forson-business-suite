@@ -1,3 +1,4 @@
+import { CASH_BOX_ENABLED } from '../config/features';
 import { useState, useCallback, useEffect } from 'react';
 import api from '../api';
 import { useAuth } from '../contexts/AuthContext';
@@ -88,7 +89,7 @@ const AccountsReceivablePage = ({ pageState, onNavigate }) => {
 
     return (
         <div className="space-y-6">
-            {pageState?.cashBoxReturn && <button type="button" className="min-h-11 rounded border border-slate-300 px-3 text-sm dark:border-slate-700" onClick={() => onNavigate?.('cash_drawer', pageState.cashBoxReturn)}>Back to Cash Box</button>}
+            {CASH_BOX_ENABLED && pageState?.cashBoxReturn && <button type="button" className="min-h-11 rounded border border-slate-300 px-3 text-sm dark:border-slate-700" onClick={() => onNavigate?.('cash_drawer', pageState.cashBoxReturn)}>Back to Cash Box</button>}
             {linkedPaymentError && <p role="alert" className="rounded border border-red-300 bg-red-50 p-3 text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-200">{linkedPaymentError}</p>}
             {linkedPayment && <div className="rounded-lg border border-slate-300 bg-white p-4 text-sm dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"><h2 className="font-semibold">A/R payment #{linkedPayment.payment_id}</h2><p>{linkedPayment.customer_name} · ₱{Number(linkedPayment.amount).toFixed(2)} · {new Date(linkedPayment.payment_date).toLocaleString('en-PH', { timeZone: 'Asia/Manila' })}</p><p>{linkedPayment.method_name || 'Payment method unavailable'} · reference {linkedPayment.physical_receipt_no || linkedPayment.reference_number || '—'}</p><p>This source record is displayed read only here.</p></div>}
             {/* Page Header & Navigation Bar */}

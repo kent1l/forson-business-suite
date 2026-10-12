@@ -1,3 +1,4 @@
+import { CASH_BOX_ENABLED } from '../config/features';
 import { useCallback, useMemo, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import Icon from '../components/ui/Icon';
@@ -107,7 +108,7 @@ const AccountsPayablePage = ({ onNavigate, pageState }) => {
 
     return (
         <div className="space-y-6">
-            {pageState?.cashBoxReturn && <button type="button" className="min-h-11 rounded border border-slate-300 px-3 text-sm dark:border-slate-700" onClick={() => onNavigate?.('cash_drawer', pageState.cashBoxReturn)}>Back to Cash Box</button>}
+            {CASH_BOX_ENABLED && pageState?.cashBoxReturn && <button type="button" className="min-h-11 rounded border border-slate-300 px-3 text-sm dark:border-slate-700" onClick={() => onNavigate?.('cash_drawer', pageState.cashBoxReturn)}>Back to Cash Box</button>}
             <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div>
                     <h1 className="text-2xl md:text-3xl font-bold text-gray-900 dark:text-slate-100">Accounts Payable</h1>

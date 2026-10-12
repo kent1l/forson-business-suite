@@ -1,6 +1,7 @@
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import { createUuid } from './utils/createUuid';
+import { CASH_BOX_ENABLED } from './config/features';
 
 // Create a CustomEvent to notify the app of auth errors
 const authErrorEvent = (detail = {}) => new CustomEvent('auth-error', { detail });
@@ -12,6 +13,9 @@ const api = axios.create({
     }
 });
 const pendingPrefix = 'cash-source-pending:';
+if (!CASH_BOX_ENABLED) {
+    try { sessionStorage.removeItem('forson_cash_drawer_session'); } catch { /* Storage may be unavailable. */ }
+}
 // Remove legacy close drafts immediately when the API client loads, including
 // drafts belonging to a previous sign-in. Keep only the key needed to reconcile.
 try {
@@ -44,7 +48,7 @@ api.interceptors.request.use(async config => {
     if (!sourceWrite || !config.data || typeof config.data !== 'object' || Array.isArray(config.data)) return config;
     const actor = sessionData?.user?.employee_id;
     if (!actor) throw new Error('Sign in before recording a cash source.');
-    const cashSessionId = sessionStorage.getItem('forson_cash_drawer_session');
+    const cashSessionId = CASH_BOX_ENABLED ? sessionStorage.getItem('forson_cash_drawer_session') : null;
     if (cashSessionId && !config.data.cash_session_id) config.data.cash_session_id = cashSessionId;
     const isCash = !!(config.data.cash_session_id || config.data.notebook_receipt_id || config.data.funding_source === 'ADVANCE');
     if (!isCash) return config;

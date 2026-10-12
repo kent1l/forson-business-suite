@@ -1,3 +1,4 @@
+import { CASH_BOX_ENABLED } from '../../config/features';
 import React, { useState, useEffect, useRef } from 'react';
 import api from '../../api';
 import Icon from '../ui/Icon';
@@ -443,7 +444,7 @@ export default function ExpenseForm({
                                 ))}
                             </select>
                         </div>
-                        {!initialData?.expense_id && /cash/i.test(formData.payment_method_text || '') && (
+                        {CASH_BOX_ENABLED && !initialData?.expense_id && /cash/i.test(formData.payment_method_text || '') && (
                             <div>
                                 <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1" htmlFor="expense-funding-source">Cash funding source</label>
                                 <select id="expense-funding-source" required value={formData.funding_source || ''}
@@ -456,7 +457,7 @@ export default function ExpenseForm({
                                 </select>
                             </div>
                         )}
-                        {!initialData?.expense_id && formData.funding_source === 'ADVANCE' && <label className="block text-sm">Employee advance ID<input type="number" min="1" required className="w-full min-h-11 rounded border border-slate-300 bg-white px-3 dark:border-slate-700 dark:bg-slate-900" value={formData.advance_id || ''} onChange={event => setFormData(prev => ({ ...prev, advance_id: event.target.value }))} /></label>}
+                        {CASH_BOX_ENABLED && !initialData?.expense_id && formData.funding_source === 'ADVANCE' && <label className="block text-sm">Employee advance ID<input type="number" min="1" required className="w-full min-h-11 rounded border border-slate-300 bg-white px-3 dark:border-slate-700 dark:bg-slate-900" value={formData.advance_id || ''} onChange={event => setFormData(prev => ({ ...prev, advance_id: event.target.value }))} /></label>}
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

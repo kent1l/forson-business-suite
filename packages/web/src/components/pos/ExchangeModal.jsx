@@ -812,7 +812,7 @@ const ExchangeModal = ({ isOpen, onClose, initialInvoice = null, onExchangeSucce
                                         <div className="flex gap-4">
                                             <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-slate-300">
                                                 <input type="radio" name="downgrade_disposition" checked={downgradeDisposition === 'cash_payout'} onChange={() => setDowngradeDisposition('cash_payout')} />
-                                                Cash Payout from Drawer
+                                                Cash Payout
                                             </label>
                                             <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-slate-300">
                                                 <input type="radio" name="downgrade_disposition" checked={downgradeDisposition === 'wallet'} onChange={() => setDowngradeDisposition('wallet')} />

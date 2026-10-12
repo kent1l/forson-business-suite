@@ -1,3 +1,4 @@
+import { CASH_BOX_ENABLED } from '../config/features';
 import React, { useState, useEffect, useCallback } from 'react';
 import api from '../api';
 import toast from 'react-hot-toast';
@@ -261,7 +262,7 @@ export default function ExpensesPage({ onNavigate, pageState }) {
                 </button>
             </div>
 
-            {pageState?.cashBoxReturn && <button type="button" className="mb-3 min-h-11 rounded border border-slate-300 px-3 text-sm dark:border-slate-700" onClick={() => onNavigate?.('cash_drawer', pageState.cashBoxReturn)}>Back to Cash Box</button>}
+            {CASH_BOX_ENABLED && pageState?.cashBoxReturn && <button type="button" className="mb-3 min-h-11 rounded border border-slate-300 px-3 text-sm dark:border-slate-700" onClick={() => onNavigate?.('cash_drawer', pageState.cashBoxReturn)}>Back to Cash Box</button>}
             {linkedExpenseError && <p role="alert" className="mb-3 rounded border border-red-300 bg-red-50 p-3 text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-200">{linkedExpenseError}</p>}
             {linkedExpense && <div className="mb-4 rounded-lg border border-slate-300 bg-white p-4 text-sm dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"><h2 className="font-semibold">Expense #{linkedExpense.expense_id}</h2><p>{linkedExpense.payee || 'No payee'} · ₱{Number(linkedExpense.amount).toFixed(2)} · {linkedExpense.expense_date?.slice(0, 10)}</p><p>{linkedExpense.category?.category_name || 'Uncategorized'} · reference {linkedExpense.reference_no || '—'}</p><p>{linkedExpense.notes || 'No notes'}</p><p>This source record is displayed read only here.</p></div>}
 

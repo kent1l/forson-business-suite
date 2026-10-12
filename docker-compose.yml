@@ -43,6 +43,9 @@ services:
       - "3001:3001"
     env_file:
       - ./.env
+    environment:
+      # Temporary rollout hold; overrides any previously enabled .env value.
+      ENABLE_CASH_DRAWER: "false"
 
   # --- Frontend Service ---
   frontend:

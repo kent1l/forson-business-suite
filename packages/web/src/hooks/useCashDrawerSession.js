@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import api from '../api';
+import { CASH_BOX_ENABLED } from '../config/features';
 
 // Select the physical box explicitly; visiting Cash Box is not a prerequisite
 // for paying a customer or collecting the difference on an exchange.
@@ -9,7 +10,7 @@ export default function useCashDrawerSession(required) {
     const [enabled, setEnabled] = useState(null);
     const [error, setError] = useState('');
     useEffect(() => {
-        if (!required) return;
+        if (!CASH_BOX_ENABLED || !required) return;
         let cancelled = false;
         setEnabled(null);
         setError('');
@@ -29,5 +30,6 @@ export default function useCashDrawerSession(required) {
     }, [required]);
     const validationError = !required || enabled === false ? null : error || (enabled === null
         ? 'Loading cash drawers…' : !sessionId ? 'Select an open cash drawer for this transaction.' : null);
-    return { sessions, sessionId, setSessionId, enabled, validationError };
+    return { sessions, sessionId, setSessionId, enabled: CASH_BOX_ENABLED ? enabled : false,
+        validationError: CASH_BOX_ENABLED ? validationError : null };
 }

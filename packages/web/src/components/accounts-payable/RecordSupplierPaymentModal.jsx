@@ -1,3 +1,4 @@
+import { CASH_BOX_ENABLED } from '../../config/features';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import api from '../../api';
@@ -268,7 +269,7 @@ const RecordSupplierPaymentModal = ({ isOpen, onClose, onRecorded, presetSupplie
                             {methods.map(m => <option key={m.method_id} value={m.method_id}>{m.name}</option>)}
                         </select>
                     </div>
-                    {selectedMethod?.type === 'cash' && (
+                    {CASH_BOX_ENABLED && selectedMethod?.type === 'cash' && (
                         <div>
                             <label className={labelClass} htmlFor="ap-cash-funding">Cash funding source</label>
                             <select id="ap-cash-funding" required value={form.funding_source || ''}
@@ -280,7 +281,7 @@ const RecordSupplierPaymentModal = ({ isOpen, onClose, onRecorded, presetSupplie
                             </select>
                         </div>
                     )}
-                    {selectedMethod?.type === 'cash' && form.funding_source === 'ADVANCE' && <div><label className={labelClass} htmlFor="ap-advance-id">Employee advance ID</label><input id="ap-advance-id" type="number" min="1" required value={form.advance_id || ''} onChange={event => handleChange('advance_id', event.target.value)} className={inputClass} /></div>}
+                    {CASH_BOX_ENABLED && selectedMethod?.type === 'cash' && form.funding_source === 'ADVANCE' && <div><label className={labelClass} htmlFor="ap-advance-id">Employee advance ID</label><input id="ap-advance-id" type="number" min="1" required value={form.advance_id || ''} onChange={event => handleChange('advance_id', event.target.value)} className={inputClass} /></div>}
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

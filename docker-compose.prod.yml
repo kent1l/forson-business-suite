@@ -49,6 +49,8 @@ services:
     env_file: .env
     environment:
       NODE_ENV: production
+      # Temporary rollout hold until Cash Box is finalized and tested.
+      ENABLE_CASH_DRAWER: "false"
     ports:
       - "3001:3001"
     volumes:

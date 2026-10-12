@@ -12,7 +12,8 @@
 | Verify cash accounting | Complete | Disposable PostgreSQL HTTP tests cover payouts, replay, rollback and noncash isolation |
 | Sales History cash without Cash Box | Complete | Independent cash-payout total includes exchange differences; disabled-rollout PostgreSQL checks pass |
 | Historical incident identification | Specific event unconfirmed | Production does not use Cash Box; Sales History label mismatch found and fixed |
-| Deployment | Not performed | Changes remain in this worktree |
+| Temporary Cash Box hold | Applied locally; deployment configuration prepared | Frontend feature switch false; Compose and local backend flag false |
+| Production deployment | Not performed | Production configuration changes await normal deployment |
 
 ## 1. For the Next Session
 
@@ -105,3 +106,13 @@ Automatic historical balance repair is excluded: a credit note does not establis
 - 2026-10-12: Investigated correction-to-drawer wiring, added explicit selection and disabled-tracking guard, verified PostgreSQL and Chromium scenarios, documented historical uncertainty and deployment status.
 
 - 2026-10-12 follow-up: User clarified Cash Box is unused in production. Found Sales History excluded Cash Payout exchange credits; corrected the independent payout query, account labels and net-cash display. Extended disabled-rollout PostgreSQL tests and Sales History Chromium coverage. No production deployment.
+
+## Temporary rollout hold — October 13, 2026 (Asia/Manila)
+
+User explicitly requested disabling and hiding Cash Box until the module is finalized and tested. `packages/web/src/config/features.js` sets `CASH_BOX_ENABLED=false`. Cash Box is absent from shared navigation (sidebar and command palette), old page navigation renders Dashboard, the session bar is not mounted, correction forms do not load/require drawers, Cash Box return links are hidden, and supplier/expense funding plus notebook receipt controls are hidden. API initialization clears only the selected drawer storage key; unknown-outcome request records remain intact. Ordinary cash source writes no longer receive a stored drawer session automatically.
+
+All three Compose configurations force `ENABLE_CASH_DRAWER=false`, overriding an old enabled .env. The ignored local .env was also set false and only the local development backend was recreated without rebuilding or touching database services. Verified runtime flag false and GET /api/cash-drawers returns 503/CASH_DRAWER_DISABLED. Production was not deployed. Existing drawer records remain intact.
+
+Sales History retains the independent refund/exchange payout fix. Its card is titled Expected Net Cash instead of implying an active drawer-count module. The existing refund/exchange browser suite now follows the rollout state and confirms hidden navigation/selection, zero drawer calls and no drawer session in submitted payloads. Sales History Chromium checks, targeted web lint and production build pass; build retains existing chunk-size/import warnings.
+
+Re-enable only after the requested finalization/testing: switch CASH_BOX_ENABLED to true, remove the temporary Compose overrides, set the intended environment ENABLE_CASH_DRAWER=true, rebuild/deploy frontend and recreate backend. Check source workflows and safe retry again before release. Do not enable this module merely to use Sales History expected cash.

@@ -30,6 +30,7 @@ services:
       - ./database:/usr/database:ro
     environment:
       - NODE_ENV=development
+      - ENABLE_CASH_DRAWER=false
       - CHOKIDAR_USEPOLLING=true
       - CHOKIDAR_INTERVAL=100
       - MIGRATIONS_DIR=/usr/database/migrations

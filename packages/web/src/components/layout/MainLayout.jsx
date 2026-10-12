@@ -51,6 +51,7 @@ import EntityManagementPage from '../../pages/EntityManagementPage';
 import PartyMergePage from '../../pages/PartyMergePage';
 import CashSessionBar from '../cashDrawer/CashSessionBar';
 import CashDrawerPage from '../../pages/CashDrawerPage';
+import { CASH_BOX_ENABLED } from '../../config/features';
 
 const MainLayout = ({ user, onLogout, onNavigate, currentPage, pageState, posLines, setPosLines }) => {
     const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -93,7 +94,7 @@ const MainLayout = ({ user, onLogout, onNavigate, currentPage, pageState, posLin
             case 'cost_correction': return <CostCorrectionPage />;
             case 'stock_reconciliation': return <StockReconciliationPage />;
             case 'expenses': return <ExpensesPage onNavigate={onNavigate} pageState={currentPage === 'expenses' ? pageState : null} />;
-            case 'cash_drawer': return <CashDrawerPage user={user} onNavigate={onNavigate} pageState={currentPage === 'cash_drawer' ? pageState : null} />;
+            case 'cash_drawer': return CASH_BOX_ENABLED ? <CashDrawerPage user={user} onNavigate={onNavigate} pageState={currentPage === 'cash_drawer' ? pageState : null} /> : <Dashboard onNavigate={onNavigate} />;
             case 'expense_categories': return <ExpenseCategoriesPage />;
             case 'expense_lexicon': return <ExpenseLexiconPage />;
             case 'expense_period_locks': return <ExpensePeriodLocksPage />;
@@ -118,7 +119,7 @@ const MainLayout = ({ user, onLogout, onNavigate, currentPage, pageState, posLin
             <Sidebar user={user} onNavigate={onNavigate} currentPage={currentPage} isOpen={sidebarOpen} setIsOpen={setSidebarOpen} />
             <div className="flex-1 flex flex-col overflow-hidden">
                 <Header user={user} onLogout={onLogout} onMenuClick={() => setSidebarOpen(true)} onOpenSearch={() => setPaletteOpen(true)} onNavigate={onNavigate} />
-                <CashSessionBar onNavigate={onNavigate} currentPage={currentPage} />
+                {CASH_BOX_ENABLED && <CashSessionBar onNavigate={onNavigate} currentPage={currentPage} />}
                 <main className="flex-1 overflow-x-hidden overflow-y-auto bg-slate-50 dark:bg-slate-950 p-4 sm:p-6 md:p-8">
                     {renderPage()}
                 </main>

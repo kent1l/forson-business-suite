@@ -1,3 +1,4 @@
+import { CASH_BOX_ENABLED } from '../../config/features';
 import { useEffect, useState } from 'react';
 import api from '../../api';
 
@@ -5,6 +6,7 @@ export default function NotebookCoverageFields({ amount, receiptId, coveredAmoun
     const [receipts, setReceipts] = useState([]);
     const [error, setError] = useState('');
     useEffect(() => {
+        if (!CASH_BOX_ENABLED) return;
         let live = true;
         api.get('/cash-drawers/notebook-receipts')
             .then(response => { if (live) setReceipts(response.data?.data || []); })
@@ -12,6 +14,7 @@ export default function NotebookCoverageFields({ amount, receiptId, coveredAmoun
         return () => { live = false; };
     }, []);
 
+    if (!CASH_BOX_ENABLED) return null;
     if (!receipts.length && !receiptId && !error) return null;
     const selected = receipts.find(row => String(row.movement_id) === String(receiptId));
     const covered = Number(coveredAmount) || 0;

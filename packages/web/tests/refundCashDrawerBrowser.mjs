@@ -10,6 +10,7 @@ async function scenario(type, drawers) {
         sessionStorage.clear(); // Reproduces never having visited Cash Box.
     });
     const posts = [];
+    let drawerCalls = 0;
     await page.setRequestInterception(true);
     page.on('request', req => {
         const path = new URL(req.url()).pathname;
@@ -18,7 +19,7 @@ async function scenario(type, drawers) {
             posts.push({ path, body: JSON.parse(req.postData()), key: req.headers()['idempotency-key'] });
             return req.respond({ status: 422, contentType: 'application/json', body: '{"message":"Captured browser payload"}' });
         }
-        if (path === '/api/cash-drawers') return req.respond(ok({ data: drawers }));
+        if (path === '/api/cash-drawers') { drawerCalls++; return req.respond(ok({ data: drawers })); }
         if (path === '/api/settings') return req.respond(ok({ DEFAULT_CURRENCY_SYMBOL: '₱' }));
         if (path === '/api/payment-methods/enabled') return req.respond(ok([]));
         if (path.endsWith('/lines-with-refunds')) return req.respond(ok([{ invoice_line_id: 1, part_id: 1, quantity: 1, quantity_refunded: 0, sale_price: 100, tax_rate_snapshot: 0, discount_amount: 0, display_name: 'Original item' }]));
@@ -34,6 +35,20 @@ async function scenario(type, drawers) {
         await page.type('input[placeholder="Search replacement part…"]', 'Replacement');
         await page.waitForSelector('#exchange-part-search-results li');
         await page.click('#exchange-part-search-results li');
+    }
+    if (!await page.evaluate(() => window.cashBoxEnabled)) {
+        assert.equal(await page.evaluate(() => window.cashBoxNavItems.some(item => item.page === 'cash_drawer')), false);
+        assert.equal(await page.evaluate(() => document.body.textContent.includes('Select an open cash drawer')), false);
+        const submit = type === 'refund' ? 'Confirm Refund' : 'Process Exchange';
+        await page.waitForFunction(text => ![...document.querySelectorAll('button')].find(button => button.textContent.trim() === text)?.disabled, {}, submit);
+        const sent = page.waitForResponse(response => response.request().method() === 'POST');
+        await page.evaluate(text => [...document.querySelectorAll('button')].find(button => button.textContent.trim() === text).click(), submit);
+        await sent;
+        assert.equal(posts.length, 1);
+        assert.equal(posts[0].body.cash_session_id, undefined);
+        assert.equal(drawerCalls, 0);
+        await page.close();
+        return;
     }
     await page.waitForFunction(() => document.querySelectorAll('select option').length >= 1 && !document.body.textContent.includes('Loading cash drawers…'));
     const submitText = type === 'refund' ? 'Confirm Refund' : 'Process Exchange';
@@ -67,5 +82,5 @@ try {
         await scenario(type, [{ session_id: 21, name: 'First', status: 'OPEN' }, { session_id: 22, name: 'Second', status: 'OPEN' }]);
         await scenario(type, [{ session_id: 22, name: 'Closing', status: 'CLOSING' }]);
     }
-    console.log('PASS: refund/exchange select open drawers, block missing/ambiguous sessions, submit explicit session and idempotency key');
+    console.log('PASS: refund/exchange respect the Cash Box rollout flag; disabled mode hides navigation and drawer selection and submits without a drawer');
 } finally { await browser.close(); }

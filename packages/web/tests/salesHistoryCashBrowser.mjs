@@ -27,7 +27,7 @@ try {
         await page.goto(`${process.env.CASH_BROWSER_BASE_URL || 'http://localhost:5173'}/tests/fixtures/salesHistoryCashBrowser.html`);
         await page.waitForFunction(value => [...document.querySelectorAll('div')].some(item => item.textContent.trim() === value), {}, expected);
         const value = await page.evaluate(() => {
-            const label = [...document.querySelectorAll('div')].find(item => item.textContent.trim() === 'Expected Net Cash (Drawer)');
+            const label = [...document.querySelectorAll('div')].find(item => item.textContent.trim() === 'Expected Net Cash');
             return label?.nextElementSibling?.textContent.trim();
         });
         assert.equal(value, expected);

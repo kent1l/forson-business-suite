@@ -1,3 +1,4 @@
+import { CASH_BOX_ENABLED } from '../config/features';
 import { useState, useEffect, useMemo, useRef } from 'react';
 import api from '../api';
 import toast from 'react-hot-toast';
@@ -500,7 +501,7 @@ const SalesHistoryPage = ({ pageState = null, onNavigate }) => {
     return (
         <div>
             <h1 className="text-2xl font-semibold text-gray-800 dark:text-slate-100 mb-6">Sales History</h1>
-            {pageState?.cashBoxReturn && <button type="button" className="mb-3 min-h-11 rounded border border-slate-300 px-3 text-sm dark:border-slate-700" onClick={() => onNavigate?.('cash_drawer', pageState.cashBoxReturn)}>Back to Cash Box</button>}
+            {CASH_BOX_ENABLED && pageState?.cashBoxReturn && <button type="button" className="mb-3 min-h-11 rounded border border-slate-300 px-3 text-sm dark:border-slate-700" onClick={() => onNavigate?.('cash_drawer', pageState.cashBoxReturn)}>Back to Cash Box</button>}
             {sourceError && <p role="alert" className="mb-4 rounded border border-red-300 bg-red-50 p-3 text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-200">{sourceError}</p>}
 
             <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border border-gray-200 dark:border-slate-700 shadow-card mb-6">
@@ -576,7 +577,7 @@ const SalesHistoryPage = ({ pageState = null, onNavigate }) => {
                         <div className="text-sm font-semibold text-success-600 dark:text-success-400 truncate">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.amountCollected.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                     </div>
                     <div className="h-full p-2 bg-white dark:bg-slate-900/50 rounded-lg border border-gray-100 dark:border-slate-700 shadow-sm flex flex-col justify-between" title="Net sales cash = Cash Tendered - Change - Cash Refunds and Exchange Payouts">
-                        <div className="text-[11px] text-gray-500 dark:text-slate-400">Expected Net Cash (Drawer)</div>
+                        <div className="text-[11px] text-gray-500 dark:text-slate-400">Expected Net Cash</div>
                         <div className="text-sm font-semibold text-gray-800 dark:text-slate-100 truncate">{stats.expectedNetCashDrawer === null ? 'Unavailable' : `${settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}${stats.expectedNetCashDrawer.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</div>
                     </div>
                     <div className="h-full p-2 bg-white dark:bg-slate-900/50 rounded-lg border border-gray-100 dark:border-slate-700 shadow-sm flex flex-col justify-between" title="Collection Rate = Collected / Total Net Invoiced (including VAT)">
@@ -606,13 +607,13 @@ const SalesHistoryPage = ({ pageState = null, onNavigate }) => {
                                         <>
                                             <div className="text-sm text-gray-500 dark:text-slate-400 flex items-center justify-between">
                                                 <span className="font-medium text-primary-700 dark:text-primary-300 text-xs uppercase tracking-wider">Operational Cash Flow (Tax-Inclusive)</span>
-                                                <span className="text-[10px] uppercase tracking-wide text-gray-400 dark:text-slate-500">Drawer Count</span>
+                                                <span className="text-[10px] uppercase tracking-wide text-gray-400 dark:text-slate-500">Sales Cash</span>
                                             </div>
                                             <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-3">
                                                 <div>
                                                     <div className="text-xs text-gray-500 dark:text-slate-400 flex items-center gap-1">
-                                                        Expected Net Cash (Drawer)
-                                                        <InfoTip label="Expected Net Cash (Drawer)">
+                                                        Expected Net Cash
+                                                        <InfoTip label="Expected Net Cash">
                                                             (Cash Tendered − Change Returned) − Cash Refunds and Exchange Payouts.
                                                             Net sales cash for the selected dates, excluding opening cash and other
                                                             cash-box movements. It can be negative when paying refunds for earlier sales.
@@ -645,7 +646,7 @@ const SalesHistoryPage = ({ pageState = null, onNavigate }) => {
                                                 </div>
                                             </div>
                                             <div className="text-[10px] text-gray-400 dark:text-slate-500 mt-2">
-                                                Reconcile Expected Net Cash (Drawer) with physical till count.
+                                                Reconcile Expected Net Cash with physical till count.
                                             </div>
                                         </>
                                     )
