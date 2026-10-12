@@ -4,12 +4,16 @@ import toast from 'react-hot-toast';
 import { useAuth } from '../../contexts/AuthContext';
 import { useSettings } from '../../contexts/SettingsContext';
 import MathExpressionInput from '../ui/MathExpressionInput';
+import useCashDrawerSession from '../../hooks/useCashDrawerSession';
+import CashDrawerSessionField from './CashDrawerSessionField';
 
 const RefundForm = ({ invoice, lines, onRefundSuccess }) => {
     const { user } = useAuth();
     const { settings } = useSettings();
     const [refundLines, setRefundLines] = useState({});
     const [refundMethod, setRefundMethod] = useState('Cash');
+    const [submitting, setSubmitting] = useState(false);
+    const drawer = useCashDrawerSession(refundMethod === 'Cash');
 
     const handleCheckboxChange = (lineId, checked) => {
         const line = lines.find(l => l.invoice_line_id === lineId);
@@ -51,6 +55,8 @@ const RefundForm = ({ invoice, lines, onRefundSuccess }) => {
     }, [refundLines]);
 
     const handleSubmitRefund = () => {
+        if (submitting) return;
+        if (drawer.validationError) return toast.error(drawer.validationError);
         const linesToRefund = Object.values(refundLines).filter(line => line.quantity > 0);
         if (linesToRefund.length === 0) {
             return toast.error('Please select at least one item to refund.');
@@ -67,8 +73,10 @@ const RefundForm = ({ invoice, lines, onRefundSuccess }) => {
                 quantity: line.quantity
             })),
         };
+        if (refundMethod === 'Cash' && drawer.enabled) payload.cash_session_id = drawer.sessionId;
 
-        const promise = api.post('/refunds', payload);
+        setSubmitting(true);
+        const promise = api.post('/refunds', payload).finally(() => setSubmitting(false));
         toast.promise(promise, {
             loading: 'Processing refund...',
             success: (res) => {
@@ -97,6 +105,7 @@ const RefundForm = ({ invoice, lines, onRefundSuccess }) => {
                     <option value="AR reduction">Accounts Receivable Reduction</option>
                 </select>
             </div>
+            {refundMethod === 'Cash' && <CashDrawerSessionField drawer={drawer} />}
             <h4 className="font-semibold text-gray-800 dark:text-slate-100 mb-2">Select items to refund:</h4>
             <div className="space-y-2 max-h-48 overflow-y-auto pr-2">
                 {lines.map(line => (
@@ -131,6 +140,7 @@ const RefundForm = ({ invoice, lines, onRefundSuccess }) => {
                 </div>
                 <button
                     onClick={handleSubmitRefund}
+                    disabled={submitting || !!drawer.validationError}
                     className="bg-primary-600 hover:bg-primary-700 text-white font-semibold px-4 py-2 rounded-lg transition-colors"
                 >
                     Confirm Refund
