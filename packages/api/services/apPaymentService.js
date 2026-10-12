@@ -284,7 +284,7 @@ async function resolveAllocations(client, { supplierId, amount, allocations, set
  * 'cheque' (backed by a cheque_records row whose lifecycle the Treasury desk
  * owns); anything else returns both.
  */
-async function listPayments(db, { supplierId = null, channel = 'all', limit = 100 } = {}) {
+async function listPayments(db, { supplierId = null, paymentId = null, channel = 'all', limit = 100 } = {}) {
   const chequeOnly = channel === 'cheque' ? true : channel === 'direct' ? false : null;
   const { rows } = await db.query(
     `SELECT ap.payment_id, ap.supplier_id, s.supplier_name, ap.payment_date, ap.amount,
@@ -312,9 +312,10 @@ async function listPayments(db, { supplierId = null, channel = 'all', limit = 10
         AND ($2::boolean IS NULL
              OR ($2::boolean AND ap.cheque_record_id IS NOT NULL)
              OR (NOT $2::boolean AND ap.cheque_record_id IS NULL))
+        AND ($3::int IS NULL OR ap.payment_id=$3::int)
       ORDER BY ap.payment_date DESC, ap.payment_id DESC
-      LIMIT $3`,
-    [supplierId, chequeOnly, Math.min(Number(limit) || 100, 500)]
+      LIMIT $4`,
+    [supplierId, chequeOnly, paymentId, Math.min(Number(limit) || 100, 500)]
   );
   return rows;
 }

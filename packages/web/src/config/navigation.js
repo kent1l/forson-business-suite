@@ -67,6 +67,7 @@ export const CATEGORIES = [
         title: 'Finance & Expenses',
         icon: ICONS.receipt,
         items: [
+            { name: 'Cash Box', icon: ICONS.receipt, page: 'cash_drawer', permission: 'cash_drawer:view', keywords: ['cash drawer', 'cash count', 'float', 'reconciliation', 'handover'] },
             { name: 'A/P',                 icon: ICONS.truck,   page: 'ap',                 permission: 'ap:view', keywords: ['accounts payable', 'payables', 'supplier balance', 'ap', 'supplier bill', 'bill'] },
             { name: 'Cheques & Treasury', icon: ICONS.bank,    page: 'cheques_treasury',   permission: ['cheques:view', 'pdc:view', 'ar:view', 'ap-pdc:view'], keywords: ['pdc', 'post-dated cheques', 'bank', 'check', 'checks', 'cheque', 'cheques'] },
             { name: 'Bulk SOA Generator', icon: ICONS.documents, page: 'soa_gen',          permission: 'ar:view', keywords: ['statement of account', 'soa'] },

@@ -9,6 +9,7 @@ import { isChequeMethod } from '../../utils/chequeMethod';
 import { ICONS } from '../../constants';
 import { useAuth } from '../../contexts/AuthContext';
 import ManagerAuthorizationModal from './ManagerAuthorizationModal';
+import NotebookCoverageFields from '../cashDrawer/NotebookCoverageFields';
 
 const MIN_NOTE_LENGTH = 10;
 
@@ -334,6 +335,9 @@ const SplitPaymentModal = ({
                 errors.push(`Amount must be greater than 0`);
             }
             if (method) {
+                if (payment.notebook_receipt_id && (method.type !== 'cash' || !(Number(payment.notebook_covered_amount) > 0) || Number(payment.notebook_covered_amount) > amountPaid)) {
+                    errors.push('Notebook coverage must be positive, no more than the cash payment, and used with Cash.');
+                }
                 if (method.settlement_type === 'on_account' && (!customerName || customerName.trim().toLowerCase().includes('walk-in') || customerName.trim().toLowerCase().includes('walk in'))) {
                     errors.push(`On Account is not available for Walk-In customers`);
                 }
@@ -473,6 +477,10 @@ const SplitPaymentModal = ({
                 return {
                     method_id: payment.method_id,
                     amount_paid: amountPaid,
+                    ...(method?.type === 'cash' && payment.notebook_receipt_id ? {
+                        notebook_receipt_id: payment.notebook_receipt_id,
+                        notebook_covered_amount: Number(payment.notebook_covered_amount)
+                    } : {}),
                     tendered_amount: tenderedAmount,
                     reference: payment.reference.trim() || null,
                     // Sent both ways on purpose: the API reads cheque_date to set the
@@ -913,6 +921,10 @@ const SplitPaymentModal = ({
                                             </div>
                                         </div>
                                     </div>
+                                    {method?.type === 'cash' && <NotebookCoverageFields amount={payment.amount_paid}
+                                        receiptId={payment.notebook_receipt_id} coveredAmount={payment.notebook_covered_amount}
+                                        onChange={(receiptId, coveredAmount) => setPayments(prev => prev.map(p => p.id === payment.id
+                                            ? { ...p, notebook_receipt_id: receiptId, notebook_covered_amount: coveredAmount } : p))} />}
                                 </div>
                             );
                         })}

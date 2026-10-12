@@ -12,6 +12,7 @@ import { maxDiscountFor, validateDiscounts, discountsPayload } from '../../utils
 import ManagerAuthorizationModal from '../ui/ManagerAuthorizationModal';
 import { useAuth } from '../../contexts/AuthContext';
 import { useSettings } from '../../contexts/SettingsContext';
+import NotebookCoverageFields from '../cashDrawer/NotebookCoverageFields';
 
 const MIN_NOTE_LENGTH = 10;
 
@@ -283,6 +284,10 @@ const ReceivePaymentForm = ({ customer, onSave, onCancel }) => {
                 toast.error('Payment amounts must be positive.');
                 return false;
             }
+            if (s.notebook_receipt_id && (method.type !== 'cash' || !(Number(s.notebook_covered_amount) > 0) || Number(s.notebook_covered_amount) > amt)) {
+                toast.error('Notebook coverage must be positive, no more than the cash payment, and used with Cash.');
+                return false;
+            }
             if (method.code === 'store_wallet' && amt > walletBalance) {
                 toast.error(`Insufficient store wallet balance (${currency(walletBalance)}) for this payment.`);
                 return false;
@@ -349,6 +354,10 @@ const ReceivePaymentForm = ({ customer, onSave, onCancel }) => {
                 customer_id: customer.customer_id,
                 amount: lineAmount,
                 method_id: s.method_id,
+                ...(methodById(s.method_id)?.type === 'cash' && s.notebook_receipt_id ? {
+                    notebook_receipt_id: s.notebook_receipt_id,
+                    notebook_covered_amount: Number(s.notebook_covered_amount)
+                } : {}),
                 reference: s.reference || null,
                 cheque_date: s.cheque_date || null,
                 notes: notes || null,
@@ -646,6 +655,12 @@ const ReceivePaymentForm = ({ customer, onSave, onCancel }) => {
                                                 </div>
                                             )}
                                         </div>
+
+                                        {m?.type === 'cash' && <NotebookCoverageFields amount={s.amount}
+                                            receiptId={s.notebook_receipt_id} coveredAmount={s.notebook_covered_amount}
+                                            onChange={(receiptId, coveredAmount) => updateSplit(s.id, {
+                                                notebook_receipt_id: receiptId, notebook_covered_amount: coveredAmount
+                                            })} />}
 
                                         {splits.length > 1 && (
                                             <div className="flex justify-end pt-1 border-t border-slate-200/60">

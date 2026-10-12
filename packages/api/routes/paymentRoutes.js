@@ -23,6 +23,7 @@ const { formatPhysicalReceiptNumber } = require('../helpers/receiptNumberFormatt
 // One POST call per payment split line (one per physical payment instrument).
 // A single cheque covering N invoices → one customer_payment row, N allocation rows.
 router.post('/payments', protect, hasPermission('ar:receive_payment'), async (req, res) => {
+    const cashDrawer = require('../services/cashDrawerService');
     const { employee_id } = req.user;
     const {
         customer_id,
@@ -92,6 +93,8 @@ router.post('/payments', protect, hasPermission('ar:receive_payment'), async (re
     const client = await db.getClient();
     try {
         await client.query('BEGIN');
+        await cashDrawer.reserveSourceSession(client, req.body.cash_session_id);
+        const cashRequestId = await cashDrawer.beginSourceRequest(client, req);
 
         if (physicalReceiptNoValue) {
             const checkRes = await client.query(
@@ -171,6 +174,8 @@ router.post('/payments', protect, hasPermission('ar:receive_payment'), async (re
             [customer_id, employee_id, numAmount, methodCode, resolvedMethodId,
              referenceValue, physicalReceiptNoValue, notes || null, pdcStatusValue, chequeDateValue]
         );
+        await cashDrawer.postSourcePayment(client, { kind: 'customer', sourceId: newPaymentId, sessionId: req.body.cash_session_id, actorId: employee_id,
+            notebookReceiptId: req.body.notebook_receipt_id, coveredAmount: req.body.notebook_covered_amount, canPost: cashDrawer.userCanPost(req.user) });
 
         // ── Step 1b: Resolve tax withheld at source ────────────────────────────
         // A withholding customer pays the invoice net of tax and hands over a BIR
@@ -409,8 +414,7 @@ router.post('/payments', protect, hasPermission('ar:receive_payment'), async (re
             overpaymentCredited = excessAmount;
         }
 
-        await client.query('COMMIT');
-        res.status(201).json({
+        const responsePayload = {
             message: 'Payment received successfully',
             payment_id: newPaymentId,
             allocated_amount: totalAllocated,
@@ -420,17 +424,21 @@ router.post('/payments', protect, hasPermission('ar:receive_payment'), async (re
             adjustment_status: adjustmentDoc?.status || null,
             overpayment_credited: overpaymentCredited,
             pdc_status: pdcStatusValue,
-        });
+        };
+        await cashDrawer.finishSourceRequest(client, cashRequestId, 201, responsePayload);
+        await client.query('COMMIT');
+        res.status(201).json(responsePayload);
 
     } catch (err) {
         await client.query('ROLLBACK');
+        if (err.replay) return res.status(err.replay.status).json(err.replay.body);
         console.error('POST /payments error:', err.message);
         // A concession refused for a business reason (over the balance, a capped
         // reason, a spent authorization, a closed period) carries its own status.
         // Reporting those as 500 would tell the clerk the system broke when in
         // fact it declined, and the message explains exactly what to change.
-        const status = err.statusCode && err.statusCode < 500 ? err.statusCode : 500;
-        res.status(status).json({ message: err.message || 'Server error during payment transaction.' });
+        const status = err.status || (err.statusCode && err.statusCode < 500 ? err.statusCode : 500);
+        res.status(status).json({ code: err.code, message: err.message || 'Server error during payment transaction.' });
     } finally {
         client.release();
     }

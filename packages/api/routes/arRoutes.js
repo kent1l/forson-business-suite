@@ -1357,6 +1357,20 @@ router.get('/ar/customers/:customerId/soa/pdf', protect, hasPermission('ar:view'
 // this sheet exists to show how that cash, plus any tax withheld and any balance
 // forgiven, was applied across the customer's invoices — three figures that must
 // never be summed into one.
+router.get('/ar/payments/:paymentId', protect, hasPermission('ar:view'), async (req, res) => {
+    const paymentId = Number(req.params.paymentId);
+    if (!Number.isSafeInteger(paymentId) || paymentId < 1 || paymentId > 2147483647) return res.status(400).json({ message: 'Invalid payment ID' });
+    try {
+        const { rows } = await db.query(`SELECT cp.payment_id,cp.customer_id,cp.amount,cp.payment_date,
+            cp.reference_number,cp.physical_receipt_no,cp.notes,pm.name AS method_name,
+            COALESCE(c.company_name,TRIM(c.first_name || ' ' || COALESCE(c.last_name,''))) AS customer_name
+            FROM customer_payment cp JOIN customer c ON c.customer_id=cp.customer_id
+            LEFT JOIN payment_methods pm ON pm.method_id=cp.method_id WHERE cp.payment_id=$1`, [paymentId]);
+        if (!rows.length) return res.status(404).json({ message: 'Payment not found' });
+        res.json({ data: rows[0] });
+    } catch (error) { console.error('AR payment source lookup failed:', error); res.status(500).json({ message: 'Unable to load payment' }); }
+});
+
 router.get('/ar/payments/:paymentId/receipt/pdf', protect, hasPermission('ar:view'), async (req, res) => {
     const paymentId = parseInt(req.params.paymentId, 10);
     if (!paymentId) return res.status(400).json({ message: 'Invalid payment ID' });

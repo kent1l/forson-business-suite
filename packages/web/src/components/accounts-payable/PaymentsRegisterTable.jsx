@@ -19,7 +19,7 @@ const fmtDate = (d) => (d ? new Date(d).toLocaleDateString() : '—');
  * payments have no instrument, so this register is the only place their
  * settlement date can be corrected.
  */
-const PaymentsRegisterTable = ({ refreshToken }) => {
+const PaymentsRegisterTable = ({ refreshToken, focusPaymentId, onClearFocus }) => {
     const { hasPermission } = useAuth();
     const canChangeDate = hasPermission('transaction:change_date') || hasPermission('transaction:change_date_unrestricted');
 
@@ -30,11 +30,11 @@ const PaymentsRegisterTable = ({ refreshToken }) => {
 
     const fetchPayments = useCallback(() => {
         setLoading(true);
-        api.get('/ap/payments', { params: { channel } })
+        api.get('/ap/payments', { params: { channel, payment_id: focusPaymentId || undefined } })
             .then(res => setPayments(res.data?.data || []))
             .catch(() => toast.error('Failed to load supplier payments'))
             .finally(() => setLoading(false));
-    }, [channel]);
+    }, [channel, focusPaymentId]);
 
     useEffect(() => { fetchPayments(); }, [fetchPayments, refreshToken]);
 
@@ -42,6 +42,7 @@ const PaymentsRegisterTable = ({ refreshToken }) => {
         <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xs">
             <div className="flex flex-wrap items-center gap-2 p-4 border-b border-gray-200 dark:border-slate-700">
                 <h3 className="text-base font-semibold text-gray-900 dark:text-slate-100 mr-auto">Payment Register</h3>
+                {focusPaymentId && <button className="min-h-11 rounded border px-3 text-sm" onClick={onClearFocus}>Payment #{focusPaymentId} · clear filter</button>}
                 {CHANNELS.map(c => (
                     <button key={c.key} onClick={() => setChannel(c.key)}
                         className={`px-3 py-1.5 text-sm rounded-md transition-colors ${channel === c.key
@@ -71,7 +72,7 @@ const PaymentsRegisterTable = ({ refreshToken }) => {
                             <tr><td colSpan={8} className="px-4 py-8 text-center text-gray-500 dark:text-slate-400">Loading…</td></tr>
                         )}
                         {!loading && payments.length === 0 && (
-                            <tr><td colSpan={8} className="px-4 py-8 text-center text-gray-500 dark:text-slate-400">No payments recorded yet.</td></tr>
+                            <tr><td colSpan={8} className="px-4 py-8 text-center text-gray-500 dark:text-slate-400">{focusPaymentId ? `Supplier payment #${focusPaymentId} is unavailable or you do not have access to it.` : 'No payments recorded yet.'}</td></tr>
                         )}
                         {!loading && payments.map(p => (
                             <tr key={p.payment_id} className="hover:bg-gray-50 dark:hover:bg-slate-700/40">

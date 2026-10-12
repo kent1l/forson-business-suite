@@ -37,6 +37,8 @@ export default function ExpenseForm({
         payee: '',
         payment_method_id: '',
         payment_method_text: 'Cash',
+        funding_source: '',
+        advance_id: '',
         reference_no: '',
         notes: ''
     });
@@ -165,13 +167,14 @@ export default function ExpenseForm({
     const handlePaymentMethodChange = (e) => {
         const selectedId = e.target.value;
         if (!selectedId) {
-            setFormData(prev => ({ ...prev, payment_method_id: '', payment_method_text: 'Cash' }));
+            setFormData(prev => ({ ...prev, payment_method_id: '', payment_method_text: 'Cash', funding_source: '', advance_id: '' }));
         } else {
             const pm = paymentMethods.find(p => String(p.method_id) === String(selectedId));
             setFormData(prev => ({
                 ...prev,
                 payment_method_id: selectedId,
-                payment_method_text: pm ? pm.name : 'Cash'
+                payment_method_text: pm ? pm.name : 'Cash',
+                funding_source: '', advance_id: ''
             }));
         }
     };
@@ -262,6 +265,8 @@ export default function ExpenseForm({
             payee: formData.payee.trim() || null,
             payment_method_id: formData.payment_method_id ? parseInt(formData.payment_method_id, 10) : null,
             payment_method_text: formData.payment_method_text || 'Cash',
+            funding_source: formData.funding_source || 'OTHER',
+            advance_id: formData.funding_source === 'ADVANCE' ? formData.advance_id : undefined,
             reference_no: formData.reference_no.trim() || null,
             notes: formData.notes.trim() || null,
             ai_corrections: corrections,
@@ -438,6 +443,20 @@ export default function ExpenseForm({
                                 ))}
                             </select>
                         </div>
+                        {!initialData?.expense_id && /cash/i.test(formData.payment_method_text || '') && (
+                            <div>
+                                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1" htmlFor="expense-funding-source">Cash funding source</label>
+                                <select id="expense-funding-source" required value={formData.funding_source || ''}
+                                    onChange={event => setFormData(prev => ({ ...prev, funding_source: event.target.value }))}
+                                    className="w-full min-h-11 rounded border border-slate-300 bg-white px-3 dark:border-slate-600 dark:bg-slate-900">
+                                    <option value="">Select funding source</option>
+                                    <option value="DRAWER">Selected cash drawer</option>
+                                    <option value="ADVANCE">Earlier employee advance</option>
+                                    <option value="OTHER">Office or other cash</option>
+                                </select>
+                            </div>
+                        )}
+                        {!initialData?.expense_id && formData.funding_source === 'ADVANCE' && <label className="block text-sm">Employee advance ID<input type="number" min="1" required className="w-full min-h-11 rounded border border-slate-300 bg-white px-3 dark:border-slate-700 dark:bg-slate-900" value={formData.advance_id || ''} onChange={event => setFormData(prev => ({ ...prev, advance_id: event.target.value }))} /></label>}
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

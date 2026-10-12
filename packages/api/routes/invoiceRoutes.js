@@ -358,6 +358,7 @@ router.get('/invoices/check-physical-receipt/:prn', protect, hasPermission('invo
 
 // POST /invoices - Create a new invoice
 router.post('/invoices', protect, hasPermission('invoicing:create'), async (req, res) => {
+    const cashDrawer = require('../services/cashDrawerService');
     const { customer_id, employee_id, lines, amount_paid, tendered_amount, payment_method, terms, payment_terms_days, physical_receipt_no, tax_rate_id, payments, staged_sale_id,
         // A concession granted at the counter: part of the sale forgiven so the
         // customer can settle now. Never a tender — see the block near the end of
@@ -419,6 +420,8 @@ router.post('/invoices', protect, hasPermission('invoicing:create'), async (req,
     const client = await db.getClient();
     try {
         await client.query('BEGIN');
+        await cashDrawer.reserveSourceSession(client, req.body.cash_session_id);
+        const cashRequestId = await cashDrawer.beginSourceRequest(client, req);
 
         // A Correct & Restart replacement is still an ordinary fresh invoice:
         // it receives normal pricing, stock, tax and payment validation below.
@@ -782,6 +785,8 @@ router.post('/invoices', protect, hasPermission('invoicing:create'), async (req,
                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::varchar, CASE WHEN $9::varchar = 'settled' THEN CURRENT_TIMESTAMP ELSE NULL END, $10)
                     RETURNING payment_id
                 `, [newInvoiceId, method.rows[0].method_id, pAmt, tAmt, changeAmt, reference, JSON.stringify(paymentMetadata), employee_id, paymentStatus, pdcStatusValue]);
+                await cashDrawer.postSourcePayment(client, { kind: 'invoice', sourceId: ipRes.rows[0].payment_id, sessionId: req.body.cash_session_id, actorId: req.user.employee_id,
+                    notebookReceiptId: payment.notebook_receipt_id, coveredAmount: payment.notebook_covered_amount, canPost: cashDrawer.userCanPost(req.user) });
                 createdTenders.push({
                     payment_id: ipRes.rows[0].payment_id,
                     is_cheque: isChequeMethod,
@@ -841,6 +846,8 @@ router.post('/invoices', protect, hasPermission('invoicing:create'), async (req,
                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8::varchar, CASE WHEN $8::varchar = 'settled' THEN CURRENT_TIMESTAMP ELSE NULL END)
                     RETURNING payment_id
                 `, [newInvoiceId, method.rows[0].method_id, paid, tenderVal, changeAmt, null, employee_id, paymentStatus]);
+                await cashDrawer.postSourcePayment(client, { kind: 'invoice', sourceId: ipRes.rows[0].payment_id, sessionId: req.body.cash_session_id, actorId: req.user.employee_id,
+                    notebookReceiptId: req.body.notebook_receipt_id, coveredAmount: req.body.notebook_covered_amount, canPost: cashDrawer.userCanPost(req.user) });
                 // Recorded on the legacy single-tender path too, so the concession
                 // guard below sees the same picture whichever shape the client used.
                 createdTenders.push({
@@ -943,8 +950,7 @@ router.post('/invoices', protect, hasPermission('invoicing:create'), async (req,
             `, [staged_sale_id, employee_id]);
         }
 
-        await client.query('COMMIT');
-    res.status(201).json({ 
+        const responsePayload = {
         message: 'Invoice created successfully', 
         invoice_id: newInvoiceId, 
         invoice_number, 
@@ -960,10 +966,15 @@ router.post('/invoices', protect, hasPermission('invoicing:create'), async (req,
         tax_total,
         total_amount,
         tax_breakdown: taxCalculation.tax_breakdown
-    });
+        };
+        await cashDrawer.finishSourceRequest(client, cashRequestId, 201, responsePayload);
+        await client.query('COMMIT');
+        res.status(201).json(responsePayload);
 
     } catch (err) {
         await client.query('ROLLBACK');
+        if (err.replay) return res.status(err.replay.status).json(err.replay.body);
+        if (err.status) return res.status(err.status).json({ code: err.code, message: err.message });
         // Unique violation for physical_receipt_no
         if (err && err.code === '23505' && /physical_receipt_no/i.test(err.detail || '')) {
             return res.status(409).json({ message: 'Physical Receipt No already exists. Please use a unique number.' });
