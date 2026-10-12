@@ -158,7 +158,7 @@ router.get('/goods-receipts', protect, hasPermission('goods_receipt:create'), as
       paramIndex += 3;
     }
 
-    query += ` ORDER BY ${sortBy} ${sortOrder}`;
+    query += ` ORDER BY ${sortBy} ${sortOrder}, gr.grn_id ${sortOrder}`;
 
     if (!paginated) {
       const { rows } = await db.query(query, params);
