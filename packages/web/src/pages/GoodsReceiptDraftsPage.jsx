@@ -211,7 +211,7 @@ const GoodsReceiptDraftsPage = ({ onNavigate }) => {
                   </td>
                   <td className="px-3 py-2 font-mono text-gray-900 dark:text-slate-100">{row.grn_number}</td>
                   <td className="px-3 py-2 text-gray-900 dark:text-slate-100">{row.supplier_name}</td>
-                  <td className="px-3 py-2 text-gray-500 dark:text-slate-400">{row.supplier_invoice_no || '—'}</td>
+                  <td className="px-3 py-2 text-gray-500 dark:text-slate-400">{row.supplier_invoice_no || row.physical_receipt_no || '—'}</td>
                   <td className="px-3 py-2 text-right tabular-nums text-gray-600 dark:text-slate-400">{row.line_count}</td>
                   <td className="px-3 py-2 text-right tabular-nums font-medium text-gray-900 dark:text-slate-100">
                     {formatCurrency(Number(row.total_value) || 0)}

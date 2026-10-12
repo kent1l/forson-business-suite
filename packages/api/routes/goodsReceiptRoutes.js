@@ -238,23 +238,37 @@ router.get('/goods-receipts/:id/lines', protect, hasPermission('goods_receipt:cr
         grl.rejection_reason,
         grl.part_id AS part_id,
         p.internal_sku,
-        CASE
-          WHEN pn.part_number IS NOT NULL THEN
-            CASE
-              WHEN g.group_name IS NOT NULL AND b.brand_name IS NOT NULL THEN CONCAT(g.group_name, ' (', b.brand_name, ') | ', pn.part_number)
-              WHEN g.group_name IS NOT NULL THEN CONCAT(g.group_name, ' | ', pn.part_number)
-              WHEN b.brand_name IS NOT NULL THEN CONCAT(b.brand_name, ' | ', pn.part_number)
-              ELSE pn.part_number
-            END
-          ELSE
-            CASE
-              WHEN g.group_name IS NOT NULL AND b.brand_name IS NOT NULL THEN CONCAT(g.group_name, ' (', b.brand_name, ') | ', p.internal_sku)
-              WHEN g.group_name IS NOT NULL THEN CONCAT(g.group_name, ' | ', p.internal_sku)
-              WHEN b.brand_name IS NOT NULL THEN CONCAT(b.brand_name, ' | ', p.internal_sku)
-              ELSE p.internal_sku
-            END
-        END ||
-        CASE WHEN p.detail IS NOT NULL AND p.detail != '' THEN ' | ' || p.detail ELSE '' END AS display_name,
+        (
+          SELECT STRING_AGG(pn.part_number, ', ' ORDER BY COALESCE(pn.display_order, 1))
+          FROM part_number pn
+          WHERE pn.part_id = p.part_id AND pn.deleted_at IS NULL
+        ) AS part_numbers,
+        (
+          SELECT pn.part_number
+          FROM part_number pn
+          WHERE pn.part_id = p.part_id AND pn.deleted_at IS NULL
+          ORDER BY COALESCE(pn.display_order, 1), pn.part_number_id ASC
+          LIMIT 1
+        ) AS part_number,
+        COALESCE(
+          (SELECT pv.display_name FROM public.parts_view pv WHERE pv.part_id = p.part_id),
+          CASE
+            WHEN pn.part_number IS NOT NULL THEN
+              CASE
+                WHEN g.group_name IS NOT NULL AND b.brand_name IS NOT NULL THEN CONCAT(g.group_name, ' (', b.brand_name, ') | ', pn.part_number)
+                WHEN g.group_name IS NOT NULL THEN CONCAT(g.group_name, ' | ', pn.part_number)
+                WHEN b.brand_name IS NOT NULL THEN CONCAT(b.brand_name, ' | ', pn.part_number)
+                ELSE pn.part_number
+              END
+            ELSE
+              CASE
+                WHEN g.group_name IS NOT NULL AND b.brand_name IS NOT NULL THEN CONCAT(g.group_name, ' (', b.brand_name, ') | ', p.internal_sku)
+                WHEN g.group_name IS NOT NULL THEN CONCAT(g.group_name, ' | ', p.internal_sku)
+                WHEN b.brand_name IS NOT NULL THEN CONCAT(b.brand_name, ' | ', p.internal_sku)
+                ELSE p.internal_sku
+              END
+          END || CASE WHEN p.detail IS NOT NULL AND p.detail != '' THEN ' | ' || p.detail ELSE '' END
+        ) AS display_name,
         p.detail
       FROM goods_receipt_line grl
       JOIN part p ON grl.part_id = p.part_id
@@ -262,9 +276,11 @@ router.get('/goods-receipts/:id/lines', protect, hasPermission('goods_receipt:cr
       LEFT JOIN "group" g ON p.group_id = g.group_id
       LEFT JOIN part_number pn ON pn.part_id = p.part_id
         AND pn.deleted_at IS NULL
-        AND pn.display_order = (
-          SELECT MIN(pn2.display_order) FROM part_number pn2
+        AND pn.part_number_id = (
+          SELECT pn2.part_number_id FROM part_number pn2
           WHERE pn2.part_id = p.part_id AND pn2.deleted_at IS NULL
+          ORDER BY COALESCE(pn2.display_order, 1), pn2.part_number_id ASC
+          LIMIT 1
         )
       WHERE grl.grn_id = $1
       ORDER BY grl.grn_line_id
@@ -1001,7 +1017,7 @@ function parseHeaderPayload(body) {
     // supplier document reference as the source of truth for new requests.
     supplier_invoice_no: body.supplier_invoice_no
       ? String(body.supplier_invoice_no).trim()
-      : (body.is_backfill ? formatPhysicalReceiptNumber(body.physical_receipt_no) : null),
+      : (body.physical_receipt_no ? formatPhysicalReceiptNumber(body.physical_receipt_no) : null),
     freight_amount: totalFreight > 0 ? totalFreight : (Number(body.freight_amount) > 0 ? Number(body.freight_amount) : 0),
     freight_allocation_method: body.freight_allocation_method || grnCosting.METHOD_A,
     freight_supplier_id: primarySupplierId,
@@ -1177,7 +1193,9 @@ router.get('/goods-receipts/drafts', protect, hasPermission('goods_receipt:creat
     // needs the document's value and size before deciding to open it.
     let query = `
       SELECT
-        gr.grn_id, gr.grn_number, gr.receipt_date, gr.workflow_status, gr.supplier_invoice_no, gr.physical_receipt_no,
+        gr.grn_id, gr.grn_number, gr.receipt_date, gr.workflow_status,
+        COALESCE(gr.supplier_invoice_no, gr.physical_receipt_no) AS supplier_invoice_no,
+        gr.physical_receipt_no,
         gr.freight_amount, gr.overall_discount_percent, gr.overall_discount_amount,
         gr.created_at, gr.submitted_at,
         s.supplier_name,
@@ -1220,10 +1238,9 @@ router.get('/goods-receipts/:id', protect, hasPermission('goods_receipt:create')
     const { rows } = await db.query(
       `SELECT gr.grn_id, gr.grn_number, gr.receipt_date, gr.supplier_id, gr.received_by, gr.po_id,
               gr.bill_id, gr.freight_bill_id, gr.status, gr.workflow_status, gr.is_backfill,
-              gr.supplier_invoice_no,
               ${includePhysicalReceipt
-                ? 'COALESCE(gr.physical_receipt_no, gr.supplier_invoice_no) AS physical_receipt_no,'
-                : 'gr.supplier_invoice_no AS physical_receipt_no,'}
+                ? 'COALESCE(gr.supplier_invoice_no, gr.physical_receipt_no) AS supplier_invoice_no, COALESCE(gr.physical_receipt_no, gr.supplier_invoice_no) AS physical_receipt_no,'
+                : 'gr.supplier_invoice_no, gr.supplier_invoice_no AS physical_receipt_no,'}
               gr.freight_amount, gr.freight_allocation_method,
               gr.freight_supplier_id, gr.overall_discount_percent, gr.overall_discount_amount,
               gr.sync_retail_prices, gr.created_at, gr.submitted_at, gr.posted_at,

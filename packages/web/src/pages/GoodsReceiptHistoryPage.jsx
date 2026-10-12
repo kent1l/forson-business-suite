@@ -219,9 +219,9 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
                         if (line.internal_sku) {
                             console.log('Attempting to resolve part_id from internal_sku:', line.internal_sku);
                             // For now, throw error - we'll add API call if needed
-                            throw new Error(`Missing part_id for line with SKU: ${line.internal_sku}. Please close and reopen this GRN to refresh the data.`);
+                            throw new Error(`Missing part_id for line with Part Number / SKU: ${line.part_number || line.internal_sku}. Please close and reopen this GRN to refresh the data.`);
                         } else {
-                            throw new Error(`Missing part_id and internal_sku for line ${index}`);
+                            throw new Error(`Missing part_id for line ${index}`);
                         }
                     }
                     
@@ -231,7 +231,7 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
                     const returned = returnedQty(line);
                     if (returned > 0 && parseFloat(line.quantity) < returned - 0.0001) {
                         throw new Error(
-                            `${line.internal_sku || `Line ${index + 1}`}: the received quantity cannot be less than the ${returned} already returned to the supplier.`
+                            `${line.part_number || line.part_numbers || line.internal_sku || `Line ${index + 1}`}: the received quantity cannot be less than the ${returned} already returned to the supplier.`
                         );
                     }
 
@@ -586,7 +586,7 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
                             <table className="w-full text-left border border-gray-200 dark:border-slate-700 rounded-xl overflow-hidden">
                                 <thead className="bg-gray-50 dark:bg-slate-700/40 border-b border-gray-200 dark:border-slate-700 text-gray-700 dark:text-slate-300">
                                     <tr>
-                                        <th className="p-3 text-sm font-semibold">Part SKU</th>
+                                        <th className="p-3 text-sm font-semibold">Part Number</th>
                                         <th className="p-3 text-sm font-semibold">Part Name</th>
                                         <th className="p-3 text-sm font-semibold text-center">Qty Received</th>
                                         <th className="p-3 text-sm font-semibold text-center">Returned</th>
@@ -604,7 +604,7 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
                                       const fullyReturned = returned > 0 && accepted <= 0;
                                       return (
                                         <tr key={index} className={`hover:bg-gray-50 dark:hover:bg-slate-700/40 text-gray-800 dark:text-slate-200 ${fullyReturned ? 'opacity-60' : ''}`}>
-                                            <td className="p-3 text-sm font-mono text-gray-900 dark:text-slate-100">{line.internal_sku}</td>
+                                            <td className="p-3 text-sm font-mono text-gray-900 dark:text-slate-100">{line.part_number || line.part_numbers || line.internal_sku || '—'}</td>
                                             <td className="p-3 text-sm font-medium text-gray-900 dark:text-slate-100">{line.display_name}</td>
                                             <td className="p-3 text-sm text-center font-mono">
                                                 {isEditMode ? (
