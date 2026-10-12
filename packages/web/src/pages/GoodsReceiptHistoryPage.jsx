@@ -350,6 +350,9 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
                                 <SortableHeader column="receipt_date" sortConfig={sortConfig} onSort={handleSort}>
                                     Date Received
                                 </SortableHeader>
+                                <SortableHeader column="created_at" sortConfig={sortConfig} onSort={handleSort}>
+                                    Date Entered
+                                </SortableHeader>
                                 <SortableHeader column="supplier_name" sortConfig={sortConfig} onSort={handleSort}>
                                     Supplier
                                 </SortableHeader>
@@ -361,13 +364,13 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
                         <tbody className="divide-y divide-gray-100 dark:divide-slate-700/60">
                             {loading ? (
                                 <tr>
-                                    <td colSpan="6" className="p-8 text-center text-gray-500 dark:text-slate-400">
+                                    <td colSpan="7" className="p-8 text-center text-gray-500 dark:text-slate-400">
                                         Loading...
                                     </td>
                                 </tr>
                             ) : grns.length === 0 ? (
                                 <tr>
-                                    <td colSpan="6" className="p-8 text-center text-gray-500 dark:text-slate-400">
+                                    <td colSpan="7" className="p-8 text-center text-gray-500 dark:text-slate-400">
                                         No goods receipts found
                                     </td>
                                 </tr>
@@ -387,14 +390,11 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
                                             <div className={`font-medium ${grn.status === 'Voided' ? 'text-gray-400 dark:text-slate-500' : 'text-gray-900 dark:text-slate-100'}`}>
                                                 {new Date(grn.receipt_date).toLocaleDateString()}
                                             </div>
-                                            {grn.created_at && (
-                                                <div
-                                                    className="text-xs text-gray-400 dark:text-slate-500 font-normal leading-tight mt-0.5"
-                                                    title={`Entered: ${new Date(grn.created_at).toLocaleString()}`}
-                                                >
-                                                    Entered: {new Date(grn.created_at).toLocaleDateString()}
-                                                </div>
-                                            )}
+                                        </td>
+                                        <td className="p-3 text-sm text-gray-500 dark:text-slate-400">
+                                            <span title={grn.created_at ? `Entered: ${new Date(grn.created_at).toLocaleString()}` : undefined}>
+                                                {grn.created_at ? new Date(grn.created_at).toLocaleDateString() : '—'}
+                                            </span>
                                         </td>
                                         <td className={`p-3 text-sm font-medium ${grn.status === 'Voided' ? '' : 'text-gray-900 dark:text-slate-100'}`}>{grn.supplier_name}</td>
                                         <td className="p-3 text-sm font-mono text-gray-600 dark:text-slate-300">{grn.physical_receipt_no || '—'}</td>
