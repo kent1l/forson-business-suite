@@ -503,7 +503,7 @@ const FreightAllocationWizard = ({
               <tbody className="divide-y divide-gray-100 dark:divide-slate-800">
                 {workingLines.map((line, i) => (
                   <tr key={line.part_id} className={overrides[line.part_id] != null ? 'bg-amber-50/60 dark:bg-amber-900/10' : ''}>
-                    <td className="px-3 py-2 text-gray-900 dark:text-slate-100">{line.display_name || line.internal_sku || `Part ${line.part_id}`}</td>
+                    <td className="px-3 py-2 text-gray-900 dark:text-slate-100">{line.display_name || line.part_number || line.part_numbers || line.internal_sku || `Part ${line.part_id}`}</td>
                     <td className="px-3 py-2 text-right tabular-nums text-gray-600 dark:text-slate-400">{line.quantity}</td>
                     <td className="px-3 py-2 text-right tabular-nums text-gray-600 dark:text-slate-400">
                       {formatCurrency(costing.lines[i]?.net_line_value ?? 0)}
@@ -513,7 +513,7 @@ const FreightAllocationWizard = ({
                         value={overrides[line.part_id] ?? ''}
                         onChange={(v) => setOverride(line.part_id, v)}
                         className={inputClass}
-                        aria-label={`Flat freight for ${line.display_name || line.part_id}`}
+                        aria-label={`Flat freight for ${line.display_name || line.part_number || line.part_numbers || line.internal_sku || line.part_id}`}
                       />
                     </td>
                   </tr>
@@ -553,7 +553,7 @@ const FreightAllocationWizard = ({
                   return (
                     <tr key={line.part_id}>
                       <td className="px-3 py-2 text-gray-900 dark:text-slate-100">
-                        {line.display_name || line.internal_sku || `Part ${line.part_id}`}
+                        {line.display_name || line.part_number || line.part_numbers || line.internal_sku || `Part ${line.part_id}`}
                         {overrides[line.part_id] != null && (
                           <span className="ml-2 text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">flat</span>
                         )}

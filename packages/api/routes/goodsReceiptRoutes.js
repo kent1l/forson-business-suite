@@ -87,7 +87,7 @@ router.get('/goods-receipts', protect, hasPermission('goods_receipt:create'), as
   const { paginated, page, pageSize, offset, limit } = parsePaginationQuery(req.query);
 
   // Validate sortBy and sortOrder
-  const allowedSortBy = ['receipt_date', 'supplier_name', 'grn_number'];
+  const allowedSortBy = ['receipt_date', 'created_at', 'supplier_name', 'grn_number'];
   const allowedSortOrder = ['asc', 'desc'];
   if (!allowedSortBy.includes(sortBy)) {
     return res.status(400).json({ message: 'Invalid sortBy parameter' });
@@ -102,6 +102,7 @@ router.get('/goods-receipts', protect, hasPermission('goods_receipt:create'), as
         gr.grn_id,
         gr.grn_number,
         gr.receipt_date,
+        COALESCE(gr.created_at, gr.receipt_date) AS created_at,
         gr.status,
         gr.workflow_status,
         gr.freight_amount,
@@ -144,7 +145,7 @@ router.get('/goods-receipts', protect, hasPermission('goods_receipt:create'), as
              JOIN part p ON grl.part_id = p.part_id
              LEFT JOIN brand b ON p.brand_id = b.brand_id
              LEFT JOIN "group" g ON p.group_id = g.group_id
-             LEFT JOIN part_number pn ON pn.part_id = p.part_id
+             LEFT JOIN part_number pn ON pn.part_id = p.part_id AND pn.deleted_at IS NULL
              WHERE grl.grn_id = gr.grn_id
                AND (pn.part_number ILIKE $${paramIndex + 2}
                     OR p.detail ILIKE $${paramIndex + 2}
@@ -157,7 +158,7 @@ router.get('/goods-receipts', protect, hasPermission('goods_receipt:create'), as
       paramIndex += 3;
     }
 
-    query += ` ORDER BY ${sortBy} ${sortOrder}`;
+    query += ` ORDER BY ${sortBy} ${sortOrder}, gr.grn_id ${sortOrder}`;
 
     if (!paginated) {
       const { rows } = await db.query(query, params);
@@ -237,31 +238,50 @@ router.get('/goods-receipts/:id/lines', protect, hasPermission('goods_receipt:cr
         grl.rejection_reason,
         grl.part_id AS part_id,
         p.internal_sku,
-        CASE
-          WHEN pn.part_number IS NOT NULL THEN
-            CASE
-              WHEN g.group_name IS NOT NULL AND b.brand_name IS NOT NULL THEN CONCAT(g.group_name, ' (', b.brand_name, ') | ', pn.part_number)
-              WHEN g.group_name IS NOT NULL THEN CONCAT(g.group_name, ' | ', pn.part_number)
-              WHEN b.brand_name IS NOT NULL THEN CONCAT(b.brand_name, ' | ', pn.part_number)
-              ELSE pn.part_number
-            END
-          ELSE
-            CASE
-              WHEN g.group_name IS NOT NULL AND b.brand_name IS NOT NULL THEN CONCAT(g.group_name, ' (', b.brand_name, ') | ', p.internal_sku)
-              WHEN g.group_name IS NOT NULL THEN CONCAT(g.group_name, ' | ', p.internal_sku)
-              WHEN b.brand_name IS NOT NULL THEN CONCAT(b.brand_name, ' | ', p.internal_sku)
-              ELSE p.internal_sku
-            END
-        END ||
-        CASE WHEN p.detail IS NOT NULL AND p.detail != '' THEN ' | ' || p.detail ELSE '' END AS display_name,
+        (
+          SELECT STRING_AGG(pn.part_number, ', ' ORDER BY COALESCE(pn.display_order, 1))
+          FROM part_number pn
+          WHERE pn.part_id = p.part_id AND pn.deleted_at IS NULL
+        ) AS part_numbers,
+        (
+          SELECT pn.part_number
+          FROM part_number pn
+          WHERE pn.part_id = p.part_id AND pn.deleted_at IS NULL
+          ORDER BY COALESCE(pn.display_order, 1), pn.part_number_id ASC
+          LIMIT 1
+        ) AS part_number,
+        COALESCE(
+          (SELECT pv.display_name FROM public.parts_view pv WHERE pv.part_id = p.part_id),
+          CASE
+            WHEN pn.part_number IS NOT NULL THEN
+              CASE
+                WHEN g.group_name IS NOT NULL AND b.brand_name IS NOT NULL THEN CONCAT(g.group_name, ' (', b.brand_name, ') | ', pn.part_number)
+                WHEN g.group_name IS NOT NULL THEN CONCAT(g.group_name, ' | ', pn.part_number)
+                WHEN b.brand_name IS NOT NULL THEN CONCAT(b.brand_name, ' | ', pn.part_number)
+                ELSE pn.part_number
+              END
+            ELSE
+              CASE
+                WHEN g.group_name IS NOT NULL AND b.brand_name IS NOT NULL THEN CONCAT(g.group_name, ' (', b.brand_name, ') | ', p.internal_sku)
+                WHEN g.group_name IS NOT NULL THEN CONCAT(g.group_name, ' | ', p.internal_sku)
+                WHEN b.brand_name IS NOT NULL THEN CONCAT(b.brand_name, ' | ', p.internal_sku)
+                ELSE p.internal_sku
+              END
+          END || CASE WHEN p.detail IS NOT NULL AND p.detail != '' THEN ' | ' || p.detail ELSE '' END
+        ) AS display_name,
         p.detail
       FROM goods_receipt_line grl
       JOIN part p ON grl.part_id = p.part_id
       LEFT JOIN brand b ON p.brand_id = b.brand_id
       LEFT JOIN "group" g ON p.group_id = g.group_id
-      LEFT JOIN part_number pn ON pn.part_id = p.part_id AND pn.display_order = (
-        SELECT MIN(pn2.display_order) FROM part_number pn2 WHERE pn2.part_id = p.part_id
-      )
+      LEFT JOIN part_number pn ON pn.part_id = p.part_id
+        AND pn.deleted_at IS NULL
+        AND pn.part_number_id = (
+          SELECT pn2.part_number_id FROM part_number pn2
+          WHERE pn2.part_id = p.part_id AND pn2.deleted_at IS NULL
+          ORDER BY COALESCE(pn2.display_order, 1), pn2.part_number_id ASC
+          LIMIT 1
+        )
       WHERE grl.grn_id = $1
       ORDER BY grl.grn_line_id
     `;
@@ -757,27 +777,6 @@ router.delete('/goods-receipts/:id', protect, hasPermission('goods_receipt:void'
       return res.status(400).json({ message: 'This goods receipt has no line items to reverse.' });
     }
 
-    // Guard: voiding removes stock this receipt added, so it must not drive any
-    // part's current on-hand quantity negative (e.g. some of it was already sold
-    // or transferred out since receiving).
-    const insufficientStock = [];
-    for (const line of lines) {
-      const { rows: stockRows } = await client.query(
-        'SELECT COALESCE(SUM(quantity), 0) AS on_hand FROM inventory_transaction WHERE part_id = $1',
-        [line.part_id]
-      );
-      const onHand = parseFloat(stockRows[0].on_hand);
-      if (parseFloat(line.quantity) > 0 && onHand - parseFloat(line.quantity) < -0.0001) {
-        insufficientStock.push({ part_id: line.part_id, on_hand: onHand, needed: parseFloat(line.quantity) });
-      }
-    }
-    if (insufficientStock.length > 0) {
-      await client.query('ROLLBACK');
-      return res.status(400).json({
-        message: 'Cannot void: some of the received stock has already been used elsewhere, and reversing it would drive on-hand quantity negative.',
-        details: insufficientStock,
-      });
-    }
 
     // If linked to a bill, block the void when the bill already has payments applied —
     // reversing a paid bill's liability without also reversing the payment/allocation
@@ -1018,7 +1017,7 @@ function parseHeaderPayload(body) {
     // supplier document reference as the source of truth for new requests.
     supplier_invoice_no: body.supplier_invoice_no
       ? String(body.supplier_invoice_no).trim()
-      : (body.is_backfill ? formatPhysicalReceiptNumber(body.physical_receipt_no) : null),
+      : (body.physical_receipt_no ? formatPhysicalReceiptNumber(body.physical_receipt_no) : null),
     freight_amount: totalFreight > 0 ? totalFreight : (Number(body.freight_amount) > 0 ? Number(body.freight_amount) : 0),
     freight_allocation_method: body.freight_allocation_method || grnCosting.METHOD_A,
     freight_supplier_id: primarySupplierId,
@@ -1194,7 +1193,9 @@ router.get('/goods-receipts/drafts', protect, hasPermission('goods_receipt:creat
     // needs the document's value and size before deciding to open it.
     let query = `
       SELECT
-        gr.grn_id, gr.grn_number, gr.receipt_date, gr.workflow_status, gr.supplier_invoice_no, gr.physical_receipt_no,
+        gr.grn_id, gr.grn_number, gr.receipt_date, gr.workflow_status,
+        COALESCE(gr.supplier_invoice_no, gr.physical_receipt_no) AS supplier_invoice_no,
+        gr.physical_receipt_no,
         gr.freight_amount, gr.overall_discount_percent, gr.overall_discount_amount,
         gr.created_at, gr.submitted_at,
         s.supplier_name,
@@ -1237,10 +1238,9 @@ router.get('/goods-receipts/:id', protect, hasPermission('goods_receipt:create')
     const { rows } = await db.query(
       `SELECT gr.grn_id, gr.grn_number, gr.receipt_date, gr.supplier_id, gr.received_by, gr.po_id,
               gr.bill_id, gr.freight_bill_id, gr.status, gr.workflow_status, gr.is_backfill,
-              gr.supplier_invoice_no,
               ${includePhysicalReceipt
-                ? 'COALESCE(gr.physical_receipt_no, gr.supplier_invoice_no) AS physical_receipt_no,'
-                : 'gr.supplier_invoice_no AS physical_receipt_no,'}
+                ? 'COALESCE(gr.supplier_invoice_no, gr.physical_receipt_no) AS supplier_invoice_no, COALESCE(gr.physical_receipt_no, gr.supplier_invoice_no) AS physical_receipt_no,'
+                : 'gr.supplier_invoice_no, gr.supplier_invoice_no AS physical_receipt_no,'}
               gr.freight_amount, gr.freight_allocation_method,
               gr.freight_supplier_id, gr.overall_discount_percent, gr.overall_discount_amount,
               gr.sync_retail_prices, gr.created_at, gr.submitted_at, gr.posted_at,

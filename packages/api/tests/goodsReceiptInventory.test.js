@@ -99,6 +99,28 @@ describe('Goods Receipt Inventory & Pricing Routes', () => {
             expect(db.query.mock.calls[1][0]).not.toContain('gr.physical_receipt_no');
         });
 
+        test('should allow sorting by created_at and query created_at column', async () => {
+            const mockRows = [
+                {
+                    grn_id: 1,
+                    grn_number: 'GRN-202607-0001',
+                    receipt_date: '2026-07-23T00:00:00Z',
+                    created_at: '2026-07-24T10:00:00Z',
+                    supplier_name: 'Test Supplier',
+                    employee_name: 'Admin User'
+                }
+            ];
+
+            db.query.mockResolvedValueOnce({ rows: mockRows });
+
+            const res = await request(app).get('/api/goods-receipts?sortBy=created_at&sortOrder=asc');
+
+            expect(res.status).toBe(200);
+            expect(res.body[0].created_at).toBe('2026-07-24T10:00:00Z');
+            expect(db.query.mock.calls[0][0]).toContain('created_at');
+            expect(db.query.mock.calls[0][0]).toContain('ORDER BY created_at asc');
+        });
+
         test('should reject invalid sort parameters', async () => {
             const res = await request(app).get('/api/goods-receipts?sortBy=invalid_column');
             expect(res.status).toBe(400);

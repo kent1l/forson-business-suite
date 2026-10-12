@@ -51,7 +51,7 @@ const ReturnLineModal = ({ isOpen, onClose, onConfirm, line, isPosted, currencyS
       <div className="space-y-4">
         <div className="rounded-md bg-gray-50 dark:bg-slate-900/60 p-3">
           <p className="text-sm font-medium text-gray-900 dark:text-slate-100">
-            {line.display_name || line.internal_sku || `Part ${line.part_id}`}
+            {line.display_name || line.part_number || line.part_numbers || line.internal_sku || `Part ${line.part_id}`}
           </p>
           <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">
             {line.quantity} received at {formatCurrency(unitCost, currencySymbol)} each

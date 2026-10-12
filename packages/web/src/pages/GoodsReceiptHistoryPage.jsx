@@ -219,9 +219,9 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
                         if (line.internal_sku) {
                             console.log('Attempting to resolve part_id from internal_sku:', line.internal_sku);
                             // For now, throw error - we'll add API call if needed
-                            throw new Error(`Missing part_id for line with SKU: ${line.internal_sku}. Please close and reopen this GRN to refresh the data.`);
+                            throw new Error(`Missing part_id for line with Part Number / SKU: ${line.part_number || line.internal_sku}. Please close and reopen this GRN to refresh the data.`);
                         } else {
-                            throw new Error(`Missing part_id and internal_sku for line ${index}`);
+                            throw new Error(`Missing part_id for line ${index}`);
                         }
                     }
                     
@@ -231,7 +231,7 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
                     const returned = returnedQty(line);
                     if (returned > 0 && parseFloat(line.quantity) < returned - 0.0001) {
                         throw new Error(
-                            `${line.internal_sku || `Line ${index + 1}`}: the received quantity cannot be less than the ${returned} already returned to the supplier.`
+                            `${line.part_number || line.part_numbers || line.internal_sku || `Line ${index + 1}`}: the received quantity cannot be less than the ${returned} already returned to the supplier.`
                         );
                     }
 
@@ -348,7 +348,10 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
                                     GRN #
                                 </SortableHeader>
                                 <SortableHeader column="receipt_date" sortConfig={sortConfig} onSort={handleSort}>
-                                    Date
+                                    Date Received
+                                </SortableHeader>
+                                <SortableHeader column="created_at" sortConfig={sortConfig} onSort={handleSort}>
+                                    Date Entered
                                 </SortableHeader>
                                 <SortableHeader column="supplier_name" sortConfig={sortConfig} onSort={handleSort}>
                                     Supplier
@@ -361,13 +364,13 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
                         <tbody className="divide-y divide-gray-100 dark:divide-slate-700/60">
                             {loading ? (
                                 <tr>
-                                    <td colSpan="6" className="p-8 text-center text-gray-500 dark:text-slate-400">
+                                    <td colSpan="7" className="p-8 text-center text-gray-500 dark:text-slate-400">
                                         Loading...
                                     </td>
                                 </tr>
                             ) : grns.length === 0 ? (
                                 <tr>
-                                    <td colSpan="6" className="p-8 text-center text-gray-500 dark:text-slate-400">
+                                    <td colSpan="7" className="p-8 text-center text-gray-500 dark:text-slate-400">
                                         No goods receipts found
                                     </td>
                                 </tr>
@@ -384,7 +387,14 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
                                     >
                                         <td className={`p-3 text-sm font-mono font-medium ${grn.status === 'Voided' ? 'line-through' : 'text-gray-900 dark:text-slate-100'}`}>{grn.grn_number}</td>
                                         <td className="p-3 text-sm text-gray-600 dark:text-slate-300">
-                                            {new Date(grn.receipt_date).toLocaleDateString()}
+                                            <div className={`font-medium ${grn.status === 'Voided' ? 'text-gray-400 dark:text-slate-500' : 'text-gray-900 dark:text-slate-100'}`}>
+                                                {new Date(grn.receipt_date).toLocaleDateString()}
+                                            </div>
+                                        </td>
+                                        <td className="p-3 text-sm text-gray-500 dark:text-slate-400">
+                                            <span title={grn.created_at ? `Entered: ${new Date(grn.created_at).toLocaleString()}` : undefined}>
+                                                {grn.created_at ? new Date(grn.created_at).toLocaleDateString() : '—'}
+                                            </span>
                                         </td>
                                         <td className={`p-3 text-sm font-medium ${grn.status === 'Voided' ? '' : 'text-gray-900 dark:text-slate-100'}`}>{grn.supplier_name}</td>
                                         <td className="p-3 text-sm font-mono text-gray-600 dark:text-slate-300">{grn.physical_receipt_no || '—'}</td>
@@ -440,7 +450,18 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
                                     <span className="text-gray-500 dark:text-slate-400">Supplier:</span> <span className="font-semibold">{selectedGrn.supplier_name}</span>
                                 </div>
                                 <div className="flex items-center flex-wrap gap-2">
-                                    <div><span className="text-gray-500 dark:text-slate-400">Received Date:</span> <span className="font-semibold">{new Date(selectedGrn.receipt_date).toLocaleDateString()}</span></div>
+                                    <div>
+                                        <span className="text-gray-500 dark:text-slate-400">Received Date:</span>{' '}
+                                        <span className="font-semibold">{new Date(selectedGrn.receipt_date).toLocaleDateString()}</span>
+                                        {selectedGrn.created_at && (
+                                            <span
+                                                className="ml-2 text-xs text-gray-400 dark:text-slate-500 font-normal"
+                                                title={`Entered: ${new Date(selectedGrn.created_at).toLocaleString()}`}
+                                            >
+                                                (Entered: {new Date(selectedGrn.created_at).toLocaleDateString()})
+                                            </span>
+                                        )}
+                                    </div>
                                     {isVoided && (
                                         <span className="px-2 py-1 text-xs font-semibold rounded-full bg-slate-200 dark:bg-slate-800 text-slate-500 dark:text-slate-500">
                                             Voided
@@ -565,7 +586,7 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
                             <table className="w-full text-left border border-gray-200 dark:border-slate-700 rounded-xl overflow-hidden">
                                 <thead className="bg-gray-50 dark:bg-slate-700/40 border-b border-gray-200 dark:border-slate-700 text-gray-700 dark:text-slate-300">
                                     <tr>
-                                        <th className="p-3 text-sm font-semibold">Part SKU</th>
+                                        <th className="p-3 text-sm font-semibold">Part Number</th>
                                         <th className="p-3 text-sm font-semibold">Part Name</th>
                                         <th className="p-3 text-sm font-semibold text-center">Qty Received</th>
                                         <th className="p-3 text-sm font-semibold text-center">Returned</th>
@@ -583,7 +604,7 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
                                       const fullyReturned = returned > 0 && accepted <= 0;
                                       return (
                                         <tr key={index} className={`hover:bg-gray-50 dark:hover:bg-slate-700/40 text-gray-800 dark:text-slate-200 ${fullyReturned ? 'opacity-60' : ''}`}>
-                                            <td className="p-3 text-sm font-mono text-gray-900 dark:text-slate-100">{line.internal_sku}</td>
+                                            <td className="p-3 text-sm font-mono text-gray-900 dark:text-slate-100">{line.part_number || line.part_numbers || line.internal_sku || '—'}</td>
                                             <td className="p-3 text-sm font-medium text-gray-900 dark:text-slate-100">{line.display_name}</td>
                                             <td className="p-3 text-sm text-center font-mono">
                                                 {isEditMode ? (

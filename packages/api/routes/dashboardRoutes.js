@@ -274,7 +274,7 @@ router.get('/dashboard/enhanced-stats', async (req, res) => {
                 JOIN part p ON il.part_id = p.part_id
                 LEFT JOIN "group" g ON p.group_id = g.group_id
                 LEFT JOIN brand b ON p.brand_id = b.brand_id
-                LEFT JOIN part_number pn ON p.part_id = pn.part_id
+                LEFT JOIN part_number pn ON p.part_id = pn.part_id AND pn.deleted_at IS NULL
                 WHERE i.invoice_date >= CURRENT_DATE - INTERVAL '30 days'
                 AND i.status IN ('Paid', 'Partially Paid')
                 GROUP BY p.part_id, p.detail, p.internal_sku, g.group_name, b.brand_name

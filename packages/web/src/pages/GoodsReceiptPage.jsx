@@ -220,6 +220,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                 grn_id: header.grn_id,
                 grn_number: header.grn_number,
                 workflow_status: header.workflow_status,
+                supplier_invoice_no: header.supplier_invoice_no || header.physical_receipt_no || '',
             });
             setSelectedSupplier(String(header.supplier_id));
             setFreightAmount(Number(header.freight_amount) || 0);
@@ -236,6 +237,8 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
             if (header.receipt_date) setReceiptDate(String(header.receipt_date).slice(0, 10));
             setLines((linesRes.data || []).map(l => ({
                 ...l,
+                part_number: l.part_number || null,
+                part_numbers: l.part_numbers || null,
                 quantity: Number(l.quantity),
                 cost_price: Number(l.cost_price),
                 sale_price: l.sale_price != null ? Number(l.sale_price) : null,
@@ -571,7 +574,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
         const line = lines.find(l => l.part_id === partId);
         setMarkupRounding({
             partId,
-            name: line?.display_name || line?.internal_sku || `Line ${partId}`,
+            name: line?.display_name || line?.part_number || line?.part_numbers || line?.internal_sku || `Line ${partId}`,
             markup: nextMarkup,
             landed,
             exact,
@@ -677,9 +680,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
         po_id: selectedPO ? selectedPO.po_id : null,
         receipt_date: receiptDate || null,
         is_backfill: isBackfill,
-        // A backfill still supplies the legacy invoice field for AP compatibility, but
-        // it is intentionally the same one user-entered supplier document reference.
-        supplier_invoice_no: isBackfill ? formatPhysicalReceiptNumber(physicalReceiptNo) : null,
+        supplier_invoice_no: formatPhysicalReceiptNumber(physicalReceiptNo) || null,
         physical_receipt_no: formatPhysicalReceiptNumber(physicalReceiptNo),
         freight_amount: freightAmount || 0,
         freight_allocation_method: freightMethod,
@@ -893,6 +894,14 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                             ? 'Check this against the supplier’s paperwork. Nothing has been posted yet.'
                             : 'Receive stock from a supplier, against a purchase order or directly.'}
                     </p>
+                    {stagedGrn && (physicalReceiptNo || stagedGrn.supplier_invoice_no) && (
+                        <div className="mt-2 inline-flex items-center gap-2 px-3 py-1 rounded-md bg-gray-100 dark:bg-slate-700/60 border border-gray-200 dark:border-slate-600 text-sm">
+                            <span className="text-gray-500 dark:text-slate-400 font-medium">Supplier invoice:</span>
+                            <span className="font-mono font-semibold text-gray-900 dark:text-slate-100">
+                                {physicalReceiptNo || stagedGrn.supplier_invoice_no}
+                            </span>
+                        </div>
+                    )}
                 </div>
                 <div className="flex items-center gap-2">
                     <button
@@ -1279,7 +1288,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                                     <td className="p-2 align-middle">
                                         <div className="flex items-center justify-between gap-2">
                                             <div className="min-w-0 flex-1">
-                                                <div className="truncate text-sm font-medium text-gray-800 dark:text-slate-100">{line.display_name}</div>
+                                                <div className="truncate text-sm font-medium text-gray-800 dark:text-slate-100">{line.display_name || line.part_number || line.part_numbers || line.internal_sku || 'Part'}</div>
                                                 {!line.part_id && (canCatalogParts ? (
                                                         <button type="button" onClick={() => setCatalogTarget(line)} className="mt-1 inline-flex rounded-full bg-yellow-100 px-2 py-1 text-xs font-semibold text-yellow-800 hover:bg-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-300">
                                                             Catalog &amp; Receive
@@ -1538,8 +1547,11 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
 
                 {stagedGrn && (
                     <p className="text-xs text-gray-500 dark:text-slate-400 text-right">
-                        Saved as <span className="font-mono">{stagedGrn.grn_number}</span> — nothing has been posted yet.
-                        It will be given a permanent receipt number when it is.
+                        Saved as <span className="font-mono">{stagedGrn.grn_number}</span>
+                        {(physicalReceiptNo || stagedGrn.supplier_invoice_no) && (
+                            <> · Supplier invoice: <span className="font-mono font-medium">{physicalReceiptNo || stagedGrn.supplier_invoice_no}</span></>
+                        )}
+                        {' — nothing has been posted yet. It will be given a permanent receipt number when it is.'}
                     </p>
                 )}
             </div>
@@ -1666,7 +1678,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                                         <ul className="divide-y divide-gray-100 dark:divide-slate-700/60">
                                             {duplicateReview.lines.slice(0, 5).map((line) => (
                                                 <li key={line.grn_line_id} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
-                                                    <span className="min-w-0 truncate text-gray-900 dark:text-slate-100">{line.display_name || line.internal_sku || 'Part'}</span>
+                                                    <span className="min-w-0 truncate text-gray-900 dark:text-slate-100">{line.display_name || line.part_number || line.part_numbers || line.internal_sku || 'Part'}</span>
                                                     <span className="shrink-0 font-mono text-gray-600 dark:text-slate-300">{line.quantity}</span>
                                                 </li>
                                             ))}
