@@ -393,8 +393,8 @@ router.get('/ap/supplier-bills/:billId/items', protect, hasPermission('ap:view')
             JOIN part p ON p.part_id = grl.part_id
             LEFT JOIN brand b ON p.brand_id = b.brand_id
             LEFT JOIN "group" g ON p.group_id = g.group_id
-            LEFT JOIN part_number pn ON pn.part_id = p.part_id AND pn.display_order = (
-                SELECT MIN(pn2.display_order) FROM part_number pn2 WHERE pn2.part_id = p.part_id
+            LEFT JOIN part_number pn ON pn.part_id = p.part_id AND pn.deleted_at IS NULL AND pn.display_order = (
+                SELECT MIN(pn2.display_order) FROM part_number pn2 WHERE pn2.part_id = p.part_id AND pn2.deleted_at IS NULL
             )
             WHERE gr.bill_id = $1
             ORDER BY gr.receipt_date ASC, grl.grn_line_id ASC
@@ -496,8 +496,8 @@ router.get('/ap/supplier-bills/:billId/goods-receipts', protect, hasPermission('
             JOIN part p ON p.part_id = grl.part_id
             LEFT JOIN brand b ON p.brand_id = b.brand_id
             LEFT JOIN "group" g ON p.group_id = g.group_id
-            LEFT JOIN part_number pn ON pn.part_id = p.part_id AND pn.display_order = (
-                SELECT MIN(pn2.display_order) FROM part_number pn2 WHERE pn2.part_id = p.part_id
+            LEFT JOIN part_number pn ON pn.part_id = p.part_id AND pn.deleted_at IS NULL AND pn.display_order = (
+                SELECT MIN(pn2.display_order) FROM part_number pn2 WHERE pn2.part_id = p.part_id AND pn2.deleted_at IS NULL
             )
             WHERE grl.grn_id = ANY($1::int[])
             ORDER BY grl.grn_id, grl.grn_line_id

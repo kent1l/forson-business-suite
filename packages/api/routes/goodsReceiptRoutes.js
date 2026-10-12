@@ -144,7 +144,7 @@ router.get('/goods-receipts', protect, hasPermission('goods_receipt:create'), as
              JOIN part p ON grl.part_id = p.part_id
              LEFT JOIN brand b ON p.brand_id = b.brand_id
              LEFT JOIN "group" g ON p.group_id = g.group_id
-             LEFT JOIN part_number pn ON pn.part_id = p.part_id
+             LEFT JOIN part_number pn ON pn.part_id = p.part_id AND pn.deleted_at IS NULL
              WHERE grl.grn_id = gr.grn_id
                AND (pn.part_number ILIKE $${paramIndex + 2}
                     OR p.detail ILIKE $${paramIndex + 2}
@@ -259,9 +259,12 @@ router.get('/goods-receipts/:id/lines', protect, hasPermission('goods_receipt:cr
       JOIN part p ON grl.part_id = p.part_id
       LEFT JOIN brand b ON p.brand_id = b.brand_id
       LEFT JOIN "group" g ON p.group_id = g.group_id
-      LEFT JOIN part_number pn ON pn.part_id = p.part_id AND pn.display_order = (
-        SELECT MIN(pn2.display_order) FROM part_number pn2 WHERE pn2.part_id = p.part_id
-      )
+      LEFT JOIN part_number pn ON pn.part_id = p.part_id
+        AND pn.deleted_at IS NULL
+        AND pn.display_order = (
+          SELECT MIN(pn2.display_order) FROM part_number pn2
+          WHERE pn2.part_id = p.part_id AND pn2.deleted_at IS NULL
+        )
       WHERE grl.grn_id = $1
       ORDER BY grl.grn_line_id
     `;

@@ -272,7 +272,7 @@ class PartMergeService {
             FROM part p
             LEFT JOIN brand b ON p.brand_id = b.brand_id
             LEFT JOIN "group" g ON p.group_id = g.group_id
-            LEFT JOIN part_number pn ON p.part_id = pn.part_id
+            LEFT JOIN part_number pn ON p.part_id = pn.part_id AND pn.deleted_at IS NULL
             LEFT JOIN part_application pa ON p.part_id = pa.part_id
             LEFT JOIN application a ON pa.application_id = a.application_id
             LEFT JOIN vehicle_make vm ON a.make_id = vm.make_id

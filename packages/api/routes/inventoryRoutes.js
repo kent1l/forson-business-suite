@@ -105,7 +105,7 @@ router.get('/inventory', protect, hasPermission('inventory:view'), async (req, r
                 (
                     SELECT STRING_AGG(pn.part_number, '; ' ORDER BY pn.display_order)
                     FROM part_number pn
-                    WHERE pn.part_id = p.part_id
+                    WHERE pn.part_id = p.part_id AND pn.deleted_at IS NULL
                 ) AS part_numbers,
                 COALESCE(s.stock_on_hand, 0) AS stock_on_hand,
                 (COALESCE(p.wac_cost, 0) * COALESCE(s.stock_on_hand, 0))::numeric(14,2) AS total_value

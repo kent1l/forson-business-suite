@@ -235,7 +235,7 @@ router.get('/reports/inventory-valuation', protect, hasPermission('reports:view'
                 (
                     SELECT STRING_AGG(pn.part_number, '; ' ORDER BY pn.display_order) 
                     FROM part_number pn 
-                    WHERE pn.part_id = p.part_id
+                    WHERE pn.part_id = p.part_id AND pn.deleted_at IS NULL
                 ) AS part_numbers,
                 p.wac_cost, -- UPDATED: Use wac_cost
                 (
@@ -432,7 +432,7 @@ router.get('/reports/low-stock', protect, hasPermission('reports:view'), async (
                 (
                     SELECT STRING_AGG(pn.part_number, '; ' ORDER BY pn.display_order) 
                     FROM part_number pn 
-                    WHERE pn.part_id = p.part_id
+                    WHERE pn.part_id = p.part_id AND pn.deleted_at IS NULL
                 ) AS part_numbers,
                 p.reorder_point,
                 (
