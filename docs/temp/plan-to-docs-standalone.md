@@ -1,7 +1,5 @@
 # Universal `plan-to-docs` Skill — Standalone Edition
 
-Use the following prompt to establish a reusable `plan-to-docs` skill in an agent environment where Graphify, Hindsight, and equivalent external memory/indexing tools are not available.
-
 ```text
 # Establish and Use the `plan-to-docs` Skill
 
