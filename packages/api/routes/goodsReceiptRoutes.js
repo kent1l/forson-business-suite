@@ -87,7 +87,7 @@ router.get('/goods-receipts', protect, hasPermission('goods_receipt:create'), as
   const { paginated, page, pageSize, offset, limit } = parsePaginationQuery(req.query);
 
   // Validate sortBy and sortOrder
-  const allowedSortBy = ['receipt_date', 'supplier_name', 'grn_number'];
+  const allowedSortBy = ['receipt_date', 'created_at', 'supplier_name', 'grn_number'];
   const allowedSortOrder = ['asc', 'desc'];
   if (!allowedSortBy.includes(sortBy)) {
     return res.status(400).json({ message: 'Invalid sortBy parameter' });
@@ -102,6 +102,7 @@ router.get('/goods-receipts', protect, hasPermission('goods_receipt:create'), as
         gr.grn_id,
         gr.grn_number,
         gr.receipt_date,
+        COALESCE(gr.created_at, gr.receipt_date) AS created_at,
         gr.status,
         gr.workflow_status,
         gr.freight_amount,

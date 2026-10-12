@@ -348,7 +348,7 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
                                     GRN #
                                 </SortableHeader>
                                 <SortableHeader column="receipt_date" sortConfig={sortConfig} onSort={handleSort}>
-                                    Date
+                                    Date Received
                                 </SortableHeader>
                                 <SortableHeader column="supplier_name" sortConfig={sortConfig} onSort={handleSort}>
                                     Supplier
@@ -384,7 +384,17 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
                                     >
                                         <td className={`p-3 text-sm font-mono font-medium ${grn.status === 'Voided' ? 'line-through' : 'text-gray-900 dark:text-slate-100'}`}>{grn.grn_number}</td>
                                         <td className="p-3 text-sm text-gray-600 dark:text-slate-300">
-                                            {new Date(grn.receipt_date).toLocaleDateString()}
+                                            <div className={`font-medium ${grn.status === 'Voided' ? 'text-gray-400 dark:text-slate-500' : 'text-gray-900 dark:text-slate-100'}`}>
+                                                {new Date(grn.receipt_date).toLocaleDateString()}
+                                            </div>
+                                            {grn.created_at && (
+                                                <div
+                                                    className="text-xs text-gray-400 dark:text-slate-500 font-normal leading-tight mt-0.5"
+                                                    title={`Entered: ${new Date(grn.created_at).toLocaleString()}`}
+                                                >
+                                                    Entered: {new Date(grn.created_at).toLocaleDateString()}
+                                                </div>
+                                            )}
                                         </td>
                                         <td className={`p-3 text-sm font-medium ${grn.status === 'Voided' ? '' : 'text-gray-900 dark:text-slate-100'}`}>{grn.supplier_name}</td>
                                         <td className="p-3 text-sm font-mono text-gray-600 dark:text-slate-300">{grn.physical_receipt_no || '—'}</td>
@@ -440,7 +450,18 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
                                     <span className="text-gray-500 dark:text-slate-400">Supplier:</span> <span className="font-semibold">{selectedGrn.supplier_name}</span>
                                 </div>
                                 <div className="flex items-center flex-wrap gap-2">
-                                    <div><span className="text-gray-500 dark:text-slate-400">Received Date:</span> <span className="font-semibold">{new Date(selectedGrn.receipt_date).toLocaleDateString()}</span></div>
+                                    <div>
+                                        <span className="text-gray-500 dark:text-slate-400">Received Date:</span>{' '}
+                                        <span className="font-semibold">{new Date(selectedGrn.receipt_date).toLocaleDateString()}</span>
+                                        {selectedGrn.created_at && (
+                                            <span
+                                                className="ml-2 text-xs text-gray-400 dark:text-slate-500 font-normal"
+                                                title={`Entered: ${new Date(selectedGrn.created_at).toLocaleString()}`}
+                                            >
+                                                (Entered: {new Date(selectedGrn.created_at).toLocaleDateString()})
+                                            </span>
+                                        )}
+                                    </div>
                                     {isVoided && (
                                         <span className="px-2 py-1 text-xs font-semibold rounded-full bg-slate-200 dark:bg-slate-800 text-slate-500 dark:text-slate-500">
                                             Voided
