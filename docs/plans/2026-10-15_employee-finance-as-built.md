@@ -10,6 +10,7 @@
 | 2. Schedules and operations | Implemented and automated checks passed | Canonical effective schedules, legacy mapping, draft/activation/release, hold/resume, direct collections and exact review |
 | 3. Settlement and Accounts | Implemented and automated checks passed | Explicit noncash execution, actual payouts, residuals, unknown instructions, rounding, legacy assertions and four-domain statements |
 | 4. Agency and rollout | Application implemented; owner rollout acceptance pending | Exact Treasury attribution, agency reconciliation/direct payment, source-specific corrections; disposable migration/API/browser verification |
+| UI finalization | Implemented and verified | System cards, focused tabs, accessible dialogs, guided funding, exact money/date presentation and expanded Chromium checks |
 | Production readiness | Owner acceptance and deployment pending | No production or existing development business data changed; migrations must precede running the new workflows |
 
 ## 1. For a New Session or Agent Picking This Up
@@ -108,6 +109,18 @@ All are separate, idempotent POST commands with `request_id`; they require `empl
 
 Ordinary unpaid cancellation cannot perform these actions. Posted payroll remains Posted; additional obligations/returns are visible in the separate settlement state and source history.
 
+### Final UI delivery — As Built
+
+- [x] Employee Accounts uses the system's segmented navigation, cards, badges, loading/error/empty states, spacing and semantic colors in light and dark mode. The four separate balance domains appear before the activity filters; focused tabs contain loans, salary settlement and government-loan work.
+- [x] Shared `FinancePrimitives.jsx` removes circular imports through the accounts tab. Drafts and loan commands use scrollable dialogs with Escape, trapped keyboard focus, focus restoration and background scroll locking. Payroll recovery review and unpaid void use the same dialog.
+- [x] All finance forms use consistent labeled controls. Monetary summaries retain exact decimal strings and full pesos/centavos; dates explicitly use Manila time. Technical request hashes and row versions are omitted from source document presentation.
+- [x] Cash funding selects the operator's current open drawer, carries its version automatically and offers independent release approvals matching the amount. Inward collections, wage returns and agency refunds use receipt controls without requiring an outward release approval. Server funding guards remain authoritative.
+- [x] Employee search is debounced and keeps the selected employee identity visible across result pages/searches. Treasury source search clears the previous selection and reports failures. Late statement/source responses cannot replace newer selections or reopen closed dialogs.
+- [x] Durable unknown-request replay remains scoped to actor and command across reloads and tab switches; successful commands use the existing toast convention. Outcome reconciliation forms sit behind labeled disclosures.
+- [x] Expanded Chromium fixtures passed for tab navigation, populated salary balances, source-dialog keyboard/focus behavior, cash drawer/approval selection, statement response races, the full employee register and global agency workspace. Screenshots at 390px and 1440px were visually inspected in light/dark mode.
+
+This follow-up changes frontend behavior and presentation only. It adds no migration and does not perform business-database rollout. Browser responses are intercepted fixtures; owner acceptance with real operational records remains pending.
+
 ## 8. API and Permission Map
 
 Original plan contracts are mounted under `/api/hr` and `/api/payroll`. Additional read routes include employee loans/payables/payouts/withholdings, source documents, an employee register, available banks, existing Treasury sources and the global agency workspace. Own-statement self-service was intentionally not added; finance authorization is explicit.
@@ -135,7 +148,7 @@ All fixture-writing/concurrency work used explicitly named `codex_employee_finan
 | Migration runner `up --db codex_employee_finance_verify_checksum_20261015 --from 20261015_01_employee_recovery_foundation.sql --to 20261015_07_payroll_entitlement_freeze.sql` | Seven forward migrations applied on fresh schema |
 | Same window with `verify`, followed by `up` again | Checksums verified; no pending migrations |
 | `EMPLOYEE_FINANCE_TEST_DB=<fresh disposable pre-feature schema> node tests/employeeFinanceMigration_db_test.js` | Legacy first/second amounts preserved, frozen Posted payslip unchanged, labeled assertion created, no invented old funding/cash, ordinary paid void rejected; verified legacy recovery correction pays only the additional wages from new bank evidence |
-| `FINANCE_BROWSER_BASE_URL=http://172.18.0.7:5173 node --input-type=module < packages/web/tests/employeeFinanceBrowser.mjs` inside backend container | Chromium fixtures: four exact panels, finance-view-only/denied roles, actor/employee switching, 390px layout, odd-cent preview and unknown-request reload/replay |
+| `FINANCE_BROWSER_BASE_URL=http://172.18.0.7:5173 node --input-type=module < packages/web/tests/employeeFinanceBrowser.mjs` inside backend container | Chromium fixtures: four exact panels, finance-view-only/denied roles, actor/employee switching, 390px layout, odd-cent preview, unknown-request reload/replay, focused tabs, populated salary cards, source keyboard/focus, guided cash selectors, stale-filter response suppression and full employee/global agency workspace |
 | `npm run -w packages/web build` | Passed; existing dynamic import/chunk-size warnings |
 | `npm run -w packages/web test` | **10 tests passed** |
 | Targeted API/web ESLint and `git diff --check` | No errors; repository JSX unused-symbol warnings and one existing unused API argument warning |
@@ -154,6 +167,7 @@ Host Supertest is sandbox socket-blocked; tests ran in Docker. Docker/Chromium v
 - `packages/web/src/components/hr/EmployeeAccountsTab.jsx`, `EmployeeAccountStatement.jsx`, `EmployeePayables.jsx`, `EmployeeAgencyLoans.jsx`, `PayrollRecoveryReview.jsx` and existing employee detail/payroll pages.
 - `packages/web/src/pages/EmployeeAccountsPage.jsx`, HR navigation/MainLayout and logout cleanup.
 - `employeeLoanSchedule.test.js`, `employeeFinance_db_test.js`, `employeeFinanceMigration_db_test.js`, `employeeFinanceBrowser.mjs` and its browser fixture.
+- Shared finance UI: `FinancePrimitives.jsx`, `financePresentation.js`, `employeeFinance.css`; `SegmentedTabs.jsx` exposes selected button state to assistive technology.
 - Package scripts: API `test:employee-finance:db`, `test:employee-finance:migration`; web `test:employee-finance:browser`.
 
 Use a fresh pre-feature disposable schema for the migration fixture. Use an already migrated disposable schema for the main integration script. Do not run either against the existing business database.
@@ -172,3 +186,5 @@ Original exclusions remain: general wallet/cross-domain netting, standalone reim
 
 - 2026-10-15: Phase 1 committed as `758e397`; phase 2 as `26433a7`; phase 3 as `658e10d`.
 - 2026-10-15: Agency remittance, source-specific corrections, direct-installment ownership, bank identities, accounting/freeze guards and final verification added for phase 4. Application implementation is complete; owner rollout acceptance remains pending.
+
+- 2026-10-15: Final UI polish completed on user follow-up. Re-ran 140 API regressions, 10 web tests, production build, web lint and expanded Chromium fixtures; visually inspected mobile/desktop layouts. No business migration or deployment performed.

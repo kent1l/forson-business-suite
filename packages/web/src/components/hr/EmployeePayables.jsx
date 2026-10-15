@@ -1,8 +1,12 @@
+import LoadingState from '../ui/LoadingState';
+import ErrorState from '../ui/ErrorState';
+import EmptyState from '../ui/EmptyState';
+import { financeStyles as styles, financeMoney, financeDate, financeLabel } from './financePresentation';
 import { useCallback, useEffect, useState } from 'react';
 import api from '../../api';
 import { useAuth } from '../../contexts/AuthContext';
-import { FinanceCommand, FinanceField, FundingFields } from './EmployeeAccountsTab';
-const cls = 'w-full border rounded p-2 bg-transparent';
+import { FinanceCommand, FinanceField, FundingFields, FinanceFigures, FinanceStatus } from './FinancePrimitives';
+const cls = styles.input;
 function ReconcilePayout({
   payout,
   employeeId,
@@ -24,7 +28,7 @@ function ReconcilePayout({
     reason,
     funding
   }} onDone={onDone} label="Record reconciled bank outcome">
- <FinanceField label="Verified outcome"><select className={cls} value={status} onChange={e => setStatus(e.target.value)}>{['UNKNOWN', 'CONFIRMED', 'FAILED', 'CANCELLED'].map(v => <option key={v}>{v}</option>)}</select></FinanceField>
+ <FinanceField label="Verified outcome"><select className={cls} value={status} onChange={e => setStatus(e.target.value)}>{['UNKNOWN', 'CONFIRMED', 'FAILED', 'CANCELLED'].map(v => <option key={v} value={v}>{financeLabel(v)}</option>)}</select></FinanceField>
  <FinanceField label="Bank evidence"><input required className={cls} value={evidence} onChange={e => setEvidence(e.target.value)} /></FinanceField><FinanceField label="Reconciliation reason"><input required className={cls} value={reason} onChange={e => setReason(e.target.value)} /></FinanceField>
  {status === 'CONFIRMED' && <FundingFields banks={banks} value={funding} onChange={setFunding} />}
  </FinanceCommand>;
@@ -95,9 +99,9 @@ export default function EmployeePayables({
     amount: allocations[p.payslip_id]
   })) || [];
   const canPay = hasPermission('employee_finance:pay');
-  return <section className="space-y-3"><h3 className="font-semibold">Salary entitlement and actual settlement</h3>{error && <p role="alert">{error}<button onClick={load}>Retry</button></p>}{!payables && !error && <p>Loading wage balances…</p>}{payables?.length === 0 && <p>No approved wage entitlements.</p>}
- {payables?.map(p => <article className="border rounded p-3 space-y-2" key={p.payslip_id}><h4>{p.payslip_no} · {p.pay_date}</h4><p className="tabular-nums">Net entitlement ₱{p.net_pay} · Corrections ₱{p.correction_amount} · Approved rounding ₱{p.rounding_amount} · Noncash recovery {p.settlement_id ? 'Posted' : p.legacy_provenance ? 'Legacy assertion (details unknown)' : 'Not executed'} · Actual paid ₱{p.actual_paid} · Remaining ₱{p.remaining_payable} · Pending ₱{p.pending_amount}</p>{p.legacy_provenance && <p>Legacy asserted settlement ₱{p.legacy_asserted_paid}. {p.legacy_provenance}</p>}
- <details><summary>Exact recovery sources</summary>{p.recoveries.map(a => <p key={a.allocation_id}>Loan #{a.loan_id} · allocation #{a.allocation_id} · ₱{a.approved_amount} · {a.status}</p>)}</details>
+  return <section className="space-y-3"><h3 className="font-semibold">Salary entitlement and actual settlement</h3>{error && <ErrorState description={error} onRetry={load}/>}{!payables && !error && <LoadingState label="Loading wage balances…" compact/>}{payables?.length === 0 && <EmptyState title="No approved wage entitlements." description="Approved payroll and its settlement history will appear here."/>}
+ {payables?.map(p => <article className={`${styles.card} space-y-4`} key={p.payslip_id}><h4>{p.payslip_no} · {financeDate(p.pay_date)}</h4><FinanceFigures items={[["Net entitlement",p.net_pay],["Corrections",p.correction_amount],["Approved rounding",p.rounding_amount],["Actual paid",p.actual_paid],["Remaining payable",p.remaining_payable],["Pending bank outcome",p.pending_amount]]}/><p className={styles.muted}>Noncash recovery: {p.settlement_id ? 'posted' : p.legacy_provenance ? 'imported assertion; details unknown' : 'awaiting execution'}</p>{p.legacy_provenance && <p>Legacy asserted settlement ₱{p.legacy_asserted_paid}. {p.legacy_provenance}</p>}
+ <details><summary>Exact recovery sources</summary>{p.recoveries.map(a => <p key={a.allocation_id}>Loan #{a.loan_id} · allocation #{a.allocation_id} · {financeMoney(a.approved_amount)} · {financeLabel(a.status)}</p>)}</details>
  {canPay && !p.settlement_id && !p.legacy_provenance && p.status === 'Approved' && <FinanceCommand scope={`settle:${p.payslip_id}`} endpoint="/payroll/employee-settlements" body={{
         payslip_id: p.payslip_id,
         version: p.version,
@@ -135,8 +139,8 @@ export default function EmployeePayables({
               ...funding,
               external_reference: e.target.value
             })} /></FinanceField></>}
- {status === 'CONFIRMED' && <FundingFields value={funding} onChange={setFunding} banks={banks} />}
+ {status === 'CONFIRMED' && <FundingFields value={funding} onChange={setFunding} banks={banks} amount={amount} />}
  </FinanceCommand></details>}
- {payouts.map(p => <article key={p.payout_id} className="border rounded p-3"><p>Payout #{p.payout_id} · ₱{p.amount} · {p.method} · {p.status}</p><p>Request {p.request_id}</p>{p.method === 'BANK' && <p>Original bank account #{p.bank_account_id} · Instruction {p.instruction_reference || 'Unknown (legacy)'}</p>}{p.allocations.map(a => <p key={a.payout_allocation_id}>Payslip #{a.payslip_id}: ₱{a.amount}</p>)}<details><summary>Outcome history</summary>{p.events.map(e => <p key={e.event_id}>{e.status} · {e.evidence} · {e.reason}</p>)}</details>{canPay && ['PENDING', 'UNKNOWN'].includes(p.status) && <ReconcilePayout payout={p} employeeId={employeeId} banks={banks} onDone={done} />}</article>)}
+ {payouts.map(p => <article key={p.payout_id} className={`${styles.card} space-y-3`}><p>Payout #{p.payout_id} · {financeMoney(p.amount)} · {financeLabel(p.method)} · <FinanceStatus value={p.status}/></p><p>Request {p.request_id}</p>{p.method === 'BANK' && <p>Original bank account #{p.bank_account_id} · Instruction {p.instruction_reference || 'Unknown (legacy)'}</p>}{p.allocations.map(a => <p key={a.payout_allocation_id}>Payslip #{a.payslip_id}: ₱{a.amount}</p>)}<details><summary>Outcome history</summary>{p.events.map(e => <p key={e.event_id}>{financeLabel(e.status)} · {e.evidence} · {e.reason}</p>)}</details>{canPay && ['PENDING', 'UNKNOWN'].includes(p.status) && <details><summary>Resolve bank outcome</summary><ReconcilePayout payout={p} employeeId={employeeId} banks={banks} onDone={done} /></details>}</article>)}
  </section>;
 }

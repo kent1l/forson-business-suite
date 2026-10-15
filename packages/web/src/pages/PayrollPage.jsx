@@ -1,4 +1,4 @@
-import {FinanceCommand} from '../components/hr/EmployeeAccountsTab';
+import {FinanceCommand, FinanceDialog} from '../components/hr/FinancePrimitives';
 import PayrollRecoveryReview from '../components/hr/PayrollRecoveryReview';
 import React, { useCallback, useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
@@ -552,10 +552,10 @@ const PayrollPage = () => {
                 </div>
             </Modal>
 
-            <Modal isOpen={Boolean(reviewSlip)} onClose={() => setReviewSlip(null)} title="Exact loan recovery review">
+            <FinanceDialog isOpen={Boolean(reviewSlip)} onClose={() => setReviewSlip(null)} title="Exact loan recovery review">
                 {reviewSlip && <PayrollRecoveryReview key={reviewSlip.payslip_id} payslip={reviewSlip} run={selectedRun} onDone={() => {setReviewSlip(null);openRun(selectedRun);}} />}
-            </Modal>
-            <Modal isOpen={Boolean(voidRun)} onClose={() => setVoidRun(null)} title={`Void ${voidRun?.run_no || ''}`}>
+            </FinanceDialog>
+            <FinanceDialog isOpen={Boolean(voidRun)} onClose={() => setVoidRun(null)} title={`Void ${voidRun?.run_no || ''}`}>
                 <FinanceCommand scope={`void:${voidRun?.run_id}`} endpoint={`/payroll/runs/${voidRun?.run_id}/void`} body={{version:voidRun?.version,reason:voidReason}} onDone={() => {setVoidRun(null);setVoidReason('');setSelectedRun(null);load();}} label="Void unpaid run" disabled={!voidReason.trim()}>
                     <p className="text-sm text-gray-600 dark:text-slate-300">
                         Canceling unpaid payroll preserves history, releases pending recovery reservations, and unlocks the time records
@@ -570,7 +570,7 @@ const PayrollPage = () => {
                             className="px-4 py-2 bg-gray-200 dark:bg-slate-700 text-gray-800 dark:text-slate-200 rounded-lg">Cancel</button>
                     </div>
                 </FinanceCommand>
-            </Modal>
+            </FinanceDialog>
         </div>
     );
 };

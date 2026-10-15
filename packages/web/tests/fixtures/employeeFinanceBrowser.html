@@ -1,12 +1,14 @@
-<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><div id="root"></div><script type="module">
+<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"></head><body class="bg-gray-50 dark:bg-slate-900 p-4"><div id="root"></div><script type="module">
 import React from 'react';
 import {createRoot} from 'react-dom/client';
 import {AuthProvider} from '../../src/contexts/AuthContext.jsx';
 import EmployeeAccountsTab from '../../src/components/hr/EmployeeAccountsTab.jsx';
+import EmployeeAccountsPage from '../../src/pages/EmployeeAccountsPage.jsx';
 import '../../src/index.css';
 const root=createRoot(document.getElementById('root'));
 window.mountFinance=(employeeId,actorId=1,permissions=['employee_finance:view','employee_finance:manage','employee_finance:approve','employee_finance:pay','employee_finance:remit','employee_finance:correct'])=>{
 localStorage.setItem('userSession',JSON.stringify({token:'browser-fixture',user:{employee_id:actorId,permission_level_id:1,permissions},permissions}));
 root.render(React.createElement(AuthProvider,{key:actorId},React.createElement(EmployeeAccountsTab,{employeeId})));
 };
+window.mountFinancePage=()=>{localStorage.setItem('userSession',JSON.stringify({token:'browser-fixture',user:{employee_id:1,permission_level_id:1,permissions:['employee_finance:view']},permissions:['employee_finance:view']}));root.render(React.createElement(AuthProvider,{key:'page'},React.createElement(EmployeeAccountsPage)));};
 </script></body></html>
