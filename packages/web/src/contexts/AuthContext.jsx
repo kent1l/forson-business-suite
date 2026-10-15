@@ -43,6 +43,7 @@ export const AuthProvider = ({ children }) => {
     const logout = useCallback((options = {}) => {
         localStorage.removeItem('userSession');
         sessionStorage.removeItem('forson_cash_drawer_session');
+        Object.keys(sessionStorage).filter(key => key.startsWith('employee-finance:')).forEach(key => sessionStorage.removeItem(key));
         lockPayReauth();
         setUser(null);
         setPermissions([]);

@@ -304,12 +304,17 @@ const computeRun = async (executor, { runId, computedBy }) => {
     }
 
     const { rows: loanRows } = await executor.query(
-        `SELECT loan_id, employee_id, loan_type, component_code, reference_no,
-                principal_amount, amortization_amount, amount_paid, deduct_on_cutoff
-         FROM employee_loan
-         WHERE employee_id = ANY($1::int[]) AND status = 'Active' AND start_date <= $2`,
+        `SELECT l.*, s.schedule_id, s.version AS schedule_version, s.schedule, s.monthly_installment,
+                COALESCE((SELECT SUM(a.approved_amount) FROM payroll_deduction_allocation a WHERE a.loan_id=l.loan_id AND a.status='RESERVED'),0)::numeric(12,2) AS reserved_amount
+         FROM employee_loan l
+         JOIN employee_loan_schedule s ON s.loan_id=l.loan_id AND s.effective_from<=date_trunc('month',$2::date)::date AND (s.effective_to IS NULL OR s.effective_to>date_trunc('month',$2::date)::date)
+         WHERE l.employee_id = ANY($1::int[]) AND l.status = 'Active' AND l.activation_state<>'DRAFT' AND l.start_date <= $2 ORDER BY l.loan_id`,
         [employeeIds, run.period_end]
     );
+    for (const loan of loanRows) {
+        loan.scheduled_share = require('./loanSchedule').share(loan.monthly_installment, loan.schedule, cutoffSeq);
+        if (!['REGULAR','JOB_ORDER'].includes(run.run_type)) loan.review_amount = '0.00';
+    }
     const loansByEmployee = new Map();
     for (const loan of loanRows) {
         if (!loansByEmployee.has(loan.employee_id)) loansByEmployee.set(loan.employee_id, []);
@@ -366,6 +371,9 @@ const computeRun = async (executor, { runId, computedBy }) => {
         adjustmentsByEmployee.get(row.employee_id).push(row);
     }
 
+    if (adjustmentRows.some(a => loanRows.some(l => l.employee_id === a.employee_id && l.component_code === a.component_code))) {
+        recovery.fail(422,'EXACT_LOAN_REVIEW_REQUIRED','Use exact obligation recovery review instead of component-only loan adjustments.');
+    }
     // --- Per-employee computation ----------------------------------------
     const warnings = [];
     // Collected rather than pushed per employee, so one missed DTR generation
@@ -494,19 +502,21 @@ const computeRun = async (executor, { runId, computedBy }) => {
         );
         const payslipId = payslipRows[0].payslip_id;
 
+        const loanLineIds = new Map();
         for (const line of computed.lines) {
-            await executor.query(
+            const lineResult = await executor.query(
                 `INSERT INTO payroll_payslip_line
                     (payslip_id, line_type, component_code, description, quantity, rate, amount, is_taxable, sort_order)
-                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING line_id`,
                 [payslipId, line.lineType, line.componentCode, line.description,
                     line.quantity ?? null, line.rate ?? null, line.amount, line.isTaxable, line.sortOrder]
             );
+            if (line.loanId) loanLineIds.set(String(line.loanId), lineResult.rows[0].line_id);
         }
 
         // Loan instalments are recorded now but only become real when the run is
         // marked Paid — see markPaid.
-        await recovery.persist(executor, { payslipId, employeeId: h.employee_id, periodId: run.pay_period_id, run, cutoffSeq, deductions: computed.loanDeductions });
+        await recovery.persist(executor, { payslipId, employeeId: h.employee_id, periodId: run.pay_period_id, run, cutoffSeq, deductions: computed.loanDeductions, loans: loansByEmployee.get(h.employee_id) || [], requiresReview: !['REGULAR','JOB_ORDER'].includes(run.run_type), loanLineIds });
 
         totals.gross = round2(totals.gross + h.gross_pay);
         totals.deductions = round2(totals.deductions + h.total_deductions);

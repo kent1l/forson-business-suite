@@ -1,3 +1,4 @@
+import PayrollRecoveryReview from '../components/hr/PayrollRecoveryReview';
 import React, { useCallback, useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import api from '../api';
@@ -42,6 +43,7 @@ const PayrollPage = () => {
     const [runs, setRuns] = useState([]);
     const [periods, setPeriods] = useState([]);
     const [selectedRun, setSelectedRun] = useState(null);
+    const [reviewSlip, setReviewSlip] = useState(null);
     const [payslips, setPayslips] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
@@ -101,10 +103,12 @@ const PayrollPage = () => {
         setSelectedRun(run);
         setWarnings([]);
         try {
-            const [slipRes, adjRes] = await Promise.all([
+            const [slipRes, adjRes, detailRes] = await Promise.all([
                 api.get(`/payroll/runs/${run.run_id}/payslips`),
                 api.get(`/payroll/runs/${run.run_id}/adjustments`),
+                api.get(`/payroll/runs/${run.run_id}`),
             ]);
+            setSelectedRun(detailRes.data);
             setPayslips(Array.isArray(slipRes.data) ? slipRes.data : []);
             setAdjustments(Array.isArray(adjRes.data) ? adjRes.data : []);
         } catch {
@@ -425,7 +429,7 @@ const PayrollPage = () => {
                                     <tbody>
                                         {payslips.map((p) => (
                                             <tr key={p.payslip_id} className="border-b border-gray-100 dark:border-slate-700/60">
-                                                <td className="p-2 font-medium text-gray-800 dark:text-slate-100">{p.employee_name}</td>
+                                                <td className="p-2 font-medium text-gray-800 dark:text-slate-100">{p.employee_name}{selectedRun.status === 'Computed' && hasPermission('payroll:approve') && <button className="block text-xs underline" onClick={() => setReviewSlip(p)}>Review exact recoveries</button>}</td>
                                                 <td className="p-2 text-right tabular-nums text-gray-600 dark:text-slate-300">{peso(p.daily_rate)}</td>
                                                 <td className="p-2 text-right tabular-nums text-gray-600 dark:text-slate-300">{Number(p.days_paid).toFixed(2)}</td>
                                                 <td className="p-2 text-right tabular-nums text-gray-800 dark:text-slate-100">{peso(p.gross_pay)}</td>
@@ -562,6 +566,9 @@ const PayrollPage = () => {
                 </div>
             </Modal>
 
+            <Modal isOpen={Boolean(reviewSlip)} onClose={() => setReviewSlip(null)} title="Exact loan recovery review">
+                {reviewSlip && <PayrollRecoveryReview key={reviewSlip.payslip_id} payslip={reviewSlip} run={selectedRun} onDone={() => {setReviewSlip(null);openRun(selectedRun);}} />}
+            </Modal>
             <Modal isOpen={Boolean(voidRun)} onClose={() => setVoidRun(null)} title={`Void ${voidRun?.run_no || ''}`}>
                 <div className="space-y-4">
                     <p className="text-sm text-gray-600 dark:text-slate-300">

@@ -34,11 +34,15 @@ async function voidEligibility(client, run) {
 async function clearProposals(client, runId) {
     await client.query(`DELETE FROM payroll_deduction_allocation a USING payroll_payslip p WHERE a.payslip_id=p.payslip_id AND p.run_id=$1 AND a.status='PROPOSED'`, [runId]);
 }
-async function persist(client, { payslipId, employeeId, periodId, run, cutoffSeq, deductions }) {
-    for (const d of [...deductions].sort((a,b) => Number(a.loanId)-Number(b.loanId))) {
-        await client.query(`INSERT INTO payroll_deduction_allocation(loan_id,employee_id,payslip_id,pay_period_id,recovery_month,cutoff_seq,scheduled_amount,approved_amount)
-            VALUES($1,$2,$3,$4,date_trunc('month',$5::date)::date,$6,$7,$7)`,
-        [d.loanId, employeeId, payslipId, periodId, run.period_end, cutoffSeq, d.amount]);
+async function persist(client, { payslipId, employeeId, periodId, run, cutoffSeq, deductions, loans = [], requiresReview = false, loanLineIds = new Map() }) {
+    const proposals = requiresReview ? loans.map(l => ({loanId:l.loan_id, amount:'0.00'})) : deductions;
+    for (const d of [...proposals].sort((a,b) => Number(a.loanId)-Number(b.loanId))) {
+        const loan=loans.find(l=>String(l.loan_id)===String(d.loanId));
+        const scheduled=requiresReview ? money(cents(loan.principal_amount)-cents(loan.amount_paid)) : loan?.scheduled_share || String(d.amount);
+        if(cents(scheduled)<=0n) continue;
+        await client.query(`INSERT INTO payroll_deduction_allocation(loan_id,employee_id,payslip_id,pay_period_id,recovery_month,cutoff_seq,scheduled_amount,approved_amount,schedule_id,schedule_version,line_id)
+            VALUES($1,$2,$3,$4,date_trunc('month',$5::date)::date,$6,$7,$8,$9,$10,$11)`,
+        [d.loanId,employeeId,payslipId,periodId,run.period_end,cutoffSeq,scheduled,d.amount,loan?.schedule_id||null,loan?.schedule_version||null,loanLineIds.get(String(d.loanId))||null]);
     }
 }
 async function reserve(client, runId) {
@@ -47,8 +51,6 @@ async function reserve(client, runId) {
     if (shortfall) fail(422, 'INSUFFICIENT_PAY', 'Resolve negative net pay with exact recovery review before approval.');
     const { rows } = await client.query(`SELECT a.*, l.amortization_amount FROM payroll_deduction_allocation a JOIN payroll_payslip p USING(payslip_id) JOIN employee_loan l USING(loan_id) WHERE p.run_id=$1 ORDER BY a.loan_id,a.allocation_id`, [runId]);
     for (const a of rows) {
-        const { rows: [used] } = await client.query(`SELECT COALESCE(SUM(approved_amount),0)::numeric(12,2) amount FROM payroll_deduction_allocation WHERE loan_id=$1 AND recovery_month=$2 AND cutoff_seq=$3 AND status IN ('RESERVED','RECOVERED') AND allocation_id<>$4`, [a.loan_id,a.recovery_month,a.cutoff_seq,a.allocation_id]);
-        if (cents(used.amount)+cents(a.approved_amount)>cents(a.scheduled_amount)) fail(409,'INSTALLMENT_RESERVED','Another payroll owns this installment slot. Release/recompute unpaid payroll first.');
         await client.query("UPDATE payroll_deduction_allocation SET status='RESERVED' WHERE allocation_id=$1", [a.allocation_id]);
     }
 }
@@ -63,4 +65,30 @@ async function postRecoveries(client, runId, actorId) {
     const { rows: [gap] } = await client.query(`SELECT p.payslip_id FROM payroll_payslip p WHERE p.run_id=$1 AND p.loans_total<>(SELECT COALESCE(SUM(a.approved_amount),0) FROM payroll_deduction_allocation a WHERE a.payslip_id=p.payslip_id AND a.status='RECOVERED') LIMIT 1`, [runId]);
     if (gap) fail(409, 'ALLOCATION_REVIEW_REQUIRED', 'Legacy payroll loan identities require release/recompute and approval.');
 }
-module.exports = { request, lockRun, lockLoans, voidEligibility, clearProposals, persist, reserve, postRecoveries, cents, money, fail, validText };
+async function review(client,payslipId,input,actorId) {
+ const {rows:[target]}=await client.query('SELECT run_id FROM payroll_payslip WHERE payslip_id=$1',[payslipId]);
+ if(!target) fail(404,'PAYSLIP_NOT_FOUND','Payslip not found.');
+ const run=await lockRun(client,target.run_id,input.version);
+ if(run.status!=='Computed') fail(409,'PAYROLL_FROZEN','Recovery review requires Computed payroll.');
+ await lockLoans(client,run.run_id);
+ if(!Array.isArray(input.allocations)||!input.allocations.length) fail(400,'ALLOCATIONS_REQUIRED','Select exact recoveries to review.');
+ const seen=new Set();
+ for(const edit of input.allocations) {
+  if(seen.has(String(edit.allocation_id))) fail(400,'DUPLICATE_TARGET','Duplicate recovery allocation.');seen.add(String(edit.allocation_id));
+  const {rows:[a]}=await client.query(`SELECT a.*,l.component_code,l.reference_no,l.principal_amount,l.amount_paid FROM payroll_deduction_allocation a JOIN employee_loan l USING(loan_id) WHERE a.allocation_id=$1 AND a.payslip_id=$2 AND a.status='PROPOSED' FOR UPDATE OF a`,[edit.allocation_id,payslipId]);
+  if(!a) fail(404,'ALLOCATION_NOT_FOUND','Editable allocation not found on this payslip.');
+  const amount=money(cents(edit.amount));const reason=validText(edit.reason,2000,true);
+  if(cents(amount)>cents(a.scheduled_amount) || cents(amount)>cents(a.principal_amount)-cents(a.amount_paid)) fail(422,'RECOVERY_LIMIT','Reviewed recovery exceeds the proposed entitlement or debt.');
+  if(!['RECOVER','DEFER','SKIP','CATCH_UP'].includes(edit.action)) fail(400,'INVALID_REVIEW','Choose recover, defer, skip or catch-up.');
+  if(['DEFER','SKIP'].includes(edit.action)&&cents(amount)!==0n) fail(400,'INVALID_REVIEW','Deferred/skipped amounts must be zero.');
+  const authorization=edit.action==='CATCH_UP'||!['REGULAR','JOB_ORDER'].includes(run.run_type) ? validText(edit.authorization,2000,true) : null;
+  let lineId=a.line_id;
+  if(lineId) await client.query('UPDATE payroll_payslip_line SET amount=$2 WHERE line_id=$1',[lineId,amount]);
+  else {const {rows:[line]}=await client.query(`INSERT INTO payroll_payslip_line(payslip_id,line_type,component_code,description,amount,is_taxable,sort_order) VALUES($1,'DEDUCTION',$2,$3,$4,false,40) RETURNING line_id`,[payslipId,a.component_code,`Loan ${a.loan_id} ${a.reference_no||''}`,amount]);lineId=line.line_id;}
+  await client.query('UPDATE payroll_deduction_allocation SET approved_amount=$2,review_reason=$3,reviewed_by=$4,supplemental_authorization=$5,line_id=$6 WHERE allocation_id=$1',[a.allocation_id,amount,reason,actorId,authorization,lineId]);
+ }
+ await client.query(`UPDATE payroll_payslip p SET loans_total=t.amount,total_deductions=total_deductions-loans_total+t.amount,net_pay=gross_pay-(total_deductions-loans_total+t.amount) FROM (SELECT COALESCE(SUM(approved_amount),0) amount FROM payroll_deduction_allocation WHERE payslip_id=$1) t WHERE p.payslip_id=$1`,[payslipId]);
+ await client.query(`UPDATE payroll_run r SET total_deductions=t.deductions,total_net=t.net,version=version+1 FROM (SELECT SUM(total_deductions) deductions,SUM(net_pay) net FROM payroll_payslip WHERE run_id=$1) t WHERE r.run_id=$1`,[run.run_id]);
+ return {payslip_id:payslipId,run_id:run.run_id,version:run.version+1};
+}
+module.exports = { review, request, lockRun, lockLoans, voidEligibility, clearProposals, persist, reserve, postRecoveries, cents, money, fail, validText };

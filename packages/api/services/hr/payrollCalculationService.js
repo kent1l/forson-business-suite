@@ -293,16 +293,16 @@ const computeFinalPay = ({ employee, compensation, loans = [], policy, statutory
     let unrecoveredLoanBalance = 0;
     let available = round2(grossPay - withholdingTax - otherDeductions);
     for (const loan of loans) {
-        const outstanding = round2(Number(loan.principal_amount) - Number(loan.amount_paid));
+        const outstanding = round2(Number(loan.principal_amount) - Number(loan.amount_paid) - Number(loan.reserved_amount || 0));
         if (outstanding <= 0) continue;
-        const amount = round2(Math.min(outstanding, Math.max(available, 0)));
+        const amount = round2(Math.min(outstanding, loan.review_amount != null ? Number(loan.review_amount) : outstanding, Math.max(available, 0)));
         if (amount > 0) {
             available = round2(available - amount);
             loansTotal = round2(loansTotal + amount);
             loanDeductions.push({ loanId: loan.loan_id, amount });
             const settled = amount >= outstanding;
             addLine({
-                lineType: 'DEDUCTION', componentCode: loan.component_code,
+                loanId: loan.loan_id, lineType: 'DEDUCTION', componentCode: loan.component_code,
                 description: `${loan.reference_no ? `${loan.loan_type} (${loan.reference_no})` : loan.loan_type}`
                     + (settled ? ' — full settlement' : ' — partial, balance remains due'),
                 amount, isTaxable: false, sortOrder: 40,
@@ -582,18 +582,18 @@ const computePayslip = ({
     const loanDeductions = [];
     let loansTotal = 0;
     for (const loan of loans) {
-        if (Number(loan.deduct_on_cutoff) !== Number(cutoffSeq)) continue;
-        const outstanding = round2(Number(loan.principal_amount) - Number(loan.amount_paid));
+        if (loan.scheduled_share == null && Number(loan.deduct_on_cutoff) !== Number(cutoffSeq)) continue;
+        const outstanding = round2(Number(loan.principal_amount) - Number(loan.amount_paid) - Number(loan.reserved_amount || 0));
         if (outstanding <= 0) continue;
         // An override on a loan component sets the instalment for this run (a
         // partial payment, say), but still never exceeds what is owed.
-        const scheduled = applyRunOverride(loan.component_code, Number(loan.amortization_amount));
+        const scheduled = loan.review_amount != null ? Number(loan.review_amount) : loan.scheduled_share != null ? Number(loan.scheduled_share) : applyRunOverride(loan.component_code, Number(loan.amortization_amount));
         const amount = round2(Math.min(scheduled, outstanding));
         if (amount <= 0) continue;
         loansTotal = round2(loansTotal + amount);
         loanDeductions.push({ loanId: loan.loan_id, amount });
         addLine({
-            lineType: 'DEDUCTION', componentCode: loan.component_code,
+            loanId: loan.loan_id, lineType: 'DEDUCTION', componentCode: loan.component_code,
             description: loan.reference_no ? `${loan.loan_type} (${loan.reference_no})` : loan.loan_type,
             amount, isTaxable: false, sortOrder: 40,
         });

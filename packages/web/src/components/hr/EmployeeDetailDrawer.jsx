@@ -1,3 +1,4 @@
+import EmployeeAccountsTab from './EmployeeAccountsTab';
 import React, { useCallback, useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import api from '../../api';
@@ -807,6 +808,7 @@ const EmployeeDetailDrawer = ({ employeeId, isOpen, onClose, roles = [], onEmplo
         { key: 'employment', label: 'Employment' },
         ...(canSeeCompensation ? [{ key: 'compensation', label: 'Compensation' }] : []),
         ...(canSeeCompensation ? [{ key: 'components', label: 'Pay Items' }] : []),
+        ...(hasPermission('employee_finance:view') ? [{key:'accounts',label:'Accounts'}] : []),
         ...(canSeeSensitive ? [{ key: 'government', label: 'Government IDs' }] : []),
     ];
 
@@ -833,6 +835,7 @@ const EmployeeDetailDrawer = ({ employeeId, isOpen, onClose, roles = [], onEmplo
                         <SegmentedTabs tabs={tabs} active={activeTab} onChange={setActiveTab} />
                     </div>
 
+                    {activeTab === 'accounts' && hasPermission('employee_finance:view') && <EmployeeAccountsTab key={employeeId} employeeId={employeeId} />}
                     {activeTab === 'profile' && <ProfileTab employee={employee} />}
                     {activeTab === 'employment' && (
                         <EmploymentTab employee={employee} roles={roles} canManageAccess={canManageAccess} onEmployeeChanged={handleChanged} />

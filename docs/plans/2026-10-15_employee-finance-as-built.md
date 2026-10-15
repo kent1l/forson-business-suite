@@ -7,7 +7,7 @@
 | Phase | Status | Evidence / remaining gate |
 |---|---|---|
 | 1. Recovery foundation | Implemented; further concurrency verification pending | Exact obligation allocations, unpaid void guards, debt reservations, immutable payments; targeted PostgreSQL checks pass |
-| 2. Schedules and operations | In progress | See original implementation plan |
+| 2. Schedules and operations | Implemented; broader race/browser gates pending | Versioned first/second/split schedules, draft activation/release, hold/resume, direct collection, exact recovery review UI/API |
 | 3. Settlement and Accounts | Not started | Actual payouts and read model pending |
 | 4. Agency remittance / rollout | Not started | Remittance and authenticated acceptance pending |
 | Production readiness | Pending | No deployment or owner acceptance implied |
@@ -28,7 +28,19 @@ Migration `20261015_01_employee_recovery_foundation.sql` adds exact loan/payslip
 
 Pending phase-1 verification: supplemental/final-pay races, custom-component browser flow, payout/void races (requires phase 3). Further schema guards and slot budgets arrive in phase 2.
 
-## 4. Phases 2–4 Pending
+## 4. Phase 2 As Built
+
+Migration `20261015_02_employee_loan_operations.sql` backfills legacy first/second schedules without changing amounts, exposes legacy principal/evidence ambiguity, and adds effective versions, overlap guards, monthly/slot budgets, funding provenance, collection/activity documents and seven employee-finance permissions. Admin/Super Admin get all; Manager gets view/manage. Original principal and explicit fees are captured for new drafts. Old cutoff writers are blocked; canonical calculation reads schedule versions.
+
+Loan operations and funding services implement draft creation, independently authorized activation (company release or agency enrollment), future schedules, hold/resume and exact direct collections. Bank evidence has a unique account/reference identity; cash writes reuse drawer posting, custody, count/session/version and independent release approval guards. Direct company collection is rejected while payroll reservations exist. Overpayments are rejected. Recurring/statutory math is unchanged. Final/supplemental recovery proposals require explicit review instead of automatic debt collection; reviewed amounts and reasons are persisted on exact obligations.
+
+Routes are mounted under `/api/hr` and `/api/payroll` through `employeeFinanceRoutes`. Employee Accounts tab includes loan creation, preview, future schedules, activation, hold/resume, direct collection and history. Payroll has an exact recovery review dialog. Request identities and retry details are scoped to actor and target in session storage, with logout cleanup; no password fields are included.
+
+Additional files: `loanSchedule.js`, `employeeLoanService.js`, `employeeFundingService.js`, `employeeFinanceRoutes.js`, `EmployeeAccountsTab.jsx`, `PayrollRecoveryReview.jsx`, `employeeLoanSchedule.test.js`; existing index, calculation, detail drawer, auth context and PayrollPage connected.
+
+Verification: combined payroll/schedule Jest suites: **113 passed**. Extended disposable PostgreSQL script passes activation, hold/resume, future schedule, old-writer rejection, reserved collection rejection, direct collection and balance-erasing status rejection. Web build passes (existing chunk warnings). Targeted API/web lint: no errors, JSX unused-symbol warnings. Browser/role and expanded concurrency verification pending.
+
+## 5. Phases 3–4 Pending
 
 Implement effective schedule versions and legacy migration, explicit final-pay review, operational creation/activation/hold/direct collection; actual settlements/payouts and Accounts; agency remittance and source-specific corrections. Complete disposable-DB, authenticated role/browser and migration rollout gates. Original plan defines acceptance; pending work is not deferred.
 
@@ -59,4 +71,5 @@ Original plan exclusions remain: general wallet, new standalone reimbursements, 
 
 ## 9. Change Log
 
+- 2026-10-15: phase 2 schedules/operations implemented and verified; settlement/remittance remain active work.
 - 2026-10-15: recovery foundation implemented and disposable PostgreSQL verification recorded; phases 2–4 remain active work.
