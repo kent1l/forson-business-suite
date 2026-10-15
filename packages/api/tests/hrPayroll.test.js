@@ -484,6 +484,8 @@ describe('payroll run state machine', () => {
     it('blocks un-approving or un-posting in place', () => {
         expect(() => assertTransition('Approved', 'Draft')).toThrow(/cannot move/);
         expect(() => assertTransition('Posted', 'Paid')).toThrow(/cannot move/);
+        expect(() => assertTransition('Paid', 'Voided')).toThrow(/cannot move/);
+        expect(() => assertTransition('Posted', 'Voided')).toThrow(/cannot move/);
     });
 
     it('treats Voided as terminal', () => {
@@ -491,8 +493,8 @@ describe('payroll run state machine', () => {
         expect(() => assertTransition('Voided', 'Draft')).toThrow(/cannot move/);
     });
 
-    it('allows voiding from every non-terminal state', () => {
-        for (const state of ['Draft', 'Computed', 'Approved', 'Paid', 'Posted']) {
+    it('allows ordinary void only before payment', () => {
+        for (const state of ['Draft', 'Computed', 'Approved']) {
             expect(() => assertTransition(state, 'Voided')).not.toThrow();
         }
     });

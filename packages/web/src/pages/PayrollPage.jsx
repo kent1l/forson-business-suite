@@ -206,7 +206,7 @@ const PayrollPage = () => {
         setBusy(true);
         try {
             await api.post(`/payroll/runs/${voidRun.run_id}/void`, { reason: voidReason });
-            toast.success('Run voided — expense postings reversed and time records unlocked.');
+            toast.success('Unpaid run canceled. History preserved and time records unlocked.');
             setVoidRun(null);
             setVoidReason('');
             await load();
@@ -289,7 +289,7 @@ const PayrollPage = () => {
                                         </button>
                                     </>
                                 )}
-                                {canVoid && !['Voided'].includes(selectedRun.status) && (
+                                {canVoid && selectedRun.void_eligibility?.eligible && (
                                     <button disabled={busy} onClick={() => setVoidRun(selectedRun)}
                                         className="px-3 py-1.5 text-sm font-semibold rounded-lg bg-danger-100 text-danger-800 hover:bg-danger-200 dark:bg-danger-900/30 dark:text-danger-400 disabled:opacity-50">
                                         Void
@@ -565,7 +565,7 @@ const PayrollPage = () => {
             <Modal isOpen={Boolean(voidRun)} onClose={() => setVoidRun(null)} title={`Void ${voidRun?.run_no || ''}`}>
                 <div className="space-y-4">
                     <p className="text-sm text-gray-600 dark:text-slate-300">
-                        Voiding reverses any expense postings, restores loan balances, and unlocks the time records
+                        Canceling unpaid payroll preserves history, releases pending recovery reservations, and unlocks the time records
                         for this period. The payslips are kept as a record and cannot be edited.
                     </p>
                     <div>

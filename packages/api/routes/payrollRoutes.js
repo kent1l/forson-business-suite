@@ -5,6 +5,7 @@ const { parsePaginationQuery, paginatedResponse } = require('../helpers/paginati
 const payrollRunService = require('../services/hr/payrollRunService');
 const payrollPostingService = require('../services/hr/payrollPostingService');
 const statutoryAdmin = require('../services/hr/statutoryAdminService');
+const recovery = require('../services/hr/employeeRecoveryService');
 const reports = require('../services/hr/payrollReportService');
 const { generatePayslipPdf } = require('../helpers/pdf/payslipPdf');
 
@@ -34,7 +35,7 @@ const ERROR_STATUS = {
 };
 
 const handleError = (err, res) => {
-    const status = ERROR_STATUS[err.code];
+    const status = err.status || ERROR_STATUS[err.code];
     if (status) return res.status(status).json({ message: err.message });
 
     // The partial unique index that keeps one live run per period per scope.
@@ -149,7 +150,7 @@ router.get('/runs/:id', protect, hasPermission('payroll:view'), async (req, res)
             [req.params.id]
         );
         if (rows.length === 0) return res.status(404).json({ message: 'Payroll run not found' });
-        res.json(rows[0]);
+        res.json({ ...rows[0], void_eligibility: await recovery.voidEligibility(db, rows[0]) });
     } catch (err) { handleError(err, res); }
 });
 
