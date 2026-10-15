@@ -42,6 +42,10 @@ const postRunToExpense = async (executor, { runId, postedBy }) => {
         throw err;
     }
 
+    await require('./employeeSettlementService').assertRunSettled(executor, runId);
+    const {rows:[rounding]} = await executor.query(`SELECT COALESCE(SUM(a.amount),0)::numeric(14,2) amount FROM payroll_rounding_adjustment a JOIN payroll_payslip p USING(payslip_id) WHERE p.run_id=$1`, [runId]);
+    const wageCost = round2(Number(run.total_gross) + Number(rounding.amount));
+
     const paymentMethodText = await getSetting(executor, 'PAYROLL_DEFAULT_PAYMENT_METHOD', 'Cash');
     const isJobOrder = run.run_type === 'JOB_ORDER';
 
@@ -64,9 +68,9 @@ const postRunToExpense = async (executor, { runId, postedBy }) => {
         }
         postings = [{
             categoryId: jobOrderCategoryId,
-            amount: round2(run.total_gross),
+            amount: wageCost,
             notes: `Fees for ${run.employee_count} job-order / contract-of-service worker(s). `
-                + `Net paid out: ${round2(run.total_net)}. No statutory contributions apply to `
+                + `Approved employer rounding: ${rounding.amount}. Net entitlement: ${round2(run.total_net)}. No statutory contributions apply to `
                 + 'this run, and no employer share was incurred.',
         }];
     } else {
@@ -84,9 +88,9 @@ const postRunToExpense = async (executor, { runId, postedBy }) => {
         postings = [
             {
                 categoryId: salariesCategoryId,
-                amount: round2(run.total_gross),
+                amount: wageCost,
                 notes: `Gross pay for ${run.employee_count} employee(s). `
-                    + `Net paid out: ${round2(run.total_net)}. The difference is employee statutory `
+                    + `Approved employer rounding: ${rounding.amount}. Net entitlement: ${round2(run.total_net)}. The difference is employee statutory `
                     + 'withholdings and loan deductions, which are liabilities remitted separately — '
                     + 'do NOT record those remittances as a second expense.',
             },

@@ -1,43 +1,142 @@
-import {useCallback,useEffect,useState} from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import api from '../../api';
-import {useAuth} from '../../contexts/AuthContext';
-import {FinanceCommand,FinanceField,FundingFields} from './EmployeeAccountsTab';
-const cls='w-full border rounded p-2 bg-transparent';
-function ReconcilePayout({payout,employeeId,banks,onDone}) {
- const [status,setStatus]=useState('UNKNOWN');const [evidence,setEvidence]=useState('');const [reason,setReason]=useState('');const [funding,setFunding]=useState({method:payout.method});
- return <FinanceCommand scope={`${employeeId}:payout:${payout.payout_id}:reconcile`} endpoint={`/payroll/payouts/${payout.payout_id}/reconcile`} body={{version:Number(payout.event_id),status,evidence,reason,funding}} onDone={onDone} label="Record reconciled bank outcome">
- <FinanceField label="Verified outcome"><select className={cls} value={status} onChange={e=>setStatus(e.target.value)}>{['UNKNOWN','CONFIRMED','FAILED','CANCELLED'].map(v=><option key={v}>{v}</option>)}</select></FinanceField>
- <FinanceField label="Bank evidence"><input required className={cls} value={evidence} onChange={e=>setEvidence(e.target.value)}/></FinanceField><FinanceField label="Reconciliation reason"><input required className={cls} value={reason} onChange={e=>setReason(e.target.value)}/></FinanceField>
- {status==='CONFIRMED'&&<FundingFields banks={banks} value={funding} onChange={setFunding}/>}
+import { useAuth } from '../../contexts/AuthContext';
+import { FinanceCommand, FinanceField, FundingFields } from './EmployeeAccountsTab';
+const cls = 'w-full border rounded p-2 bg-transparent';
+function ReconcilePayout({
+  payout,
+  employeeId,
+  banks,
+  onDone
+}) {
+  const [status, setStatus] = useState('UNKNOWN');
+  const [evidence, setEvidence] = useState('');
+  const [reason, setReason] = useState('');
+  const [funding, setFunding] = useState({
+    method: payout.method,
+    bank_account_id: payout.bank_account_id || '',
+    external_reference: payout.instruction_reference || ''
+  });
+  return <FinanceCommand scope={`${employeeId}:payout:${payout.payout_id}:reconcile`} endpoint={`/payroll/payouts/${payout.payout_id}/reconcile`} body={{
+    version: Number(payout.event_id),
+    status,
+    evidence,
+    reason,
+    funding
+  }} onDone={onDone} label="Record reconciled bank outcome">
+ <FinanceField label="Verified outcome"><select className={cls} value={status} onChange={e => setStatus(e.target.value)}>{['UNKNOWN', 'CONFIRMED', 'FAILED', 'CANCELLED'].map(v => <option key={v}>{v}</option>)}</select></FinanceField>
+ <FinanceField label="Bank evidence"><input required className={cls} value={evidence} onChange={e => setEvidence(e.target.value)} /></FinanceField><FinanceField label="Reconciliation reason"><input required className={cls} value={reason} onChange={e => setReason(e.target.value)} /></FinanceField>
+ {status === 'CONFIRMED' && <FundingFields banks={banks} value={funding} onChange={setFunding} />}
  </FinanceCommand>;
 }
-function Rounding({p,banks,onDone}) {
- const [amount,setAmount]=useState('');const [policy,setPolicy]=useState('');const [reason,setReason]=useState('');const [evidence,setEvidence]=useState('');
- return <details><summary>Approve employer-funded upward rounding</summary><FinanceCommand scope={`rounding:${p.payslip_id}`} endpoint={`/payroll/payslips/${p.payslip_id}/rounding-adjustments`} body={{version:p.version,amount,policy_version:policy,reason,evidence}} onDone={onDone} label="Approve adjustment">
+function Rounding({
+  p,
+  onDone
+}) {
+  const [amount, setAmount] = useState('');
+  const [policy, setPolicy] = useState('');
+  const [reason, setReason] = useState('');
+  const [evidence, setEvidence] = useState('');
+  return <details><summary>Approve employer-funded upward rounding</summary><FinanceCommand scope={`rounding:${p.payslip_id}`} endpoint={`/payroll/payslips/${p.payslip_id}/rounding-adjustments`} body={{
+      version: p.version,
+      amount,
+      policy_version: policy,
+      reason,
+      evidence
+    }} onDone={onDone} label="Approve adjustment">
  <p>Less than ₱1.00; added to wages owed and funded by the actual payout.</p>
- {[['Amount',amount,setAmount],['Policy version',policy,setPolicy],['Reason',reason,setReason],['Approval evidence',evidence,setEvidence]].map(([label,value,set])=><FinanceField key={label} label={label}><input required className={cls} value={value} onChange={e=>set(e.target.value)}/></FinanceField>)}
+ {[['Amount', amount, setAmount], ['Policy version', policy, setPolicy], ['Reason', reason, setReason], ['Approval evidence', evidence, setEvidence]].map(([label, value, set]) => <FinanceField key={label} label={label}><input required className={cls} value={value} onChange={e => set(e.target.value)} /></FinanceField>)}
  </FinanceCommand></details>;
 }
-export default function EmployeePayables({employeeId,banks,onChanged}) {
- const {hasPermission,user}=useAuth();const [payables,setPayables]=useState(null);const [payouts,setPayouts]=useState([]);const [error,setError]=useState('');const [allocations,setAllocations]=useState({});const [amount,setAmount]=useState('');const [evidence,setEvidence]=useState('');const [status,setStatus]=useState('CONFIRMED');const [funding,setFunding]=useState({method:'BANK'});
- const load=useCallback(async()=>{setError('');try{const [p,o]=await Promise.all([api.get(`/hr/employees/${employeeId}/payables`),api.get(`/hr/employees/${employeeId}/payouts`)]);setPayables(p.data);setPayouts(o.data);}catch(e){setError(e.response?.data?.message||'Settlement details failed to load.');}},[employeeId]);
- useEffect(()=>{setPayables(null);setPayouts([]);setAllocations({});load();},[load,user?.employee_id]);
- const done=()=>{setAllocations({});setAmount('');load();onChanged?.();};
- const selected=payables?.filter(p=>allocations[p.payslip_id]&&allocations[p.payslip_id]!=='0.00').map(p=>({payslip_id:p.payslip_id,version:p.version,amount:allocations[p.payslip_id]}))||[];
- const canPay=hasPermission('employee_finance:pay');
- return <section className="space-y-3"><h3 className="font-semibold">Salary entitlement and actual settlement</h3>{error&&<p role="alert">{error}<button onClick={load}>Retry</button></p>}{!payables&&!error&&<p>Loading wage balances…</p>}{payables?.length===0&&<p>No approved wage entitlements.</p>}
- {payables?.map(p=><article className="border rounded p-3 space-y-2" key={p.payslip_id}><h4>{p.payslip_no} · {p.pay_date}</h4><p className="tabular-nums">Net entitlement ₱{p.net_pay} · Noncash recovery {p.settlement_id?'Posted':'Not executed'} · Actual paid ₱{p.actual_paid} · Remaining ₱{p.remaining_payable} · Pending ₱{p.pending_amount}</p>{p.legacy_provenance&&<p>Legacy asserted settlement ₱{p.legacy_asserted_paid}. {p.legacy_provenance}</p>}
- <details><summary>Exact recovery sources</summary>{p.recoveries.map(a=><p key={a.allocation_id}>Loan #{a.loan_id} · allocation #{a.allocation_id} · ₱{a.approved_amount} · {a.status}</p>)}</details>
- {canPay&&!p.settlement_id&&!p.legacy_provenance&&p.status==='Approved'&&<FinanceCommand scope={`settle:${p.payslip_id}`} endpoint="/payroll/employee-settlements" body={{payslip_id:p.payslip_id,version:p.version,allocation_ids:p.recoveries.filter(a=>a.status==='RESERVED').map(a=>a.allocation_id),reason:'Execute approved payslip noncash offsets'}} onDone={done} label="Execute approved noncash settlement"><p>Posts the exact approved recoveries once, including when net wages are zero. Cash is recorded separately.</p></FinanceCommand>}
- {hasPermission('employee_finance:approve')&&<Rounding p={p} banks={banks} onDone={done}/>}
+export default function EmployeePayables({
+  employeeId,
+  banks,
+  onChanged
+}) {
+  const {
+    hasPermission,
+    user
+  } = useAuth();
+  const [payables, setPayables] = useState(null);
+  const [payouts, setPayouts] = useState([]);
+  const [error, setError] = useState('');
+  const [allocations, setAllocations] = useState({});
+  const [amount, setAmount] = useState('');
+  const [evidence, setEvidence] = useState('');
+  const [status, setStatus] = useState('CONFIRMED');
+  const [funding, setFunding] = useState({
+    method: 'BANK'
+  });
+  const load = useCallback(async () => {
+    setError('');
+    try {
+      const [p, o] = await Promise.all([api.get(`/hr/employees/${employeeId}/payables`), api.get(`/hr/employees/${employeeId}/payouts`)]);
+      setPayables(p.data);
+      setPayouts(o.data);
+    } catch (e) {
+      setError(e.response?.data?.message || 'Settlement details failed to load.');
+    }
+  }, [employeeId]);
+  useEffect(() => {
+    setPayables(null);
+    setPayouts([]);
+    setAllocations({});
+    load();
+  }, [load, user?.employee_id]);
+  const done = () => {
+    setAllocations({});
+    setAmount('');
+    load();
+    onChanged?.();
+  };
+  const selected = payables?.filter(p => allocations[p.payslip_id] && allocations[p.payslip_id] !== '0.00').map(p => ({
+    payslip_id: p.payslip_id,
+    version: p.version,
+    amount: allocations[p.payslip_id]
+  })) || [];
+  const canPay = hasPermission('employee_finance:pay');
+  return <section className="space-y-3"><h3 className="font-semibold">Salary entitlement and actual settlement</h3>{error && <p role="alert">{error}<button onClick={load}>Retry</button></p>}{!payables && !error && <p>Loading wage balances…</p>}{payables?.length === 0 && <p>No approved wage entitlements.</p>}
+ {payables?.map(p => <article className="border rounded p-3 space-y-2" key={p.payslip_id}><h4>{p.payslip_no} · {p.pay_date}</h4><p className="tabular-nums">Net entitlement ₱{p.net_pay} · Corrections ₱{p.correction_amount} · Approved rounding ₱{p.rounding_amount} · Noncash recovery {p.settlement_id ? 'Posted' : p.legacy_provenance ? 'Legacy assertion (details unknown)' : 'Not executed'} · Actual paid ₱{p.actual_paid} · Remaining ₱{p.remaining_payable} · Pending ₱{p.pending_amount}</p>{p.legacy_provenance && <p>Legacy asserted settlement ₱{p.legacy_asserted_paid}. {p.legacy_provenance}</p>}
+ <details><summary>Exact recovery sources</summary>{p.recoveries.map(a => <p key={a.allocation_id}>Loan #{a.loan_id} · allocation #{a.allocation_id} · ₱{a.approved_amount} · {a.status}</p>)}</details>
+ {canPay && !p.settlement_id && !p.legacy_provenance && p.status === 'Approved' && <FinanceCommand scope={`settle:${p.payslip_id}`} endpoint="/payroll/employee-settlements" body={{
+        payslip_id: p.payslip_id,
+        version: p.version,
+        allocation_ids: p.recoveries.filter(a => a.status === 'RESERVED').map(a => a.allocation_id),
+        reason: 'Execute approved payslip noncash offsets'
+      }} onDone={done} label="Execute approved noncash settlement"><p>Posts the exact approved recoveries once, including when net wages are zero. Cash is recorded separately.</p></FinanceCommand>}
+ {hasPermission('employee_finance:approve') && ['Approved', 'Paid'].includes(p.status) && <Rounding p={p} banks={banks} onDone={done} />}
  </article>)}
- {canPay&&payables?.some(p=>p.settlement_id)&&<details><summary>Record actual payout across current / older payslips</summary><FinanceCommand scope={`${employeeId}:payout-create`} endpoint="/payroll/payouts" body={{employee_id:employeeId,amount,method:funding.method,status,evidence,funding,allocations:selected}} onDone={done} label="Record actual payment" disabled={!selected.length}>
- <FinanceField label="Actual total amount"><input required inputMode="decimal" className={cls} value={amount} onChange={e=>setAmount(e.target.value)}/></FinanceField>
- {payables.filter(p=>p.settlement_id&&p.remaining_payable!=='0.00').map(p=><FinanceField key={p.payslip_id} label={`${p.payslip_no} — remaining ₱${p.remaining_payable}`}><input inputMode="decimal" className={cls} value={allocations[p.payslip_id]||''} onChange={e=>setAllocations({...allocations,[p.payslip_id]:e.target.value})}/></FinanceField>)}
- <FinanceField label="Outcome"><select className={cls} value={status} onChange={e=>setStatus(e.target.value)}><option value="CONFIRMED">Confirmed actual payout</option><option value="PENDING">Pending bank instruction</option><option value="UNKNOWN">Unknown bank outcome</option></select></FinanceField>
- <FinanceField label="Payment / instruction evidence"><input required className={cls} value={evidence} onChange={e=>setEvidence(e.target.value)}/></FinanceField>
- {status==='CONFIRMED'&&<FundingFields value={funding} onChange={setFunding} banks={banks}/>}
+ {canPay && payables?.some(p => p.settlement_id || p.legacy_provenance) && <details><summary>Record actual payout across current / older payslips</summary><FinanceCommand scope={`${employeeId}:payout-create`} endpoint="/payroll/payouts" body={{
+        employee_id: employeeId,
+        amount,
+        method: funding.method,
+        status,
+        evidence,
+        funding,
+        allocations: selected
+      }} onDone={done} label="Record actual payment" disabled={!selected.length}>
+ <FinanceField label="Actual total amount"><input required inputMode="decimal" className={cls} value={amount} onChange={e => setAmount(e.target.value)} /></FinanceField>
+ {payables.filter(p => (p.settlement_id || p.legacy_provenance) && p.remaining_payable !== '0.00').map(p => <FinanceField key={p.payslip_id} label={`${p.payslip_no} — remaining ₱${p.remaining_payable}`}><input inputMode="decimal" className={cls} value={allocations[p.payslip_id] || ''} onChange={e => setAllocations({
+            ...allocations,
+            [p.payslip_id]: e.target.value
+          })} /></FinanceField>)}
+ <FinanceField label="Outcome"><select className={cls} value={status} onChange={e => {
+            setStatus(e.target.value);
+            if (e.target.value !== 'CONFIRMED') setFunding({
+              ...funding,
+              method: 'BANK'
+            });
+          }}><option value="CONFIRMED">Confirmed actual payout</option><option value="PENDING">Pending bank instruction</option><option value="UNKNOWN">Unknown bank outcome</option></select></FinanceField>
+ <FinanceField label="Payment / instruction evidence"><input required className={cls} value={evidence} onChange={e => setEvidence(e.target.value)} /></FinanceField>
+ {status !== 'CONFIRMED' && <><FinanceField label="Bank account for instruction"><select required className={cls} value={funding.bank_account_id || ''} onChange={e => setFunding({
+              ...funding,
+              bank_account_id: e.target.value
+            })}><option value="">Select bank</option>{banks.map(b => <option key={b.bank_account_id} value={b.bank_account_id}>{b.account_name}</option>)}</select></FinanceField><FinanceField label="Bank instruction reference"><input required className={cls} value={funding.external_reference || ''} onChange={e => setFunding({
+              ...funding,
+              external_reference: e.target.value
+            })} /></FinanceField></>}
+ {status === 'CONFIRMED' && <FundingFields value={funding} onChange={setFunding} banks={banks} />}
  </FinanceCommand></details>}
- {payouts.map(p=><article key={p.payout_id} className="border rounded p-3"><p>Payout #{p.payout_id} · ₱{p.amount} · {p.method} · {p.status}</p><p>Request {p.request_id}</p>{p.allocations.map(a=><p key={a.payout_allocation_id}>Payslip #{a.payslip_id}: ₱{a.amount}</p>)}<details><summary>Outcome history</summary>{p.events.map(e=><p key={e.event_id}>{e.status} · {e.evidence} · {e.reason}</p>)}</details>{canPay&&['PENDING','UNKNOWN'].includes(p.status)&&<ReconcilePayout payout={p} employeeId={employeeId} banks={banks} onDone={done}/>}</article>)}
+ {payouts.map(p => <article key={p.payout_id} className="border rounded p-3"><p>Payout #{p.payout_id} · ₱{p.amount} · {p.method} · {p.status}</p><p>Request {p.request_id}</p>{p.method === 'BANK' && <p>Original bank account #{p.bank_account_id} · Instruction {p.instruction_reference || 'Unknown (legacy)'}</p>}{p.allocations.map(a => <p key={a.payout_allocation_id}>Payslip #{a.payslip_id}: ₱{a.amount}</p>)}<details><summary>Outcome history</summary>{p.events.map(e => <p key={e.event_id}>{e.status} · {e.evidence} · {e.reason}</p>)}</details>{canPay && ['PENDING', 'UNKNOWN'].includes(p.status) && <ReconcilePayout payout={p} employeeId={employeeId} banks={banks} onDone={done} />}</article>)}
  </section>;
 }

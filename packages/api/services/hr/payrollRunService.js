@@ -305,14 +305,17 @@ const computeRun = async (executor, { runId, computedBy }) => {
 
     const { rows: loanRows } = await executor.query(
         `SELECT l.*, s.schedule_id, s.version AS schedule_version, s.schedule, s.monthly_installment,
-                COALESCE((SELECT SUM(a.approved_amount) FROM payroll_deduction_allocation a WHERE a.loan_id=l.loan_id AND a.status='RESERVED'),0)::numeric(12,2) AS reserved_amount
+                COALESCE((SELECT SUM(a.approved_amount) FROM payroll_deduction_allocation a WHERE a.loan_id=l.loan_id AND a.status='RESERVED'),0)::numeric(12,2) AS reserved_amount,
+                COALESCE((SELECT SUM(a.amount) FROM employee_installment_consumed a WHERE a.loan_id=l.loan_id AND a.recovery_month=date_trunc('month',$2::date)::date AND a.cutoff_seq=$3),0)::numeric(12,2) AS used_slot
          FROM employee_loan l
          JOIN employee_loan_schedule s ON s.loan_id=l.loan_id AND s.effective_from<=date_trunc('month',$2::date)::date AND (s.effective_to IS NULL OR s.effective_to>date_trunc('month',$2::date)::date)
          WHERE l.employee_id = ANY($1::int[]) AND l.status = 'Active' AND l.activation_state<>'DRAFT' AND l.start_date <= $2 ORDER BY l.loan_id`,
-        [employeeIds, run.period_end]
+        [employeeIds, run.period_end, cutoffSeq]
     );
     for (const loan of loanRows) {
-        loan.scheduled_share = require('./loanSchedule').share(loan.monthly_installment, loan.schedule, cutoffSeq);
+        const share = require('./loanSchedule').share(loan.monthly_installment, loan.schedule, cutoffSeq);
+        const available = recovery.cents(share)-recovery.cents(loan.used_slot);
+        loan.scheduled_share = recovery.money(available>0n?available:0n);
         if (!['REGULAR','JOB_ORDER'].includes(run.run_type)) loan.review_amount = '0.00';
     }
     const loansByEmployee = new Map();
@@ -371,7 +374,8 @@ const computeRun = async (executor, { runId, computedBy }) => {
         adjustmentsByEmployee.get(row.employee_id).push(row);
     }
 
-    if (adjustmentRows.some(a => loanRows.some(l => l.employee_id === a.employee_id && l.component_code === a.component_code))) {
+    const {rows: loanComponentOwners} = await executor.query('SELECT employee_id,component_code FROM employee_loan WHERE employee_id=ANY($1::int[])', [employeeIds]);
+    if (adjustmentRows.some(a => ['SSS_LOAN','HDMF_LOAN','CASH_ADVANCE'].includes(a.component_code) || loanComponentOwners.some(l => l.employee_id === a.employee_id && l.component_code === a.component_code))) {
         recovery.fail(422,'EXACT_LOAN_REVIEW_REQUIRED','Use exact obligation recovery review instead of component-only loan adjustments.');
     }
     // --- Per-employee computation ----------------------------------------

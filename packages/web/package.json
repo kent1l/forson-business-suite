@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "lint": "eslint .",
     "test": "node --test tests/*.test.js",
-    "test:merge-browser": "node tests/mergeBrowser.mjs"
+    "test:merge-browser": "node tests/mergeBrowser.mjs",
+    "test:employee-finance:browser": "node tests/employeeFinanceBrowser.mjs"
   },
   "dependencies": {
     "@fontsource-variable/jetbrains-mono": "^5.3.0",

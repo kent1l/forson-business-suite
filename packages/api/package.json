@@ -13,7 +13,9 @@
     "migrate:verify": "node scripts/migrate.js verify",
     "audit:master-merge": "node scripts/auditMasterDataMerge.js",
     "reconcile:ar": "node scripts/reconcileArBalances.js",
-    "normalize:data": "node scripts/normalizeExistingData.js"
+    "normalize:data": "node scripts/normalizeExistingData.js",
+    "test:employee-finance:db": "node tests/employeeFinance_db_test.js",
+    "test:employee-finance:migration": "node tests/employeeFinanceMigration_db_test.js"
   },
   "keywords": [],
   "author": "",

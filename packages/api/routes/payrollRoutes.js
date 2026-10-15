@@ -520,6 +520,8 @@ router.post('/runs/:id/adjustments', protect, hasPermission('payroll:override'),
     }
 
     try {
+        const loanComponent = await db.query('SELECT 1 FROM employee_loan WHERE employee_id=$1 AND component_code=$2 LIMIT 1', [employee_id,component_code]);
+        if (['SSS_LOAN','HDMF_LOAN','CASH_ADVANCE'].includes(component_code) || loanComponent.rowCount) return res.status(422).json({message:'Use exact obligation recovery review for balance-linked deductions.'});
         const { rows } = await db.query(
             `INSERT INTO payroll_run_adjustment
                 (run_id, employee_id, component_code, adjustment_type, amount, reason, created_by)

@@ -566,7 +566,7 @@ const PayrollPage = () => {
                         <textarea rows={3} value={voidReason} onChange={(e) => setVoidReason(e.target.value)} className={INPUT_CLASS} />
                     </div>
                     <div className="flex justify-end gap-3">
-                        <button onClick={() => setVoidRun(null)}
+                        <button type="button" onClick={() => setVoidRun(null)}
                             className="px-4 py-2 bg-gray-200 dark:bg-slate-700 text-gray-800 dark:text-slate-200 rounded-lg">Cancel</button>
                     </div>
                 </FinanceCommand>

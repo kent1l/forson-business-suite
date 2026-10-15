@@ -414,10 +414,10 @@ const CompensationTab = ({ employee }) => {
 // --- Benefits, deductions and statutory overrides ------------------------
 
 const FREQUENCY_LABEL = {
-    EVERY_CUTOFF: 'Every cutoff',
+    EVERY_CUTOFF: 'Fixed amount each cutoff',
     FIRST_CUTOFF: '1st cutoff only',
     SECOND_CUTOFF: '2nd cutoff only',
-    MONTHLY: 'Monthly (split)',
+    MONTHLY: 'Split monthly amount',
 };
 
 const OVERRIDABLE = [
@@ -590,7 +590,7 @@ const PayComponentsTab = ({ employee, canOverride }) => {
                                             label={a.component_type === 'EARNING' ? 'Earning' : 'Deduction'} />
                                     </td>
                                     <td className="py-2 text-right tabular-nums text-gray-900 dark:text-slate-100">
-                                        {a.rate_percent != null ? `${(Number(a.rate_percent) * 100).toFixed(2)}%` : peso(a.amount)}
+                                        {a.rate_percent != null ? `${(Number(a.rate_percent) * 100).toFixed(2)}% of existing cutoff basis${a.frequency === 'MONTHLY' ? ' — review legacy monthly percentage basis' : ''}` : peso(a.amount)}
                                     </td>
                                     <td className="py-2 text-right">
                                         <button onClick={() => removeComponent(a.epc_id)}
