@@ -1,6 +1,6 @@
 # Employee Accounts, Payroll Recovery & Settlement — Final Implementation Plan
 
-**Status:** Final planning handoff; application implementation NOT STARTED.
+**Status:** Application implementation completed 2026-10-15; owner rollout acceptance pending. See [As Built and verification evidence](2026-10-15_employee-finance-as-built.md).
 **Goal:** Provide reliable employee loans/vale, cutoff-selectable deductions, direct repayments, actual salary payouts, unpaid salary residuals and agency remittance without duplicate balances or cash movements.
 **Architecture:** Extend existing payroll and loan machinery; persist exact obligation allocations; add source-linked settlements and an Employee Accounts read model. Reuse business-advance custody/liquidation. No general-purpose wallet.
 **Stack:** Existing Node/Express, raw PostgreSQL SQL migrations, React/Tailwind and state-based navigation. No new ORM, router, state library or public financial search index.
@@ -198,7 +198,7 @@ Use existing employee detail primitives and navigation; add Accounts tab and an 
 
 ## 10. Execution phases and acceptance gates
 
-All implementation phases below are **NOT STARTED**, not deferred. Each phase requires connected UI/API, tests, documentation and explicit done/pending evidence.
+Application work for all four phases is implemented. The phase checklists, executed verification and remaining owner/deployment gates are recorded in [As Built](2026-10-15_employee-finance-as-built.md). The requirements below remain the acceptance contract; production readiness is not implied.
 
 ### Phase 1 — Lifecycle and exact recovery foundation
 
@@ -271,4 +271,4 @@ These are deliberately deprioritized, unlike the not-started implementation phas
 - Automatic interest/penalties, automatic advance-to-loan conversion and automatic payroll-deficit debt: **excluded**.
 - Redesign of statutory bases/rates, variable percentage assessment, agency portal automation and PRN generation: **out of scope**. Loan schedule selection must not silently change them.
 
-Planning is finalized. No application implementation, deployment, migration execution or runtime certification is implied.
+The application implementation and disposable verification are recorded in the linked As Built document. No production migration, deployment or owner acceptance is implied.

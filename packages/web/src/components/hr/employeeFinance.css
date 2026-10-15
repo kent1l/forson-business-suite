@@ -1,0 +1,24 @@
+/* Local form/disclosure defaults share the app's semantic tokens. */
+:where(.employee-finance) { color: var(--color-gray-900); min-width: 0; }
+:where(.dark .employee-finance) { color: var(--color-slate-100); }
+:where(.employee-finance) :where(button:not([class])) {
+  border: 1px solid var(--color-gray-300); border-radius: .5rem; padding: .45rem .75rem;
+  font-size: .75rem; font-weight: 600; color: var(--color-gray-700); background: var(--color-white);
+}
+:where(.dark .employee-finance) :where(button:not([class])) { border-color: var(--color-slate-600); color: var(--color-slate-200); background: var(--color-slate-800); }
+:where(.employee-finance) :where(button:not([class]):hover) { background: var(--color-gray-100); }
+:where(.dark .employee-finance) :where(button:not([class]):hover) { background: var(--color-slate-700); }
+:where(.employee-finance) :where(button:disabled) { opacity: .5; cursor: not-allowed; }
+:where(.employee-finance) :where(button:focus-visible,summary:focus-visible) { outline: 2px solid var(--color-primary-500); outline-offset: 3px; }
+:where(.employee-finance) :where(details) { border: 1px solid var(--color-gray-200); border-radius: .75rem; padding: .85rem; min-width: 0; }
+:where(.dark .employee-finance) :where(details) { border-color: var(--color-slate-700); }
+:where(.employee-finance) :where(summary) { cursor: pointer; font-size: .75rem; font-weight: 600; color: var(--color-gray-600); }
+:where(.dark .employee-finance) :where(summary) { color: var(--color-slate-300); }
+:where(.employee-finance) :where(details[open]>summary) { margin-bottom: 1rem; }
+:where(.employee-finance) :where(table) { width: 100%; text-align: left; font-size: .75rem; }
+:where(.employee-finance) :where(th) { padding: .75rem; font-weight: 600; color: var(--color-gray-500); background: var(--color-gray-50); }
+:where(.dark .employee-finance) :where(th) { color: var(--color-slate-400); background: var(--color-slate-900); }
+:where(.employee-finance) :where(td) { padding: .85rem .75rem; border-top: 1px solid var(--color-gray-100); vertical-align: top; }
+:where(.dark .employee-finance) :where(td) { border-color: var(--color-slate-700); }
+
+:where(.employee-finance) :where(p, dd, summary, h3, h4) { overflow-wrap: anywhere; }

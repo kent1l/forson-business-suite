@@ -119,6 +119,7 @@ registerRoute('/api', './routes/apPdcRoutes');
 registerRoute('/api', './routes/apRoutes');
 
 // Human Resources Module
+app.use('/api', require('./routes/employeeFinanceRoutes').router);
 registerRoute('/api/hr', './routes/hrRoutes');
 registerRoute('/api/dtr', './routes/dtrRoutes');
 registerRoute('/api/leave', './routes/leaveRoutes');

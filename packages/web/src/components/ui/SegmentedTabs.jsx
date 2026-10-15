@@ -21,9 +21,10 @@ const SegmentedTabs = ({ tabs = [], active, onChange, className = '', variant = 
                             key={tab.key}
                             type="button"
                             onClick={() => onChange(tab.key)}
+                        aria-pressed={isActive}
                             className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
                                 isActive
-                                    ? 'bg-white dark:bg-slate-700 text-primary-700 dark:text-primary-400 shadow-sm'
+                                    ? 'bg-white dark:bg-slate-700 text-primary-700 dark:text-primary-100 shadow-sm'
                                     : 'text-gray-500 dark:text-slate-400 hover:text-gray-800 dark:hover:text-slate-200'
                             }`}
                         >
@@ -49,6 +50,7 @@ const SegmentedTabs = ({ tabs = [], active, onChange, className = '', variant = 
                         key={tab.key}
                         type="button"
                         onClick={() => onChange(tab.key)}
+                        aria-pressed={isActive}
                         className={`py-3 px-1 border-b-2 font-bold text-sm transition-all cursor-pointer flex items-center gap-2 ${
                             isActive
                                 ? 'border-primary-600 text-primary-600 dark:border-primary-500 dark:text-primary-500'

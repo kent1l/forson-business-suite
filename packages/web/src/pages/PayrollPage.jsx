@@ -1,3 +1,5 @@
+import {FinanceCommand, FinanceDialog} from '../components/hr/FinancePrimitives';
+import PayrollRecoveryReview from '../components/hr/PayrollRecoveryReview';
 import React, { useCallback, useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import api from '../api';
@@ -42,6 +44,7 @@ const PayrollPage = () => {
     const [runs, setRuns] = useState([]);
     const [periods, setPeriods] = useState([]);
     const [selectedRun, setSelectedRun] = useState(null);
+    const [reviewSlip, setReviewSlip] = useState(null);
     const [payslips, setPayslips] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
@@ -101,10 +104,12 @@ const PayrollPage = () => {
         setSelectedRun(run);
         setWarnings([]);
         try {
-            const [slipRes, adjRes] = await Promise.all([
+            const [slipRes, adjRes, detailRes] = await Promise.all([
                 api.get(`/payroll/runs/${run.run_id}/payslips`),
                 api.get(`/payroll/runs/${run.run_id}/adjustments`),
+                api.get(`/payroll/runs/${run.run_id}`),
             ]);
+            setSelectedRun(detailRes.data);
             setPayslips(Array.isArray(slipRes.data) ? slipRes.data : []);
             setAdjustments(Array.isArray(adjRes.data) ? adjRes.data : []);
         } catch {
@@ -201,23 +206,6 @@ const PayrollPage = () => {
         }
     };
 
-    const submitVoid = async () => {
-        if (!voidReason.trim()) { toast.error('A reason is required'); return; }
-        setBusy(true);
-        try {
-            await api.post(`/payroll/runs/${voidRun.run_id}/void`, { reason: voidReason });
-            toast.success('Run voided — expense postings reversed and time records unlocked.');
-            setVoidRun(null);
-            setVoidReason('');
-            await load();
-            setSelectedRun(null);
-        } catch (err) {
-            toast.error(err.response?.data?.message || 'Failed to void run');
-        } finally {
-            setBusy(false);
-        }
-    };
-
     if (!canView) {
         return (
             <div className="text-center p-8">
@@ -258,6 +246,9 @@ const PayrollPage = () => {
                                 <p className="text-sm text-gray-500 dark:text-slate-400 mt-1">
                                     {selectedRun.period_start} to {selectedRun.period_end} · paid {selectedRun.pay_date}
                                 </p>
+                                {selectedRun.status === 'Approved' && <p className="text-sm text-gray-600 dark:text-slate-300">Mark Paid records the exact remaining wages and posts approved deductions automatically.</p>}
+                                {selectedRun.settlement_summary && <p className="text-sm">Paid ₱{selectedRun.settlement_summary.actual_paid} · Remaining ₱{selectedRun.settlement_summary.remaining_payable}</p>}
+                                {!selectedRun.void_eligibility?.eligible && selectedRun.void_eligibility?.reason && <p className="text-xs">{selectedRun.void_eligibility.reason}</p>}
                                 {selectedRun.status === 'Voided' && selectedRun.void_reason && (
                                     <p className="text-xs text-danger-600 mt-1">Voided: {selectedRun.void_reason}</p>
                                 )}
@@ -289,7 +280,7 @@ const PayrollPage = () => {
                                         </button>
                                     </>
                                 )}
-                                {canVoid && !['Voided'].includes(selectedRun.status) && (
+                                {canVoid && selectedRun.void_eligibility?.eligible && (
                                     <button disabled={busy} onClick={() => setVoidRun(selectedRun)}
                                         className="px-3 py-1.5 text-sm font-semibold rounded-lg bg-danger-100 text-danger-800 hover:bg-danger-200 dark:bg-danger-900/30 dark:text-danger-400 disabled:opacity-50">
                                         Void
@@ -425,7 +416,7 @@ const PayrollPage = () => {
                                     <tbody>
                                         {payslips.map((p) => (
                                             <tr key={p.payslip_id} className="border-b border-gray-100 dark:border-slate-700/60">
-                                                <td className="p-2 font-medium text-gray-800 dark:text-slate-100">{p.employee_name}</td>
+                                                <td className="p-2 font-medium text-gray-800 dark:text-slate-100">{p.employee_name}{selectedRun.status === 'Computed' && hasPermission('payroll:approve') && <button className="block text-xs underline" onClick={() => setReviewSlip(p)}>Review exact recoveries</button>}</td>
                                                 <td className="p-2 text-right tabular-nums text-gray-600 dark:text-slate-300">{peso(p.daily_rate)}</td>
                                                 <td className="p-2 text-right tabular-nums text-gray-600 dark:text-slate-300">{Number(p.days_paid).toFixed(2)}</td>
                                                 <td className="p-2 text-right tabular-nums text-gray-800 dark:text-slate-100">{peso(p.gross_pay)}</td>
@@ -562,10 +553,13 @@ const PayrollPage = () => {
                 </div>
             </Modal>
 
-            <Modal isOpen={Boolean(voidRun)} onClose={() => setVoidRun(null)} title={`Void ${voidRun?.run_no || ''}`}>
-                <div className="space-y-4">
+            <FinanceDialog isOpen={Boolean(reviewSlip)} onClose={() => setReviewSlip(null)} title="Exact loan recovery review">
+                {reviewSlip && <PayrollRecoveryReview key={reviewSlip.payslip_id} payslip={reviewSlip} run={selectedRun} onDone={() => {setReviewSlip(null);openRun(selectedRun);}} />}
+            </FinanceDialog>
+            <FinanceDialog isOpen={Boolean(voidRun)} onClose={() => setVoidRun(null)} title={`Void ${voidRun?.run_no || ''}`}>
+                <FinanceCommand scope={`void:${voidRun?.run_id}`} endpoint={`/payroll/runs/${voidRun?.run_id}/void`} body={{version:voidRun?.version,reason:voidReason}} onDone={() => {setVoidRun(null);setVoidReason('');setSelectedRun(null);load();}} label="Void unpaid run" disabled={!voidReason.trim()}>
                     <p className="text-sm text-gray-600 dark:text-slate-300">
-                        Voiding reverses any expense postings, restores loan balances, and unlocks the time records
+                        Canceling unpaid payroll preserves history, releases pending recovery reservations, and unlocks the time records
                         for this period. The payslips are kept as a record and cannot be edited.
                     </p>
                     <div>
@@ -573,15 +567,11 @@ const PayrollPage = () => {
                         <textarea rows={3} value={voidReason} onChange={(e) => setVoidReason(e.target.value)} className={INPUT_CLASS} />
                     </div>
                     <div className="flex justify-end gap-3">
-                        <button onClick={() => setVoidRun(null)}
+                        <button type="button" onClick={() => setVoidRun(null)}
                             className="px-4 py-2 bg-gray-200 dark:bg-slate-700 text-gray-800 dark:text-slate-200 rounded-lg">Cancel</button>
-                        <button onClick={submitVoid} disabled={busy || !voidReason.trim()}
-                            className="px-4 py-2 bg-danger-600 text-white rounded-lg font-semibold hover:bg-danger-700 disabled:opacity-50">
-                            Void Run
-                        </button>
                     </div>
-                </div>
-            </Modal>
+                </FinanceCommand>
+            </FinanceDialog>
         </div>
     );
 };

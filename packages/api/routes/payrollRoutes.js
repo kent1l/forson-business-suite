@@ -5,6 +5,7 @@ const { parsePaginationQuery, paginatedResponse } = require('../helpers/paginati
 const payrollRunService = require('../services/hr/payrollRunService');
 const payrollPostingService = require('../services/hr/payrollPostingService');
 const statutoryAdmin = require('../services/hr/statutoryAdminService');
+const recovery = require('../services/hr/employeeRecoveryService');
 const reports = require('../services/hr/payrollReportService');
 const { generatePayslipPdf } = require('../helpers/pdf/payslipPdf');
 
@@ -34,7 +35,7 @@ const ERROR_STATUS = {
 };
 
 const handleError = (err, res) => {
-    const status = ERROR_STATUS[err.code];
+    const status = err.status || ERROR_STATUS[err.code];
     if (status) return res.status(status).json({ message: err.message });
 
     // The partial unique index that keeps one live run per period per scope.
@@ -149,7 +150,7 @@ router.get('/runs/:id', protect, hasPermission('payroll:view'), async (req, res)
             [req.params.id]
         );
         if (rows.length === 0) return res.status(404).json({ message: 'Payroll run not found' });
-        res.json(rows[0]);
+        res.json({ ...rows[0], void_eligibility: await recovery.voidEligibility(db, rows[0]), settlement_summary: await require('../services/hr/employeeSettlementService').runSummary(db, req.params.id) });
     } catch (err) { handleError(err, res); }
 });
 
@@ -205,8 +206,10 @@ router.post('/runs/:id/post', protect, hasPermission('payroll:post'), withTransa
 ));
 
 router.post('/runs/:id/void', protect, hasPermission('payroll:void'), withTransaction(
-    (req, client) => payrollRunService.voidRun(client, {
-        runId: req.params.id, userId: req.user.employee_id, reason: req.body.reason,
+    (req, client) => recovery.request(client, {requestId:req.body.request_id,actorId:req.user.employee_id,operation:`payroll-void:${req.params.id}`,payload:req.body}, async () => {
+        if(!Number.isInteger(req.body.version)) recovery.fail(400,'VERSION_REQUIRED','Current run version is required.');
+        await recovery.lockRun(client,req.params.id,req.body.version);
+        return payrollRunService.voidRun(client, {runId:req.params.id,userId:req.user.employee_id,reason:req.body.reason});
     })
 ));
 
@@ -517,6 +520,8 @@ router.post('/runs/:id/adjustments', protect, hasPermission('payroll:override'),
     }
 
     try {
+        const loanComponent = await db.query('SELECT 1 FROM employee_loan WHERE employee_id=$1 AND component_code=$2 LIMIT 1', [employee_id,component_code]);
+        if (['SSS_LOAN','HDMF_LOAN','CASH_ADVANCE'].includes(component_code) || loanComponent.rowCount) return res.status(422).json({message:'Use exact obligation recovery review for balance-linked deductions.'});
         const { rows } = await db.query(
             `INSERT INTO payroll_run_adjustment
                 (run_id, employee_id, component_code, adjustment_type, amount, reason, created_by)

@@ -12,6 +12,7 @@
  * message and the trigger is the actual guarantee.
  */
 
+const recovery = require('./employeeRecoveryService');
 const statutory = require('./statutoryService');
 const dtrService = require('./dtrService');
 const { computePayslip, round2 } = require('./payrollCalculationService');
@@ -26,8 +27,8 @@ const ALLOWED_TRANSITIONS = {
     Draft: ['Computed', 'Voided'],
     Computed: ['Draft', 'Approved', 'Voided'],
     Approved: ['Paid', 'Voided'],
-    Paid: ['Posted', 'Voided'],
-    Posted: ['Voided'],
+    Paid: ['Posted'],
+    Posted: [],
     Voided: [],
 };
 
@@ -141,6 +142,7 @@ const computeRun = async (executor, { runId, computedBy }) => {
 
     // Clear any previous computation. Allowed here because the run is Draft or
     // Computed; the immutability trigger blocks it in every later state.
+    await recovery.clearProposals(executor, runId);
     await executor.query('DELETE FROM payroll_payslip WHERE run_id = $1', [runId]);
 
     // --- Bulk loads (four queries, regardless of headcount) --------------
@@ -302,12 +304,20 @@ const computeRun = async (executor, { runId, computedBy }) => {
     }
 
     const { rows: loanRows } = await executor.query(
-        `SELECT loan_id, employee_id, loan_type, component_code, reference_no,
-                principal_amount, amortization_amount, amount_paid, deduct_on_cutoff
-         FROM employee_loan
-         WHERE employee_id = ANY($1::int[]) AND status = 'Active' AND start_date <= $2`,
-        [employeeIds, run.period_end]
+        `SELECT l.*, s.schedule_id, s.version AS schedule_version, s.schedule, s.monthly_installment,
+                COALESCE((SELECT SUM(a.approved_amount) FROM payroll_deduction_allocation a WHERE a.loan_id=l.loan_id AND a.status='RESERVED'),0)::numeric(12,2) AS reserved_amount,
+                COALESCE((SELECT SUM(a.amount) FROM employee_installment_consumed a WHERE a.loan_id=l.loan_id AND a.recovery_month=date_trunc('month',$2::date)::date AND a.cutoff_seq=$3),0)::numeric(12,2) AS used_slot
+         FROM employee_loan l
+         JOIN employee_loan_schedule s ON s.loan_id=l.loan_id AND s.effective_from<=date_trunc('month',$2::date)::date AND (s.effective_to IS NULL OR s.effective_to>date_trunc('month',$2::date)::date)
+         WHERE l.employee_id = ANY($1::int[]) AND l.status = 'Active' AND l.activation_state<>'DRAFT' AND l.start_date <= $2 ORDER BY l.loan_id`,
+        [employeeIds, run.period_end, cutoffSeq]
     );
+    for (const loan of loanRows) {
+        const share = require('./loanSchedule').share(loan.monthly_installment, loan.schedule, cutoffSeq);
+        const available = recovery.cents(share)-recovery.cents(loan.used_slot);
+        loan.scheduled_share = recovery.money(available>0n?available:0n);
+        if (!['REGULAR','JOB_ORDER'].includes(run.run_type)) loan.review_amount = '0.00';
+    }
     const loansByEmployee = new Map();
     for (const loan of loanRows) {
         if (!loansByEmployee.has(loan.employee_id)) loansByEmployee.set(loan.employee_id, []);
@@ -364,6 +374,10 @@ const computeRun = async (executor, { runId, computedBy }) => {
         adjustmentsByEmployee.get(row.employee_id).push(row);
     }
 
+    const {rows: loanComponentOwners} = await executor.query('SELECT employee_id,component_code FROM employee_loan WHERE employee_id=ANY($1::int[])', [employeeIds]);
+    if (adjustmentRows.some(a => ['SSS_LOAN','HDMF_LOAN','CASH_ADVANCE'].includes(a.component_code) || loanComponentOwners.some(l => l.employee_id === a.employee_id && l.component_code === a.component_code))) {
+        recovery.fail(422,'EXACT_LOAN_REVIEW_REQUIRED','Use exact obligation recovery review instead of component-only loan adjustments.');
+    }
     // --- Per-employee computation ----------------------------------------
     const warnings = [];
     // Collected rather than pushed per employee, so one missed DTR generation
@@ -492,19 +506,21 @@ const computeRun = async (executor, { runId, computedBy }) => {
         );
         const payslipId = payslipRows[0].payslip_id;
 
+        const loanLineIds = new Map();
         for (const line of computed.lines) {
-            await executor.query(
+            const lineResult = await executor.query(
                 `INSERT INTO payroll_payslip_line
                     (payslip_id, line_type, component_code, description, quantity, rate, amount, is_taxable, sort_order)
-                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING line_id`,
                 [payslipId, line.lineType, line.componentCode, line.description,
                     line.quantity ?? null, line.rate ?? null, line.amount, line.isTaxable, line.sortOrder]
             );
+            if (line.loanId) loanLineIds.set(String(line.loanId), lineResult.rows[0].line_id);
         }
 
         // Loan instalments are recorded now but only become real when the run is
         // marked Paid — see markPaid.
-        computed.loanDeductions.forEach((d) => { d.payslipId = payslipId; });
+        await recovery.persist(executor, { payslipId, employeeId: h.employee_id, periodId: run.pay_period_id, run, cutoffSeq, deductions: computed.loanDeductions, loans: loansByEmployee.get(h.employee_id) || [], requiresReview: !['REGULAR','JOB_ORDER'].includes(run.run_type), loanLineIds });
 
         totals.gross = round2(totals.gross + h.gross_pay);
         totals.deductions = round2(totals.deductions + h.total_deductions);
@@ -574,6 +590,7 @@ const revertToDraft = async (executor, { runId, userId }) => {
     if (!rows[0]) { const e = new Error('Payroll run not found'); e.code = 'RUN_NOT_FOUND'; throw e; }
     assertTransition(rows[0].status, 'Draft');
 
+    await recovery.clearProposals(executor, runId);
     await executor.query('DELETE FROM payroll_payslip WHERE run_id = $1', [runId]);
     const { rows: updated } = await executor.query(
         `UPDATE payroll_run
@@ -600,6 +617,7 @@ const approveRun = async (executor, { runId, approvedBy }) => {
     const run = rows[0];
     if (!run) { const e = new Error('Payroll run not found'); e.code = 'RUN_NOT_FOUND'; throw e; }
     assertTransition(run.status, 'Approved');
+    await recovery.reserve(executor, runId);
 
     await executor.query(
         `UPDATE daily_time_record d
@@ -624,24 +642,10 @@ const markPaid = async (executor, { runId, paidBy }) => {
     if (!rows[0]) { const e = new Error('Payroll run not found'); e.code = 'RUN_NOT_FOUND'; throw e; }
     assertTransition(rows[0].status, 'Paid');
 
-    // Reconstructed from the payslip lines rather than carried in memory, so
-    // marking paid is correct even in a separate request from compute.
-    await executor.query(
-        `INSERT INTO employee_loan_payment (loan_id, payslip_id, amount)
-         SELECT l.loan_id, p.payslip_id, pl.amount
-         FROM payroll_payslip p
-         JOIN payroll_payslip_line pl ON pl.payslip_id = p.payslip_id
-         JOIN employee_loan l ON l.employee_id = p.employee_id
-                             AND l.component_code = pl.component_code
-                             AND l.status = 'Active'
-         WHERE p.run_id = $1 AND pl.line_type = 'DEDUCTION'
-           AND pl.component_code IN ('SSS_LOAN', 'HDMF_LOAN', 'CASH_ADVANCE')
-         ON CONFLICT (loan_id, payslip_id) DO NOTHING`,
-        [runId]
-    );
+    await require('./employeeSettlementService').payRunExact(executor, runId, paidBy);
 
     const { rows: updated } = await executor.query(
-        `UPDATE payroll_run SET status = 'Paid', paid_by = $1, paid_at = now()
+        `UPDATE payroll_run SET status = 'Paid', paid_by = $1, paid_at = now(), version = version + 1
          WHERE run_id = $2 RETURNING run_id, run_no, status`,
         [paidBy, runId]
     );
@@ -662,20 +666,10 @@ const voidRun = async (executor, { runId, userId, reason }) => {
         throw e;
     }
 
-    await executor.query(
-        `UPDATE expense SET is_void = true, voided_by = $1, voided_at = now(),
-                            void_reason = $2
-         WHERE payroll_run_id = $3 AND is_void = false`,
-        [userId, `Payroll run voided: ${reason}`, runId]
-    );
-
-    // Deleting the payments lets the loan-balance trigger restore the
-    // outstanding amounts automatically.
-    await executor.query(
-        `DELETE FROM employee_loan_payment
-         WHERE payslip_id IN (SELECT payslip_id FROM payroll_payslip WHERE run_id = $1)`,
-        [runId]
-    );
+    const eligibility = await recovery.voidEligibility(executor, { run_id: runId, status: rows[0].status });
+    if (!eligibility.eligible) recovery.fail(409, 'VOID_BLOCKED', eligibility.reason);
+    await recovery.lockLoans(executor, runId);
+    await executor.query(`UPDATE payroll_deduction_allocation a SET status='RELEASED' FROM payroll_payslip p WHERE a.payslip_id=p.payslip_id AND p.run_id=$1 AND a.status IN ('PROPOSED','RESERVED')`, [runId]);
 
     // The DTR lock guard blocks ordinary edits, so releasing the lock needs the
     // documented escape hatch. SET LOCAL scopes it to this transaction only.
