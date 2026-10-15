@@ -3,7 +3,7 @@ module: Payroll
 page_component: PayrollPage.jsx, PayComponentsPage.jsx, StatutoryTablesPage.jsx, MyPayslipsPage.jsx
 audience: Payroll Admin, HR Admin, Accounting (running payroll, pay components, statutory schedules); All Employees (self-service payslips and time clock)
 verified_against: master @ 5d772b8
-last_updated: 2026-08-17
+last_updated: 2026-10-15
 ---
 
 # Payroll
@@ -35,7 +35,7 @@ Payroll turns each pay period's approved time records into payslips — computin
   - **Regular** — ordinary employees.
   - **Job Order** — contract-of-service workers. No statutory contributions or withholding tax are computed for this run type, and job-order pay is excluded from SSS, PhilHealth, Pag-IBIG and BIR reports.
   - **Final Pay** — a one-time run for a departing employee. It pays pro-rated 13th month pay and settles every outstanding loan in full; it does not replace their last regular payslip.
-- **Pay Period / Cutoff** — the date range a run covers, and which half of the month it is (first or second cutoff). A cutoff matters because statutory contributions are legally monthly amounts that get split across both cutoffs.
+- **Pay Period / Cutoff** — the date range a run covers, and which half of the month it is (first or second cutoff). Monthly statutory contributions follow the configured deduction timing policy: split across both cutoffs, or deducted in full on the first or second cutoff only.
 - **Pay Component** — a named earning or deduction line (e.g. "HMO Employee Share," "Union Dues") that can be attached to an employee's pay. Components are either **SYSTEM** (built into the payroll engine — statutory items, basic pay, overtime — and cannot be edited) or **CUSTOM** (created by Payroll Admin here).
 - **Statutory Schedule** — the versioned table of government contribution rates (SSS, PhilHealth, Pag-IBIG) and withholding tax brackets (BIR) that a run's calculations look up. Schedules are dated, not just replaced, so old payslips always reproduce the numbers they were actually computed with.
 - **Adjustment** — a one-off, per-employee change scoped to a single run (an extra bonus line, or an override of a computed amount) — not a standing change to the employee's pay setup.
@@ -49,7 +49,7 @@ Payroll turns each pay period's approved time records into payslips — computin
 Worked example — a monthly-paid employee with a ₱20,000/month basic salary, first cutoff of the month, no absences or overtime:
 
 1. **Basic pay for the cutoff** — a monthly salary splits evenly across the two cutoffs, so this cutoff's entitlement is ₱10,000.00.
-2. **Statutory contributions** are computed once on the full monthly basis (₱20,000) using the current Statutory Schedule, then split across the two cutoffs the same way basic pay is. For example, if the schedule's PhilHealth premium rate is 5% split evenly between employer and employee: Monthly premium = ₱20,000 × 5% = ₱1,000.00 → Employee share = ₱500.00/month → **₱250.00 for this cutoff.** SSS and Pag-IBIG follow the same monthly-then-split pattern, each from their own bracket/rate in the active schedule.
+2. **Statutory contributions** are computed on the full monthly basis (₱20,000) using the current Statutory Schedule, then allocated according to the deduction timing policy. With **Split Evenly** selected and a PhilHealth premium rate of 5% split evenly between employer and employee: Monthly premium = ₱20,000 × 5% = ₱1,000.00 → Employee share = ₱500.00/month → **₱250.00 for this cutoff.** SSS and Pag-IBIG follow the same timing policy, each from their own bracket/rate in the active schedule.
 3. **Withholding tax** is computed on taxable earnings minus the statutory deductions actually withheld this cutoff (contributions are tax-deductible), then looked up against the BIR bracket table for a semi-monthly payroll.
 4. **Net pay** subtracts every deduction line from gross pay:
 
@@ -154,6 +154,8 @@ To retire a component without deleting its history, click **Deactivate** on its 
 **Example:** Payroll Admin creates a new **Earning** component with code `TRANSPO_ALLOW`, name "Transportation Allowance," sort order `15`, marked taxable, for a monthly transport stipend that will later be assigned to field staff.
 
 ## How To — Update a Statutory Schedule
+
+To change deduction timing, choose **Split Evenly (Both Cutoffs)**, **1st Cutoff Only**, or **2nd Cutoff Only** under **Statutory Deduction Timing Policy**, then save. The same setting is available under **Settings → Payroll → Statutory Deduction Schedule**. The first-cutoff option applies the full monthly SSS, PhilHealth, and Pag-IBIG amounts (including employer contributions) to the first cutoff and zero to the second. Standing monthly overrides follow this timing too; computed withholding tax continues to use each cutoff's taxable income. Recompute a draft run to apply a changed policy to its payslips.
 
 *Why this matters:* SSS, PhilHealth, Pag-IBIG and BIR withholding rates change periodically by government circular. This is where those official rate changes are entered so future payroll runs compute correctly — without altering the numbers that already-paid payslips were computed with.
 

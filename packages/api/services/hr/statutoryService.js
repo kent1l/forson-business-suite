@@ -182,6 +182,7 @@ const computeWithholdingTax = (tables, taxableIncome, frequency = 'SEMI_MONTHLY'
  * Splits a monthly contribution across the cutoffs of a semi-monthly payroll.
  *
  * 'SPLIT_HALF'    — half on each cutoff (the common arrangement).
+ * 'FIRST_CUTOFF' — the whole amount on the first cutoff only.
  * 'SECOND_CUTOFF' — the whole amount on the second cutoff only.
  *
  * On SPLIT_HALF the second cutoff takes the remainder rather than another half,
@@ -191,6 +192,9 @@ const computeWithholdingTax = (tables, taxableIncome, frequency = 'SEMI_MONTHLY'
  */
 const prorateMonthly = (monthlyAmount, schedule, cutoffSeq) => {
     const amount = Number(monthlyAmount) || 0;
+    if (schedule === 'FIRST_CUTOFF') {
+        return cutoffSeq === 1 ? round2(amount) : 0;
+    }
     if (schedule === 'SECOND_CUTOFF') {
         return cutoffSeq === 2 ? round2(amount) : 0;
     }

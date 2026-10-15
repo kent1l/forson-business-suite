@@ -529,7 +529,7 @@ const PayrollPage = () => {
                             Pay Period
                             <InfoTip label="Pay Period">
                                 The date range a run covers, and which half of the month it is. Statutory contributions
-                                are legally monthly amounts, so they get split evenly across both cutoffs.
+                                are monthly amounts allocated according to the statutory deduction timing policy.
                             </InfoTip>
                         </label>
                         <select value={newPeriodId} onChange={(e) => setNewPeriodId(e.target.value)} className={INPUT_CLASS}>

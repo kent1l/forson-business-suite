@@ -183,6 +183,11 @@ describe('prorateMonthly', () => {
         expect(statutory.round2(first + second)).toBe(397.77);
     });
 
+    it('puts the whole amount on the first cutoff when configured that way', () => {
+        expect(statutory.prorateMonthly(397.77, 'FIRST_CUTOFF', 1)).toBe(397.77);
+        expect(statutory.prorateMonthly(397.77, 'FIRST_CUTOFF', 2)).toBe(0);
+    });
+
     it('puts the whole amount on the second cutoff when configured that way', () => {
         expect(statutory.prorateMonthly(800, 'SECOND_CUTOFF', 1)).toBe(0);
         expect(statutory.prorateMonthly(800, 'SECOND_CUTOFF', 2)).toBe(800);
@@ -195,6 +200,52 @@ describe('round2', () => {
         expect(statutory.round2(1.005)).toBe(1.01);
         expect(statutory.round2(2.675)).toBe(2.68);
         expect(statutory.round2(-1.005)).toBe(-1.01);
+    });
+});
+
+describe.each([
+    ['FIRST_CUTOFF', 1, 2],
+    ['SECOND_CUTOFF', 2, 1],
+])('computePayslip — %s statutory schedule', (schedule, chargedCutoff, otherCutoff) => {
+    const input = {
+        employee: { employee_id: 4, employee_name: 'Monthly Staff' },
+        compensation: { compensation_id: 2, pay_basis: 'monthly', base_rate: 30000 },
+        dtrSummary: { days_paid: 13, days_worked: 13, overtime_hours: 0 },
+        loans: [], policy: { ...POLICY, statutorySchedule: schedule }, statutoryTables: TABLES,
+    };
+
+    it('allocates full employee and employer contributions to the selected cutoff', () => {
+        const charged = computePayslip({ ...input, cutoffSeq: chargedCutoff });
+        const other = computePayslip({ ...input, cutoffSeq: otherCutoff });
+        const monthlyContributions = {
+            sss_ee: 1000, sss_mpf_ee: 500, philhealth_ee: 750, pagibig_ee: 200,
+            sss_er: 2000, sss_mpf_er: 1000, sss_ec: 30, philhealth_er: 750, pagibig_er: 200,
+            total_employer_contrib: 3980,
+        };
+        for (const [field, monthlyAmount] of Object.entries(monthlyContributions)) {
+            expect(charged.header[field]).toBe(monthlyAmount);
+            expect(other.header[field]).toBe(0);
+        }
+        expect(charged.header.taxable_income).toBe(12550);
+        expect(charged.header.withholding_tax).toBe(319.95);
+        expect(other.header.taxable_income).toBe(15000);
+        expect(other.header.withholding_tax).toBe(687.45);
+        expect(charged.header.net_pay).toBe(12230.05);
+        expect(other.header.net_pay).toBe(14312.55);
+        expect(charged.trace.statutorySchedule).toBe(schedule);
+    });
+
+    it('allocates standing monthly overrides to the same cutoff', () => {
+        const statutoryOverrides = { SSS_EE: 999.99, PHIC_EE: 777.77, HDMF_EE: 199.99, WTAX: 123.45 };
+        const charged = computePayslip({ ...input, statutoryOverrides, cutoffSeq: chargedCutoff });
+        const other = computePayslip({ ...input, statutoryOverrides, cutoffSeq: otherCutoff });
+        expect(charged.header.sss_ee).toBe(999.99);
+        expect(charged.header.philhealth_ee).toBe(777.77);
+        expect(charged.header.pagibig_ee).toBe(199.99);
+        expect(charged.header.withholding_tax).toBe(123.45);
+        for (const field of ['sss_ee', 'philhealth_ee', 'pagibig_ee', 'withholding_tax']) {
+            expect(other.header[field]).toBe(0);
+        }
     });
 });
 
