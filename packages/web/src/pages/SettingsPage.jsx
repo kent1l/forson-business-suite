@@ -244,10 +244,11 @@ const PayrollSettings = ({ settings, handleChange }) => (
                 className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 dark:text-slate-100 rounded-lg"
             >
                 <option value="SPLIT_HALF">Split Evenly (Half on 1st &amp; 2nd Cutoff)</option>
+                <option value="FIRST_CUTOFF">1st Cutoff Only (Full deduction on 1st cutoff)</option>
                 <option value="SECOND_CUTOFF">2nd Cutoff Only (Full deduction on 2nd cutoff)</option>
             </select>
             <p className="mt-1 text-xs text-gray-500 dark:text-slate-500">
-                SPLIT_HALF deducts 50% per cutoff. SECOND_CUTOFF deducts 100% on the 2nd cutoff only.
+                Split evenly deducts 50% per cutoff. Choose 1st or 2nd Cutoff Only to deduct 100% on that cutoff.
             </p>
         </div>
         <div>

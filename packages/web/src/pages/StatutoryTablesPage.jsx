@@ -210,7 +210,7 @@ const StatutoryDeductionScheduleCard = ({ canConfig }) => {
                         </InfoTip>
                     </h2>
                     <p className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">
-                        Controls whether contributions are deducted evenly across cutoffs or held until the second cutoff.
+                        Deduct contributions evenly across both cutoffs or in full on the first or second cutoff.
                     </p>
                 </div>
                 {isDirty && (
@@ -225,7 +225,7 @@ const StatutoryDeductionScheduleCard = ({ canConfig }) => {
                 )}
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-1">
                 <label className={`flex items-start gap-3 p-3.5 rounded-lg border cursor-pointer transition ${
                     schedule === 'SPLIT_HALF'
                         ? 'border-primary-500 bg-primary-50/50 dark:bg-primary-900/20 ring-1 ring-primary-500'
@@ -246,6 +246,30 @@ const StatutoryDeductionScheduleCard = ({ canConfig }) => {
                         </span>
                         <span className="text-gray-500 dark:text-slate-400 mt-1 block">
                             Deducts 50% on the 1st cutoff and 50% (+ remainder centavos) on the 2nd cutoff. Standard practice for consistent employee take-home pay.
+                        </span>
+                    </div>
+                </label>
+
+                <label className={`flex items-start gap-3 p-3.5 rounded-lg border cursor-pointer transition ${
+                    schedule === 'FIRST_CUTOFF'
+                        ? 'border-primary-500 bg-primary-50/50 dark:bg-primary-900/20 ring-1 ring-primary-500'
+                        : 'border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:border-gray-300'
+                }`}>
+                    <input
+                        type="radio"
+                        name="statutory_deduction_schedule"
+                        value="FIRST_CUTOFF"
+                        checked={schedule === 'FIRST_CUTOFF'}
+                        onChange={(e) => setSchedule(e.target.value)}
+                        disabled={!canConfig || saving}
+                        className="mt-0.5 text-primary-600 focus:ring-primary-500 border-gray-300"
+                    />
+                    <div className="text-xs">
+                        <span className="font-semibold text-gray-900 dark:text-slate-100 block">
+                            1st Cutoff Only
+                        </span>
+                        <span className="text-gray-500 dark:text-slate-400 mt-1 block">
+                            Deducts 100% of the monthly contribution on the 1st cutoff and none on the 2nd cutoff.
                         </span>
                     </div>
                 </label>

@@ -626,8 +626,8 @@ router.put('/settings', protect, hasPermission('payroll:config'), withTransactio
     const allowedKeys = payrollRunService.PAYROLL_SETTING_KEYS;
     const updates = req.body || {};
 
-    if (updates.PAYROLL_STATUTORY_SCHEDULE && !['SPLIT_HALF', 'SECOND_CUTOFF'].includes(updates.PAYROLL_STATUTORY_SCHEDULE)) {
-        const err = new Error('PAYROLL_STATUTORY_SCHEDULE must be SPLIT_HALF or SECOND_CUTOFF');
+    if (updates.PAYROLL_STATUTORY_SCHEDULE && !['SPLIT_HALF', 'FIRST_CUTOFF', 'SECOND_CUTOFF'].includes(updates.PAYROLL_STATUTORY_SCHEDULE)) {
+        const err = new Error('PAYROLL_STATUTORY_SCHEDULE must be SPLIT_HALF, FIRST_CUTOFF or SECOND_CUTOFF');
         err.code = 'INVALID_BRACKET_PARAMS';
         throw err;
     }

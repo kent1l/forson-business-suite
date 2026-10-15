@@ -80,15 +80,15 @@ describe('Payroll Settings API', () => {
                 .send({ PAYROLL_STATUTORY_SCHEDULE: 'INVALID_SCHEDULE' });
 
             expect(res.status).toBe(400);
-            expect(res.body.message).toMatch(/SPLIT_HALF or SECOND_CUTOFF/);
+            expect(res.body.message).toMatch(/SPLIT_HALF, FIRST_CUTOFF or SECOND_CUTOFF/);
         });
 
-        it('updates statutory schedule successfully', async () => {
+        it.each(['SPLIT_HALF', 'FIRST_CUTOFF', 'SECOND_CUTOFF'])('updates statutory schedule to %s successfully', async (schedule) => {
             db.__client.query.mockImplementation(async (sql) => {
                 if (sql.includes('SELECT setting_key, setting_value FROM settings')) {
                     return {
                         rows: [
-                            { setting_key: 'PAYROLL_STATUTORY_SCHEDULE', setting_value: 'SECOND_CUTOFF' },
+                            { setting_key: 'PAYROLL_STATUTORY_SCHEDULE', setting_value: schedule },
                         ],
                     };
                 }
@@ -97,10 +97,14 @@ describe('Payroll Settings API', () => {
 
             const res = await request(app)
                 .put('/api/payroll/settings')
-                .send({ PAYROLL_STATUTORY_SCHEDULE: 'SECOND_CUTOFF' });
+                .send({ PAYROLL_STATUTORY_SCHEDULE: schedule });
 
             expect(res.status).toBe(200);
-            expect(res.body.PAYROLL_STATUTORY_SCHEDULE).toBe('SECOND_CUTOFF');
+            expect(res.body.PAYROLL_STATUTORY_SCHEDULE).toBe(schedule);
+            expect(db.__client.query).toHaveBeenCalledWith(
+                expect.stringContaining('INSERT INTO settings'),
+                ['PAYROLL_STATUTORY_SCHEDULE', schedule]
+            );
         });
     });
 });
