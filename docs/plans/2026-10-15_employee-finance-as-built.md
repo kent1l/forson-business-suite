@@ -8,7 +8,7 @@
 |---|---|---|
 | 1. Recovery foundation | Implemented; further concurrency verification pending | Exact obligation allocations, unpaid void guards, debt reservations, immutable payments; targeted PostgreSQL checks pass |
 | 2. Schedules and operations | Implemented; broader race/browser gates pending | Versioned first/second/split schedules, draft activation/release, hold/resume, direct collection, exact recovery review UI/API |
-| 3. Settlement and Accounts | Not started | Actual payouts and read model pending |
+| 3. Settlement and Accounts | Implemented; final browser/concurrency gates pending | Explicit offsets, actual payout allocations, residuals, unknown outcomes, legacy assertions and Accounts UI/API |
 | 4. Agency remittance / rollout | Not started | Remittance and authenticated acceptance pending |
 | Production readiness | Pending | No deployment or owner acceptance implied |
 
@@ -40,7 +40,19 @@ Additional files: `loanSchedule.js`, `employeeLoanService.js`, `employeeFundingS
 
 Verification: combined payroll/schedule Jest suites: **113 passed**. Extended disposable PostgreSQL script passes activation, hold/resume, future schedule, old-writer rejection, reserved collection rejection, direct collection and balance-erasing status rejection. Web build passes (existing chunk warnings). Targeted API/web lint: no errors, JSX unused-symbol warnings. Browser/role and expanded concurrency verification pending.
 
-## 5. Phases 3–4 Pending
+## 5. Phase 3 As Built
+
+Migration `20261015_03_employee_settlement.sql` separates immutable employee recovery execution, payout documents/allocations, append-only bank outcome events, employer rounding adjustments and provenance-labeled legacy settlement assertions. Legacy Paid/Posted amounts are assertions only; no bank evidence or drawer movement is fabricated. Immutable approved entitlement remains the source of wages owed. Actual funding is unique; confirmed actual money alone reduces unpaid wages. Partial/unknown payments retain exact target allocations. Unknown/pending payments prevent replacements; explicit evidence resolves failed/cancelled/confirmed outcomes.
+
+`employeeSettlementService` serializes run targets in deterministic order and exact employee residuals, supports zero-net noncash recovery, multi-payslip payouts and explicit employer rounding. Mark Paid now verifies all employee steps instead of posting recovery or claiming a payout. Run detail shows separate settlement summary and definitive void blockers. Void requires current version and replay identity.
+
+`employeeAccountsService` derives four separate categories and paginated statements from canonical loans, payouts, wage entitlement and existing advance custody. Opening/closing balances respect Manila date boundaries. Accounts use a repeatable-read snapshot and report freshness. Source reads are employee-scoped and finance-authorized. Employee identity remains valid without login access.
+
+UI includes an Employee Accounts register in HR navigation, an employee-detail Accounts tab, separate statement balances/source document dialogs, exact loan/recovery forms, wage entitlements, noncash execution, old/current payout allocations, unknown outcome reconciliation, rounding approval and clear legacy labels. No public indexing added.
+
+Verification: disposable DB checks pass explicit recovery, partial payout, centavo carry, unknown replacement rejection, failed reconciliation, Mark Paid gate, source summaries, zero-net offsets with no funding and explicit rounding owed. Docker regression command `npm test -- --runInBand tests/hrPayroll.test.js tests/hrPayrollComponents.test.js tests/hrPayrollSettings.test.js tests/employeeLoanSchedule.test.js`: **140 passed**. Host Supertest is sandbox socket-blocked; container execution passes. Web build passes with existing chunk warnings. Authenticated browser and expanded races remain phase-4 verification gates.
+
+## 6. Phase 4 Pending
 
 Implement effective schedule versions and legacy migration, explicit final-pay review, operational creation/activation/hold/direct collection; actual settlements/payouts and Accounts; agency remittance and source-specific corrections. Complete disposable-DB, authenticated role/browser and migration rollout gates. Original plan defines acceptance; pending work is not deferred.
 
@@ -71,5 +83,6 @@ Original plan exclusions remain: general wallet, new standalone reimbursements, 
 
 ## 9. Change Log
 
+- 2026-10-15: phase 3 settlement/Accounts implemented; no production deployment.
 - 2026-10-15: phase 2 schedules/operations implemented and verified; settlement/remittance remain active work.
 - 2026-10-15: recovery foundation implemented and disposable PostgreSQL verification recorded; phases 2–4 remain active work.

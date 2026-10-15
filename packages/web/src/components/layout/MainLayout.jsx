@@ -20,6 +20,7 @@ import EmployeesPage from '../../pages/EmployeesPage';
 import DepartmentsPage from '../../pages/DepartmentsPage';
 import DtrPage from '../../pages/DtrPage';
 import LeavePage from '../../pages/LeavePage';
+import EmployeeAccountsPage from '../../pages/EmployeeAccountsPage';
 import PayrollPage from '../../pages/PayrollPage';
 import StatutoryTablesPage from '../../pages/StatutoryTablesPage';
 import PayComponentsPage from '../../pages/PayComponentsPage';
@@ -103,6 +104,7 @@ const MainLayout = ({ user, onLogout, onNavigate, currentPage, pageState, posLin
             case 'departments': return <DepartmentsPage />;
             case 'dtr': return <DtrPage />;
             case 'leave': return <LeavePage pageState={currentPage === 'leave' ? pageState : null} />;
+            case 'employee_accounts': return <EmployeeAccountsPage />;
             case 'payroll': return <PayrollPage />;
             case 'statutory_tables': return <StatutoryTablesPage />;
             case 'pay_components': return <PayComponentsPage />;

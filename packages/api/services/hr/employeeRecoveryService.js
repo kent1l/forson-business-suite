@@ -29,6 +29,9 @@ async function voidEligibility(client, run) {
     if (!['Draft', 'Computed', 'Approved'].includes(run.status)) return { eligible: false, reason: `${run.status} payroll cannot be ordinarily voided. Paid corrections require source-specific evidence.` };
     const { rowCount } = await client.query(`SELECT 1 FROM employee_loan_payment ep JOIN payroll_payslip p USING(payslip_id) WHERE p.run_id=$1 LIMIT 1`, [run.run_id]);
     if (rowCount) return { eligible: false, reason: 'Posted recoveries block cancellation. Investigate linked financial history.' };
+    const settled=await client.query(`SELECT 1 FROM employee_settlement s JOIN payroll_payslip p USING(payslip_id) WHERE p.run_id=$1
+        UNION ALL SELECT 1 FROM payroll_payout_allocation a JOIN payroll_payslip p USING(payslip_id) JOIN payroll_payout_current pc USING(payout_id) WHERE p.run_id=$1 AND pc.status IN ('PENDING','UNKNOWN','CONFIRMED') LIMIT 1`,[run.run_id]);
+    if(settled.rowCount) return {eligible:false,reason:'Recovery settlement or actual/pending payout blocks cancellation. Reconcile source-specific corrections.'};
     return { eligible: true, reason: null };
 }
 async function clearProposals(client, runId) {
@@ -54,15 +57,15 @@ async function reserve(client, runId) {
         await client.query("UPDATE payroll_deduction_allocation SET status='RESERVED' WHERE allocation_id=$1", [a.allocation_id]);
     }
 }
-async function postRecoveries(client, runId, actorId) {
+async function postRecoveries(client, runId, actorId, payslipId = null) {
     await lockLoans(client, runId);
-    const { rows } = await client.query(`SELECT a.* FROM payroll_deduction_allocation a JOIN payroll_payslip p USING(payslip_id) WHERE p.run_id=$1 AND a.status='RESERVED' ORDER BY a.loan_id,a.allocation_id`, [runId]);
+    const { rows } = await client.query(`SELECT a.* FROM payroll_deduction_allocation a JOIN payroll_payslip p USING(payslip_id) WHERE p.run_id=$1 AND a.status='RESERVED' AND ($2::bigint IS NULL OR a.payslip_id=$2) ORDER BY a.loan_id,a.allocation_id`, [runId,payslipId]);
     for (const a of rows) {
         if (cents(a.approved_amount)>0n) await client.query(`INSERT INTO employee_loan_payment(loan_id,payslip_id,amount,allocation_id,actor_id,source_key) VALUES($1,$2,$3,$4,$5,$6)`, [a.loan_id,a.payslip_id,a.approved_amount,a.allocation_id,actorId,`allocation:${a.allocation_id}`]);
         await client.query("UPDATE payroll_deduction_allocation SET status='RECOVERED' WHERE allocation_id=$1", [a.allocation_id]);
     }
     // Old computed payroll has no trustworthy identity; never infer it by component.
-    const { rows: [gap] } = await client.query(`SELECT p.payslip_id FROM payroll_payslip p WHERE p.run_id=$1 AND p.loans_total<>(SELECT COALESCE(SUM(a.approved_amount),0) FROM payroll_deduction_allocation a WHERE a.payslip_id=p.payslip_id AND a.status='RECOVERED') LIMIT 1`, [runId]);
+    const { rows: [gap] } = await client.query(`SELECT p.payslip_id FROM payroll_payslip p WHERE p.run_id=$1 AND ($2::bigint IS NULL OR p.payslip_id=$2) AND p.loans_total<>(SELECT COALESCE(SUM(a.approved_amount),0) FROM payroll_deduction_allocation a WHERE a.payslip_id=p.payslip_id AND a.status='RECOVERED') LIMIT 1`, [runId,payslipId]);
     if (gap) fail(409, 'ALLOCATION_REVIEW_REQUIRED', 'Legacy payroll loan identities require release/recompute and approval.');
 }
 async function review(client,payslipId,input,actorId) {

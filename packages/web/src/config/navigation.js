@@ -58,6 +58,7 @@ export const CATEGORIES = [
             { name: 'Time Records', icon: ICONS.history,  page: 'dtr',         permission: 'dtr:view', keywords: ['attendance', 'clock in', 'clock out', 'dtr', 'timesheet', 'punch', 'punch in', 'punch out', 'time in', 'time out'] },
             { name: 'Work Schedules', icon: ICONS.settings, page: 'work_schedules', permission: 'hr:view', keywords: ['shifts', 'roster'] },
             { name: 'Leave',       icon: ICONS.documents, page: 'leave',       permission: 'leave:view', keywords: ['vacation', 'time off', 'leave requests'] },
+            { name: 'Employee Accounts', icon: ICONS.dollar, page: 'employee_accounts', permission: 'employee_finance:view', keywords: ['loans', 'vale', 'salary settlement', 'statement'] },
             { name: 'Payroll',     icon: ICONS.dollar,    page: 'payroll',     permission: 'payroll:view', keywords: ['salary', 'wages', 'pay run'] },
             { name: 'Statutory Rates', icon: ICONS.settings, page: 'statutory_tables', permission: 'payroll:config', keywords: ['sss', 'philhealth', 'pag-ibig', 'tax tables'] },
             { name: 'Pay Components', icon: ICONS.tag, page: 'pay_components', permission: 'payroll:config', keywords: ['allowances', 'deductions', 'earnings'] },

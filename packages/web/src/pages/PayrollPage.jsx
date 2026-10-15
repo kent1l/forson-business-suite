@@ -1,3 +1,4 @@
+import {FinanceCommand} from '../components/hr/EmployeeAccountsTab';
 import PayrollRecoveryReview from '../components/hr/PayrollRecoveryReview';
 import React, { useCallback, useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
@@ -205,23 +206,6 @@ const PayrollPage = () => {
         }
     };
 
-    const submitVoid = async () => {
-        if (!voidReason.trim()) { toast.error('A reason is required'); return; }
-        setBusy(true);
-        try {
-            await api.post(`/payroll/runs/${voidRun.run_id}/void`, { reason: voidReason });
-            toast.success('Unpaid run canceled. History preserved and time records unlocked.');
-            setVoidRun(null);
-            setVoidReason('');
-            await load();
-            setSelectedRun(null);
-        } catch (err) {
-            toast.error(err.response?.data?.message || 'Failed to void run');
-        } finally {
-            setBusy(false);
-        }
-    };
-
     if (!canView) {
         return (
             <div className="text-center p-8">
@@ -262,6 +246,8 @@ const PayrollPage = () => {
                                 <p className="text-sm text-gray-500 dark:text-slate-400 mt-1">
                                     {selectedRun.period_start} to {selectedRun.period_end} · paid {selectedRun.pay_date}
                                 </p>
+                                {selectedRun.settlement_summary && <p className="text-sm">Settlement: {selectedRun.settlement_summary.state} · Actual paid ₱{selectedRun.settlement_summary.actual_paid} · Remaining ₱{selectedRun.settlement_summary.remaining_payable}</p>}
+                                {!selectedRun.void_eligibility?.eligible && selectedRun.void_eligibility?.reason && <p className="text-xs">{selectedRun.void_eligibility.reason}</p>}
                                 {selectedRun.status === 'Voided' && selectedRun.void_reason && (
                                     <p className="text-xs text-danger-600 mt-1">Voided: {selectedRun.void_reason}</p>
                                 )}
@@ -570,7 +556,7 @@ const PayrollPage = () => {
                 {reviewSlip && <PayrollRecoveryReview key={reviewSlip.payslip_id} payslip={reviewSlip} run={selectedRun} onDone={() => {setReviewSlip(null);openRun(selectedRun);}} />}
             </Modal>
             <Modal isOpen={Boolean(voidRun)} onClose={() => setVoidRun(null)} title={`Void ${voidRun?.run_no || ''}`}>
-                <div className="space-y-4">
+                <FinanceCommand scope={`void:${voidRun?.run_id}`} endpoint={`/payroll/runs/${voidRun?.run_id}/void`} body={{version:voidRun?.version,reason:voidReason}} onDone={() => {setVoidRun(null);setVoidReason('');setSelectedRun(null);load();}} label="Void unpaid run" disabled={!voidReason.trim()}>
                     <p className="text-sm text-gray-600 dark:text-slate-300">
                         Canceling unpaid payroll preserves history, releases pending recovery reservations, and unlocks the time records
                         for this period. The payslips are kept as a record and cannot be edited.
@@ -582,12 +568,8 @@ const PayrollPage = () => {
                     <div className="flex justify-end gap-3">
                         <button onClick={() => setVoidRun(null)}
                             className="px-4 py-2 bg-gray-200 dark:bg-slate-700 text-gray-800 dark:text-slate-200 rounded-lg">Cancel</button>
-                        <button onClick={submitVoid} disabled={busy || !voidReason.trim()}
-                            className="px-4 py-2 bg-danger-600 text-white rounded-lg font-semibold hover:bg-danger-700 disabled:opacity-50">
-                            Void Run
-                        </button>
                     </div>
-                </div>
+                </FinanceCommand>
             </Modal>
         </div>
     );

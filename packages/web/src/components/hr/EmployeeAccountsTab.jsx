@@ -1,3 +1,5 @@
+import EmployeePayables from './EmployeePayables';
+import EmployeeAccountStatement from './EmployeeAccountStatement';
 import { useCallback, useEffect, useState } from 'react';
 import api from '../../api';
 import { useAuth } from '../../contexts/AuthContext';
@@ -65,11 +67,13 @@ function LoanAction({loan,employeeId,banks,onDone}) {
  </FinanceCommand>}</div>;
 }
 export default function EmployeeAccountsTab({employeeId}) {
- const {user,hasPermission}=useAuth();const [loans,setLoans]=useState(null);const [banks,setBanks]=useState([]);const [error,setError]=useState('');const [create,setCreate]=useState(false);const [terms,setTerms]=useState(initialTerms);
- const load=useCallback(async()=>{setError('');try{const [l,b]=await Promise.all([api.get(`/hr/employees/${employeeId}/loans`),api.get('/hr/employee-finance/bank-accounts')]);setLoans(l.data);setBanks(b.data);}catch(e){setError(e.response?.data?.message||'Employee accounts could not load.');}},[employeeId]);
+ const {user,hasPermission}=useAuth();const [loans,setLoans]=useState(null);const [banks,setBanks]=useState([]);const [error,setError]=useState('');const [refresh,setRefresh]=useState(0);const [create,setCreate]=useState(false);const [terms,setTerms]=useState(initialTerms);
+ const load=useCallback(async()=>{setRefresh(n=>n+1);setError('');try{const [l,b]=await Promise.all([api.get(`/hr/employees/${employeeId}/loans`),api.get('/hr/employee-finance/bank-accounts')]);setLoans(l.data);setBanks(b.data);}catch(e){setError(e.response?.data?.message||'Employee accounts could not load.');}},[employeeId]);
  useEffect(()=>{setLoans(null);setCreate(false);setTerms(initialTerms);load();},[load,user?.employee_id]);
  if(!hasPermission('employee_finance:view'))return <p role="alert">Financial access required.</p>;
  return <div className="space-y-4 p-4"><h2 className="font-semibold">Employee Accounts</h2>{error&&<div role="alert">{error}<button onClick={load}>Retry</button></div>}{!loans&&!error&&<p role="status">Loading accounts…</p>}
+ <EmployeeAccountStatement key={`${user?.employee_id}:${employeeId}`} employeeId={employeeId} refresh={refresh}/>
+ <EmployeePayables key={`pay:${user?.employee_id}:${employeeId}`} employeeId={employeeId} banks={banks} onChanged={load}/>
  {hasPermission('employee_finance:manage')&&<button onClick={()=>setCreate(!create)}>Create loan / vale draft</button>}
  {create&&<FinanceCommand scope={`${employeeId}:loan-create`} endpoint={`/hr/employees/${employeeId}/loans`} body={terms} onDone={()=>{setCreate(false);setTerms(initialTerms);load();}} label="Create draft"><TermsFields value={terms} onChange={setTerms} initial/></FinanceCommand>}
  {loans?.length===0&&<p>No employee loans.</p>}

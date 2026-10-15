@@ -150,7 +150,7 @@ router.get('/runs/:id', protect, hasPermission('payroll:view'), async (req, res)
             [req.params.id]
         );
         if (rows.length === 0) return res.status(404).json({ message: 'Payroll run not found' });
-        res.json({ ...rows[0], void_eligibility: await recovery.voidEligibility(db, rows[0]) });
+        res.json({ ...rows[0], void_eligibility: await recovery.voidEligibility(db, rows[0]), settlement_summary: await require('../services/hr/employeeSettlementService').runSummary(db, req.params.id) });
     } catch (err) { handleError(err, res); }
 });
 
@@ -206,8 +206,10 @@ router.post('/runs/:id/post', protect, hasPermission('payroll:post'), withTransa
 ));
 
 router.post('/runs/:id/void', protect, hasPermission('payroll:void'), withTransaction(
-    (req, client) => payrollRunService.voidRun(client, {
-        runId: req.params.id, userId: req.user.employee_id, reason: req.body.reason,
+    (req, client) => recovery.request(client, {requestId:req.body.request_id,actorId:req.user.employee_id,operation:`payroll-void:${req.params.id}`,payload:req.body}, async () => {
+        if(!Number.isInteger(req.body.version)) recovery.fail(400,'VERSION_REQUIRED','Current run version is required.');
+        await recovery.lockRun(client,req.params.id,req.body.version);
+        return payrollRunService.voidRun(client, {runId:req.params.id,userId:req.user.employee_id,reason:req.body.reason});
     })
 ));
 

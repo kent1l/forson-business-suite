@@ -638,7 +638,7 @@ const markPaid = async (executor, { runId, paidBy }) => {
     if (!rows[0]) { const e = new Error('Payroll run not found'); e.code = 'RUN_NOT_FOUND'; throw e; }
     assertTransition(rows[0].status, 'Paid');
 
-    await recovery.postRecoveries(executor, runId, paidBy);
+    await require('./employeeSettlementService').assertRunSettled(executor, runId);
 
     const { rows: updated } = await executor.query(
         `UPDATE payroll_run SET status = 'Paid', paid_by = $1, paid_at = now()
