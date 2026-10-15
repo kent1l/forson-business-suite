@@ -246,7 +246,8 @@ const PayrollPage = () => {
                                 <p className="text-sm text-gray-500 dark:text-slate-400 mt-1">
                                     {selectedRun.period_start} to {selectedRun.period_end} · paid {selectedRun.pay_date}
                                 </p>
-                                {selectedRun.settlement_summary && <p className="text-sm">Settlement: {selectedRun.settlement_summary.state} · Actual paid ₱{selectedRun.settlement_summary.actual_paid} · Remaining ₱{selectedRun.settlement_summary.remaining_payable}</p>}
+                                {selectedRun.status === 'Approved' && <p className="text-sm text-gray-600 dark:text-slate-300">Mark Paid records the exact remaining wages and posts approved deductions automatically.</p>}
+                                {selectedRun.settlement_summary && <p className="text-sm">Paid ₱{selectedRun.settlement_summary.actual_paid} · Remaining ₱{selectedRun.settlement_summary.remaining_payable}</p>}
                                 {!selectedRun.void_eligibility?.eligible && selectedRun.void_eligibility?.reason && <p className="text-xs">{selectedRun.void_eligibility.reason}</p>}
                                 {selectedRun.status === 'Voided' && selectedRun.void_reason && (
                                     <p className="text-xs text-danger-600 mt-1">Voided: {selectedRun.void_reason}</p>

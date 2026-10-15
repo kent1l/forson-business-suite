@@ -134,10 +134,6 @@ async function main() {
     })));
   };
   const currentVersion = async id => (await pool.query('SELECT version FROM payroll_run WHERE run_id=$1', [id])).rows[0].version;
-  await assert.rejects(tx(c => runs.markPaid(c, {
-    runId: run.run_id,
-    paidBy: actor
-  })), /Complete recovery settlement/);
   const ids = (await pool.query('SELECT allocation_id FROM payroll_deduction_allocation WHERE payslip_id=$1', [slip.payslip_id])).rows.map(a => a.allocation_id);
   await post('settle', {
     payslip_id: slip.payslip_id,
@@ -158,10 +154,6 @@ async function main() {
     }]
   }, (c, b) => settlement.payout(c, b, actorUser));
   assert.equal((await settlement.payable(pool, actor)).find(p => p.payslip_id === slip.payslip_id).remaining_payable, '0.01');
-  await assert.rejects(tx(c => runs.markPaid(c, {
-    runId: run.run_id,
-    paidBy: actor
-  })), /Complete recovery settlement/);
   const pending = await post('payout', {
     employee_id: actor,
     amount: '0.01',
@@ -194,18 +186,6 @@ async function main() {
     evidence: 'verified bank rejection',
     reason: 'bank rejected'
   }, (c, b) => settlement.resolve(c, pending.payout_id, b, actorUser));
-  await post('payout', {
-    employee_id: actor,
-    amount: '0.01',
-    method: 'BANK',
-    evidence: 'actual residual transfer',
-    funding: proof(),
-    allocations: [{
-      payslip_id: slip.payslip_id,
-      version: await currentVersion(run.run_id),
-      amount: '0.01'
-    }]
-  }, (c, b) => settlement.payout(c, b, actorUser));
   await tx(c => runs.markPaid(c, {
     runId: run.run_id,
     paidBy: actor
@@ -213,6 +193,34 @@ async function main() {
   const summary = await accounts.summary(pool, actor);
   assert.equal(summary.categories.owed_to_employee.unpaid_salary, '0.00');
   assert.equal(summary.categories.owed_to_company.outstanding, '180.00');
+  // Simplified payroll: no separate recovery, amount, method, funding or evidence.
+  const exactDepartment = (await pool.query('INSERT INTO department(department_name) VALUES($1) RETURNING department_id', [randomUUID()])).rows[0].department_id;
+  const exactRun = await makeRun('REGULAR', exactDepartment);
+  const exactSlip = await makeSlip(exactRun, '20.00');
+  const exactLoan = (await pool.query("INSERT INTO employee_loan(employee_id,loan_type,component_code,principal_amount,amortization_amount,start_date) VALUES($1,'OTHER','TEST_LOAN',100,20,'2089-01-01') RETURNING *", [actor])).rows[0];
+  const exactTerms = (await pool.query("INSERT INTO employee_loan_schedule(loan_id,schedule,monthly_installment,effective_from,version,deduction_authority,reason) VALUES($1,'FIRST_CUTOFF',20,'2089-01-01',1,'test authority','test') RETURNING *", [exactLoan.loan_id])).rows[0];
+  Object.assign(exactLoan, {schedule_id: exactTerms.schedule_id, schedule_version: 1, scheduled_share: '20.00'});
+  await tx(c => recovery.persist(c, {payslipId: exactSlip.payslip_id, employeeId: actor, periodId: period.pay_period_id, run: {period_end: '2090-01-15'}, cutoffSeq: 1, deductions: [{loanId: exactLoan.loan_id, amount: '20.00'}], loans: [exactLoan]}));
+  await pool.query("UPDATE payroll_run SET status='Computed' WHERE run_id=$1", [exactRun.run_id]);
+  await tx(c => runs.approveRun(c, {runId: exactRun.run_id, approvedBy: actor}));
+  const fundingBefore = (await pool.query('SELECT COUNT(*)::int n FROM employee_finance_funding')).rows[0].n;
+  const doubleClick = await Promise.allSettled([1,2].map(() => tx(c => runs.markPaid(c, {runId: exactRun.run_id, paidBy: actor}))));
+  assert.equal(doubleClick.filter(r => r.status === 'fulfilled').length, 1);
+  const exactBalance = (await settlement.payable(pool, actor)).find(p => p.payslip_id === exactSlip.payslip_id);
+  assert.equal(exactBalance.actual_paid, '80.00');
+  assert.equal((await pool.query('SELECT amount_paid FROM employee_loan WHERE loan_id=$1', [exactLoan.loan_id])).rows[0].amount_paid, '20.00');
+  assert.equal(exactBalance.remaining_payable, '0.00');
+  assert.ok(exactBalance.settlement_id);
+  const exactPayouts = (await pool.query('SELECT pc.* FROM payroll_payout_current pc JOIN payroll_payout_allocation a USING(payout_id) WHERE a.payslip_id=$1', [exactSlip.payslip_id])).rows;
+  assert.equal(exactPayouts.length, 1);
+  assert.equal(exactPayouts[0].method, null);
+  assert.equal(exactPayouts[0].funding_id, null);
+  assert.equal(exactPayouts[0].status, 'CONFIRMED');
+  const exactStatement = await accounts.statement(pool, actor, {domain: 'EMPLOYEE', pageSize: '100'});
+  assert.ok(exactStatement.data.some(e => e.source_type === 'PAYOUT' && e.source_id === String(exactPayouts[0].payout_id) && e.amount === '-80.00'));
+  assert.equal(exactStatement.balances.find(b => b.domain === 'EMPLOYEE').closing, '0.00');
+  assert.equal((await pool.query('SELECT COUNT(*)::int n FROM employee_finance_funding')).rows[0].n, fundingBefore);
+  console.log('PASS simplified payroll: one click settles exact wages, no method/funding, duplicate click cannot pay twice');
   console.log('PASS settlement: explicit noncash offsets, partial actual payout, centavo residual, unknown replacement rejection, failed outcome reconciliation, final payout gate, source-linked accounts');
   assert.deepEqual((await pool.query('SELECT amount_paid FROM employee_loan WHERE loan_id=ANY($1::bigint[]) ORDER BY loan_id', [loans.map(l => l.loan_id)])).rows.map(l => l.amount_paid), ['10.00', '10.00']);
   await assert.rejects(tx(c => runs.voidRun(c, {
@@ -357,19 +365,13 @@ async function main() {
     });
   });
   const beforeFunding = (await pool.query('SELECT count(*)::int n FROM employee_finance_funding')).rows[0].n;
-  const zids = (await pool.query('SELECT allocation_id FROM payroll_deduction_allocation WHERE payslip_id=$1', [zeroSlip.payslip_id])).rows.map(a => a.allocation_id);
-  await post('settle', {
-    payslip_id: zeroSlip.payslip_id,
-    version: await currentVersion(zeroRun.run_id),
-    allocation_ids: zids,
-    reason: 'zero-net noncash offsets'
-  }, (c, b) => settlement.settle(c, b, actorUser));
-  assert.equal((await pool.query('SELECT count(*)::int n FROM employee_finance_funding')).rows[0].n, beforeFunding);
-  assert.equal((await pool.query('SELECT amount_paid FROM employee_loan WHERE loan_id=$1', [z.loan_id])).rows[0].amount_paid, '100.00');
   await tx(c => runs.markPaid(c, {
     runId: zeroRun.run_id,
     paidBy: actor
   }));
+  assert.equal((await pool.query('SELECT count(*)::int n FROM employee_finance_funding')).rows[0].n, beforeFunding);
+  assert.equal((await pool.query('SELECT amount_paid FROM employee_loan WHERE loan_id=$1', [z.loan_id])).rows[0].amount_paid, '100.00');
+  assert.equal((await pool.query('SELECT count(*)::int n FROM payroll_payout_allocation WHERE payslip_id=$1', [zeroSlip.payslip_id])).rows[0].n, 0);
   await post('rounding', {
     version: await currentVersion(zeroRun.run_id),
     amount: '0.50',
@@ -978,13 +980,14 @@ async function main() {
     runId: zeroRun.run_id,
     postedBy: actor
   }));
-  assert.equal((await pool.query('SELECT amount FROM expense WHERE payroll_run_id=$1', [zeroRun.run_id])).rows[0].amount, '100.50');
+  assert.equal((await pool.query('SELECT amount,payment_method_text FROM expense WHERE payroll_run_id=$1', [zeroRun.run_id])).rows[0].amount, '100.50');
   assert.equal((await pool.query('SELECT count(*)::int n FROM cash_drawer_movement')).rows[0].n, movementCount);
   const unexpectedRun=await makeRun('REGULAR',await dept());
   await pool.query("INSERT INTO expense(expense_date,category_id,amount,payee,payment_method_text,created_by,payroll_run_id) VALUES(current_date,$1,1,'Unexpected payroll fixture','Bank',$2,$3)",[category.category_id,actor,unexpectedRun.run_id]);
   await assert.rejects(tx(c=>runs.voidRun(c,{runId:unexpectedRun.run_id,userId:actor,reason:'wrong run'})),/Expense recognition/);
   await assert.rejects(pool.query("UPDATE payroll_run SET status='Voided' WHERE run_id=$1",[unexpectedRun.run_id]),/Expense recognition/);
   console.log('PASS stale-status integrity: unexpected recognized expense blocks ordinary unpaid cancellation');
+  assert.ok((await pool.query('SELECT payment_method_text FROM expense WHERE payroll_run_id=$1', [zeroRun.run_id])).rows.every(e => e.payment_method_text === null));
   console.log('PASS expense recognition: gross entitlement plus explicit employer rounding, no duplicated funding movement');
   console.log('PASS cash funding: independent bound approval required, company release and actual salary payout each create one outflow; duplicate bank source rejected');
   console.log('PASS direct installments: exact arrears month/cutoff consumes the shared budget, excess rejected atomically, verified refund reopens the slot');

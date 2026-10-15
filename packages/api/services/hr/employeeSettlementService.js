@@ -164,6 +164,40 @@ async function runSummary(client, runId) {
     }) < 0n || cents(result.pending_amount) > 0n ? 'NEEDS_REVIEW' : settled ? 'SETTLED' : cents(result.actual_paid) > 0n ? 'PARTIAL' : result.recoveries_posted > 0 ? 'IN_PROGRESS' : 'NOT_STARTED'
   };
 }
+// The caller holds the run lock for the entire transaction. Approved recovery
+// identities come from the database; the operator supplies no payment details.
+async function payRunExact(client, runId, actorId) {
+  const { rows: slips } = await client.query(
+    'SELECT payslip_id,employee_id FROM payroll_payslip WHERE run_id=$1 ORDER BY payslip_id', [runId]);
+  for (const slip of slips) {
+    let balance = (await payable(client, slip.employee_id)).find(p => String(p.payslip_id) === String(slip.payslip_id));
+    if (!balance.settlement_id && !balance.legacy_provenance) {
+      await settle(client, {
+        payslip_id: slip.payslip_id,
+        version: balance.version,
+        allocation_ids: balance.recoveries.filter(a => a.status === 'RESERVED').map(a => a.allocation_id),
+        reason: 'Approved recoveries posted by Mark Paid'
+      }, { employee_id: actorId });
+      balance = (await payable(client, slip.employee_id)).find(p => String(p.payslip_id) === String(slip.payslip_id));
+    }
+    // Older bank instructions must not be silently duplicated or overwritten.
+    if (cents(balance.pending_amount) > 0n) fail(409, 'PAYMENT_UNRESOLVED', 'This payroll has an existing pending bank payment. Resolve its outcome before marking paid.');
+    const amount = money(cents(balance.remaining_payable));
+    if (cents(amount) === 0n) continue;
+    const requestId = require('node:crypto').randomUUID();
+    await recovery.request(client, { requestId, actorId, operation: `payroll-exact:${slip.payslip_id}`, payload: { runId, amount } }, async () => {
+      const { rows: [doc] } = await client.query(
+        `INSERT INTO payroll_payout(employee_id,amount,request_id,method,evidence,actor_id)
+         VALUES($1,$2,$3,NULL,'Exact amount assumed by Mark Paid',$4) RETURNING payout_id`,
+        [slip.employee_id, amount, requestId, actorId]);
+      await client.query('INSERT INTO payroll_payout_allocation(payout_id,payslip_id,amount) VALUES($1,$2,$3)', [doc.payout_id, slip.payslip_id, amount]);
+      await client.query(`INSERT INTO payroll_payout_event(payout_id,status,evidence,reason,actor_id)
+        VALUES($1,'CONFIRMED','Exact amount assumed by Mark Paid','Payroll marked paid',$2)`, [doc.payout_id, actorId]);
+      return doc;
+    });
+  }
+  await assertRunSettled(client, runId);
+}
 async function assertRunSettled(client, runId) {
   const {
     rows: [state]
@@ -186,6 +220,7 @@ async function rounding(client, payslipId, input, actor) {
 }
 module.exports = {
   runSummary,
+  payRunExact,
   settle,
   payout,
   resolve,

@@ -73,16 +73,25 @@ async function activate(client, id, input, actor) {
   if (loan.activation_state !== 'DRAFT') fail(409, 'LOAN_STATE', 'Only a draft can be activated.');
   const reason = validText(input.reason, 2000, true);
   let funding = null;
-  if (loan.creditor === 'COMPANY') funding = await fundingService.record(client, {
-    funding: input.funding,
-    amount: loan.collectible_opening && money(cents(loan.collectible_opening) - cents(loan.interest_fees || '0.00')),
-    direction: 'OUT',
-    ownerKey: `loan:${id}`,
-    actor
-  });else validText(input.enrollment_evidence, 2000, true);
+  if (loan.creditor === 'COMPANY') {
+    if (input.funding && input.funding.method) {
+      funding = await fundingService.record(client, {
+        funding: input.funding,
+        amount: loan.collectible_opening && money(cents(loan.collectible_opening) - cents(loan.interest_fees || '0.00')),
+        direction: 'OUT',
+        ownerKey: `loan:${id}`,
+        actor
+      });
+    } else {
+      validText(input.release_evidence || input.enrollment_evidence, 2000, true);
+    }
+  } else {
+    validText(input.enrollment_evidence, 2000, true);
+  }
+  const evidence = input.release_evidence || input.enrollment_evidence || reason;
   const {
     rows: [updated]
-  } = await client.query(`UPDATE employee_loan SET activation_state='ACTIVE',status='Active',activated_by=$2,activated_at=now(),release_funding_id=$3,evidence=evidence || E'\n' || $4,version=version+1 WHERE loan_id=$1 RETURNING *`, [id, actor.employee_id, funding?.funding_id || null, input.enrollment_evidence || reason]);
+  } = await client.query(`UPDATE employee_loan SET activation_state='ACTIVE',status='Active',activated_by=$2,activated_at=now(),release_funding_id=$3,evidence=evidence || E'\n' || $4,version=version+1 WHERE loan_id=$1 RETURNING *`, [id, actor.employee_id, funding?.funding_id || null, evidence]);
   await activity(client, id, 'ACTIVATE', reason, actor.employee_id, updated.version);
   return updated;
 }

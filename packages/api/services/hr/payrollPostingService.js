@@ -46,7 +46,6 @@ const postRunToExpense = async (executor, { runId, postedBy }) => {
     const {rows:[rounding]} = await executor.query(`SELECT COALESCE(SUM(a.amount),0)::numeric(14,2) amount FROM payroll_rounding_adjustment a JOIN payroll_payslip p USING(payslip_id) WHERE p.run_id=$1`, [runId]);
     const wageCost = round2(Number(run.total_gross) + Number(rounding.amount));
 
-    const paymentMethodText = await getSetting(executor, 'PAYROLL_DEFAULT_PAYMENT_METHOD', 'Cash');
     const isJobOrder = run.run_type === 'JOB_ORDER';
 
     const label = `Payroll ${run.run_no} (${run.period_start} to ${run.period_end})`;
@@ -116,7 +115,7 @@ const postRunToExpense = async (executor, { runId, postedBy }) => {
              ON CONFLICT (payroll_run_id, category_id) WHERE payroll_run_id IS NOT NULL AND is_void = false
              DO NOTHING
              RETURNING expense_id`,
-            [run.pay_date, posting.categoryId, posting.amount, label, paymentMethodText,
+            [run.pay_date, posting.categoryId, posting.amount, label, null,
                 run.run_no, posting.notes, runId, postedBy]
         );
         if (rows[0]) expenseIds.push(rows[0].expense_id);

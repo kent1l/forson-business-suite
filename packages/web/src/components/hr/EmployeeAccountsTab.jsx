@@ -19,12 +19,13 @@ const initialTerms = {
   collectible_opening: '',
   interest_fees: '0.00',
   monthly_installment: '',
+  months_to_pay: '',
   schedule: 'SECOND_CUTOFF',
   effective_from: '',
   start_date: '',
-  purpose: '',
-  authorization: '',
-  evidence: '',
+  purpose: 'Vale / cash advance',
+  authorization: 'Signed payroll deduction authority',
+  evidence: 'Signed vale slip / agreement',
   reference_no: ''
 };
 function TermsFields({
@@ -42,39 +43,145 @@ function TermsFields({
     const n = BigInt(whole) * 100n + BigInt(f.padEnd(2, '0'));
     const fmt = x => `${x / 100n}.${String(x % 100n).padStart(2, '0')}`;
     const first = value.schedule === 'FIRST_CUTOFF' ? n : value.schedule === 'SECOND_CUTOFF' ? 0n : (n + 1n) / 2n;
-    preview = `First cutoff ${peso(fmt(first))}; second cutoff ${peso(fmt(n - first))}`;
+    const cutoffText = `First cutoff ${peso(fmt(first))}; second cutoff ${peso(fmt(n - first))}`;
+    const totalText = value.collectible_opening ? ` · Total: ${peso(value.collectible_opening)}` : '';
+    const monthsText = value.months_to_pay ? ` (${value.months_to_pay} mo.)` : '';
+    preview = `${cutoffText}${totalText}${monthsText}`;
   }
+
+  const handleMonthlyChange = (monthlyStr) => {
+    const next = { ...value, monthly_installment: monthlyStr };
+    const m = parseFloat(monthlyStr);
+    const months = parseFloat(value.months_to_pay);
+    if (!isNaN(m) && m > 0 && !isNaN(months) && months > 0) {
+      const total = (m * months).toFixed(2);
+      next.collectible_opening = total;
+      next.principal_amount = total;
+      next.interest_fees = '0.00';
+    }
+    onChange(next);
+  };
+
+  const handleMonthsChange = (monthsStr) => {
+    const next = { ...value, months_to_pay: monthsStr };
+    const m = parseFloat(value.monthly_installment);
+    const months = parseFloat(monthsStr);
+    if (!isNaN(m) && m > 0 && !isNaN(months) && months > 0) {
+      const total = (m * months).toFixed(2);
+      next.collectible_opening = total;
+      next.principal_amount = total;
+      next.interest_fees = '0.00';
+    }
+    onChange(next);
+  };
+
+  const handleTotalChange = (totalStr) => {
+    const next = { ...value, collectible_opening: totalStr };
+    const tot = parseFloat(totalStr);
+    const fees = parseFloat(value.interest_fees) || 0;
+    if (!isNaN(tot)) {
+      next.principal_amount = (tot - fees).toFixed(2);
+      const m = parseFloat(value.monthly_installment);
+      if (!isNaN(m) && m > 0) {
+        next.months_to_pay = String(Math.ceil(tot / m));
+      }
+    }
+    onChange(next);
+  };
+
+  const handleEffectiveFromChange = (monthStr) => {
+    const eff = `${monthStr}-01`;
+    const next = { ...value, effective_from: eff };
+    if (!value.start_date || value.start_date < eff) {
+      next.start_date = eff;
+    }
+    onChange(next);
+  };
+
+  const handleCreditorChange = (creditor) => {
+    const loan_type = {
+      COMPANY: 'CASH_ADVANCE',
+      SSS: 'SSS_SALARY',
+      PAGIBIG: 'HDMF_MPL'
+    }[creditor];
+    const defaultPurpose = `${financeLabel(creditor)} ${financeLabel(loan_type)}`;
+    const defaultEvidence = creditor === 'COMPANY' ? 'Signed vale slip / agreement' : `${financeLabel(creditor)} loan voucher / billing notice`;
+    onChange({
+      ...value,
+      creditor,
+      loan_type,
+      purpose: defaultPurpose,
+      evidence: defaultEvidence
+    });
+  };
+
   return <div className="grid gap-4 sm:grid-cols-2">
- {initial && <><FinanceField label="Creditor"><select className={fieldClass} value={value.creditor} onChange={e => onChange({
-          ...value,
-          creditor: e.target.value,
-          loan_type: {
-            COMPANY: 'CASH_ADVANCE',
-            SSS: 'SSS_SALARY',
-            PAGIBIG: 'HDMF_MPL'
-          }[e.target.value]
-        })}>{['COMPANY', 'SSS', 'PAGIBIG'].map(v => <option key={v} value={v}>{financeLabel(v)}</option>)}</select></FinanceField><FinanceField label="Loan type"><select className={fieldClass} value={value.loan_type} onChange={e => set('loan_type', e.target.value)}>{{
+    {initial && <>
+      <FinanceField label="Creditor">
+        <select className={fieldClass} value={value.creditor} onChange={e => handleCreditorChange(e.target.value)}>
+          {['COMPANY', 'SSS', 'PAGIBIG'].map(v => <option key={v} value={v}>{financeLabel(v)}</option>)}
+        </select>
+      </FinanceField>
+      <FinanceField label="Loan type">
+        <select className={fieldClass} value={value.loan_type} onChange={e => onChange({ ...value, loan_type: e.target.value, purpose: `${financeLabel(value.creditor)} ${financeLabel(e.target.value)}` })}>
+          {{
             COMPANY: ['CASH_ADVANCE', 'OTHER'],
             SSS: ['SSS_SALARY', 'SSS_CALAMITY'],
             PAGIBIG: ['HDMF_MPL', 'HDMF_CALAMITY']
-          }[value.creditor].map(v => <option key={v} value={v}>{financeLabel(v)}</option>)}</select></FinanceField>
- {['principal_amount', 'interest_fees', 'collectible_opening'].map(k => <FinanceField key={k} label={{
-        principal_amount: 'Original principal',
-        interest_fees: 'Explicit agreed interest / fees',
-        collectible_opening: 'Total collectible opening'
-      }[k]}><input required inputMode="decimal" className={fieldClass} value={value[k]} onChange={e => set(k, e.target.value)} /></FinanceField>)}
- <FinanceField label="Recovery eligibility start date"><input required type="date" className={fieldClass} value={value.start_date} onChange={e => set('start_date', e.target.value)} /></FinanceField>
- {['reference_no', 'purpose', 'evidence'].map(k => <FinanceField key={k} label={{
-        reference_no: 'Loan reference',
-        purpose: 'Purpose',
-        evidence: 'Agreement / enrollment evidence'
-      }[k]}><input required className={fieldClass} value={value[k]} onChange={e => set(k, e.target.value)} /></FinanceField>)}</>}
- <FinanceField label="Monthly installment amount"><input required inputMode="decimal" className={fieldClass} value={value.monthly_installment} onChange={e => set('monthly_installment', e.target.value)} /></FinanceField>
- <FinanceField label="Deduct on"><select className={fieldClass} value={value.schedule} onChange={e => set('schedule', e.target.value)}><option value="FIRST_CUTOFF">1st cutoff</option><option value="SECOND_CUTOFF">2nd cutoff</option><option value="SPLIT_HALF">Split monthly amount across both cutoffs</option></select></FinanceField>
- {preview && <div className="sm:col-span-2"><FinanceNotice>{preview}. No automatic catch-up on mid-month start.</FinanceNotice></div>}
- <FinanceField label="Effective recovery month"><input required type="month" className={fieldClass} value={value.effective_from?.slice(0, 7) || ''} onChange={e => set('effective_from', `${e.target.value}-01`)} /></FinanceField>
- <FinanceField label="Deduction authorization"><input required className={fieldClass} value={value.authorization} onChange={e => set('authorization', e.target.value)} /></FinanceField>
- </div>;
+          }[value.creditor].map(v => <option key={v} value={v}>{financeLabel(v)}</option>)}
+        </select>
+      </FinanceField>
+      <FinanceField label="Loan reference">
+        <input required className={fieldClass} placeholder="e.g. VALE-2026-001 or SSS Loan #" value={value.reference_no} onChange={e => set('reference_no', e.target.value)} />
+      </FinanceField>
+      <FinanceField label="Number of months to pay">
+        <input inputMode="numeric" className={fieldClass} placeholder="e.g. 12 or 24" value={value.months_to_pay || ''} onChange={e => handleMonthsChange(e.target.value)} />
+      </FinanceField>
+    </>}
+    <FinanceField label="Monthly installment amount">
+      <input required inputMode="decimal" className={fieldClass} placeholder="e.g. 1000.00" value={value.monthly_installment} onChange={e => handleMonthlyChange(e.target.value)} />
+    </FinanceField>
+    <FinanceField label="Deduct on">
+      <select className={fieldClass} value={value.schedule} onChange={e => set('schedule', e.target.value)}>
+        <option value="FIRST_CUTOFF">1st cutoff</option>
+        <option value="SECOND_CUTOFF">2nd cutoff</option>
+        <option value="SPLIT_HALF">Split monthly amount across both cutoffs</option>
+      </select>
+    </FinanceField>
+    {preview && <div className="sm:col-span-2"><FinanceNotice>{preview}. No automatic catch-up on mid-month start.</FinanceNotice></div>}
+    <FinanceField label="Effective recovery month">
+      <input required type="month" className={fieldClass} value={value.effective_from?.slice(0, 7) || ''} onChange={e => handleEffectiveFromChange(e.target.value)} />
+    </FinanceField>
+    <FinanceField label="Deduction authorization">
+      <input required className={fieldClass} value={value.authorization} onChange={e => set('authorization', e.target.value)} />
+    </FinanceField>
+
+    {initial && <details className="sm:col-span-2 rounded-lg border border-gray-200 dark:border-slate-700 p-3 bg-gray-50/50 dark:bg-slate-800/50">
+      <summary className="cursor-pointer text-xs font-semibold text-gray-700 dark:text-slate-300">
+        Detailed breakdown & evidence (auto-computed, click to customize)
+      </summary>
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        <FinanceField label="Total collectible opening">
+          <input required inputMode="decimal" className={fieldClass} value={value.collectible_opening} onChange={e => handleTotalChange(e.target.value)} />
+        </FinanceField>
+        <FinanceField label="Original principal">
+          <input required inputMode="decimal" className={fieldClass} value={value.principal_amount} onChange={e => set('principal_amount', e.target.value)} />
+        </FinanceField>
+        <FinanceField label="Explicit agreed interest / fees">
+          <input required inputMode="decimal" className={fieldClass} value={value.interest_fees} onChange={e => set('interest_fees', e.target.value)} />
+        </FinanceField>
+        <FinanceField label="Recovery eligibility start date">
+          <input required type="date" className={fieldClass} value={value.start_date} onChange={e => set('start_date', e.target.value)} />
+        </FinanceField>
+        <FinanceField label="Purpose">
+          <input required className={fieldClass} value={value.purpose} onChange={e => set('purpose', e.target.value)} />
+        </FinanceField>
+        <FinanceField label="Agreement / enrollment evidence">
+          <input required className={fieldClass} value={value.evidence} onChange={e => set('evidence', e.target.value)} />
+        </FinanceField>
+      </div>
+    </details>}
+  </div>;
 }
 function LoanAction({
   loan,
@@ -106,7 +213,7 @@ function LoanAction({
   if (action === 'activate') body = {
     ...body,
     enrollment_evidence: enrollment,
-    funding
+    release_evidence: enrollment
   };
   if (action === 'schedule-changes') body = {
     ...body,
@@ -151,7 +258,7 @@ function LoanAction({
     }} label={action === 'activate' ? 'Approve and activate' : 'Confirm'}>
  <p className={styles.muted}>{financeLabel(loan.loan_type)} · {loan.reference_no || `Loan #${loan.loan_id}`}</p>
  {action === 'schedule-changes' && <TermsFields value={terms} onChange={setTerms} />}
- {action === 'activate' && loan.creditor !== 'COMPANY' && <FinanceField label="Verified agency enrollment evidence"><input required className={fieldClass} value={enrollment} onChange={e => setEnrollment(e.target.value)} /></FinanceField>}
+ {action === 'activate' && <FinanceField label={loan.creditor === 'COMPANY' ? "Release evidence / reference" : "Verified agency enrollment evidence"}><input required className={fieldClass} placeholder={loan.creditor === 'COMPANY' ? "e.g. Signed vale voucher # or manual receipt" : "e.g. Agency loan reference / billing notice"} value={enrollment} onChange={e => setEnrollment(e.target.value)} /></FinanceField>}
  {action === 'agency-payments' && <><p>Agency-direct evidence only. No company cash receipt or schedule rewrite.</p><FinanceField label="Agency payment amount"><input required className={fieldClass} value={amount} onChange={e => setAmount(e.target.value)} /></FinanceField><FinanceField label="Official agency receipt reference"><input required className={fieldClass} value={enrollment} onChange={e => setEnrollment(e.target.value)} /></FinanceField><FinanceField label="Agency evidence"><input required className={fieldClass} value={funding.evidence || ''} onChange={e => setFunding({
             ...funding,
             evidence: e.target.value
@@ -160,7 +267,7 @@ function LoanAction({
             occurred_at: e.target.value ? new Date(`${e.target.value}+08:00`).toISOString() : null
           })} /></FinanceField></>}
  {action === 'collect' && <><FinanceField label="Actual receipt amount"><input required className={fieldClass} value={amount} onChange={e => setAmount(e.target.value)} /></FinanceField><FinanceField label="Allocation policy"><select className={fieldClass} value={policy} onChange={e => setPolicy(e.target.value)}><option value="PRINCIPAL">Reduce principal outstanding</option><option value="INSTALLMENT_ARREARS">Apply to installment arrears</option></select></FinanceField>{policy === 'INSTALLMENT_ARREARS' && <><FinanceField label="Exact arrears recovery month"><input required type="month" className={fieldClass} value={arrearsMonth.slice(0, 7)} onChange={e => setArrearsMonth(`${e.target.value}-01`)} /></FinanceField><FinanceField label="Exact arrears cutoff"><select className={fieldClass} value={arrearsCutoff} onChange={e => setArrearsCutoff(Number(e.target.value))}><option value={1}>1st cutoff</option><option value={2}>2nd cutoff</option></select></FinanceField></>}</>}
- {(action === 'collect' || action === 'activate' && loan.creditor === 'COMPANY') && <FundingFields value={funding} onChange={setFunding} banks={banks} direction={action === 'collect' ? 'IN' : 'OUT'} amount={action === 'collect' ? amount : loan.original_principal} />}
+ {action === 'collect' && <FundingFields value={funding} onChange={setFunding} banks={banks} direction="IN" amount={amount} />}
  <FinanceField label="Reason"><input required className={fieldClass} value={reason} onChange={e => setReason(e.target.value)} /></FinanceField>
  </FinanceCommand></FinanceDialog></div>;
 }
