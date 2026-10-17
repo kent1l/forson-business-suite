@@ -57,6 +57,15 @@
     .sheet.up-2 { grid-template-rows: repeat(2, 1fr); }
     .sheet.up-3 { grid-template-rows: repeat(3, 1fr); }
     .sheet.up-4 { grid-template-rows: repeat(4, 1fr); }
+    .sheet.up-1 { display: block; height: auto; min-height: 281mm; }
+    .up-1 .slip { overflow: visible; min-height: 281mm; }
+    .up-1 .cols, .up-1 .col { overflow: visible; }
+    /* A slip longer than one full page uses normal table fragmentation, with
+       earnings followed by deductions. No fixed-height flex box may clip it. */
+    .flow-layout, .flow-layout .slip { height: auto; min-height: 0; }
+    .flow-layout .slip, .flow-layout .cols, .flow-layout .col { display: block; overflow: visible; }
+    .flow-layout .col { margin-bottom: 3mm; }
+    tr, .foot { break-inside: avoid; }
     .sheet { grid-template-columns: 1fr; }
 
     /* The cut guide is a hairline dashed rule, not a border box: a full box
@@ -186,8 +195,12 @@
 
         <div class="foot">
             <div class="stats">
-                Days paid {{days_paid}}{{#overtime_hours}} · OT {{overtime_hours}} hrs{{/overtime_hours}}<br />
-                Rate {{daily_rate}}/day
+                {{#show_rate_stats}}
+                {{pay_basis_label}} · DTR paid days {{days_paid}}{{#overtime_hours}} · OT {{overtime_hours}} hrs{{/overtime_hours}}<br />
+                {{rate_label}} {{daily_rate}}/day
+                {{#salary_note}}<br />{{salary_note}}{{/salary_note}}
+                {{/show_rate_stats}}
+                {{^show_rate_stats}}Final pay entitlements{{/show_rate_stats}}
             </div>
             <div class="net">
                 <div class="net-label">Net Pay</div>

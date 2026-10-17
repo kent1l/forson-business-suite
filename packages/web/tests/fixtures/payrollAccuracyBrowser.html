@@ -1,0 +1,16 @@
+<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"></head><body class="bg-gray-50 dark:bg-slate-900 p-4"><div id="root"></div><script type="module">
+import React from 'react';
+import {createRoot} from 'react-dom/client';
+import {AuthProvider} from '../../src/contexts/AuthContext.jsx';
+import {unlockPayReauth} from '../../src/utils/payReauth.js';
+import PayrollPage from '../../src/pages/PayrollPage.jsx';
+import MyPayslipsPage from '../../src/pages/MyPayslipsPage.jsx';
+import '../../src/index.css';
+const root=createRoot(document.getElementById('root'));
+window.mountPayroll=(own=false)=>{
+ const permissions=['payroll:view','payroll:compute','payroll:approve','payslip:view_own'];
+ localStorage.setItem('userSession',JSON.stringify({token:'browser-fixture',user:{employee_id:1,permission_level_id:1,permissions},permissions}));
+ unlockPayReauth();
+ root.render(React.createElement(AuthProvider,{key:String(own)},React.createElement(own?MyPayslipsPage:PayrollPage)));
+};
+</script></body></html>

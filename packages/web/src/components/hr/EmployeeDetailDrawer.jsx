@@ -317,7 +317,7 @@ const CompensationTab = ({ employee }) => {
                     {isMonthly && (
                         <p className="text-xs text-gray-500 dark:text-slate-400">
                             {form.salary_model === 'ATTENDANCE'
-                                ? 'Paid exactly half the monthly salary each cutoff, less unpaid absences and approved leave without pay.'
+                                ? 'Paid exactly half the monthly salary each cutoff, less unpaid absences, unpaid half-days and approved leave without pay. Lateness and undertime remain paid.'
                                 : 'Paid exactly half the monthly salary each cutoff regardless of attendance. Only approved leave without pay reduces it.'}
                         </p>
                     )}

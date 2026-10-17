@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import api from '../api';
+import PayslipBreakdown from '../components/hr/PayslipBreakdown';
 import StatusBadge from '../components/ui/StatusBadge';
 import LoadingState from '../components/ui/LoadingState';
 import EmptyState from '../components/ui/EmptyState';
@@ -128,6 +129,7 @@ const PayPasswordGate = ({ onUnlock }) => {
 const MyPayslipsPage = () => {
     const { hasPermission } = useAuth();
     const [payslips, setPayslips] = useState([]);
+    const [breakdownId, setBreakdownId] = useState(null);
     const [loading, setLoading] = useState(true);
     const [unlocked, setUnlocked] = useState(isPayReauthUnlocked);
 
@@ -160,6 +162,7 @@ const MyPayslipsPage = () => {
 
     return (
         <div>
+            {breakdownId && <PayslipBreakdown key={breakdownId} payslipId={breakdownId} own onClose={() => setBreakdownId(null)} />}
             <h1 className="text-2xl font-semibold text-gray-800 dark:text-slate-100 mb-6">My Pay</h1>
 
             {canPunch && <PunchCard />}
@@ -178,7 +181,7 @@ const MyPayslipsPage = () => {
                                 <tr className="text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">
                                     <th className="p-2">Period</th>
                                     <th className="p-2">Pay Date</th>
-                                    <th className="p-2 text-right">Days</th>
+                                    <th className="p-2 text-right">DTR Paid Days</th>
                                     <th className="p-2 text-right">Gross</th>
                                     <th className="p-2 text-right">Deductions</th>
                                     <th className="p-2 text-right">Net Pay</th>
@@ -193,13 +196,14 @@ const MyPayslipsPage = () => {
                                         </td>
                                         <td className="p-2 tabular-nums text-gray-600 dark:text-slate-300">{p.pay_date}</td>
                                         <td className="p-2 text-right tabular-nums text-gray-600 dark:text-slate-300">
-                                            {Number(p.days_paid).toFixed(2)}
+                                            {Number(p.days_paid).toLocaleString('en-PH', { maximumFractionDigits: 3 })}
                                         </td>
                                         <td className="p-2 text-right tabular-nums text-gray-600 dark:text-slate-300">{peso(p.gross_pay)}</td>
                                         <td className="p-2 text-right tabular-nums text-gray-600 dark:text-slate-300">{peso(p.total_deductions)}</td>
                                         <td className="p-2 text-right tabular-nums font-semibold text-gray-900 dark:text-slate-50">{peso(p.net_pay)}</td>
                                         <td className="p-2 text-right whitespace-nowrap">
                                             <StatusBadge tone={p.status === 'Posted' || p.status === 'Paid' ? 'success' : 'primary'} label={p.status} />
+                                            <button onClick={() => setBreakdownId(p.payslip_id)} className="ml-2 text-xs font-semibold text-primary-600">Breakdown</button>
                                             <button onClick={() => download(p.payslip_id)}
                                                 className="ml-2 text-xs font-semibold text-primary-600 hover:text-primary-800">
                                                 PDF

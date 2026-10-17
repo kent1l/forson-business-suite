@@ -76,6 +76,11 @@ const loadTables = async (executor, versions) => {
     for (const row of bir.rows) {
         (birByFrequency[row.payroll_frequency] ||= []).push(row);
     }
+    if (!sss.rows.length || !philhealth.rows.length || !pagibig.rows.length || !birByFrequency.SEMI_MONTHLY?.length) {
+        const error = new Error('The selected statutory version has incomplete contribution or semi-monthly tax tables. Complete the schedule before computing payroll.');
+        error.code = 'STATUTORY_VERSION_MISSING';
+        throw error;
+    }
 
     return {
         versions,
@@ -162,9 +167,12 @@ const computeWithholdingTax = (tables, taxableIncome, frequency = 'SEMI_MONTHLY'
     const income = Number(taxableIncome) || 0;
     if (income <= 0) return { tax: 0, bracketSeq: null };
 
-    const bracket = brackets.find(
-        (b) => income >= Number(b.lower_bound) && (b.upper_bound === null || income <= Number(b.upper_bound))
-    ) || brackets[brackets.length - 1];
+    // Published upper bounds are whole pesos (e.g. 16,666 followed by
+    // 16,667). Centavos between them still belong to the lower band, never
+    // the final/top band. Select by the greatest applicable lower threshold.
+    const bracket = [...brackets].sort((a, b) => Number(b.lower_bound) - Number(a.lower_bound))
+        .find((b) => income >= Number(b.lower_bound));
+    if (!bracket) return { tax: 0, bracketSeq: null };
 
     const tax = Number(bracket.base_tax)
         + ((income - Number(bracket.excess_over)) * Number(bracket.rate_percent));

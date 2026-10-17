@@ -11,6 +11,7 @@
  */
 
 const statutory = require('./statutoryService');
+const { computeAttendanceEarnings, invalid } = require('./attendanceEarningsService');
 
 const { round2 } = statutory;
 
@@ -120,6 +121,7 @@ const computeBasicPay = ({ compensation, dtrSummary, periodDays, policy, cutoffS
     // Only an approved leave-without-pay — a deliberate HR act — reduces it.
     const lwopDays = Number(summary.days_lwop) || 0;
     const absentDays = salaryModel === 'ATTENDANCE' ? (Number(summary.days_absent) || 0) : 0;
+    const halfDays = salaryModel === 'ATTENDANCE' ? (Number(summary.days_half_unpaid) || 0) : 0;
 
     const deductionLines = [];
     let deducted = 0;
@@ -138,6 +140,7 @@ const computeBasicPay = ({ compensation, dtrSummary, periodDays, policy, cutoffS
     };
     addDeduction('LWOP', 'Leave Without Pay', lwopDays);
     addDeduction('ABSENCE', 'Absences', absentDays);
+    addDeduction('HALF_DAY_UNPAID', 'Unpaid Half Days', halfDays);
 
     const basicPay = round2(entitlement - deducted);
     // The equivalent daily rate is display-and-overtime only; it never
@@ -168,6 +171,7 @@ const computeBasicPay = ({ compensation, dtrSummary, periodDays, policy, cutoffS
             dayValue: round2(dayValue),
             lwopDays,
             absentDaysDeducted: absentDays,
+            halfDaysDeducted: halfDays,
             totalDayDeductions: deducted,
             equivalentDailyRate,
         },
@@ -237,12 +241,20 @@ const computeFinalPay = ({ employee, compensation, loans = [], policy, statutory
     // One-off additions (a separation bonus, a last allowance) ride alongside,
     // so the run-adjustment UI works on a final pay exactly as on a regular one.
     let otherEarnings = 0;
+    let taxableAdditions = 0;
     let otherDeductions = 0;
     for (const adj of adjustments) {
         const amount = round2(Number(adj.amount) || 0);
         if (amount === 0) continue;
         if (adj.adjustment_type === 'ADD') {
+            if (adj.component_type === 'DEDUCTION') {
+                otherDeductions = round2(otherDeductions + amount);
+                addLine({ lineType: 'DEDUCTION', componentCode: adj.component_code,
+                    description: adj.component_name || adj.component_code, amount, isTaxable: false, sortOrder: 45 });
+                continue;
+            }
             otherEarnings = round2(otherEarnings + amount);
+            if (adj.is_taxable) taxableAdditions = round2(taxableAdditions + amount);
             addLine({
                 lineType: 'EARNING', componentCode: adj.component_code,
                 description: adj.component_name || adj.component_code,
@@ -264,7 +276,7 @@ const computeFinalPay = ({ employee, compensation, loans = [], policy, statutory
     // AND other benefits for the year, so the figure already paid counts toward
     // it — otherwise splitting a bonus across two runs would dodge the ceiling.
     const benefitsForYear = round2(alreadyPaid + thirteenthMonth);
-    const taxableBenefits = round2(Math.max(benefitsForYear - exemptCap, 0));
+    const taxableBenefits = round2(Math.max(benefitsForYear - exemptCap, 0) - Math.max(alreadyPaid - exemptCap, 0));
     const isExempt = compensation?.statutory_coverage === 'EXEMPT';
 
     // No tax is withheld here even when there IS an excess, and that is a
@@ -278,7 +290,7 @@ const computeFinalPay = ({ employee, compensation, loans = [], policy, statutory
     // raised as a run warning for the year-end BIR 2316. Visibly unwithheld
     // beats invisibly under-withheld.
     const withholdingTax = 0;
-    const requiresAnnualisation = !isExempt && taxableBenefits > 0;
+    const requiresAnnualisation = !isExempt && (taxableBenefits > 0 || taxableAdditions > 0);
 
     // Every outstanding loan closes here, regardless of which cutoff it was
     // scheduled against — there will be no later payslip to deduct from.
@@ -342,7 +354,7 @@ const computeFinalPay = ({ employee, compensation, loans = [], policy, statutory
             loans_total: loansTotal,
             other_deductions: otherDeductions,
             total_deductions: totalDeductions,
-            taxable_income: taxableBenefits,
+            taxable_income: isExempt ? 0 : round2(taxableBenefits + taxableAdditions),
             net_pay: netPay,
 
             sss_er: 0, sss_mpf_er: 0, sss_ec: 0, philhealth_er: 0, pagibig_er: 0,
@@ -352,6 +364,8 @@ const computeFinalPay = ({ employee, compensation, loans = [], policy, statutory
         loanDeductions,
         trace: {
             basicPayModel: 'FINAL_PAY',
+            earningsModelVersion: 2,
+            taxableAdditions,
             dateSeparated: employee.date_separated || null,
             basicEarnedThisYear: basicEarned,
             thirteenthMonthEntitlement: entitlement,
@@ -389,6 +403,9 @@ const computePayslip = ({
     payComponents = [], statutoryOverrides = {}, adjustments = [], runType = 'REGULAR',
     finalPay = null,
 }) => {
+    if (!['REGULAR', 'JOB_ORDER', 'FINAL_PAY'].includes(runType)) {
+        invalid(`Run type ${runType} requires a dedicated benefit and tax computation; regular salary must not be paid again.`);
+    }
     if (runType === 'FINAL_PAY') {
         return computeFinalPay({
             employee, compensation, loans, policy, statutoryTables, finalPay, adjustments,
@@ -401,10 +418,9 @@ const computePayslip = ({
     }
     const summary = dtrSummary || {};
     const isOvertimeExempt = Boolean(compensation.is_overtime_exempt);
-    // An exempt employee accrues no premium, so any hours the DTR happens to
-    // carry are ignored rather than silently paid.
+    // The configured overtime exemption suppresses OT hours. Holiday/rest-day
+    // earnings are classified separately from overtime.
     const overtimeHours = isOvertimeExempt ? 0 : (Number(summary.overtime_hours) || 0);
-    const nightDiffHours = isOvertimeExempt ? 0 : (Number(summary.night_diff_hours) || 0);
 
     const lines = [];
     const addLine = (line) => { if (line.amount !== 0) lines.push(line); };
@@ -420,19 +436,9 @@ const computePayslip = ({
     // and taxable income both reflect what was actually earned.
     for (const line of basic.deductionLines) addLine(line);
 
-    const overtimePay = round2(overtimeHours * hourlyRate * Number(policy.otRateOrdinary || 1.25));
-    addLine({
-        lineType: 'EARNING', componentCode: 'OT_REG', description: 'Overtime Pay',
-        quantity: overtimeHours, rate: round2(hourlyRate * Number(policy.otRateOrdinary || 1.25)),
-        amount: overtimePay, isTaxable: true, sortOrder: 3,
-    });
-
-    const nightDiffPay = round2(nightDiffHours * hourlyRate * Number(policy.nightDiffRate || 0.10));
-    addLine({
-        lineType: 'EARNING', componentCode: 'NIGHT_DIFF', description: 'Night Differential',
-        quantity: nightDiffHours, rate: round2(hourlyRate * Number(policy.nightDiffRate || 0.10)),
-        amount: nightDiffPay, isTaxable: true, sortOrder: 4,
-    });
+    const premiums = computeAttendanceEarnings({ employee, compensation, summary, dailyRate, hourlyRate, policy });
+    const { overtimePay, nightDiffPay, holidayPay } = premiums;
+    for (const line of premiums.lines) addLine(line);
 
     // --- Recurring components and one-off additions ----------------------
     // ADD adjustments are folded in here, alongside the standing components,
@@ -453,13 +459,18 @@ const computePayslip = ({
     const overrideByComponent = new Map(
         adjustments.filter((a) => a.adjustment_type === 'OVERRIDE').map((a) => [a.component_code, a])
     );
+    const overridable = new Set(['SSS_EE', 'SSS_MPF_EE', 'PHIC_EE', 'HDMF_EE', 'WTAX',
+        ...payComponents.map((component) => component.component_code), ...loans.map((loan) => loan.component_code)]);
+    for (const code of overrideByComponent.keys()) {
+        if (!overridable.has(code)) invalid(`${code}: no recurring or statutory amount exists to override. Use a separate addition or correct the attendance input.`);
+    }
 
     let allowancesTaxable = 0;
     let allowancesNonTaxable = 0;
     let otherDeductions = 0;
 
     for (const component of [...payComponents, ...oneOffAdditions]) {
-        const override = overrideByComponent.get(component.component_code);
+        const override = component._oneOff ? null : overrideByComponent.get(component.component_code);
         const amount = override
             ? round2(Number(override.amount))
             : componentAmountFor(component, { basicPay, cutoffSeq });
@@ -483,7 +494,7 @@ const computePayslip = ({
     }
 
     const grossPay = round2(
-        basicPay + overtimePay + nightDiffPay + allowancesTaxable + allowancesNonTaxable
+        basicPay + holidayPay + overtimePay + nightDiffPay + allowancesTaxable + allowancesNonTaxable
     );
 
     // --- Statutory contributions ----------------------------------------
@@ -551,7 +562,7 @@ const computePayslip = ({
     const statutoryDeductions = round2(sssEe + sssMpfEe + philhealthEe + pagibigEe);
     // Non-taxable allowances (rice, meal, de minimis) are part of gross but not
     // of taxable income, so tax is computed on the taxable earnings only.
-    const taxableEarnings = round2(basicPay + overtimePay + nightDiffPay + allowancesTaxable);
+    const taxableEarnings = round2(basicPay + holidayPay + overtimePay + nightDiffPay + allowancesTaxable);
     // An exempt worker earns a fee, not compensation, so the compensation tax
     // table does not apply to them at all — the figure is zero rather than
     // computed-and-suppressed, and taxable income follows so BIR 1601-C
@@ -634,7 +645,7 @@ const computePayslip = ({
 
             basic_pay: basicPay,
             overtime_pay: overtimePay,
-            holiday_pay: 0,
+            holiday_pay: holidayPay,
             night_diff_pay: nightDiffPay,
             allowances_taxable: allowancesTaxable,
             allowances_nontaxable: allowancesNonTaxable,
@@ -665,6 +676,8 @@ const computePayslip = ({
         // reached years later, without re-running the engine.
         trace: {
             ...basic.trace,
+            attendanceTimePolicy: 'HALF_DAYS_ONLY',
+            earningsModelVersion: 2,
             monthlyBasis,
             workerClass: employee.worker_class || 'EMPLOYEE',
             statutoryCoverage: isStatutoryExempt ? 'EXEMPT' : 'COVERED',

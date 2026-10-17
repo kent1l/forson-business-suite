@@ -35,7 +35,9 @@ const dtrSourceFor = (punchSource) => {
     return punchSource;
 };
 
-const toTime = (timestamp) => new Date(timestamp).toISOString().slice(11, 19);
+const toTime = (timestamp) => new Date(timestamp).toLocaleTimeString('en-GB', {
+    timeZone: 'Asia/Manila', hour12: false, hourCycle: 'h23',
+});
 
 const hoursBetween = (startIso, endIso, breakMinutes = 0) => {
     const ms = new Date(endIso) - new Date(startIso);
@@ -199,8 +201,15 @@ const deriveDtrFromPunches = async (executor, { employeeIds, dateFrom, dateTo, a
         }
 
         const { rows: existingRows } = await executor.query(
-            `SELECT dtr_id, source, locked_by_run_id, break_minutes, scheduled_time_in
-             FROM daily_time_record WHERE employee_id = $1 AND work_date = $2`,
+            `SELECT d.dtr_id, d.source, d.locked_by_run_id, d.break_minutes, d.scheduled_time_in,
+                    COALESCE(d.is_rest_day, sd.is_rest_day, false) AS is_rest_day,
+                    h.holiday_id, h.holiday_type
+             FROM employee e
+             LEFT JOIN daily_time_record d ON d.employee_id = e.employee_id AND d.work_date = $2
+             LEFT JOIN holiday h ON h.holiday_date = $2::date
+             LEFT JOIN work_schedule_day sd ON sd.schedule_id = e.work_schedule_id
+                 AND sd.day_of_week = EXTRACT(DOW FROM $2::date)
+             WHERE e.employee_id = $1`,
             [bucket.employee_id, bucket.date]
         );
         const existing = existingRows[0];
@@ -211,8 +220,11 @@ const deriveDtrFromPunches = async (executor, { employeeIds, dateFrom, dateTo, a
 
         const breakMinutes = existing?.break_minutes ?? 60;
         const hours = hoursBetween(firstIn, lastOut, breakMinutes);
-        const dayType = hours > 0 && hours < halfDayBelow ? 'Half Day' : 'Present';
-        const dayFraction = dayType === 'Half Day' ? 0.5 : 1;
+        const dayFraction = hours <= 0 ? 0 : hours <= halfDayBelow ? 0.5 : 1;
+        const dayType = hours <= 0 ? 'Absent'
+            : existing?.holiday_type && existing.holiday_type !== 'Special Working' ? 'Holiday Worked'
+            : existing?.is_rest_day ? 'Rest Day Worked'
+            : dayFraction === 0.5 ? 'Half Day' : 'Present';
 
         let lateMinutes = 0;
         if (existing?.scheduled_time_in) {
@@ -225,8 +237,8 @@ const deriveDtrFromPunches = async (executor, { employeeIds, dateFrom, dateTo, a
         await executor.query(
             `INSERT INTO daily_time_record
                 (employee_id, work_date, day_type, day_fraction, time_in, time_out,
-                 break_minutes, hours_worked, late_minutes, source, created_by)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+                 break_minutes, hours_worked, late_minutes, source, created_by, holiday_id, is_rest_day)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
              ON CONFLICT (employee_id, work_date) DO UPDATE
              SET day_type = EXCLUDED.day_type,
                  day_fraction = EXCLUDED.day_fraction,
@@ -234,12 +246,14 @@ const deriveDtrFromPunches = async (executor, { employeeIds, dateFrom, dateTo, a
                  time_out = EXCLUDED.time_out,
                  hours_worked = EXCLUDED.hours_worked,
                  late_minutes = EXCLUDED.late_minutes,
+                 holiday_id = EXCLUDED.holiday_id,
+                 is_rest_day = EXCLUDED.is_rest_day,
                  source = EXCLUDED.source,
                  modified_by = EXCLUDED.created_by,
                  updated_at = now()`,
             [bucket.employee_id, bucket.date, dayType, dayFraction,
                 toTime(firstIn), toTime(lastOut), breakMinutes, hours, lateMinutes,
-                dtrSourceFor(bucket.source), actorId]
+                dtrSourceFor(bucket.source), actorId, existing?.holiday_id || null, Boolean(existing?.is_rest_day)]
         );
         updated += 1;
     }

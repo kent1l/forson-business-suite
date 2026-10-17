@@ -31,6 +31,7 @@ const postRunToExpense = async (executor, { runId, postedBy }) => {
         [runId]
     );
     const run = runRows[0];
+    if (run) await require('./payrollIntegrityService').assertRun(executor, runId);
     if (!run) {
         const err = new Error('Payroll run not found');
         err.code = 'RUN_NOT_FOUND';
