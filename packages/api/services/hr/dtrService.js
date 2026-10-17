@@ -171,7 +171,7 @@ const resolveDay = ({ isoDate, scheduleDay, holiday, leave }) => {
         };
     }
 
-    if (holiday) {
+    if (holiday && holiday.holiday_type !== 'Special Working') {
         // Holiday premiums are a payroll concern; the DTR only records that the
         // day was a holiday and was not worked.
         return {
@@ -373,6 +373,7 @@ const summarizePeriodBulk = async (executor, { employeeIds, periodStart, periodE
                 COALESCE(SUM(dtr.day_fraction), 0)::numeric(8,3)                      AS days_paid,
                 COUNT(*) FILTER (WHERE dtr.day_type IN ('Present','Half Day'))::int   AS days_worked,
                 COUNT(*) FILTER (WHERE dtr.day_type = 'Absent')::int                  AS days_absent,
+                COALESCE(SUM(1 - dtr.day_fraction) FILTER (WHERE dtr.day_type = 'Half Day'), 0) AS days_half_unpaid,
                 COUNT(*) FILTER (WHERE dtr.day_type = 'On Leave')::int                AS days_on_leave,
                 -- Unpaid leave is the one absence a GUARANTEED monthly salary still
                 -- deducts: it is an explicit HR act, not a no-show. The fraction
@@ -388,11 +389,35 @@ const summarizePeriodBulk = async (executor, { employeeIds, periodStart, periodE
                 COALESCE(SUM(dtr.overtime_hours), 0)::numeric(8,2)                    AS overtime_hours,
                 COALESCE(SUM(dtr.night_diff_hours), 0)::numeric(8,2)                  AS night_diff_hours,
                 COALESCE(SUM(dtr.late_minutes), 0)::int                               AS late_minutes,
-                COALESCE(SUM(dtr.undertime_minutes), 0)::int                          AS undertime_minutes
+                COALESCE(SUM(dtr.undertime_minutes), 0)::int                          AS undertime_minutes,
+                jsonb_agg(jsonb_build_object(
+                    'work_date', TO_CHAR(dtr.work_date, 'YYYY-MM-DD'),
+                    'day_type', dtr.day_type, 'day_fraction', dtr.day_fraction,
+                    'is_rest_day', dtr.is_rest_day, 'holiday_type', h.holiday_type,
+                    'overtime_hours', dtr.overtime_hours, 'night_diff_hours', dtr.night_diff_hours,
+                    'late_minutes', dtr.late_minutes, 'undertime_minutes', dtr.undertime_minutes,
+                    'holiday_eligible', CASE WHEN previous.dtr_id IS NULL THEN NULL
+                        ELSE previous.day_fraction > 0 END
+                ) ORDER BY dtr.work_date) AS days
          FROM daily_time_record dtr
          JOIN employee e ON e.employee_id = dtr.employee_id
          LEFT JOIN leave_request lr ON lr.leave_id = dtr.leave_id
          LEFT JOIN leave_type    lt ON lt.leave_type_id = lr.leave_type_id
+         LEFT JOIN holiday h ON h.holiday_id = dtr.holiday_id
+         LEFT JOIN LATERAL (
+             SELECT prior.dtr_id, prior.day_fraction
+             FROM (
+                 SELECT g::date AS work_date
+                 FROM generate_series(dtr.work_date - 32, dtr.work_date - 1, interval '1 day') g
+                 JOIN work_schedule_day sd ON sd.schedule_id = e.work_schedule_id
+                     AND sd.day_of_week = EXTRACT(DOW FROM g) AND NOT sd.is_rest_day
+                 WHERE NOT EXISTS (SELECT 1 FROM holiday ph WHERE ph.holiday_date = g::date
+                     AND ph.holiday_type <> 'Special Working')
+                 ORDER BY g DESC LIMIT 1
+             ) scheduled
+             LEFT JOIN daily_time_record prior ON prior.employee_id = dtr.employee_id
+                 AND prior.work_date = scheduled.work_date
+         ) previous ON dtr.day_type = 'Holiday' AND h.holiday_type = 'Regular'
          WHERE dtr.employee_id = ANY($1::int[]) AND dtr.work_date BETWEEN $2 AND $3
            -- Defence in depth against rows generated before the employment
            -- window was known (or before generation honoured it). Payroll reads
@@ -484,7 +509,7 @@ const countScheduledDays = (dates, schedule, holidays, within = null) => {
     let days = 0;
     for (const isoDate of dates) {
         if (within && !within(isoDate)) continue;
-        if (holidays.has(isoDate)) continue;
+        if (holidays.has(isoDate) && holidays.get(isoDate).holiday_type !== 'Special Working') continue;
         const scheduleDay = schedule.get(dayOfWeek(isoDate));
         if (!scheduleDay || scheduleDay.is_rest_day) continue;
         days += 1;

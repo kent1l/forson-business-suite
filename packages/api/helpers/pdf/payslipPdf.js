@@ -1,4 +1,5 @@
 'use strict';
+/* global document */
 
 /**
  * Payslip PDF generation, laid out N-up on A4.
@@ -25,7 +26,9 @@ const puppeteer = require('puppeteer');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const { randomUUID } = require('node:crypto');
 const mustache = require('mustache');
+const { assertPayslip } = require('../../services/hr/payrollIntegrityService');
 
 const TEMPLATE_PATH = path.join(__dirname, '..', '..', 'templates', 'pdf', 'payslip.html');
 
@@ -39,7 +42,7 @@ const money = (v) => (Number(v) || 0).toLocaleString('en-PH', {
 
 const trimNum = (v) => {
     const n = Number(v) || 0;
-    return Number.isInteger(n) ? String(n) : n.toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
+    return Number.isInteger(n) ? String(n) : n.toFixed(3).replace(/0+$/, '').replace(/\.$/, '');
 };
 
 const formatDate = (iso) => {
@@ -48,12 +51,22 @@ const formatDate = (iso) => {
     return d.toLocaleDateString('en-PH', { year: 'numeric', month: 'short', day: '2-digit', timeZone: 'UTC' });
 };
 
+const quantityLabel = (line, monthly) => {
+    if ((monthly && line.component_code === 'BASIC') || line.rate == null || line.quantity == null || Number(line.quantity) === 1) return null;
+    const displayedRate = Number(Number(line.rate).toFixed(2));
+    const product = Math.round(Number(line.quantity) * displayedRate * 100);
+    const amount = Math.round(Math.abs(Number(line.amount)) * 100);
+    return `${trimNum(line.quantity)} @ ${money(line.rate)}${product !== amount ? ' (rate rounded)' : ''}`;
+};
+
 /**
  * Turns a payslip row plus its lines into the flat shape the template renders.
  * Zero-value lines are dropped — at this size every row costs real space, and a
  * line of zeros tells the reader nothing.
  */
 const buildSlip = (payslip, lines, { company, periodLabel, payDate }) => {
+    const monthly = payslip.pay_basis === 'monthly';
+    const finalPay = payslip.computation_trace?.basicPayModel === 'FINAL_PAY';
     const relevant = lines.filter((l) => Number(l.amount) !== 0);
 
     const earnings = relevant
@@ -63,9 +76,7 @@ const buildSlip = (payslip, lines, { company, periodLabel, payDate }) => {
             label: l.description,
             // Quantity is only meaningful where it varies (days, OT hours);
             // showing "1 x" on an allowance is noise.
-            qty: l.quantity != null && Number(l.quantity) !== 1
-                ? `${trimNum(l.quantity)} @ ${money(l.rate)}`
-                : null,
+            qty: quantityLabel(l, monthly),
             amount: money(l.amount),
         }));
 
@@ -91,6 +102,12 @@ const buildSlip = (payslip, lines, { company, periodLabel, payDate }) => {
         days_paid: trimNum(payslip.days_paid),
         overtime_hours: Number(payslip.overtime_hours) > 0 ? trimNum(payslip.overtime_hours) : null,
         daily_rate: money(payslip.daily_rate),
+        rate_label: monthly ? 'Equivalent daily rate' : 'Daily rate',
+        pay_basis_label: monthly ? 'Monthly salary' : 'Daily pay',
+        show_rate_stats: !finalPay,
+        salary_note: monthly ? (payslip.salary_model === 'ATTENDANCE'
+            ? 'Cutoff salary less unpaid leave, absences and unpaid half-days. Lateness / undertime are paid.'
+            : 'Guaranteed cutoff salary less approved unpaid leave. Attendance does not reduce salary.') : null,
         total_employer_contrib: money(payslip.total_employer_contrib),
         show_employer_note: Number(payslip.total_employer_contrib) > 0,
     };
@@ -124,18 +141,22 @@ const generatePayslipPdf = async ({
 }) => {
     const slipsPerPage = VALID_PER_PAGE.includes(Number(perPage)) ? Number(perPage) : 4;
 
+    for (const payslip of payslips) {
+        assertPayslip(payslip, linesByPayslip.get(String(payslip.payslip_id)) || linesByPayslip.get(payslip.payslip_id) || []);
+    }
+
     const slips = payslips.map((p) => buildSlip(
         p, linesByPayslip.get(String(p.payslip_id)) || linesByPayslip.get(p.payslip_id) || [],
         { company, periodLabel, payDate }
     ));
 
     const template = fs.readFileSync(TEMPLATE_PATH, 'utf8');
-    const html = mustache.render(template, {
+    const render = (density) => mustache.render(template, {
         company,
-        sheets: paginate(slips, slipsPerPage),
+        sheets: paginate(slips, density),
     });
 
-    const outputPath = path.join(os.tmpdir(), `payslips_${Date.now()}.pdf`);
+    const outputPath = path.join(os.tmpdir(), `payslips_${randomUUID()}.pdf`);
     let browser;
     try {
         browser = await puppeteer.launch({
@@ -144,7 +165,21 @@ const generatePayslipPdf = async ({
             args: ['--no-sandbox', '--disable-setuid-sandbox', '--font-render-hinting=medium'],
         });
         const page = await browser.newPage();
-        await page.setContent(html, { waitUntil: 'domcontentloaded' });
+        // Choose density from the tallest actual slip, not a fixed number of
+        // deductions. Never silently clip earnings, deductions or subtotals.
+        for (const density of [...VALID_PER_PAGE.filter((n) => n <= slipsPerPage).sort((a, b) => b - a), 1]) {
+            await page.setContent(render(density), { waitUntil: 'domcontentloaded' });
+            const overflowing = await page.evaluate(() => [...document.querySelectorAll('.col, .slip')]
+                .some((col) => col.scrollHeight > col.clientHeight + 1));
+            if (density === 1) {
+                await page.evaluate(() => {
+                    for (const sheet of document.querySelectorAll('.sheet')) {
+                        if (sheet.scrollHeight > 281 * 96 / 25.4 + 1) sheet.classList.add('flow-layout');
+                    }
+                });
+            }
+            if (!overflowing || density === 1) break;
+        }
         await page.pdf({
             path: outputPath,
             printBackground: true,

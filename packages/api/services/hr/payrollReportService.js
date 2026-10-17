@@ -18,8 +18,8 @@ const COMMITTED_STATUSES = ['Approved', 'Paid', 'Posted'];
 const payrollRegister = async (executor, { runId }) => {
     const { rows } = await executor.query(
         `SELECT p.payslip_no, p.employee_code, p.employee_name, p.position_title, p.department_name,
-                p.daily_rate, p.days_paid, p.days_absent, p.days_on_leave, p.overtime_hours,
-                p.basic_pay, p.overtime_pay, p.night_diff_pay,
+                p.pay_basis, p.salary_model, p.daily_rate, p.days_paid, p.days_absent, p.days_on_leave, p.overtime_hours,
+                p.basic_pay, p.overtime_pay, p.holiday_pay, p.night_diff_pay, p.other_earnings,
                 p.allowances_taxable, p.allowances_nontaxable, p.gross_pay,
                 p.sss_ee, p.sss_mpf_ee, p.philhealth_ee, p.pagibig_ee, p.withholding_tax,
                 p.loans_total, p.other_deductions, p.total_deductions, p.net_pay,
@@ -34,7 +34,8 @@ const payrollRegister = async (executor, { runId }) => {
         for (const key of Object.keys(acc)) acc[key] = Math.round((acc[key] + Number(r[key] || 0)) * 100) / 100;
         return acc;
     }, {
-        basic_pay: 0, overtime_pay: 0, night_diff_pay: 0, gross_pay: 0,
+        basic_pay: 0, overtime_pay: 0, holiday_pay: 0, night_diff_pay: 0,
+        allowances_taxable: 0, allowances_nontaxable: 0, other_earnings: 0, gross_pay: 0,
         sss_ee: 0, sss_mpf_ee: 0, philhealth_ee: 0, pagibig_ee: 0, withholding_tax: 0,
         loans_total: 0, other_deductions: 0, total_deductions: 0, net_pay: 0,
         sss_er: 0, sss_mpf_er: 0, sss_ec: 0, philhealth_er: 0, pagibig_er: 0, total_employer_contrib: 0,
@@ -154,9 +155,12 @@ const thirteenthMonthReport = async (executor, { year }) => {
             WHERE r.status = ANY($1) AND EXTRACT(YEAR FROM r.period_end) = $2
             GROUP BY p.employee_id
         ), already AS (
-            SELECT p.employee_id, SUM(p.gross_pay)::numeric(14,2) AS already_paid
+            SELECT p.employee_id, SUM(COALESCE(benefit.amount, 0))::numeric(14,2) AS already_paid
             FROM payroll_payslip p
             JOIN payroll_run r ON p.run_id = r.run_id
+            LEFT JOIN LATERAL (SELECT SUM(amount) AS amount FROM payroll_payslip_line
+                WHERE payslip_id = p.payslip_id AND component_code = 'THIRTEENTH_MONTH'
+                  AND line_type = 'EARNING') benefit ON true
             -- A final pay settles the leaver's 13th month too, so it counts as
             -- already paid; otherwise this report would keep showing them owed.
             WHERE r.status = ANY($1) AND r.run_type IN ('THIRTEENTH_MONTH', 'FINAL_PAY')

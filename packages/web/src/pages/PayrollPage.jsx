@@ -1,4 +1,5 @@
 import {FinanceCommand, FinanceDialog} from '../components/hr/FinancePrimitives';
+import PayslipBreakdown from '../components/hr/PayslipBreakdown';
 import PayrollRecoveryReview from '../components/hr/PayrollRecoveryReview';
 import React, { useCallback, useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
@@ -28,6 +29,7 @@ const STATUS_TONE = {
 const NEXT_ACTIONS = {
     Draft: [{ action: 'compute', label: 'Compute', permission: 'payroll:compute' }],
     Computed: [
+        { action: 'compute', label: 'Recompute', permission: 'payroll:compute' },
         { action: 'approve', label: 'Approve', permission: 'payroll:approve' },
         { action: 'revert', label: 'Back to Draft', permission: 'payroll:compute', subtle: true },
     ],
@@ -45,6 +47,7 @@ const PayrollPage = () => {
     const [periods, setPeriods] = useState([]);
     const [selectedRun, setSelectedRun] = useState(null);
     const [reviewSlip, setReviewSlip] = useState(null);
+    const [breakdownId, setBreakdownId] = useState(null);
     const [payslips, setPayslips] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
@@ -110,6 +113,7 @@ const PayrollPage = () => {
                 api.get(`/payroll/runs/${run.run_id}`),
             ]);
             setSelectedRun(detailRes.data);
+            setWarnings(detailRes.data.policy_snapshot?.computationWarnings || []);
             setPayslips(Array.isArray(slipRes.data) ? slipRes.data : []);
             setAdjustments(Array.isArray(adjRes.data) ? adjRes.data : []);
         } catch {
@@ -219,6 +223,7 @@ const PayrollPage = () => {
 
     return (
         <div>
+            {breakdownId && <PayslipBreakdown key={breakdownId} payslipId={breakdownId} onClose={() => setBreakdownId(null)} />}
             <div className="flex flex-wrap justify-between items-center gap-3 mb-6">
                 <h1 className="text-2xl font-semibold text-gray-800 dark:text-slate-100">Payroll</h1>
                 {canCompute && (
@@ -301,6 +306,13 @@ const PayrollPage = () => {
                         </p>
                     </div>
 
+                    {['Computed', 'Approved'].includes(selectedRun.status) && payslips.some((p) => p.computation_trace?.earningsModelVersion !== 2) && (
+                        <p className="mb-4 rounded-lg border border-warning-300 bg-warning-50 p-4 text-sm text-warning-800 dark:bg-warning-900/20 dark:text-warning-300">
+                            This unpaid run uses the earlier payroll calculation. {selectedRun.status === 'Computed'
+                                ? 'Recompute and review the breakdown before approval.'
+                                : 'Review and replace this unpaid approved run before payout.'}
+                        </p>
+                    )}
                     {warnings.length > 0 && (
                         <div className="mb-6 p-4 rounded-xl border border-warning-300 bg-warning-50 dark:bg-warning-900/20 dark:border-warning-800">
                             <h3 className="text-sm font-semibold text-warning-800 dark:text-warning-400 mb-2">
@@ -402,14 +414,18 @@ const PayrollPage = () => {
                                     <thead className="border-b border-gray-200 dark:border-slate-700">
                                         <tr className="text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">
                                             <th className="p-2">Employee</th>
-                                            <th className="p-2 text-right">Rate</th>
-                                            <th className="p-2 text-right">Days</th>
+                                            <th className="p-2 text-right">Pay Basis / Daily Rate</th>
+                                            <th className="p-2 text-right">DTR Paid Days</th>
+                                            <th className="p-2 text-right">Basic</th>
+                                            <th className="p-2 text-right">Additional Earnings</th>
                                             <th className="p-2 text-right">Gross</th>
                                             <th className="p-2 text-right">SSS</th>
                                             <th className="p-2 text-right">PhilHealth</th>
                                             <th className="p-2 text-right">Pag-IBIG</th>
                                             <th className="p-2 text-right">Tax</th>
                                             <th className="p-2 text-right">Loans</th>
+                                            <th className="p-2 text-right">Other Deductions</th>
+                                            <th className="p-2 text-right">Total Deductions</th>
                                             <th className="p-2 text-right">Net Pay</th>
                                         </tr>
                                     </thead>
@@ -417,8 +433,10 @@ const PayrollPage = () => {
                                         {payslips.map((p) => (
                                             <tr key={p.payslip_id} className="border-b border-gray-100 dark:border-slate-700/60">
                                                 <td className="p-2 font-medium text-gray-800 dark:text-slate-100">{p.employee_name}{selectedRun.status === 'Computed' && hasPermission('payroll:approve') && <button className="block text-xs underline" onClick={() => setReviewSlip(p)}>Review exact recoveries</button>}</td>
-                                                <td className="p-2 text-right tabular-nums text-gray-600 dark:text-slate-300">{peso(p.daily_rate)}</td>
-                                                <td className="p-2 text-right tabular-nums text-gray-600 dark:text-slate-300">{Number(p.days_paid).toFixed(2)}</td>
+                                                <td className="p-2 text-right tabular-nums text-gray-600 dark:text-slate-300"><span className="block text-xs">{selectedRun.run_type === 'FINAL_PAY' ? 'Final pay' : p.pay_basis === 'monthly' ? 'Monthly · Equivalent daily rate' : 'Daily'}</span>{selectedRun.run_type === 'FINAL_PAY' ? '—' : peso(p.daily_rate)}</td>
+                                                <td className="p-2 text-right tabular-nums text-gray-600 dark:text-slate-300">{Number(p.days_paid).toLocaleString('en-PH', { maximumFractionDigits: 3 })}</td>
+                                                <td className="p-2 text-right tabular-nums">{peso(p.basic_pay)}</td>
+                                                <td className="p-2 text-right tabular-nums">{peso(Number(p.gross_pay) - Number(p.basic_pay))}</td>
                                                 <td className="p-2 text-right tabular-nums text-gray-800 dark:text-slate-100">{peso(p.gross_pay)}</td>
                                                 <td className="p-2 text-right tabular-nums text-gray-600 dark:text-slate-300">
                                                     {peso(Number(p.sss_ee) + Number(p.sss_mpf_ee))}
@@ -427,7 +445,9 @@ const PayrollPage = () => {
                                                 <td className="p-2 text-right tabular-nums text-gray-600 dark:text-slate-300">{peso(p.pagibig_ee)}</td>
                                                 <td className="p-2 text-right tabular-nums text-gray-600 dark:text-slate-300">{peso(p.withholding_tax)}</td>
                                                 <td className="p-2 text-right tabular-nums text-gray-600 dark:text-slate-300">{peso(p.loans_total)}</td>
-                                                <td className="p-2 text-right tabular-nums font-semibold text-gray-900 dark:text-slate-50">{peso(p.net_pay)}</td>
+                                                <td className="p-2 text-right tabular-nums">{peso(p.other_deductions)}</td>
+                                                <td className="p-2 text-right tabular-nums">{peso(p.total_deductions)}</td>
+                                                <td className="p-2 text-right tabular-nums font-semibold text-gray-900 dark:text-slate-50">{peso(p.net_pay)}<button className="block text-xs underline" onClick={() => setBreakdownId(p.payslip_id)}>View breakdown</button></td>
                                             </tr>
                                         ))}
                                     </tbody>

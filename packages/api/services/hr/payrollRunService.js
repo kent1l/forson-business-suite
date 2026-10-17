@@ -16,6 +16,7 @@ const recovery = require('./employeeRecoveryService');
 const statutory = require('./statutoryService');
 const dtrService = require('./dtrService');
 const { computePayslip, round2 } = require('./payrollCalculationService');
+const integrity = require('./payrollIntegrityService');
 const { getNextDocumentNumber } = require('../../helpers/documentNumberGenerator');
 
 // Statuses meaning the employment has ended. Kept distinct from `is_active`,
@@ -128,11 +129,23 @@ const computeRun = async (executor, { runId, computedBy }) => {
         err.code = 'INVALID_TRANSITION';
         throw err;
     }
+    if (['THIRTEENTH_MONTH', 'SPECIAL'].includes(run.run_type)) {
+        recovery.fail(422, 'PAYROLL_INPUT_REVIEW_REQUIRED',
+            'This run type needs a dedicated benefit and tax computation. It cannot be computed as another regular salary. Use the 13th-month report to review entitlements.');
+    }
 
     const { rows: seqRows } = await executor.query(
-        'SELECT period_seq FROM pay_period WHERE pay_period_id = $1', [run.pay_period_id]
+        'SELECT period_seq, period_type FROM pay_period WHERE pay_period_id = $1', [run.pay_period_id]
     );
     const cutoffSeq = seqRows[0]?.period_seq || 1;
+    const monthEnd = new Date(`${run.period_start.slice(0, 7)}-01T00:00:00Z`);
+    monthEnd.setUTCMonth(monthEnd.getUTCMonth() + 1);
+    monthEnd.setUTCDate(0);
+    const expectedStart = `${run.period_start.slice(0, 7)}-${cutoffSeq === 1 ? '01' : '16'}`;
+    const expectedEnd = cutoffSeq === 1 ? `${run.period_start.slice(0, 7)}-15` : monthEnd.toISOString().slice(0, 10);
+    if (seqRows[0]?.period_type !== 'SEMI_MONTHLY' || run.period_start !== expectedStart || run.period_end !== expectedEnd) {
+        recovery.fail(422, 'PAYROLL_INPUT_REVIEW_REQUIRED', 'Payroll supports complete semi-monthly cutoffs (1–15 and 16–month-end). This period needs a different salary and tax calculation.');
+    }
 
     // Statutory schedules are resolved against the PERIOD END, not today, so
     // recomputing an old run still picks the schedule that applied back then.
@@ -256,11 +269,17 @@ const computeRun = async (executor, { runId, computedBy }) => {
         `SELECT DISTINCT ON (employee_id)
                 employee_id, compensation_id, pay_basis, salary_model, base_rate, days_per_year,
                 declared_monthly_basic, sss_msc_override, is_overtime_exempt, is_tardiness_exempt,
-                statutory_coverage
+                statutory_coverage,
+                (SELECT COUNT(*) FROM employee_compensation history
+                 WHERE history.employee_id = employee_compensation.employee_id
+                   AND history.effective_date > $3 AND history.effective_date <= $2
+                   AND EXISTS (SELECT 1 FROM employee_compensation earlier
+                       WHERE earlier.employee_id = history.employee_id
+                         AND earlier.effective_date < history.effective_date)) AS changes_in_period
          FROM employee_compensation
          WHERE employee_id = ANY($1::int[]) AND effective_date <= $2
          ORDER BY employee_id, effective_date DESC`,
-        [employeeIds, run.period_end]
+        [employeeIds, run.period_end, run.period_start]
     );
     const compensationByEmployee = new Map(compRows.map((r) => [r.employee_id, r]));
 
@@ -284,10 +303,13 @@ const computeRun = async (executor, { runId, computedBy }) => {
             `SELECT p.employee_id,
                     COALESCE(SUM(p.basic_pay) FILTER (WHERE r.run_type = 'REGULAR'), 0)::numeric(14,2)
                         AS basic_earned_this_year,
-                    COALESCE(SUM(p.gross_pay) FILTER (WHERE r.run_type IN ('THIRTEENTH_MONTH','FINAL_PAY')), 0)::numeric(14,2)
+                    COALESCE(SUM(benefit.amount) FILTER (WHERE r.run_type IN ('THIRTEENTH_MONTH','FINAL_PAY')), 0)::numeric(14,2)
                         AS thirteenth_month_already_paid
              FROM payroll_payslip p
              JOIN payroll_run r ON r.run_id = p.run_id
+             LEFT JOIN LATERAL (SELECT SUM(amount) AS amount FROM payroll_payslip_line
+                 WHERE payslip_id = p.payslip_id AND component_code = 'THIRTEENTH_MONTH'
+                   AND line_type = 'EARNING') benefit ON true
              WHERE p.employee_id = ANY($1::int[])
                AND r.status = ANY($2)
                AND r.run_id <> $3
@@ -380,6 +402,7 @@ const computeRun = async (executor, { runId, computedBy }) => {
     }
     // --- Per-employee computation ----------------------------------------
     const warnings = [];
+    const approvalBlockers = [];
     // Collected rather than pushed per employee, so one missed DTR generation
     // reads as a single actionable warning instead of a wall of identical ones.
     const monthlyWithoutDtr = [];
@@ -421,8 +444,37 @@ const computeRun = async (executor, { runId, computedBy }) => {
 
         // Paying someone with no recorded rate would be inventing money.
         if (!compensation) {
-            warnings.push(`${employee.employee_name}: skipped — no compensation on record as of ${run.period_end}.`);
+            const message = `${employee.employee_name}: skipped — no compensation on record as of ${run.period_end}.`;
+            warnings.push(message);
+            approvalBlockers.push(message);
             continue;
+        }
+        if (!isFinalPay && Number(compensation.changes_in_period) > 0) {
+            recovery.fail(422, 'PAYROLL_INPUT_REVIEW_REQUIRED',
+                `${employee.employee_name}: compensation changes inside this cutoff. Review the split rate calculation before computing; applying the final rate to all days is unsafe.`);
+        }
+        if (!isFinalPay && compensation.pay_basis === 'monthly') {
+            const scheduled = periodDaysByEmployee.get(employee.employee_id);
+            if (!scheduled?.schedDaysInPeriod && (Number(dtrSummary?.days_lwop) > 0
+                || employee.date_hired > run.period_start
+                || (employee.date_separated && employee.date_separated < run.period_end))) {
+                recovery.fail(422, 'PAYROLL_INPUT_REVIEW_REQUIRED',
+                    `${employee.employee_name}: attach a work schedule before prorating a partial contract or deducting unpaid leave.`);
+            }
+        }
+        if (!isFinalPay && compensation.pay_basis === 'monthly' && compensation.salary_model === 'ATTENDANCE') {
+            const scheduled = periodDaysByEmployee.get(employee.employee_id);
+            if (!scheduled?.contractDays || !dtrSummary) {
+                recovery.fail(422, 'PAYROLL_INPUT_REVIEW_REQUIRED',
+                    `${employee.employee_name}: attendance-based monthly pay requires a work schedule and DTR records.`);
+            }
+            if (Array.isArray(dtrSummary.days)) {
+                const recorded = dtrSummary.days.filter((day) => !day.is_rest_day
+                    && (!day.holiday_type || day.holiday_type === 'Special Working')
+                    && !['Rest Day', 'Rest Day Worked'].includes(day.day_type)).length;
+                if (recorded < scheduled.contractDays) recovery.fail(422, 'PAYROLL_INPUT_REVIEW_REQUIRED',
+                    `${employee.employee_name}: some scheduled working days have no DTR. Complete attendance before computing pay.`);
+            }
         }
         // A daily earner with no time recorded has earned nothing we can prove,
         // so skipping is right. A monthly earner is owed a contractual salary
@@ -433,7 +485,9 @@ const computeRun = async (executor, { runId, computedBy }) => {
         // A final pay owes 13th month and loan settlement, neither of which is
         // attendance-derived, so it needs no DTR at all.
         if (!isFinalPay && !dtrSummary && compensation.pay_basis === 'daily') {
-            warnings.push(`${employee.employee_name}: skipped — no daily time records for this period.`);
+            const message = `${employee.employee_name}: skipped — no daily time records for this period.`;
+            warnings.push(message);
+            approvalBlockers.push(message);
             continue;
         }
         if (!isFinalPay && !dtrSummary) monthlyWithoutDtr.push(employee.employee_name);
@@ -453,7 +507,9 @@ const computeRun = async (executor, { runId, computedBy }) => {
             });
         } catch (err) {
             if (['NO_COMPENSATION', 'UNSUPPORTED_PAY_BASIS'].includes(err.code)) {
-                warnings.push(`${employee.employee_name}: skipped — ${err.message}`);
+                const message = `${employee.employee_name}: skipped — ${err.message}`;
+                warnings.push(message);
+                approvalBlockers.push(message);
                 continue;
             }
             throw err;
@@ -472,6 +528,7 @@ const computeRun = async (executor, { runId, computedBy }) => {
 
         payslipCount += 1;
         const h = computed.header;
+        integrity.assertPayslip(h, computed.lines);
         const payslipNo = `${run.run_no}-${String(payslipCount).padStart(3, '0')}`;
 
         const { rows: payslipRows } = await executor.query(
@@ -577,7 +634,7 @@ const computeRun = async (executor, { runId, computedBy }) => {
          RETURNING run_id, run_no, status, employee_count, total_gross, total_deductions, total_net, total_employer_contrib`,
         [computedBy, versions.sssVersionId, versions.philhealthVersionId,
             versions.pagibigVersionId, versions.birVersionId,
-            JSON.stringify({ ...policy, statutoryVersionLabels: versions.labels }),
+            JSON.stringify({ ...policy, statutoryVersionLabels: versions.labels, computationWarnings: warnings, approvalBlockers }),
             payslipCount, totals.gross, totals.deductions, totals.net, totals.employer, runId]
     );
 
@@ -617,6 +674,7 @@ const approveRun = async (executor, { runId, approvedBy }) => {
     const run = rows[0];
     if (!run) { const e = new Error('Payroll run not found'); e.code = 'RUN_NOT_FOUND'; throw e; }
     assertTransition(run.status, 'Approved');
+    await integrity.assertRun(executor, runId, { requireCurrentComputation: true });
     await recovery.reserve(executor, runId);
 
     await executor.query(
@@ -641,6 +699,7 @@ const markPaid = async (executor, { runId, paidBy }) => {
     const { rows } = await executor.query('SELECT status FROM payroll_run WHERE run_id = $1 FOR UPDATE', [runId]);
     if (!rows[0]) { const e = new Error('Payroll run not found'); e.code = 'RUN_NOT_FOUND'; throw e; }
     assertTransition(rows[0].status, 'Paid');
+    await integrity.assertRun(executor, runId, { requireCurrentComputation: true });
 
     await require('./employeeSettlementService').payRunExact(executor, runId, paidBy);
 

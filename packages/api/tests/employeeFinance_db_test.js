@@ -41,6 +41,20 @@ async function tx(fn) {
     c.release();
   }
 }
+// Production computation persists the earning/loan lines together with these
+// headers. Lifecycle fixtures must provide the same evidence for reconciliation.
+async function persistRecoveryFixture(client, args) {
+  const loanLineIds = new Map();
+  for (const deduction of args.deductions) {
+    const loan = args.loans.find(row => String(row.loan_id) === String(deduction.loanId));
+    const { rows: [line] } = await client.query(
+      `INSERT INTO payroll_payslip_line(payslip_id,line_type,component_code,description,amount,sort_order)
+       VALUES($1,'DEDUCTION',$2,'Fixture loan deduction',$3,40) RETURNING line_id`,
+      [args.payslipId, loan.component_code, deduction.amount]);
+    loanLineIds.set(String(deduction.loanId), line.line_id);
+  }
+  return recovery.persist(client, { ...args, loanLineIds });
+}
 async function main() {
   const tag = randomUUID().slice(0, 8);
   await pool.query("INSERT INTO permission_level(permission_level_id,level_name) VALUES(10,'Admin') ON CONFLICT DO NOTHING");
@@ -54,7 +68,9 @@ async function main() {
   } = await pool.query("INSERT INTO pay_period(period_year,period_month,period_seq,period_start,period_end,pay_date) VALUES(2200+$1,1,1,make_date(2200+$1,1,1),make_date(2200+$1,1,15),make_date(2200+$1,1,15)) RETURNING pay_period_id", [actor]);
   const makeRun = async (type = 'REGULAR', departmentId = null) => (await pool.query(`INSERT INTO payroll_run(run_no,run_type,pay_period_id,period_start,period_end,pay_date,created_by,department_id) VALUES($1,$2,$3,'2090-01-01','2090-01-15','2090-01-15',$4,$5) RETURNING *`, [tag + randomUUID().slice(0, 8), type, period.pay_period_id, actor, departmentId])).rows[0];
   const makeSlip = async (run, loanTotal = '20.00') => {
-    const result = await pool.query(`INSERT INTO payroll_payslip(run_id,employee_id,payslip_no,employee_code,employee_name,pay_basis,daily_rate,monthly_basis,gross_pay,loans_total,total_deductions,net_pay) VALUES($1,$2,$3,'FIN','Finance Test','monthly',100,200,100,$4,$4,100-$4::numeric) RETURNING *`, [run.run_id, actor, randomUUID(), loanTotal]);
+    const result = await pool.query(`INSERT INTO payroll_payslip(run_id,employee_id,payslip_no,employee_code,employee_name,pay_basis,daily_rate,monthly_basis,basic_pay,gross_pay,loans_total,total_deductions,net_pay,computation_trace) VALUES($1,$2,$3,'FIN','Finance Test','monthly',100,200,100,100,$4,$4,100-$4::numeric,'{"earningsModelVersion":2}') RETURNING *`, [run.run_id, actor, randomUUID(), loanTotal]);
+    await pool.query(`INSERT INTO payroll_payslip_line(payslip_id,line_type,component_code,description,amount,sort_order)
+        VALUES($1,'EARNING','BASIC','Fixture basic pay',100,1)`, [result.rows[0].payslip_id]);
     await pool.query('UPDATE payroll_run SET employee_count=1,total_gross=100,total_deductions=$2,total_net=100-$2::numeric WHERE run_id=$1', [run.run_id, loanTotal]);
     return result.rows[0];
   };
@@ -73,7 +89,7 @@ async function main() {
   const run = await makeRun();
   const slip = await makeSlip(run);
   await tx(async c => {
-    await recovery.persist(c, {
+    await persistRecoveryFixture(c, {
       payslipId: slip.payslip_id,
       employeeId: actor,
       periodId: period.pay_period_id,
@@ -200,7 +216,7 @@ async function main() {
   const exactLoan = (await pool.query("INSERT INTO employee_loan(employee_id,loan_type,component_code,principal_amount,amortization_amount,start_date) VALUES($1,'OTHER','TEST_LOAN',100,20,'2089-01-01') RETURNING *", [actor])).rows[0];
   const exactTerms = (await pool.query("INSERT INTO employee_loan_schedule(loan_id,schedule,monthly_installment,effective_from,version,deduction_authority,reason) VALUES($1,'FIRST_CUTOFF',20,'2089-01-01',1,'test authority','test') RETURNING *", [exactLoan.loan_id])).rows[0];
   Object.assign(exactLoan, {schedule_id: exactTerms.schedule_id, schedule_version: 1, scheduled_share: '20.00'});
-  await tx(c => recovery.persist(c, {payslipId: exactSlip.payslip_id, employeeId: actor, periodId: period.pay_period_id, run: {period_end: '2090-01-15'}, cutoffSeq: 1, deductions: [{loanId: exactLoan.loan_id, amount: '20.00'}], loans: [exactLoan]}));
+  await tx(c => persistRecoveryFixture(c, {payslipId: exactSlip.payslip_id, employeeId: actor, periodId: period.pay_period_id, run: {period_end: '2090-01-15'}, cutoffSeq: 1, deductions: [{loanId: exactLoan.loan_id, amount: '20.00'}], loans: [exactLoan]}));
   await pool.query("UPDATE payroll_run SET status='Computed' WHERE run_id=$1", [exactRun.run_id]);
   await tx(c => runs.approveRun(c, {runId: exactRun.run_id, approvedBy: actor}));
   const fundingBefore = (await pool.query('SELECT COUNT(*)::int n FROM employee_finance_funding')).rows[0].n;
@@ -344,7 +360,7 @@ async function main() {
   const z = (await pool.query('SELECT l.*,s.schedule_id,s.version schedule_version FROM employee_loan l JOIN employee_loan_schedule s USING(loan_id) WHERE l.loan_id=$1', [zeroLoan.loan_id])).rows[0];
   z.scheduled_share = '100.00';
   await tx(async c => {
-    await recovery.persist(c, {
+    await persistRecoveryFixture(c, {
       payslipId: zeroSlip.payslip_id,
       employeeId: actor,
       periodId: period.pay_period_id,
@@ -406,7 +422,7 @@ async function main() {
   const agencyLoan = (await pool.query('SELECT l.*,s.schedule_id,s.version schedule_version FROM employee_loan l JOIN employee_loan_schedule s USING(loan_id) WHERE l.loan_id=$1', [agency.loan_id])).rows[0];
   agencyLoan.scheduled_share = '10.00';
   await tx(async c => {
-    await recovery.persist(c, {
+    await persistRecoveryFixture(c, {
       payslipId: agencySlip.payslip_id,
       employeeId: actor,
       periodId: period.pay_period_id,
@@ -561,7 +577,7 @@ async function main() {
   for (const rr of raceRuns) {
     const pp = await makeSlip(rr, '5.01');
     await tx(async c => {
-      await recovery.persist(c, {
+      await persistRecoveryFixture(c, {
         payslipId: pp.payslip_id,
         employeeId: actor,
         periodId: period.pay_period_id,
