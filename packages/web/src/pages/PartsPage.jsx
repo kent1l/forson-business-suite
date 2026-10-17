@@ -76,6 +76,19 @@ const PartsPage = ({ user, onNavigate }) => {
         }
     }, [statusFilter, debouncedSearchTerm, page, pageSize, globalSortBy, globalSortDirection]);
 
+    const refreshLookupsOnly = useCallback(async () => {
+        try {
+            const [brandsRes, groupsRes] = await Promise.all([
+                api.get('/brands'),
+                api.get('/groups')
+            ]);
+            setBrands(asArray(brandsRes.data?.data ?? brandsRes.data));
+            setGroups(asArray(groupsRes.data?.data ?? groupsRes.data));
+        } catch (err) {
+            console.error('Failed to refresh lookups:', err);
+        }
+    }, []);
+
     useEffect(() => {
         fetchInitialData();
     }, [fetchInitialData]);
@@ -372,10 +385,10 @@ const PartsPage = ({ user, onNavigate }) => {
                 />
             </div>
             <Modal isOpen={isFormModalOpen} onClose={() => setIsFormModalOpen(false)} title={currentPart ? 'Edit Part' : 'New Part'}>
-                <PartForm part={currentPart} brands={brands} groups={groups} onSave={handleSave} onCancel={() => setIsFormModalOpen(false)} onBrandGroupAdded={fetchInitialData} />
+                <PartForm part={currentPart} brands={brands} groups={groups} onSave={handleSave} onCancel={() => setIsFormModalOpen(false)} onBrandGroupAdded={refreshLookupsOnly} />
             </Modal>
             <Modal isOpen={isBulkEditModalOpen} onClose={() => setIsBulkEditModalOpen(false)} title={`Bulk Edit ${selectedParts.length} Parts`}>
-                <PartForm isBulkEdit={true} brands={brands} groups={groups} onSave={handleBulkSave} onCancel={() => setIsBulkEditModalOpen(false)} onBrandGroupAdded={fetchInitialData} />
+                <PartForm isBulkEdit={true} brands={brands} groups={groups} onSave={handleBulkSave} onCancel={() => setIsBulkEditModalOpen(false)} onBrandGroupAdded={refreshLookupsOnly} />
             </Modal>
              <Modal isOpen={isNumberModalOpen} onClose={() => setIsNumberModalOpen(false)} title={`Manage Numbers for: ${currentPart?.internal_sku || currentPart?.display_name || currentPart?.detail || ''}`}>
                 <PartNumberManager part={currentPart} onSave={fetchInitialData} onCancel={() => setIsNumberModalOpen(false)} />

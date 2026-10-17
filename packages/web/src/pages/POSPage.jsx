@@ -470,6 +470,19 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
         toast.success('Cart transferred to Invoicing page');
     }, [lines, selectedCustomer, onNavigate, customers, setLines, setSelectedCustomer]);
 
+    const refreshLookupsOnly = useCallback(async () => {
+        try {
+            const [brandsRes, groupsRes] = await Promise.all([
+                api.get('/brands'),
+                api.get('/groups')
+            ]);
+            setBrands(brandsRes.data);
+            setGroups(groupsRes.data);
+        } catch (err) {
+            console.error('Failed to refresh lookups:', err);
+        }
+    }, []);
+
     // Provide a callable version used by child components when brands/groups change
     const fetchInitialData = async () => {
         try {
@@ -1238,7 +1251,7 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
                     groups={groups}
                     onSave={handleSaveNewPart}
                     onCancel={() => setIsNewPartModalOpen(false)}
-                    onBrandGroupAdded={fetchInitialData}
+                    onBrandGroupAdded={refreshLookupsOnly}
                 />
             </Modal>
 

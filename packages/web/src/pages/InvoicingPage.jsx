@@ -130,6 +130,19 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
         fetchInitialData();
     }, [selectedTaxRate]);
 
+    const refreshLookupsOnly = useCallback(async () => {
+        try {
+            const [brandsRes, groupsRes] = await Promise.all([
+                api.get('/brands'),
+                api.get('/groups')
+            ]);
+            setBrands(Array.isArray(brandsRes.data) ? brandsRes.data : brandsRes.data?.data || []);
+            setGroups(Array.isArray(groupsRes.data) ? groupsRes.data : groupsRes.data?.data || []);
+        } catch (err) {
+            console.error('Failed to refresh lookups:', err);
+        }
+    }, []);
+
     useEffect(() => {
         if (pageState && pageState.lines) {
             const mappedLines = pageState.lines.map(item => ({
@@ -915,6 +928,7 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
                     groups={groups}
                     onSave={handleSaveNewPart}
                     onCancel={() => setIsNewPartModalOpen(false)}
+                    onBrandGroupAdded={refreshLookupsOnly}
                 />
             </Modal>
             {settings?.ENABLE_SPLIT_PAYMENTS === 'true' && (

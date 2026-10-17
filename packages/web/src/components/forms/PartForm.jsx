@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import api from '../../api';
 import toast from 'react-hot-toast';
 import Modal from '../ui/Modal';
@@ -60,11 +60,106 @@ const BrandGroupForm = ({ type, onSave, onCancel, initialName = '', uppercaseTex
     );
 };
 
+const computeInitialState = (source, isBulkEdit, settings) => {
+    if (isBulkEdit) {
+        return {
+            brand_id: '', group_id: '',
+            reorder_point: '', warning_quantity: '', last_cost: '', last_sale_price: '', measurement_unit: '', tax_rate_id: '',
+            is_active: 'unchanged', is_price_change_allowed: 'unchanged', is_using_default_quantity: 'unchanged',
+            is_service: 'unchanged', low_stock_warning: 'unchanged', is_tax_inclusive_price: 'unchanged',
+            is_universal: 'unchanged'
+        };
+    }
+    if (source) {
+        return {
+            detail: source.detail || '',
+            brand_id: source.brand_id || '',
+            group_id: source.group_id || '',
+            part_numbers_string: source.part_numbers ? source.part_numbers.replace(/; /g, ', ') : '',
+            reorder_point: source.reorder_point ?? 1,
+            warning_quantity: source.warning_quantity ?? 1,
+            is_active: source.is_active ?? true,
+            last_cost: source.last_cost ?? 0,
+            last_sale_price: source.last_sale_price ?? 0,
+            measurement_unit: source.measurement_unit || 'pcs',
+            tax_rate_id: source.tax_rate_id || '',
+            is_price_change_allowed: source.is_price_change_allowed ?? true,
+            is_using_default_quantity: source.is_using_default_quantity ?? true,
+            is_service: source.is_service ?? false,
+            low_stock_warning: source.low_stock_warning ?? true,
+            is_tax_inclusive_price: source.is_tax_inclusive_price ?? (settings?.DEFAULT_IS_TAX_INCLUSIVE !== 'false'),
+            is_universal: source.is_universal ?? false
+        };
+    }
+    return {
+        detail: '', brand_id: '', group_id: '', part_numbers_string: '',
+        reorder_point: 1, warning_quantity: 1, is_active: true,
+        last_cost: 0, last_sale_price: 0, measurement_unit: 'pcs', tax_rate_id: '',
+        is_price_change_allowed: true, is_using_default_quantity: true,
+        is_service: false, low_stock_warning: true,
+        is_tax_inclusive_price: settings?.DEFAULT_IS_TAX_INCLUSIVE !== 'false',
+        is_universal: false
+    };
+};
+
+const extractTags = (source) => {
+    const raw = source?.tags;
+    if (!raw) return [];
+    if (Array.isArray(raw)) return raw;
+    if (typeof raw === 'string') return raw.split(',').map(t => t.trim()).filter(Boolean);
+    return [];
+};
+
+const extractBarcodes = (source) => {
+    const raw = source?.barcodes;
+    if (!raw) return [];
+    if (Array.isArray(raw)) return raw;
+    if (typeof raw === 'string') return raw.split(',').map(b => b.trim()).filter(Boolean);
+    return [];
+};
+
 const PartForm = ({ part, initialValues = null, uppercaseText = false, brands, groups, onSave, onCancel, onBrandGroupAdded, isBulkEdit = false, selectedCount: _selectedCount = 0 }) => {
     const { settings } = useSettings();
-    const [tags, setTags] = useState([]); // <-- State for tags
-    const [barcodes, setBarcodes] = useState([]); // <-- State for barcodes
-    const [selectedApps, setSelectedApps] = useState([]); // <-- State for linked applications
+
+    const sessionKey = useMemo(() => {
+        if (isBulkEdit) return 'bulk';
+        if (part?.part_id) return `edit-${part.part_id}`;
+        if (initialValues?.po_line_id) return `po-line-${initialValues.po_line_id}`;
+        if (initialValues?.part_id) return `part-${initialValues.part_id}`;
+        return 'new-part';
+    }, [isBulkEdit, part?.part_id, initialValues?.po_line_id, initialValues?.part_id]);
+
+    const activeSessionRef = useRef(sessionKey);
+    const prevSessionKeyRef = useRef(sessionKey);
+
+    const [baseline, setBaseline] = useState(() => ({
+        sessionKey,
+        formData: computeInitialState(part || initialValues, isBulkEdit, settings),
+        tags: extractTags(part || initialValues),
+        barcodes: extractBarcodes(part || initialValues),
+    }));
+
+    const [formData, setFormData] = useState(() => computeInitialState(part || initialValues, isBulkEdit, settings));
+    const [tags, setTags] = useState(() => extractTags(part || initialValues));
+    const [barcodes, setBarcodes] = useState(() => extractBarcodes(part || initialValues));
+    const [selectedApps, setSelectedApps] = useState([]);
+    const [localNewBrands, setLocalNewBrands] = useState([]);
+    const [localNewGroups, setLocalNewGroups] = useState([]);
+
+    useEffect(() => {
+        activeSessionRef.current = sessionKey;
+        if (prevSessionKeyRef.current !== sessionKey) {
+            prevSessionKeyRef.current = sessionKey;
+            const newInitState = computeInitialState(part || initialValues, isBulkEdit, settings);
+            const newTags = extractTags(part || initialValues);
+            const newBarcodes = extractBarcodes(part || initialValues);
+            setBaseline({ sessionKey, formData: newInitState, tags: newTags, barcodes: newBarcodes });
+            setFormData(newInitState);
+            setTags(newTags);
+            setBarcodes(newBarcodes);
+            setGroupPrediction(null);
+        }
+    }, [sessionKey, part, initialValues, isBulkEdit, settings]);
 
     // helper to display an application label
     const labelForApp = (app) => [app?.make, app?.model, app?.engine].filter(Boolean).join(' ');
@@ -96,51 +191,6 @@ const PartForm = ({ part, initialValues = null, uppercaseText = false, brands, g
 
     const removeApplication = (id) => setSelectedApps(prev => prev.filter(a => a.application_id !== id));
 
-    const getInitialState = useCallback(() => {
-        if (isBulkEdit) {
-            return {
-                brand_id: '', group_id: '',
-                reorder_point: '', warning_quantity: '', last_cost: '', last_sale_price: '', measurement_unit: '', tax_rate_id: '',
-                is_active: 'unchanged', is_price_change_allowed: 'unchanged', is_using_default_quantity: 'unchanged',
-                is_service: 'unchanged', low_stock_warning: 'unchanged', is_tax_inclusive_price: 'unchanged',
-                is_universal: 'unchanged'
-            };
-        }
-        const source = part || initialValues;
-        if (source) {
-            return {
-                detail: source.detail || '',
-                brand_id: source.brand_id || '',
-                group_id: source.group_id || '',
-                part_numbers_string: source.part_numbers ? source.part_numbers.replace(/; /g, ', ') : '',
-                reorder_point: source.reorder_point ?? 1,
-                warning_quantity: source.warning_quantity ?? 1,
-                is_active: source.is_active ?? true,
-                last_cost: source.last_cost ?? 0,
-                last_sale_price: source.last_sale_price ?? 0,
-                measurement_unit: source.measurement_unit || 'pcs',
-                tax_rate_id: source.tax_rate_id || '',
-                is_price_change_allowed: source.is_price_change_allowed ?? true,
-                is_using_default_quantity: source.is_using_default_quantity ?? true,
-                is_service: source.is_service ?? false,
-                low_stock_warning: source.low_stock_warning ?? true,
-                is_tax_inclusive_price: source.is_tax_inclusive_price ?? (settings?.DEFAULT_IS_TAX_INCLUSIVE !== 'false'),
-                is_universal: source.is_universal ?? false
-            };
-        }
-        return {
-            detail: '', brand_id: '', group_id: '', part_numbers_string: '',
-            reorder_point: 1, warning_quantity: 1, is_active: true,
-            last_cost: 0, last_sale_price: 0, measurement_unit: 'pcs', tax_rate_id: '',
-            is_price_change_allowed: true, is_using_default_quantity: true,
-            is_service: false, low_stock_warning: true,
-            is_tax_inclusive_price: settings?.DEFAULT_IS_TAX_INCLUSIVE !== 'false', // Default to true unless explicitly set to false
-            is_universal: false
-        };
-    }, [isBulkEdit, settings, part, initialValues]);
-
-    const [formData, setFormData] = useState(getInitialState());
-
     const [taxRates, setTaxRates] = useState([]);
     const [isBrandModalOpen, setIsBrandModalOpen] = useState(false);
     const [initialBrandName, setInitialBrandName] = useState('');
@@ -148,60 +198,38 @@ const PartForm = ({ part, initialValues = null, uppercaseText = false, brands, g
     const [showAdvanced, setShowAdvanced] = useState(false);
     const [groupPrediction, setGroupPrediction] = useState(null);
 
-    const brandOptions = useMemo(() => brands.map(b => ({ value: b.brand_id, label: b.brand_name, code: b.brand_code })), [brands]);
-    const groupOptions = useMemo(() => groups.map(g => ({ value: g.group_id, label: g.group_name, code: g.group_code })), [groups]);
+    const brandOptions = useMemo(() => {
+        const list = [...(brands || [])];
+        for (const nb of localNewBrands) {
+            if (!list.some(b => Number(b.brand_id) === Number(nb.brand_id))) {
+                list.push(nb);
+            }
+        }
+        return list.map(b => ({ value: b.brand_id, label: b.brand_name, code: b.brand_code }));
+    }, [brands, localNewBrands]);
+
+    const groupOptions = useMemo(() => {
+        const list = [...(groups || [])];
+        for (const ng of localNewGroups) {
+            if (!list.some(g => Number(g.group_id) === Number(ng.group_id))) {
+                list.push(ng);
+            }
+        }
+        return list.map(g => ({ value: g.group_id, label: g.group_name, code: g.group_code }));
+    }, [groups, localNewGroups]);
+
     const [initialGroupName, setInitialGroupName] = useState('');
-
-    const initialFormData = useMemo(() => getInitialState(), [getInitialState]);
-
-    useEffect(() => {
-        setFormData(getInitialState());
-    }, [getInitialState]);
-
-    const initialTags = useMemo(() => {
-        let tags = [];
-        const sourceTags = part?.tags ?? initialValues?.tags;
-        if (sourceTags) {
-            if (Array.isArray(sourceTags)) {
-                tags = sourceTags;
-            } else if (typeof sourceTags === 'string') {
-                tags = sourceTags.split(',').map(t => t.trim()).filter(t => t);
-            }
-        }
-        return tags;
-    }, [part, initialValues]);
-
-    useEffect(() => {
-        setTags(initialTags);
-    }, [initialTags]);
-
-    const initialBarcodes = useMemo(() => {
-        let bs = [];
-        const sourceBarcodes = part?.barcodes ?? initialValues?.barcodes;
-        if (sourceBarcodes) {
-            if (Array.isArray(sourceBarcodes)) {
-                bs = sourceBarcodes;
-            } else if (typeof sourceBarcodes === 'string') {
-                bs = sourceBarcodes.split(',').map(b => b.trim()).filter(b => b);
-            }
-        }
-        return bs;
-    }, [part, initialValues]);
-
-    useEffect(() => {
-        setBarcodes(initialBarcodes);
-    }, [initialBarcodes]);
 
     const isFormDirty = useMemo(() => {
         const keys = Object.keys(formData);
         for (let key of keys) {
-            if (formData[key] !== initialFormData[key]) return true;
+            if (formData[key] !== baseline.formData[key]) return true;
         }
-        if (JSON.stringify(tags) !== JSON.stringify(initialTags)) return true;
-        if (JSON.stringify(barcodes) !== JSON.stringify(initialBarcodes)) return true;
+        if (JSON.stringify(tags) !== JSON.stringify(baseline.tags)) return true;
+        if (JSON.stringify(barcodes) !== JSON.stringify(baseline.barcodes)) return true;
         if (selectedApps.length > 0) return true;
         return false;
-    }, [formData, initialFormData, tags, initialTags, barcodes, initialBarcodes, selectedApps]);
+    }, [formData, baseline, tags, barcodes, selectedApps]);
 
     const isFormElement = (el) => {
         if (!el) return false;
@@ -231,8 +259,11 @@ const PartForm = ({ part, initialValues = null, uppercaseText = false, brands, g
         // Never replace a group the user has consciously selected. The endpoint
         // is an optional convenience, not a classification requirement.
         if (isBulkEdit || formData.group_id || !formData.detail?.trim()) return;
+        const currentSession = activeSessionRef.current;
+        const currentDetail = formData.detail;
         try {
-            const { data } = await api.get('/parts/predict-group', { params: { detail: formData.detail } });
+            const { data } = await api.get('/parts/predict-group', { params: { detail: currentDetail } });
+            if (activeSessionRef.current !== currentSession) return;
             const prediction = data?.prediction;
             if (!prediction) return;
             setFormData(prev => prev.group_id ? prev : { ...prev, group_id: prediction.group_id });
@@ -288,13 +319,24 @@ const PartForm = ({ part, initialValues = null, uppercaseText = false, brands, g
     }, []);
     
     const handleNewBrandGroup = (newItem, type) => {
-        onBrandGroupAdded();
-        if(type === 'Brand') {
-            setFormData(prev => ({...prev, brand_id: newItem.brand_id}));
+        if (type === 'Brand' && newItem?.brand_id) {
+            setLocalNewBrands(prev => [...prev, newItem]);
+            setFormData(prev => ({ ...prev, brand_id: newItem.brand_id }));
             setIsBrandModalOpen(false);
-        } else {
-            setFormData(prev => ({...prev, group_id: newItem.group_id}));
+        } else if (type === 'Group' && newItem?.group_id) {
+            setLocalNewGroups(prev => [...prev, newItem]);
+            setFormData(prev => ({ ...prev, group_id: newItem.group_id }));
             setIsGroupModalOpen(false);
+        }
+        if (typeof onBrandGroupAdded === 'function') {
+            try {
+                const res = onBrandGroupAdded(newItem, type);
+                if (res && typeof res.catch === 'function') {
+                    res.catch(err => console.error('Failed to refresh lookup data:', err));
+                }
+            } catch (err) {
+                console.error('Failed to refresh lookup data:', err);
+            }
         }
     };    // BooleanSelect used for bulk edit dropdowns
     function BooleanSelect({ name, label }) {

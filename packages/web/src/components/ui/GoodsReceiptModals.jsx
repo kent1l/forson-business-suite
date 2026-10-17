@@ -30,11 +30,13 @@ const GoodsReceiptModals = ({
     handleEditPartSave,
     handleAppManagerClose,
     fetchInitialData,
+    onBrandGroupAdded = fetchInitialData,
 
     // State updaters for lines (intentionally unused for now)
     _setLines,
     _lines
 }) => {
+    const lookupRefresh = onBrandGroupAdded || fetchInitialData;
     return (
         <>
             <Modal isOpen={isSupplierModalOpen} onClose={() => setIsSupplierModalOpen(false)} title="Add New Supplier">
@@ -47,7 +49,7 @@ const GoodsReceiptModals = ({
                     groups={groups}
                     onSave={handleSaveNewPart}
                     onCancel={() => setIsNewPartModalOpen(false)}
-                    onBrandGroupAdded={fetchInitialData}
+                    onBrandGroupAdded={lookupRefresh}
                 />
             </Modal>
 
@@ -59,7 +61,7 @@ const GoodsReceiptModals = ({
                         groups={groups}
                         onSave={handleEditPartSave}
                         onCancel={() => { setIsEditPartModalOpen(false); setCurrentEditPart(null); }}
-                        onBrandGroupAdded={fetchInitialData}
+                        onBrandGroupAdded={lookupRefresh}
                     />
                 )}
             </Modal>

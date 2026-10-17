@@ -191,6 +191,19 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
         return response.data;
     };
 
+    const refreshLookupsOnly = useCallback(async () => {
+        try {
+            const [brandsRes, groupsRes] = await Promise.all([
+                api.get('/brands'),
+                api.get('/groups')
+            ]);
+            setBrands(brandsRes.data);
+            setGroups(groupsRes.data);
+        } catch (err) {
+            console.error('Failed to refresh lookups:', err);
+        }
+    }, []);
+
     useEffect(() => {
         fetchInitialData();
     }, []);
@@ -624,6 +637,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
             ? `${parsedDetail} ${packSize}`.trim()
             : parsedDetail;
         return {
+            po_line_id: catalogTarget.po_line_id,
             detail,
             brand_id: brand?.brand_id || '',
             brand_name: upperCatalogText(draft.brand),
@@ -632,7 +646,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
             measurement_unit: upperCatalogText(draft.purchase_uom || catalogTarget.unit || 'PCS'),
             last_cost: catalogTarget.cost_price || 0,
         };
-    }, [catalogTarget, brands, groups]);
+    }, [catalogTarget?.po_line_id]);
 
     const handleCatalogPart = async (partData) => {
         if (!catalogTarget || !selectedPO) return;
@@ -1596,7 +1610,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                         groups={groups}
                         onSave={handleCatalogPart}
                         onCancel={() => setCatalogTarget(null)}
-                        onBrandGroupAdded={fetchInitialData}
+                        onBrandGroupAdded={refreshLookupsOnly}
                     />
                 )}
             </Modal>
@@ -1724,6 +1738,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                 handleEditPartSave={handleEditPartSave}
                 handleAppManagerClose={handleAppManagerClose}
                 fetchInitialData={fetchInitialData}
+                onBrandGroupAdded={refreshLookupsOnly}
 
                 // State updaters for lines
                 _setLines={setLines}
