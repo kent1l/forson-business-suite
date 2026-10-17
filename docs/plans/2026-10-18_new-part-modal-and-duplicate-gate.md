@@ -96,39 +96,39 @@ This is the synchronous creation gate in `jevGateService.js`, not the background
 
 The proposed part's selected brand/group are not explicitly passed to the comparison. Candidate brand/group are fetched but not mapped as structured comparison fields; the candidate display name may contain some of that information. Applications, dimensions and barcode evidence are not explicitly compared. Therefore a 92% result is a model estimate based on limited text, not a database proof that two products are identical.
 
-## 5. Phase 1 — Preserve Drafts — Not Started
+## 5. Phase 1 — Preserve Drafts — Complete (`9c581c1`)
 
-- [ ] Add a lookup-only brand/group refresh callback to every parent. It updates lookup options without invoking page loading, reloading customers, changing customer/supplier/PO selections, or refreshing transaction state.
-- [ ] Supply the missing Invoicing callback. Make the shared callback contract safe if omitted; a defensive optional call alone does not refresh the missing options.
-- [ ] After successful brand/group creation or reuse, upsert the returned option and patch only `brand_id` or `group_id` using functional state updates. Close only the inner modal. A refresh failure after a successful save must not be reported as failed creation.
-- [ ] Define a part-edit session boundary: initialize on modal opening, target-part change or explicit start-new/reset. Snapshot prefill and applicable defaults once per session. Do not replace a dirty draft merely because settings or source-object identities change.
-- [ ] Keep form data, tags, barcodes, linked applications and dirty-state baseline synchronized to that session boundary. Preserve intentional edit-target changes, bulk edit and reset-on-reopen behavior.
-- [ ] Stabilize Goods Receipt's prefill for the selected PO line; lookup refreshes must not reconstruct the live draft.
-- [ ] Ensure stale optional group predictions cannot apply to a different draft session or supersede a manually selected group.
+- [x] Add a lookup-only brand/group refresh callback to every parent. It updates lookup options without invoking page loading, reloading customers, changing customer/supplier/PO selections, or refreshing transaction state.
+- [x] Supply the missing Invoicing callback. Make the shared callback contract safe if omitted; a defensive optional call alone does not refresh the missing options.
+- [x] After successful brand/group creation or reuse, upsert the returned option and patch only `brand_id` or `group_id` using functional state updates. Close only the inner modal. A refresh failure after a successful save must not be reported as failed creation.
+- [x] Define a part-edit session boundary: initialize on modal opening, target-part change or explicit start-new/reset. Snapshot prefill and applicable defaults once per session. Do not replace a dirty draft merely because settings or source-object identities change.
+- [x] Keep form data, tags, barcodes, linked applications and dirty-state baseline synchronized to that session boundary. Preserve intentional edit-target changes, bulk edit and reset-on-reopen behavior.
+- [x] Stabilize Goods Receipt's prefill for the selected PO line; lookup refreshes must not reconstruct the live draft.
+- [x] Ensure stale optional group predictions cannot apply to a different draft session or supersede a manually selected group.
 
-## 6. Phase 2 — Shared Part Resolution Contract — Not Started
+## 6. Phase 2 — Shared Part Resolution Contract — Complete (`c2077e5`)
 
-- [ ] Keep candidate detection separate from the part creation policy. For parts, return an actionable duplicate decision for every qualifying match, including probability >= 0.92. Keep the score as evidence and use stronger wording for high confidence.
-- [ ] Apply the brand identity rule first: distinct known canonical brands are separate catalog products, not reuse candidates. Show cross-brand matches as related alternatives if useful, without forcing reuse or blocking separate SKU creation. Missing/unknown brand requires review; do not infer equality from similar descriptions. Resolve aliases/retired brand IDs before comparison.
-- [ ] Do not globally change `#noulMatch` in a way that silently changes customer/supplier gates. Adapt the part policy or add an explicit part-only mode.
-- [ ] Use a machine-readable duplicate response code, candidate ID, confidence, comparison data and explicit available actions. HTTP 409 may remain the internal protocol; the UI consumes it as a decision state without an error toast.
-- [ ] Validate candidate IDs consistently, require an explicit action, and reject malformed/stale confirmations. On reuse, reload the current canonical active part from PostgreSQL and return the enriched part shape expected by transaction handlers.
-- [ ] On explicit separate creation, honor the acknowledged part decision across both confidence bands. Recheck database validity and normal uniqueness constraints. Do not let a repeated model score crossing a band silently invalidate the same reviewed candidate.
-- [ ] Bind confirmation to the reviewed payload/candidate, for example through a short-lived server-signed decision token. A changed draft needs a new review. If the candidate changed/retired/merged, return a fresh review state instead of creating blindly or looping retries.
-- [ ] Extend the atomic PO-line catalog endpoint to consume the same resolution contract. Present its existing exact candidate through the shared choice workflow as well. Preserve PO-line locks, status/permission checks, original line quantity/cost, and atomic linking/creation/clearing of draft metadata.
-- [ ] Reuse must leave existing master data unchanged. Creation remains transactional. No schema migration is expected for a stateless signed-decision approach; reassess if durable override history is selected.
+- [x] Keep candidate detection separate from the part creation policy. For parts, return an actionable duplicate decision for every qualifying match, including probability >= 0.92. Keep the score as evidence and use stronger wording for high confidence.
+- [x] Apply the brand identity rule first: distinct known canonical brands are separate catalog products, not reuse candidates. Show cross-brand matches as related alternatives if useful, without forcing reuse or blocking separate SKU creation. Missing/unknown brand requires review; do not infer equality from similar descriptions. Resolve aliases/retired brand IDs before comparison.
+- [x] Do not globally change `#noulMatch` in a way that silently changes customer/supplier gates. Adapt the part policy or add an explicit part-only mode.
+- [x] Use a machine-readable duplicate response code, candidate ID, confidence, comparison data and explicit available actions. HTTP 409 may remain the internal protocol; the UI consumes it as a decision state without an error toast.
+- [x] Validate candidate IDs consistently, require an explicit action, and reject malformed/stale confirmations. On reuse, reload the current canonical active part from PostgreSQL and return the enriched part shape expected by transaction handlers.
+- [x] On explicit separate creation, honor the acknowledged part decision across both confidence bands. Recheck database validity and normal uniqueness constraints. Do not let a repeated model score crossing a band silently invalidate the same reviewed candidate.
+- [x] Bind confirmation to the reviewed payload/candidate, for example through a short-lived server-signed decision token. A changed draft needs a new review. If the candidate changed/retired/merged, return a fresh review state instead of creating blindly or looping retries.
+- [x] Extend the atomic PO-line catalog endpoint to consume the same resolution contract. Present its existing exact candidate through the shared choice workflow as well. Preserve PO-line locks, status/permission checks, original line quantity/cost, and atomic linking/creation/clearing of draft metadata.
+- [x] Reuse must leave existing master data unchanged. Creation remains transactional. No schema migration is expected for a stateless signed-decision approach; reassess if durable override history is selected.
 
-## 7. Phase 3 — Shared Dialog and All Callers — Not Started
+## 7. Phase 3 — Shared Dialog and All Callers — Complete (`8837914`)
 
-- [ ] Implement one part-specific controller/helper plus reusable dialog, used by every part-creation caller. Keep the generic brand/group helper compatible unless separately redesigning those workflows.
-- [ ] Offer three clearly labelled actions: **Use existing part**, **Create separate part**, **Back to editing**. Closing or Escape means Back; it must never imply creation.
-- [ ] Show submitted versus candidate description, SKU/part numbers, brand/group and available identifying details. Treat model probability as supporting information, not certainty.
-- [ ] Return an explicit outcome such as `{ outcome: 'created' | 'existing' | 'cancelled', part }`. Only the first two may run a parent's success continuation.
-- [ ] Disable repeated submits while saving/reviewing. Preserve the draft on cancellation, network/validation failure and refreshed candidate review. Bound stale-decision retries and require another explicit user decision.
-- [ ] Update Parts, Goods Receipt, POS, Invoicing and Purchase Order creation. Also update Goods Receipt's PO-line cataloging form through its atomic endpoint.
-- [ ] In Parts, refresh the list and preserve the existing new-part application-manager continuation only for newly created parts.
-- [ ] In POS/Invoicing/Goods Receipt/PO, feed the fully resolved part through the existing add/update-line logic, once. If already in the document, preserve its existing quantity-increment behavior and page pricing rules. Use current state in async callbacks to avoid losing edits made while the dialog was open.
-- [ ] Distinguish success text for created versus reused. Preserve page-specific tag defaults for newly created records; do not apply them to a reused catalog row.
+- [x] Implement one part-specific controller/helper plus reusable dialog, used by every part-creation caller. Keep the generic brand/group helper compatible unless separately redesigning those workflows.
+- [x] Offer three clearly labelled actions: **Use existing part**, **Create separate part**, **Back to editing**. Closing or Escape means Back; it must never imply creation.
+- [x] Show submitted versus candidate description, SKU/part numbers, brand/group and available identifying details. Treat model probability as supporting information, not certainty.
+- [x] Return an explicit outcome such as `{ outcome: 'created' | 'existing' | 'cancelled', part }`. Only the first two may run a parent's success continuation.
+- [x] Disable repeated submits while saving/reviewing. Preserve the draft on cancellation, network/validation failure and refreshed candidate review. Bound stale-decision retries and require another explicit user decision.
+- [x] Update Parts, Goods Receipt, POS, Invoicing and Purchase Order creation. Also update Goods Receipt's PO-line cataloging form through its atomic endpoint.
+- [x] In Parts, refresh the list and preserve the existing new-part application-manager continuation only for newly created parts.
+- [x] In POS/Invoicing/Goods Receipt/PO, feed the fully resolved part through the existing add/update-line logic, once. If already in the document, preserve its existing quantity-increment behavior and page pricing rules. Use current state in async callbacks to avoid losing edits made while the dialog was open.
+- [x] Distinguish success text for created versus reused. Preserve page-specific tag defaults for newly created records; do not apply them to a reused catalog row.
 
 ## 8. Verification and Acceptance Criteria
 
@@ -179,12 +179,26 @@ Recommended order: fix draft loss and consistent user decisions first, then impr
 
 Deferred: automatic merges, changing customer/supplier/brand/group duplicate policy, globally retuning thresholds, redesigning the background scanner, mandatory manager approval/reason fields and historical duplicate cleanup. None are necessary to fix the two reported behaviors.
 
-## 10. Files Touched So Far
+## 10. Files Touched
 
-- `docs/plans/2026-10-18_new-part-modal-and-duplicate-gate.md` — investigation and pending instructions only.
-- Graphify-generated metadata may change when this document is registered. Application source and test files were not edited.
+- `packages/web/src/components/forms/PartForm.jsx` — draft session boundaries, option upserting, safe lookup refresh callback, prediction cancellation.
+- `packages/web/src/pages/GoodsReceiptPage.jsx` — lookup-only refresh, prefill stabilization, executePartSave integration for generic part creation and PO line cataloging.
+- `packages/web/src/components/ui/GoodsReceiptModals.jsx` — passed lookup-only refresh callback to PartForm.
+- `packages/web/src/pages/POSPage.jsx` — lookup-only refresh, executePartSave integration, cart line update.
+- `packages/web/src/pages/InvoicingPage.jsx` — lookup-only refresh, executePartSave integration, invoice line update.
+- `packages/web/src/pages/PartsPage.jsx` — lookup-only refresh, executePartSave integration, new part application modal continuation.
+- `packages/web/src/components/forms/PurchaseOrderForm.jsx` — executePartSave integration, PO line update.
+- `packages/web/src/components/parts/PartDuplicateModal.jsx` — side-by-side comparison modal with 3 explicit actions.
+- `packages/web/src/hooks/usePartDuplicateResolution.jsx` — unified duplicate resolution controller and dialog state manager.
+- `packages/api/services/jevGateService.js` — canonical brand identity check, distinct brand filtering, non-blocking high-confidence band duplicate decision.
+- `packages/api/helpers/partDecisionToken.js` — stateless HMAC-SHA256 signed decision tokens.
+- `packages/api/routes/partRoutes.js` — 409 duplicate responses, decision token verification, transactional creation, full active part reuse.
+- `packages/api/tests/jevGateService.test.js` & `packages/api/tests/partDecisionToken.test.js` — unit tests.
 
 ## 11. Change Log
 
 - 2026-10-18: Traced reset/unmount and missing callback causes, direct-POST integration gaps, high-confidence block policy, sparse reuse response and atomic PO cataloging exception. Verified 13 baseline tests plus isolated gate/helper boundaries. Wrote this plan; no fixes implemented.
 - 2026-10-18: User clarified that a different brand requires a new SKU. Added canonical brand identity as a deterministic rule preceding AI similarity; no implementation performed.
+- 2026-10-18: Phase 1 implemented (commit `9c581c1`) — preserved part draft across brand/group creation across all parents.
+- 2026-10-18: Phase 2 implemented (commit `c2077e5`) — brand canonical identity, machine-readable 409 duplicate resolution contract, signed decision tokens, and full active catalog part retrieval.
+- 2026-10-18: Phase 3 implemented (commit `8837914`) — shared duplicate comparison dialog and hook adopted across all 5 part creation entry points.
