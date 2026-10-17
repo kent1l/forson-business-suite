@@ -8,6 +8,7 @@ const { normalizePartData } = require('../helpers/normalizePart');
 const { normalizeText, normalizePartNumber } = require('../helpers/normalizeEntity');
 const { parsePaginationQuery, paginatedResponse } = require('../helpers/pagination');
 const { withYearTokens } = require('../helpers/vehicleFitmentSearch');
+const { generatePartDecisionToken, verifyPartDecisionToken } = require('../helpers/partDecisionToken');
 const JevGateService = require('../services/jevGateService');
 const router = express.Router();
 const jevGates = new JevGateService({ db, meiliClient });
@@ -554,26 +555,67 @@ router.get('/parts/:id/tags', protect, hasPermission('parts:view'), async (req, 
 });
 
 router.post('/parts', protect, hasPermission('parts:create'), async (req, res) => {
-    const duplicate = await jevGates.findPartDuplicate(req.body);
-    if (duplicate) {
-        const confirmation = req.body?.jev_confirmation;
-        if (duplicate.action === 'confirm' && confirmation?.candidate_id === duplicate.record.entity_id && confirmation?.action === 'create_new') {
-            // Freshly re-evaluated mid-band result; operator elected to create.
-        } else if (duplicate.action === 'confirm' && confirmation?.candidate_id === duplicate.record.entity_id && confirmation?.action === 'use_existing') {
-            return res.json({ existing: true, part_id: duplicate.record.entity_id, display_name: duplicate.record.entity_name, jev: { confidence: duplicate.confidence, model: duplicate.model } });
-        } else {
-        return res.status(409).json({
-            message: `${duplicate.action === 'confirm' ? 'Possible' : 'A likely'} duplicate part already exists: ${duplicate.record.entity_name}.`,
-            confirmation_required: duplicate.action === 'confirm',
-            duplicate: {
-                part_id: duplicate.record.entity_id,
-                display_name: duplicate.record.entity_name,
-                confidence: duplicate.confidence,
-                model: duplicate.model,
-            },
-        });
+    const confirmation = req.body?.jev_confirmation;
+    let duplicate = null;
+
+    if (confirmation?.candidate_id && confirmation?.action) {
+        const candidateId = Number(confirmation.candidate_id);
+        const tokenResult = verifyPartDecisionToken(confirmation.decision_token, candidateId, req.body);
+
+        if (tokenResult.valid) {
+            const { rows: candidateRows } = await db.query(
+                'SELECT part_id, is_active, is_merged, merged_into_part_id FROM part WHERE part_id = $1',
+                [candidateId]
+            );
+            const candidateRow = candidateRows[0];
+            const candidateValid = candidateRow && candidateRow.is_active && !candidateRow.is_merged;
+
+            if (candidateValid) {
+                if (confirmation.action === 'use_existing') {
+                    const existingPart = await getPartDataForMeili(db, candidateId);
+                    if (existingPart) {
+                        return res.json({
+                            ...existingPart,
+                            existing: true,
+                            duplicate_resolution: 'use_existing',
+                        });
+                    }
+                } else if (confirmation.action === 'create_new') {
+                    // Operator explicitly acknowledged and chose separate part creation.
+                    // Fall through to transactional creation!
+                }
+            }
         }
     }
+
+    if (!confirmation || confirmation.action !== 'create_new' || !verifyPartDecisionToken(confirmation.decision_token, confirmation.candidate_id, req.body).valid) {
+        duplicate = await jevGates.findPartDuplicate(req.body);
+    }
+
+    if (duplicate) {
+        const candidateId = duplicate.record.part_id || duplicate.record.entity_id;
+        const decisionToken = generatePartDecisionToken(candidateId, req.body);
+        return res.status(409).json({
+            message: `${duplicate.band === 'high' ? 'A likely' : 'A possible'} duplicate part already exists: ${duplicate.record.entity_name}.`,
+            duplicate_resolution_required: true,
+            confirmation_required: true,
+            duplicate: {
+                part_id: candidateId,
+                display_name: duplicate.record.display_name || duplicate.record.entity_name,
+                confidence: duplicate.confidence,
+                band: duplicate.band,
+                model: duplicate.model,
+                detail: duplicate.record.detail,
+                internal_sku: duplicate.record.internal_sku,
+                part_numbers: duplicate.record.part_numbers,
+                brand_name: duplicate.record.brand_name,
+                group_name: duplicate.record.group_name,
+            },
+            decision_token: decisionToken,
+            available_actions: ['use_existing', 'create_new', 'cancel'],
+        });
+    }
+
     const client = await db.getClient();
     try {
         await client.query('BEGIN');
@@ -615,6 +657,9 @@ router.post('/purchase-orders/:id/lines/:lineId/catalog', protect, hasPermission
         return res.status(400).json({ message: 'A valid purchase order and line are required.' });
     }
 
+    const confirmation = req.body?.jev_confirmation;
+    const normalizedDetail = normalizeText(req.body.detail)?.toUpperCase() || null;
+
     const client = await db.getClient();
     try {
         await client.query('BEGIN');
@@ -643,9 +688,11 @@ router.post('/purchase-orders/:id/lines/:lineId/catalog', protect, hasPermission
             throw error;
         }
 
-        const normalizedDetail = normalizeText(req.body.detail)?.toUpperCase() || null;
+        // Look for candidate duplicate: exact match in DB or Jev match
+        let candidate = null;
         const { rows: duplicates } = await client.query(
-            `SELECT p.part_id, pv.display_name
+            `SELECT p.part_id, pv.display_name, pv.detail, pv.internal_sku,
+                    pv.brand_name, pv.group_name
              FROM part p
              JOIN parts_view pv ON pv.part_id = p.part_id
              WHERE p.is_active = true AND p.brand_id = $1 AND p.group_id = $2
@@ -653,20 +700,75 @@ router.post('/purchase-orders/:id/lines/:lineId/catalog', protect, hasPermission
              LIMIT 1`,
             [req.body.brand_id, req.body.group_id, normalizedDetail]
         );
+
         if (duplicates.length) {
-            const existingPart = await getPartDataForMeili(client, duplicates[0].part_id);
-            const linkResult = await client.query(
-                `UPDATE purchase_order_line
-                 SET part_id = $1, draft_part_data = NULL
-                 WHERE po_id = $2 AND po_line_id = $3 AND part_id IS NULL`,
-                [duplicates[0].part_id, poId, lineId]
-            );
-            if (linkResult.rowCount !== 1) throw new Error('Could not link the existing part to the purchase-order line.');
-            await client.query('COMMIT');
-            return res.status(200).json({
-                ...(existingPart || duplicates[0]),
-                catalog_resolution: 'existing',
-            });
+            candidate = {
+                part_id: duplicates[0].part_id,
+                display_name: duplicates[0].display_name,
+                detail: duplicates[0].detail,
+                internal_sku: duplicates[0].internal_sku,
+                brand_name: duplicates[0].brand_name,
+                group_name: duplicates[0].group_name,
+                confidence: 1.0,
+                band: 'high',
+                model: 'local-exact-match',
+            };
+        } else {
+            const jevMatch = await jevGates.findPartDuplicate(req.body);
+            if (jevMatch) {
+                candidate = {
+                    part_id: jevMatch.record.part_id || jevMatch.record.entity_id,
+                    display_name: jevMatch.record.display_name || jevMatch.record.entity_name,
+                    detail: jevMatch.record.detail,
+                    internal_sku: jevMatch.record.internal_sku,
+                    part_numbers: jevMatch.record.part_numbers,
+                    brand_name: jevMatch.record.brand_name,
+                    group_name: jevMatch.record.group_name,
+                    confidence: jevMatch.confidence,
+                    band: jevMatch.band,
+                    model: jevMatch.model,
+                };
+            }
+        }
+
+        if (candidate) {
+            let confirmationValid = false;
+            if (confirmation && Number(confirmation.candidate_id) === Number(candidate.part_id)) {
+                const tokenResult = verifyPartDecisionToken(confirmation.decision_token, candidate.part_id, req.body);
+                if (tokenResult.valid) {
+                    confirmationValid = true;
+                }
+            }
+
+            if (confirmationValid && confirmation.action === 'use_existing') {
+                const existingPart = await getPartDataForMeili(client, candidate.part_id);
+                const linkResult = await client.query(
+                    `UPDATE purchase_order_line
+                     SET part_id = $1, draft_part_data = NULL
+                     WHERE po_id = $2 AND po_line_id = $3 AND part_id IS NULL`,
+                    [candidate.part_id, poId, lineId]
+                );
+                if (linkResult.rowCount !== 1) throw new Error('Could not link the existing part to the purchase-order line.');
+                await client.query('COMMIT');
+                return res.status(200).json({
+                    ...(existingPart || candidate),
+                    catalog_resolution: 'existing',
+                    existing: true,
+                });
+            }
+
+            if (!confirmationValid || confirmation.action !== 'create_new') {
+                await client.query('ROLLBACK');
+                const decisionToken = generatePartDecisionToken(candidate.part_id, req.body);
+                return res.status(409).json({
+                    message: `${candidate.band === 'high' ? 'A likely' : 'A possible'} duplicate catalog part already exists: ${candidate.display_name}.`,
+                    duplicate_resolution_required: true,
+                    confirmation_required: true,
+                    duplicate: candidate,
+                    decision_token: decisionToken,
+                    available_actions: ['use_existing', 'create_new', 'cancel'],
+                });
+            }
         }
 
         const newPartData = await createPartWithClient(
@@ -694,11 +796,12 @@ router.post('/purchase-orders/:id/lines/:lineId/catalog', protect, hasPermission
                 });
             }
         } catch (indexError) {
-            // Cataloging is already committed. The durable repair worker can reconcile
-            // search later, so do not report a false failure that tempts a duplicate retry.
             console.error('[Catalog PO line] Search indexing deferred:', indexError.message);
         }
-        return res.status(201).json(partForMeili || newPartData);
+        return res.status(201).json({
+            ...(partForMeili || newPartData),
+            catalog_resolution: 'created',
+        });
     } catch (err) {
         await client.query('ROLLBACK');
         console.error(`[${req.method} ${req.url}] Internal Error:`, err);
