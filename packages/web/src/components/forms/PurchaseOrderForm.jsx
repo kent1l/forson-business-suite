@@ -14,6 +14,7 @@ import POBatchPasteModal from './POBatchPasteModal';
 import PODraftShelf from './PODraftShelf';
 import { formatApplicationText } from '../../helpers/applicationTextHelper';
 import { enrichPartsArray } from '../../helpers/applicationCache';
+import usePartDuplicateResolution from '../../hooks/usePartDuplicateResolution';
 
 const PurchaseOrderForm = ({ user, onSave, onCancel, existingPO }) => {
     const [suppliers, setSuppliers] = useState([]);
@@ -32,6 +33,7 @@ const PurchaseOrderForm = ({ user, onSave, onCancel, existingPO }) => {
     const [activeDraftId, setActiveDraftId] = useState(null);
     const searchBarRef = useRef(null);
     const isScrollingRef = useRef(false);
+    const { executePartSave, DuplicateDialog } = usePartDuplicateResolution();
     const poIsEmpty = useMemo(() => (d) => (!d?.selectedSupplier && (!d?.lines || d.lines.length === 0)), []);
 
     const initialFormData = useMemo(() => {
@@ -454,40 +456,43 @@ const PurchaseOrderForm = ({ user, onSave, onCancel, existingPO }) => {
                 part={null}
                 brands={brands}
                 groups={groups}
-                onSave={(payload) => {
-                    // create the part and add to lines on success
-                    const promise = api.post('/parts', payload);
-                    toast.promise(promise, {
-                        loading: 'Creating part...',
-                        success: (res) => {
-                            const newPart = res.data;
-                            // ensure minimal fields and add to lines
-                            addPartToLines({
-                                part_id: newPart.part_id,
-                                display_name: newPart.display_name || newPart.detail || (newPart.brand_name ? `${newPart.brand_name} ${newPart.detail}` : ''),
-                                last_cost: newPart.last_cost || 0,
-                                ...newPart
-                            });
-                            setIsNewPartOpen(false);
-                            return 'Part created and added to PO';
-                        },
-                        error: 'Failed to create part.'
+                onSave={async (payload) => {
+                    const result = await executePartSave({
+                        endpoint: '/parts',
+                        payload,
+                        brands,
+                        groups,
                     });
-                    return promise;
+
+                    if (result.outcome === 'cancelled' || result.outcome === 'error') {
+                        return;
+                    }
+
+                    const resolvedPart = result.part;
+                    addPartToLines({
+                        part_id: resolvedPart.part_id,
+                        display_name: resolvedPart.display_name || resolvedPart.detail || (resolvedPart.brand_name ? `${resolvedPart.brand_name} ${resolvedPart.detail}` : ''),
+                        last_cost: resolvedPart.last_cost || 0,
+                        ...resolvedPart
+                    });
+                    setIsNewPartOpen(false);
+                    toast.success(result.outcome === 'existing' ? 'Using existing part and added to PO' : 'Part created and added to PO');
                 }}
                 onCancel={() => setIsNewPartOpen(false)}
                 onBrandGroupAdded={async () => {
                     // refresh brands/groups if a new one was created inside the PartForm
                     try {
                         const [b, g] = await Promise.all([api.get('/brands'), api.get('/groups')]);
-                        setBrands(Array.isArray(b.data) ? b.data : []);
-                        setGroups(Array.isArray(g.data) ? g.data : []);
+                        const asArray = (val) => (Array.isArray(val) ? val : (Array.isArray(val?.data) ? val.data : []));
+                        setBrands(asArray(b.data));
+                        setGroups(asArray(g.data));
                     } catch (err) {
                         console.error('Could not refresh brands/groups', err);
                     }
                 }}
             />
         </Modal>
+        <DuplicateDialog />
         </>
     );
 };

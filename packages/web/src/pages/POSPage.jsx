@@ -27,6 +27,7 @@ import Receipt from '../components/ui/Receipt';
 import SavedSalesPanel from '../components/pos/SavedSalesPanel';
 import VehicleFilterBar from '../components/VehicleFilterBar';
 import ExchangeModal from '../components/pos/ExchangeModal';
+import usePartDuplicateResolution from '../hooks/usePartDuplicateResolution';
 
 // Grid with Save Sale + View Saved + Void Transaction
 const ButtonsGrid = ({ lines, savedCount, handleSaveSale, setShowSaved, canSave, handleVoid, canVoid, openCustomer, selectedCustomer, handleConvertToInvoice, handleOpenExchange }) => {
@@ -391,21 +392,46 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
         searchInputRef.current?.focus();
     };
 
-    const handleSaveNewPart = (partData) => {
-        const payload = { ...partData, created_by: user.employee_id, tags: ['old_new'] };
-        const promise = api.post('/parts', payload);
+    const { executePartSave, DuplicateDialog } = usePartDuplicateResolution();
 
-        toast.promise(promise, {
-            loading: 'Saving new part...',
-            success: (response) => {
-                const newPart = response.data;
-                setIsNewPartModalOpen(false);
-                handleConfirmAddItem({ ...newPart, quantity: 1, sale_price: newPart.last_sale_price || 0 });
-
-                return 'Part added and added to cart!';
-            },
-            error: 'Failed to save part.'
+    const handleSaveNewPart = async (partData) => {
+        const payload = {
+            ...partData,
+            created_by: user.employee_id,
+            tags: partData.tags?.length ? partData.tags : ['old_new'],
+        };
+        const result = await executePartSave({
+            endpoint: '/parts',
+            payload,
+            brands,
+            groups,
         });
+
+        if (result.outcome === 'cancelled' || result.outcome === 'error') {
+            return;
+        }
+
+        const resolvedPart = result.part;
+        setIsNewPartModalOpen(false);
+        const itemToAdd = {
+            ...resolvedPart,
+            quantity: 1,
+            sale_price: resolvedPart.last_sale_price || resolvedPart.retail_price || 0,
+        };
+
+        setLines(current => {
+            const existingLine = current.find(line => line.part_id === itemToAdd.part_id);
+            if (existingLine) {
+                return current.map(line =>
+                    line.part_id === itemToAdd.part_id
+                        ? { ...line, quantity: line.quantity + itemToAdd.quantity, sale_price: itemToAdd.sale_price }
+                        : line
+                );
+            }
+            return [...current, itemToAdd];
+        });
+
+        toast.success(result.outcome === 'existing' ? 'Using existing part and added to cart!' : 'Part created and added to cart!');
     };
 
     // Void transaction: uses styled modal confirmation and supports undo
@@ -1380,6 +1406,7 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
                     <SavedSalesPanel saved={saved} onRestore={handleRestoreSaved} onDelete={removeSaved} currency={settings?.DEFAULT_CURRENCY_SYMBOL || '₱'} />
                 </div>
             </Modal>
+            <DuplicateDialog />
         </>
     );
 };
