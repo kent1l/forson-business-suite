@@ -505,7 +505,7 @@ router.post('/goods-receipts', protect, hasPermission('goods_receipt:create'), a
     });
 
     await client.query('COMMIT');
-    await syncReceiptRecordedTag(physicalReceiptNo || invoiceNo, true);
+    await syncReceiptRecordedTag(physicalReceiptNo || invoiceNo, true, supplier_id, client);
     res.status(201).json({
       message: 'Goods receipt created successfully',
       grn_id: newGrnId,
@@ -947,7 +947,7 @@ router.delete('/goods-receipts/:id', protect, hasPermission('goods_receipt:void'
     );
 
     await client.query('COMMIT');
-    await syncReceiptRecordedTag(grn.physical_receipt_no || grn.supplier_invoice_no, false);
+    await syncReceiptRecordedTag(grn.physical_receipt_no || grn.supplier_invoice_no, false, grn.supplier_id, client);
     res.json({ message: 'Goods receipt voided and stock reversed.' });
   } catch (err) {
     await client.query('ROLLBACK');
@@ -1525,7 +1525,7 @@ router.post('/goods-receipts/:id/post', protect, hasPermission('goods_receipt:po
     });
 
     await client.query('COMMIT');
-    await syncReceiptRecordedTag(grn.physical_receipt_no || grn.supplier_invoice_no, true);
+    await syncReceiptRecordedTag(grn.physical_receipt_no || grn.supplier_invoice_no, true, grn.supplier_id, client);
     res.json({
       message: 'Goods receipt posted.',
       grn_id: Number(id),

@@ -231,7 +231,7 @@ describe('Goods Receipt Inventory & Pricing Routes', () => {
             expect(res.body.grn_id).toBe(101);
             expect(client.query).toHaveBeenCalledWith('BEGIN');
             expect(client.query).toHaveBeenCalledWith('COMMIT');
-            expect(syncReceiptRecordedTag).toHaveBeenCalledWith('DR-42', true);
+            expect(syncReceiptRecordedTag).toHaveBeenCalledWith('DR-42', true, 1, client);
             const commitIndex = client.query.mock.calls.findIndex(c => c[0] === 'COMMIT');
             expect(client.query.mock.invocationCallOrder[commitIndex]).toBeLessThan(syncReceiptRecordedTag.mock.invocationCallOrder[0]);
         });

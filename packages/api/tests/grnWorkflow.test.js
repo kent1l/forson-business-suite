@@ -337,7 +337,7 @@ describe('POST /goods-receipts/:id/post', () => {
     expect(stockIn).toBeDefined();
     // 1000 of goods plus 300 of freight over 10 units.
     expect(Number(stockIn[1][2])).toBe(130);
-    expect(syncReceiptRecordedTag).toHaveBeenCalledWith('DR-42', true);
+    expect(syncReceiptRecordedTag).toHaveBeenCalledWith('DR-42', true, 3, mockClient);
     const commitIndex = mockClient.query.mock.calls.findIndex(c => c[0] === 'COMMIT');
     expect(mockClient.query.mock.invocationCallOrder[commitIndex]).toBeLessThan(syncReceiptRecordedTag.mock.invocationCallOrder[0]);
   });
@@ -354,7 +354,7 @@ describe('POST /goods-receipts/:id/post', () => {
     const res = await request(app).post('/api/goods-receipts/11/post').send({});
     expect(res.status).toBe(200);
     expect(res.body.grn_number).toBe('GRN-202609-0001');
-    expect(syncReceiptRecordedTag).toHaveBeenCalledWith('SI-100', true);
+    expect(syncReceiptRecordedTag).toHaveBeenCalledWith('SI-100', true, 3, mockClient);
   });
 
   test('freight is billed to the carrier, separately from the goods', async () => {
@@ -428,7 +428,7 @@ describe('Paperless tag removal on GRN void', () => {
   test('removes the recorded tag only after the void commits', async () => {
     mockClient.query.mockImplementation(async sql => {
       if (String(sql).includes('FROM goods_receipt WHERE grn_id')) {
-        return { rows: [{ grn_id: 11, grn_number: 'GRN-11', status: 'Active', physical_receipt_no: 'DR-42' }] };
+        return { rows: [{ grn_id: 11, grn_number: 'GRN-11', status: 'Active', supplier_id: 3, physical_receipt_no: 'DR-42' }] };
       }
       if (String(sql).includes('FROM goods_receipt_line WHERE grn_id')) {
         return { rows: [{ part_id: 100, quantity: 1, cost_price: 100 }] };
@@ -437,7 +437,7 @@ describe('Paperless tag removal on GRN void', () => {
     });
     const res = await request(app).delete('/api/goods-receipts/11').send({ reason: 'Duplicate' });
     expect(res.status).toBe(200);
-    expect(syncReceiptRecordedTag).toHaveBeenCalledWith('DR-42', false);
+    expect(syncReceiptRecordedTag).toHaveBeenCalledWith('DR-42', false, 3, mockClient);
     const commitIndex = mockClient.query.mock.calls.findIndex(c => c[0] === 'COMMIT');
     expect(mockClient.query.mock.invocationCallOrder[commitIndex]).toBeLessThan(syncReceiptRecordedTag.mock.invocationCallOrder[0]);
   });

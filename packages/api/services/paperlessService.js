@@ -3,6 +3,7 @@
 const https = require('https');
 const http = require('http');
 const { getPaperlessConfig } = require('../config/paperlessConfig');
+const { normalizePartyName, normalizeReceiptIdentifier } = require('../helpers/paperlessMatching');
 
 /**
  * Helper to make HTTP/HTTPS requests to Paperless-ngx REST API with timeout, SSL verification toggle, and Bearer/Token auth.
@@ -118,6 +119,8 @@ async function listDocuments(params = {}) {
     if (params.page) searchParams.set('page', String(params.page));
     if (params.pageSize || params.page_size) searchParams.set('page_size', String(params.pageSize || params.page_size || 25));
     if (params.ordering) searchParams.set('ordering', params.ordering);
+    if (params.correspondentId) searchParams.set('correspondent__id', String(params.correspondentId));
+    if (params.documentTypeId) searchParams.set('document_type__id', String(params.documentTypeId));
 
     const queryString = searchParams.toString();
     const path = `/documents/${queryString ? `?${queryString}` : ''}`;
@@ -225,11 +228,54 @@ async function findDocumentByReceiptNo(receiptNo, { exactOnly = false } = {}) {
     }
 }
 
+async function listAllPaperlessObjects(resource) {
+    const results = [];
+    let page = 1;
+    let data;
+    do {
+        data = await paperlessFetch(`/${resource}/?page_size=100&page=${page++}`);
+        results.push(...(data.results || []));
+    } while (data.next);
+    return results;
+}
+
+async function findGoodsReceiptDocument(receiptNo, supplierName) {
+    const receiptKey = normalizeReceiptIdentifier(receiptNo);
+    const supplierKey = normalizePartyName(supplierName);
+    if (!receiptKey || !supplierKey || !isValidReceiptQuery(supplierName)) return null;
+    const [correspondents, types] = await Promise.all([
+        listAllPaperlessObjects('correspondents'),
+        listAllPaperlessObjects('document_types'),
+    ]);
+    const matchingParties = correspondents.filter(c => normalizePartyName(c.name) === supplierKey);
+    const matchingTypes = types.filter(t => normalizePartyName(t.name) === normalizePartyName('Goods Receipt'));
+    if (matchingParties.length !== 1 || matchingTypes.length !== 1) return null;
+    const correspondentId = matchingParties[0].id;
+    const documentTypeId = matchingTypes[0].id;
+    const matches = new Map();
+    let page = 1;
+    let data;
+    // Fetch scoped metadata rather than filtering raw title text: leading zeros and
+    // punctuation can differ before normalization. Check IDs again defensively.
+    do {
+        data = await listDocuments({ correspondentId, documentTypeId, pageSize: 100, page: page++ });
+        for (const doc of data.results || []) {
+            if (doc.correspondent === correspondentId && doc.document_type === documentTypeId &&
+                normalizeReceiptIdentifier(doc.title) === receiptKey) matches.set(doc.id, doc);
+        }
+    } while (data.next);
+    return matches.size === 1 ? matches.values().next().value : null;
+}
+
 /** Best-effort post-commit synchronization: Paperless must not undo a posted GRN. */
-async function syncReceiptRecordedTag(receiptNo, recorded) {
-    if (!getPaperlessConfig().isConfigured || !isValidReceiptQuery(receiptNo)) return;
+async function syncReceiptRecordedTag(receiptNo, recorded, supplierId, queryClient) {
+    if (!getPaperlessConfig().isConfigured || !isValidReceiptQuery(receiptNo) || !supplierId) return;
     try {
-        const document = await findDocumentByReceiptNo(receiptNo, { exactOnly: true });
+        const { rows: [supplier] } = await (queryClient || require('../db')).query(
+            'SELECT supplier_name FROM supplier WHERE supplier_id = $1', [supplierId],
+        );
+        if (!supplier) return;
+        const document = await findGoodsReceiptDocument(receiptNo, supplier.supplier_name);
         if (!document) return;
 
         const findRecordedTag = async () => {
@@ -331,4 +377,6 @@ module.exports = {
     normalizeToHyphen,
     isValidReceiptQuery,
     syncReceiptRecordedTag,
+    findGoodsReceiptDocument,
+    listAllPaperlessObjects,
 };
