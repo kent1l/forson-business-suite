@@ -83,4 +83,94 @@ describe('JevGateService', () => {
         await expect(service.findPartDuplicate({ detail: 'Brake pad' })).resolves.toBeNull();
         expect(logger.warn).toHaveBeenCalled();
     });
+
+    test('excludes candidates from duplicate evaluation when canonical brands differ', async () => {
+        const db = {
+            query: jest.fn()
+                .mockImplementation(async (sql, params) => {
+                    if (sql.includes('SELECT p.part_id')) {
+                        return { rows: [{ part_id: 101, brand_id: 2, brand_name: 'Denso', is_merged: false, detail: 'Brake pad' }] };
+                    }
+                    if (sql.includes('SELECT brand_id')) {
+                        if (params[0] === 1) return { rows: [{ brand_id: 1, brand_name: 'Bosch', is_merged: false }] };
+                        if (params[0] === 2) return { rows: [{ brand_id: 2, brand_name: 'Denso', is_merged: false }] };
+                    }
+                    return { rows: [] };
+                })
+        };
+        const jevClient = { isConfigured: () => true, evaluateDuplicate: jest.fn() };
+        const meiliClient = {
+            index: () => ({
+                search: jest.fn().mockResolvedValue({
+                    hits: [{ part_id: 101, detail: 'Brake pad', brand_id: 2, brand_name: 'Denso', is_active: true }]
+                })
+            })
+        };
+        const service = new JevGateService({ db, jevClient, meiliClient, env: {} });
+
+        const result = await service.findPartDuplicate({ detail: 'Brake pad', brand_id: 1 });
+        expect(result).toBeNull();
+        expect(jevClient.evaluateDuplicate).not.toHaveBeenCalled();
+    });
+
+    test('evaluates candidates that share the same canonical brand or alias and marks bands', async () => {
+        const db = {
+            query: jest.fn()
+                .mockImplementation(async (sql, params) => {
+                    if (sql.includes('SELECT p.part_id')) {
+                        return { rows: [{ part_id: 101, brand_id: 12, brand_name: 'Bosch Auto', is_merged: true, merged_into_brand_id: 1, detail: 'Brake pad' }] };
+                    }
+                    if (sql.includes('SELECT brand_id')) {
+                        if (params[0] === 1) return { rows: [{ brand_id: 1, brand_name: 'Bosch', is_merged: false }] };
+                        if (params[0] === 12) return { rows: [{ brand_id: 12, brand_name: 'Bosch Auto', is_merged: true, merged_into_brand_id: 1 }] };
+                    }
+                    return { rows: [] };
+                })
+        };
+        const jevClient = {
+            isConfigured: () => true,
+            evaluateDuplicate: jest.fn().mockResolvedValue({ probability: 0.95, model: 'jev-test' }),
+        };
+        const meiliClient = {
+            index: () => ({
+                search: jest.fn().mockResolvedValue({
+                    hits: [{ part_id: 101, detail: 'Brake pad', brand_id: 12, brand_name: 'Bosch Auto', is_active: true }]
+                })
+            })
+        };
+        const service = new JevGateService({ db, jevClient, meiliClient, env: {} });
+
+        const result = await service.findPartDuplicate({ detail: 'Brake pad', brand_id: 1 });
+        expect(result).toMatchObject({
+            record: expect.objectContaining({ entity_id: 101 }),
+            confidence: 0.95,
+            band: 'high',
+            action: 'confirm', // Actionable for parts!
+        });
+    });
+
+    test('returns medium band for 0.85 confidence part match', async () => {
+        const db = {
+            query: jest.fn().mockResolvedValue({ rows: [{ part_id: 101, brand_id: 1, brand_name: 'Bosch', is_merged: false, detail: 'Brake pad' }] })
+        };
+        const jevClient = {
+            isConfigured: () => true,
+            evaluateDuplicate: jest.fn().mockResolvedValue({ probability: 0.85, model: 'jev-test' }),
+        };
+        const meiliClient = {
+            index: () => ({
+                search: jest.fn().mockResolvedValue({
+                    hits: [{ part_id: 101, detail: 'Brake pad', brand_id: 1, brand_name: 'Bosch', is_active: true }]
+                })
+            })
+        };
+        const service = new JevGateService({ db, jevClient, meiliClient, env: {} });
+
+        const result = await service.findPartDuplicate({ detail: 'Brake pad', brand_id: 1 });
+        expect(result).toMatchObject({
+            confidence: 0.85,
+            band: 'medium',
+            action: 'confirm',
+        });
+    });
 });

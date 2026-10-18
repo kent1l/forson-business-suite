@@ -93,17 +93,43 @@ class JevGateService {
             threshold(this.env.JEV_PARTY_CONFIRM_THRESHOLD, 0.80));
     }
 
+    async #resolveCanonicalBrand(brandId) {
+        if (!brandId || !this.db) return null;
+        let currentId = Number(brandId);
+        if (!Number.isInteger(currentId)) return null;
+        let depth = 0;
+        while (currentId && depth < 5) {
+            depth++;
+            try {
+                const { rows } = await this.db.query(
+                    'SELECT brand_id, brand_name, is_merged, merged_into_brand_id FROM brand WHERE brand_id = $1',
+                    [currentId]
+                );
+                const row = rows[0];
+                if (!row) return null;
+                if (!row.is_merged || !row.merged_into_brand_id) {
+                    return { brand_id: row.brand_id, brand_name: row.brand_name };
+                }
+                currentId = Number(row.merged_into_brand_id);
+            } catch (err) {
+                this.logger.warn?.(`Brand canonical resolution error: ${err.message}`);
+                return null;
+            }
+        }
+        return null;
+    }
+
     async findPartDuplicate(payload) {
         if (!this.enabled() || !this.meiliClient) return null;
         const detail = normalize(payload?.detail);
-        const numbers = normalize(payload?.part_numbers_string);
+        const numbers = normalize(payload?.part_numbers_string || payload?.part_numbers);
         const query = [numbers, detail].filter(Boolean).join(' ');
         if (query.length < 3) return null;
         let hits;
         try {
             const result = await this.meiliClient.index('parts').search(query, {
                 limit: 8,
-                attributesToRetrieve: ['part_id', 'display_name', 'detail', 'internal_sku', 'part_numbers', 'brand_name', 'group_name', 'is_active'],
+                attributesToRetrieve: ['part_id', 'display_name', 'detail', 'internal_sku', 'part_numbers', 'brand_id', 'brand_name', 'group_name', 'is_active'],
                 filter: 'is_active = true',
             });
             hits = (result?.hits || []).filter((row) => row.part_id);
@@ -111,15 +137,104 @@ class JevGateService {
             this.logger.warn?.(`Jev part gate search unavailable; allowing create: ${error.message}`);
             return null;
         }
+        if (!hits.length) return null;
+
+        const candidateMap = new Map();
+        if (this.db) {
+            try {
+                const hitIds = hits.map((h) => Number(h.part_id)).filter(Number.isInteger);
+                if (hitIds.length > 0) {
+                    const { rows } = await this.db.query(
+                        `SELECT p.part_id, p.brand_id, p.group_id, p.detail, p.internal_sku,
+                                b.brand_name, b.is_merged, b.merged_into_brand_id,
+                                g.group_name
+                         FROM part p
+                         LEFT JOIN brand b ON b.brand_id = p.brand_id
+                         LEFT JOIN "group" g ON g.group_id = p.group_id
+                         WHERE p.part_id = ANY($1)`,
+                        [hitIds]
+                    );
+                    for (const row of rows) {
+                        candidateMap.set(Number(row.part_id), row);
+                    }
+                }
+            } catch (err) {
+                this.logger.warn?.(`Could not load part candidate brand metadata: ${err.message}`);
+            }
+        }
+
+        let proposedCanonicalBrand = null;
+        if (payload?.brand_id) {
+            proposedCanonicalBrand = await this.#resolveCanonicalBrand(payload.brand_id);
+        }
+
+        const candidates = [];
+        for (const hit of hits) {
+            const dbRow = candidateMap.get(Number(hit.part_id));
+            const candidateBrandId = dbRow?.brand_id ?? hit.brand_id;
+            let candidateCanonicalBrand = null;
+            if (candidateBrandId) {
+                if (dbRow && (!dbRow.is_merged || !dbRow.merged_into_brand_id)) {
+                    candidateCanonicalBrand = { brand_id: dbRow.brand_id, brand_name: dbRow.brand_name };
+                } else {
+                    candidateCanonicalBrand = await this.#resolveCanonicalBrand(candidateBrandId);
+                }
+            }
+
+            // Brand Identity Rule:
+            // Distinct known canonical brands are separate catalog products, not reuse candidates.
+            if (proposedCanonicalBrand?.brand_id && candidateCanonicalBrand?.brand_id) {
+                if (Number(proposedCanonicalBrand.brand_id) !== Number(candidateCanonicalBrand.brand_id)) {
+                    continue;
+                }
+            }
+
+            candidates.push({
+                entity_id: hit.part_id,
+                entity_name: [hit.display_name || hit.detail, hit.part_numbers, hit.internal_sku].filter(Boolean).join(' | '),
+                entity_code: hit.internal_sku || null,
+                part_id: hit.part_id,
+                display_name: hit.display_name || dbRow?.detail || hit.detail,
+                detail: dbRow?.detail || hit.detail,
+                internal_sku: dbRow?.internal_sku || hit.internal_sku,
+                part_numbers: hit.part_numbers,
+                brand_name: candidateCanonicalBrand?.brand_name || dbRow?.brand_name || hit.brand_name || null,
+                group_name: dbRow?.group_name || hit.group_name || null,
+            });
+        }
+
+        if (!candidates.length) return null;
+
         const proposed = { name: [detail, numbers].filter(Boolean).join(' | ') };
-        const candidates = hits.map((row) => ({
-            entity_id: row.part_id,
-            entity_name: [row.display_name || row.detail, row.part_numbers, row.internal_sku].filter(Boolean).join(' | '),
-            entity_code: row.internal_sku || null,
-        }));
-        return this.#noulMatch('part catalog item', proposed, candidates,
+        return this.#noulPartMatch(proposed, candidates,
             threshold(this.env.JEV_PART_GATE_THRESHOLD, 0.92),
             threshold(this.env.JEV_PART_CONFIRM_THRESHOLD, 0.80));
+    }
+
+    async #noulPartMatch(proposed, candidates, minConfidence, confirmConfidence = minConfidence) {
+        for (const candidate of candidates) {
+            try {
+                const decision = await this.jevClient.evaluateDuplicate({
+                    entityType: 'part catalog item',
+                    left: proposed,
+                    right: { name: candidate.entity_name, code: candidate.entity_code },
+                });
+                if (decision?.probability >= confirmConfidence) {
+                    const confidence = decision.probability;
+                    return {
+                        record: candidate,
+                        confidence,
+                        band: confidence >= minConfidence ? 'high' : 'medium',
+                        model: decision.model,
+                        action: 'confirm',
+                    };
+                }
+            } catch (error) {
+                this.logger.warn?.(`Jev part catalog item gate unavailable; allowing normal workflow: ${error.message}`);
+                return null;
+            }
+        }
+        return null;
     }
 
     async #chooseRecord({ question, input, records, id, label, instructions, minConfidence, confirmConfidence = minConfidence }) {

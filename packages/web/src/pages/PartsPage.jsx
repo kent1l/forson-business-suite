@@ -15,7 +15,7 @@ import PartNumberManager from './PartNumberManager';
 import PartApplicationManager from './PartApplicationManager';
 import { formatApplicationText } from '../helpers/applicationTextHelper';
 import { sortData } from '../utils/sortData';
-import { postWithJevConfirmation } from '../helpers/jevConfirmation';
+import usePartDuplicateResolution from '../hooks/usePartDuplicateResolution';
 
 const asArray = (value) => (Array.isArray(value) ? value : []);
 
@@ -76,6 +76,19 @@ const PartsPage = ({ user, onNavigate }) => {
         }
     }, [statusFilter, debouncedSearchTerm, page, pageSize, globalSortBy, globalSortDirection]);
 
+    const refreshLookupsOnly = useCallback(async () => {
+        try {
+            const [brandsRes, groupsRes] = await Promise.all([
+                api.get('/brands'),
+                api.get('/groups')
+            ]);
+            setBrands(asArray(brandsRes.data?.data ?? brandsRes.data));
+            setGroups(asArray(groupsRes.data?.data ?? groupsRes.data));
+        } catch (err) {
+            console.error('Failed to refresh lookups:', err);
+        }
+    }, []);
+
     useEffect(() => {
         fetchInitialData();
     }, [fetchInitialData]);
@@ -84,36 +97,46 @@ const PartsPage = ({ user, onNavigate }) => {
         setPage(1);
     }, [statusFilter, debouncedSearchTerm, globalSortBy, globalSortDirection]);
 
-    const handleSave = (partData) => {
-        const promise = currentPart
-            ? api.put(`/parts/${currentPart.part_id}`, { ...partData, modified_by: user.employee_id })
-            : postWithJevConfirmation('/parts', { ...partData, created_by: user.employee_id }, 'part');
-        toast.promise(promise, {
-            loading: `${currentPart ? 'Updating' : 'Creating'} part...`,
-            success: (res) => {
-                // Refresh list
-                fetchInitialData();
+    const { executePartSave, DuplicateDialog } = usePartDuplicateResolution();
 
-                if (!currentPart) {
-                    // Created new part: open the Applications manager for the new part
-                    const newPart = res?.data || res;
+    const handleSave = async (partData) => {
+        if (currentPart) {
+            const promise = api.put(`/parts/${currentPart.part_id}`, { ...partData, modified_by: user.employee_id });
+            toast.promise(promise, {
+                loading: 'Updating part...',
+                success: () => {
+                    fetchInitialData();
                     setIsFormModalOpen(false);
-                    if (newPart?.existing) {
-                        setCurrentPart(null);
-                        return 'Using the existing part.';
-                    }
-                    setCurrentPart(newPart);
-                    setIsAppModalOpen(true);
-                    return 'Part created successfully!';
-                }
+                    setCurrentPart(null);
+                    return 'Part updated successfully!';
+                },
+                error: (err) => err.response?.data?.message || 'Failed to update part.'
+            });
+            return;
+        }
 
-                // Updated existing part
-                setIsFormModalOpen(false);
-                setCurrentPart(null);
-                return 'Part updated successfully!';
-            },
-            error: (err) => err.response?.data?.message || `Failed to ${currentPart ? 'update' : 'create'} part.`
+        const result = await executePartSave({
+            endpoint: '/parts',
+            payload: { ...partData, created_by: user.employee_id },
+            brands,
+            groups,
         });
+
+        if (result.outcome === 'cancelled' || result.outcome === 'error') {
+            return;
+        }
+
+        fetchInitialData();
+        setIsFormModalOpen(false);
+
+        if (result.outcome === 'existing') {
+            setCurrentPart(null);
+            toast.success('Using existing catalog part.');
+        } else {
+            toast.success('Part created successfully!');
+            setCurrentPart(result.part);
+            setIsAppModalOpen(true);
+        }
     };
 
     const handleBulkSave = (updates) => {
@@ -372,10 +395,10 @@ const PartsPage = ({ user, onNavigate }) => {
                 />
             </div>
             <Modal isOpen={isFormModalOpen} onClose={() => setIsFormModalOpen(false)} title={currentPart ? 'Edit Part' : 'New Part'}>
-                <PartForm part={currentPart} brands={brands} groups={groups} onSave={handleSave} onCancel={() => setIsFormModalOpen(false)} onBrandGroupAdded={fetchInitialData} />
+                <PartForm part={currentPart} brands={brands} groups={groups} onSave={handleSave} onCancel={() => setIsFormModalOpen(false)} onBrandGroupAdded={refreshLookupsOnly} />
             </Modal>
             <Modal isOpen={isBulkEditModalOpen} onClose={() => setIsBulkEditModalOpen(false)} title={`Bulk Edit ${selectedParts.length} Parts`}>
-                <PartForm isBulkEdit={true} brands={brands} groups={groups} onSave={handleBulkSave} onCancel={() => setIsBulkEditModalOpen(false)} onBrandGroupAdded={fetchInitialData} />
+                <PartForm isBulkEdit={true} brands={brands} groups={groups} onSave={handleBulkSave} onCancel={() => setIsBulkEditModalOpen(false)} onBrandGroupAdded={refreshLookupsOnly} />
             </Modal>
              <Modal isOpen={isNumberModalOpen} onClose={() => setIsNumberModalOpen(false)} title={`Manage Numbers for: ${currentPart?.internal_sku || currentPart?.display_name || currentPart?.detail || ''}`}>
                 <PartNumberManager part={currentPart} onSave={fetchInitialData} onCancel={() => setIsNumberModalOpen(false)} />
@@ -383,6 +406,7 @@ const PartsPage = ({ user, onNavigate }) => {
             <Modal isOpen={isAppModalOpen} onClose={() => setIsAppModalOpen(false)} title={`Manage Applications for: ${currentPart?.part_numbers || currentPart?.internal_sku || currentPart?.detail || ''}`}>
                 <PartApplicationManager part={currentPart} onCancel={() => setIsAppModalOpen(false)} />
             </Modal>
+            <DuplicateDialog />
         </div>
     );
 };

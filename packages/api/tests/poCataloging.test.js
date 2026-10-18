@@ -120,16 +120,44 @@ describe('cataloging a drafted PO line', () => {
         expect(mockClient.query.mock.calls.some(([sql]) => String(sql) === 'COMMIT')).toBe(false);
     });
 
-    test('links an exact active catalog match instead of creating a duplicate', async () => {
+    test('requires confirmation before linking an exact active catalog match', async () => {
         mockClient.query.mockReset();
         configureSuccessfulQueries({ duplicate: true });
 
-        const response = await request(app)
+        const conflict = await request(app)
             .post('/api/purchase-orders/4/lines/9/catalog')
             .send(partPayload);
 
+        expect(conflict.status).toBe(409);
+        expect(conflict.body).toMatchObject({
+            duplicate_resolution_required: true,
+            confirmation_required: true,
+            duplicate: { part_id: 88, model: 'local-exact-match' },
+            decision_token: expect.any(String),
+            available_actions: ['use_existing', 'create_new', 'cancel'],
+        });
+        expect(mockClient.query.mock.calls.some(([sql]) => String(sql) === 'ROLLBACK')).toBe(true);
+        expect(mockClient.query.mock.calls.some(([sql]) => String(sql) === 'COMMIT')).toBe(false);
+        expect(mockClient.query.mock.calls.some(([sql]) => String(sql).includes('INSERT INTO part (detail'))).toBe(false);
+        expect(mockClient.query.mock.calls.some(([sql]) => String(sql).includes('UPDATE purchase_order_line'))).toBe(false);
+
+        mockClient.query.mockClear();
+
+        const response = await request(app)
+            .post('/api/purchase-orders/4/lines/9/catalog')
+            .send({
+                ...partPayload,
+                jev_confirmation: {
+                    candidate_id: 88,
+                    action: 'use_existing',
+                    decision_token: conflict.body.decision_token,
+                },
+            });
+
         expect(response.status).toBe(200);
-        expect(response.body).toMatchObject({ part_id: 88, catalog_resolution: 'existing' });
+        expect(response.body).toMatchObject({ part_id: 88, catalog_resolution: 'existing', existing: true });
+        const linkCall = mockClient.query.mock.calls.find(([sql]) => String(sql).includes('UPDATE purchase_order_line'));
+        expect(linkCall[1]).toEqual([88, 4, 9]);
         expect(mockClient.query.mock.calls.some(([sql]) => String(sql).includes('INSERT INTO part (detail'))).toBe(false);
         expect(mockClient.query.mock.calls.some(([sql]) => String(sql) === 'COMMIT')).toBe(true);
     });

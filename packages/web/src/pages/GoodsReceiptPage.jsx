@@ -22,6 +22,7 @@ import { formatCurrency } from '../utils/currency';
 import { computeCosting, markupFromPrice, roundUpTo, DEFAULT_MARKUP_PERCENT, MIN_MARKUP_PERCENT, PRICE_ROUNDING_INCREMENT, METHOD_A } from '../utils/grnCosting';
 import { useAuth } from '../contexts/AuthContext';
 import { formatPhysicalReceiptNumber } from '../utils/receiptNumberFormatter';
+import usePartDuplicateResolution from '../hooks/usePartDuplicateResolution';
 
 const upperCatalogText = (value) => String(value || '').replace(/\s+/g, ' ').trim().toUpperCase();
 
@@ -190,6 +191,19 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
         setSuppliers(response.data);
         return response.data;
     };
+
+    const refreshLookupsOnly = useCallback(async () => {
+        try {
+            const [brandsRes, groupsRes] = await Promise.all([
+                api.get('/brands'),
+                api.get('/groups')
+            ]);
+            setBrands(brandsRes.data);
+            setGroups(groupsRes.data);
+        } catch (err) {
+            console.error('Failed to refresh lookups:', err);
+        }
+    }, []);
 
     useEffect(() => {
         fetchInitialData();
@@ -423,20 +437,23 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
         }
     };
 
-    const handleSaveNewPart = (partData) => {
-        const payload = { ...partData, created_by: user.employee_id };
-        const promise = api.post('/parts', payload);
+    const { executePartSave, DuplicateDialog } = usePartDuplicateResolution();
 
-        toast.promise(promise, {
-            loading: 'Saving new part...',
-            success: (response) => {
-                const newPart = response.data;
-                setIsNewPartModalOpen(false);
-                addPartToLines(newPart);
-                return 'Part created successfully!';
-            },
-            error: 'Failed to save part.'
+    const handleSaveNewPart = async (partData) => {
+        const result = await executePartSave({
+            endpoint: '/parts',
+            payload: { ...partData, created_by: user.employee_id },
+            brands,
+            groups,
         });
+
+        if (result.outcome === 'cancelled' || result.outcome === 'error') {
+            return;
+        }
+
+        setIsNewPartModalOpen(false);
+        addPartToLines(result.part);
+        toast.success(result.outcome === 'existing' ? 'Using existing catalog part.' : 'Part created successfully!');
     };
 
     const handleOpenEditPartModal = async (line) => {
@@ -624,6 +641,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
             ? `${parsedDetail} ${packSize}`.trim()
             : parsedDetail;
         return {
+            po_line_id: catalogTarget.po_line_id,
             detail,
             brand_id: brand?.brand_id || '',
             brand_name: upperCatalogText(draft.brand),
@@ -632,31 +650,35 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
             measurement_unit: upperCatalogText(draft.purchase_uom || catalogTarget.unit || 'PCS'),
             last_cost: catalogTarget.cost_price || 0,
         };
-    }, [catalogTarget, brands, groups]);
+    }, [catalogTarget?.po_line_id]);
 
     const handleCatalogPart = async (partData) => {
         if (!catalogTarget || !selectedPO) return;
-        try {
-            const { data: fullPart } = await api.post(
-                `/purchase-orders/${selectedPO.po_id}/lines/${catalogTarget.po_line_id}/catalog`,
-                partData
-            );
-            setLines(current => current.map(line => line.po_line_id === catalogTarget.po_line_id ? {
-                ...line,
-                ...fullPart,
-                part_id: fullPart.part_id,
-                draft_part_data: null,
-                display_name: fullPart.display_name || fullPart.detail,
-                quantity: line.quantity,
-                cost_price: line.cost_price,
-            } : line));
-            setCatalogTarget(null);
-            toast.success(fullPart.catalog_resolution === 'existing'
-                ? 'Matching catalog part found and linked to this PO line.'
-                : 'Part cataloged and ready to receive.');
-        } catch (error) {
-            toast.error(error?.response?.data?.message || 'Could not catalog this PO line.');
+        const result = await executePartSave({
+            endpoint: `/purchase-orders/${selectedPO.po_id}/lines/${catalogTarget.po_line_id}/catalog`,
+            payload: partData,
+            brands,
+            groups,
+        });
+
+        if (result.outcome === 'cancelled' || result.outcome === 'error') {
+            return;
         }
+
+        const fullPart = result.part;
+        setLines(current => current.map(line => line.po_line_id === catalogTarget.po_line_id ? {
+            ...line,
+            ...fullPart,
+            part_id: fullPart.part_id,
+            draft_part_data: null,
+            display_name: fullPart.display_name || fullPart.detail,
+            quantity: line.quantity,
+            cost_price: line.cost_price,
+        } : line));
+        setCatalogTarget(null);
+        toast.success(result.outcome === 'existing'
+            ? 'Matching catalog part found and linked to this PO line.'
+            : 'Part cataloged and ready to receive.');
     };
 
     // Everything the API needs, in the shape both the one-shot post and the draft
@@ -1596,7 +1618,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                         groups={groups}
                         onSave={handleCatalogPart}
                         onCancel={() => setCatalogTarget(null)}
-                        onBrandGroupAdded={fetchInitialData}
+                        onBrandGroupAdded={refreshLookupsOnly}
                     />
                 )}
             </Modal>
@@ -1724,11 +1746,13 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                 handleEditPartSave={handleEditPartSave}
                 handleAppManagerClose={handleAppManagerClose}
                 fetchInitialData={fetchInitialData}
+                onBrandGroupAdded={refreshLookupsOnly}
 
                 // State updaters for lines
                 _setLines={setLines}
                 _lines={lines}
             />
+            <DuplicateDialog />
         </div>
     );
 };

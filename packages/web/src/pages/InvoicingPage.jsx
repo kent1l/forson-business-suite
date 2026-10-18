@@ -22,6 +22,7 @@ import { formatApplicationText } from '../helpers/applicationTextHelper';
 import { enrichPartsArray } from '../helpers/applicationCache';
 import useTypeahead from '../hooks/useTypeahead';
 import useSavedSales from '../hooks/useSavedSales';
+import usePartDuplicateResolution from '../hooks/usePartDuplicateResolution';
 
 const InvoicingPage = ({ user, onNavigate, pageState }) => {
     const { settings } = useSettings();
@@ -129,6 +130,19 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
         
         fetchInitialData();
     }, [selectedTaxRate]);
+
+    const refreshLookupsOnly = useCallback(async () => {
+        try {
+            const [brandsRes, groupsRes] = await Promise.all([
+                api.get('/brands'),
+                api.get('/groups')
+            ]);
+            setBrands(Array.isArray(brandsRes.data) ? brandsRes.data : brandsRes.data?.data || []);
+            setGroups(Array.isArray(groupsRes.data) ? groupsRes.data : groupsRes.data?.data || []);
+        } catch (err) {
+            console.error('Failed to refresh lookups:', err);
+        }
+    }, []);
 
     useEffect(() => {
         if (pageState && pageState.lines) {
@@ -244,21 +258,45 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
         setSearchTerm('');
     };
 
-    const handleSaveNewPart = (partData) => {
-        const payload = { ...partData, created_by: user.employee_id, tags: ['old_new'] };
-        const promise = api.post('/parts', payload);
+    const { executePartSave, DuplicateDialog } = usePartDuplicateResolution();
 
-        toast.promise(promise, {
-            loading: 'Saving new part...',
-            success: (response) => {
-                const newPart = response.data;
-                setIsNewPartModalOpen(false);
-                addPartToLines({ ...newPart, quantity: 1, sale_price: newPart.last_sale_price || 0 });
-                
-                return 'Part added and added to cart!';
-            },
-            error: 'Failed to save part.'
+    const handleSaveNewPart = async (partData) => {
+        const payload = {
+            ...partData,
+            created_by: user.employee_id,
+            tags: partData.tags?.length ? partData.tags : ['old_new'],
+        };
+        const result = await executePartSave({
+            endpoint: '/parts',
+            payload,
+            brands,
+            groups,
         });
+
+        if (result.outcome === 'cancelled' || result.outcome === 'error') {
+            return;
+        }
+
+        const resolvedPart = result.part;
+        setIsNewPartModalOpen(false);
+        const itemToAdd = {
+            ...resolvedPart,
+            part_id: resolvedPart.part_id,
+            quantity: 1,
+            sale_price: resolvedPart.last_sale_price || resolvedPart.retail_price || 0,
+        };
+
+        setLines(current => {
+            const existingLine = current.find(line => line.part_id === itemToAdd.part_id);
+            if (existingLine) {
+                return current.map(line =>
+                    line.part_id === itemToAdd.part_id ? { ...line, quantity: line.quantity + 1 } : line
+                );
+            }
+            return [...current, itemToAdd];
+        });
+
+        toast.success(result.outcome === 'existing' ? 'Using existing part and added to invoice!' : 'Part created and added to invoice!');
     };
 
     // Exact-match barcode/SKU lookup, triggered by pressing Enter with no dropdown item highlighted —
@@ -915,6 +953,7 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
                     groups={groups}
                     onSave={handleSaveNewPart}
                     onCancel={() => setIsNewPartModalOpen(false)}
+                    onBrandGroupAdded={refreshLookupsOnly}
                 />
             </Modal>
             {settings?.ENABLE_SPLIT_PAYMENTS === 'true' && (
@@ -940,6 +979,7 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
                     withholdingPreview={withholdingPreview}
                 />
             )}
+            <DuplicateDialog />
         </div>
     );
 };
