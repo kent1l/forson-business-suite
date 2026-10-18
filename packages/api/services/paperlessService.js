@@ -23,6 +23,7 @@ async function paperlessFetch(endpointPath, options = {}) {
     const headers = {
         'Authorization': `Token ${config.apiToken}`,
         'Accept': 'application/json',
+        ...(options.body ? { 'Content-Type': 'application/json' } : {}),
         ...(options.headers || {}),
     };
 
@@ -165,7 +166,7 @@ function normalizeToHyphen(str) {
  * Match a physical receipt number against Paperless document titles.
  * Supports format variations like CI_xxxx, CI-xxxx, CI xxxx while preserving full prefixes.
  */
-async function findDocumentByReceiptNo(receiptNo) {
+async function findDocumentByReceiptNo(receiptNo, { exactOnly = false } = {}) {
     if (!isValidReceiptQuery(receiptNo)) return null;
     const cleanReceiptNo = receiptNo.trim();
 
@@ -178,20 +179,26 @@ async function findDocumentByReceiptNo(receiptNo) {
         // Query Paperless REST API trying the primary variants
         let results = [];
         for (const variant of searchVariants) {
-            const result = await listDocuments({ title: variant, pageSize: 10 });
-            if (result?.results?.length) {
-                results = results.concat(result.results);
-            }
+            let page = 1;
+            let result;
+            do {
+                result = await listDocuments({ title: variant, pageSize: exactOnly ? 100 : 10, page });
+                results = results.concat(result?.results || []);
+                page += 1;
+            } while (exactOnly && result?.next);
         }
 
         // Deduplicate results by ID
         const uniqueDocs = Array.from(new Map(results.map(d => [d.id, d])).values());
 
         // Exact match of clean or normalized hyphenated form
-        const exactMatch = uniqueDocs.find(doc => doc.title && (
+        const exactMatches = uniqueDocs.filter(doc => doc.title && (
             doc.title.trim() === cleanReceiptNo ||
             (normalizedReceiptNo && normalizeToHyphen(doc.title) === normalizedReceiptNo)
         ));
+        // Tag mutations must never choose an arbitrary document or a partial match.
+        if (exactOnly && exactMatches.length !== 1) return null;
+        const exactMatch = exactMatches[0];
         if (exactMatch) {
             return {
                 ...exactMatch,
@@ -215,6 +222,50 @@ async function findDocumentByReceiptNo(receiptNo) {
     } catch (err) {
         console.error(`[PaperlessService] Error searching document for receiptNo "${cleanReceiptNo}":`, err.message);
         return null;
+    }
+}
+
+/** Best-effort post-commit synchronization: Paperless must not undo a posted GRN. */
+async function syncReceiptRecordedTag(receiptNo, recorded) {
+    if (!getPaperlessConfig().isConfigured || !isValidReceiptQuery(receiptNo)) return;
+    try {
+        const document = await findDocumentByReceiptNo(receiptNo, { exactOnly: true });
+        if (!document) return;
+
+        const findRecordedTag = async () => {
+            let page = 1;
+            let data;
+            do {
+                data = await paperlessFetch(`/tags/?page_size=100&page=${page}`);
+                const tag = data.results?.find(t => t.name?.trim().toLowerCase() === 'recorded');
+                if (tag) return tag;
+                page += 1;
+            } while (data.next);
+            return null;
+        };
+        let tag = await findRecordedTag();
+        if (!tag && recorded) {
+            try {
+                tag = await paperlessFetch('/tags/', { method: 'POST', body: { name: 'recorded' } });
+            } catch (err) {
+                // Another receipt may have created the tag concurrently.
+                tag = await findRecordedTag();
+                if (!tag) throw err;
+            }
+        }
+        if (!tag) return;
+
+        // Modify only this tag, preserving concurrent changes to other document tags.
+        await paperlessFetch('/documents/bulk_edit/', {
+            method: 'POST',
+            body: {
+                documents: [document.id],
+                method: 'modify_tags',
+                parameters: recorded ? { add_tags: [tag.id] } : { remove_tags: [tag.id] },
+            },
+        });
+    } catch (err) {
+        console.error(`[PaperlessService] Failed to ${recorded ? 'add' : 'remove'} recorded tag for receipt "${receiptNo}":`, err.message);
     }
 }
 
@@ -279,4 +330,5 @@ module.exports = {
     paperlessFetch,
     normalizeToHyphen,
     isValidReceiptQuery,
+    syncReceiptRecordedTag,
 };

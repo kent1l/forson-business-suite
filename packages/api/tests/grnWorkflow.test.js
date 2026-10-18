@@ -27,6 +27,8 @@ jest.mock('../services/stockReconciliationService', () => ({
   recordWacAfter: jest.fn().mockResolvedValue(undefined),
 }));
 jest.mock('../services/transactionDateService', () => ({ recomputeWacForParts: jest.fn().mockResolvedValue([]) }));
+jest.mock('../services/paperlessService', () => ({ syncReceiptRecordedTag: jest.fn().mockResolvedValue(undefined) }));
+const { syncReceiptRecordedTag } = require('../services/paperlessService');
 
 const workflow = require('../services/grnWorkflowService');
 const goodsReceiptRouter = require('../routes/goodsReceiptRoutes');
@@ -322,7 +324,7 @@ describe('POST /goods-receipts/:id/post', () => {
   }
 
   test('posting stocks in at landed cost, not the raw supplier price', async () => {
-    wireStagedReceipt(stagedReceipt(), [
+    wireStagedReceipt(stagedReceipt({ physical_receipt_no: 'DR-42' }), [
       { grn_line_id: 1, part_id: 100, quantity: '10', cost_price: '100', sale_price: '200',
         line_discount_percent: null, line_discount_amount: null, override_freight_amount: null,
         effective_markup_percent: '70', return_quantity: '0' },
@@ -335,6 +337,9 @@ describe('POST /goods-receipts/:id/post', () => {
     expect(stockIn).toBeDefined();
     // 1000 of goods plus 300 of freight over 10 units.
     expect(Number(stockIn[1][2])).toBe(130);
+    expect(syncReceiptRecordedTag).toHaveBeenCalledWith('DR-42', true);
+    const commitIndex = mockClient.query.mock.calls.findIndex(c => c[0] === 'COMMIT');
+    expect(mockClient.query.mock.invocationCallOrder[commitIndex]).toBeLessThan(syncReceiptRecordedTag.mock.invocationCallOrder[0]);
   });
 
   test('a provisional draft number is exchanged for a real GRN number at posting', async () => {
@@ -349,6 +354,7 @@ describe('POST /goods-receipts/:id/post', () => {
     const res = await request(app).post('/api/goods-receipts/11/post').send({});
     expect(res.status).toBe(200);
     expect(res.body.grn_number).toBe('GRN-202609-0001');
+    expect(syncReceiptRecordedTag).toHaveBeenCalledWith('SI-100', true);
   });
 
   test('freight is billed to the carrier, separately from the goods', async () => {
@@ -372,6 +378,7 @@ describe('POST /goods-receipts/:id/post', () => {
     const res = await request(app).post('/api/goods-receipts/11/post').send({});
     expect(res.status).toBe(409);
     expect(require('../services/apLedgerService').appendEntry).not.toHaveBeenCalled();
+    expect(syncReceiptRecordedTag).not.toHaveBeenCalled();
   });
 
   test('posting refuses prices below the 30% markup floor', async () => {
@@ -391,6 +398,7 @@ describe('POST /goods-receipts/:id/post', () => {
     const res = await request(app).post('/api/goods-receipts/11/post').send({});
     expect(res.status).toBe(400);
     expect(res.body.message).toMatch(/no line items/i);
+    expect(syncReceiptRecordedTag).not.toHaveBeenCalled();
   });
 
   test('a receipt entirely returned at the dock has nothing left to post', async () => {
@@ -411,5 +419,38 @@ describe('POST /goods-receipts/:id/post', () => {
 
     const res = await request(app).post('/api/goods-receipts/11/post').send({});
     expect(res.status).toBe(423);
+  });
+});
+
+describe('Paperless tag removal on GRN void', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  test('removes the recorded tag only after the void commits', async () => {
+    mockClient.query.mockImplementation(async sql => {
+      if (String(sql).includes('FROM goods_receipt WHERE grn_id')) {
+        return { rows: [{ grn_id: 11, grn_number: 'GRN-11', status: 'Active', physical_receipt_no: 'DR-42' }] };
+      }
+      if (String(sql).includes('FROM goods_receipt_line WHERE grn_id')) {
+        return { rows: [{ part_id: 100, quantity: 1, cost_price: 100 }] };
+      }
+      return { rows: [] };
+    });
+    const res = await request(app).delete('/api/goods-receipts/11').send({ reason: 'Duplicate' });
+    expect(res.status).toBe(200);
+    expect(syncReceiptRecordedTag).toHaveBeenCalledWith('DR-42', false);
+    const commitIndex = mockClient.query.mock.calls.findIndex(c => c[0] === 'COMMIT');
+    expect(mockClient.query.mock.invocationCallOrder[commitIndex]).toBeLessThan(syncReceiptRecordedTag.mock.invocationCallOrder[0]);
+  });
+
+  test('a failed void leaves Paperless tags alone', async () => {
+    mockClient.query.mockImplementation(async sql => {
+      if (String(sql).includes('FROM goods_receipt WHERE grn_id')) {
+        return { rows: [{ grn_id: 11, status: 'Voided', physical_receipt_no: 'DR-42' }] };
+      }
+      return { rows: [] };
+    });
+    const res = await request(app).delete('/api/goods-receipts/11').send({});
+    expect(res.status).toBe(400);
+    expect(syncReceiptRecordedTag).not.toHaveBeenCalled();
   });
 });

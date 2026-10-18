@@ -10,6 +10,7 @@ const grnCosting = require('../services/grnCostingService');
 const grnWorkflow = require('../services/grnWorkflowService');
 const { postReceipt } = require('../services/grnPostingService');
 const { formatPhysicalReceiptNumber } = require('../helpers/receiptNumberFormatter');
+const { syncReceiptRecordedTag } = require('../services/paperlessService');
 const router = express.Router();
 
 // Shape a request's line payload into what grnCostingService expects, and back again.
@@ -504,6 +505,7 @@ router.post('/goods-receipts', protect, hasPermission('goods_receipt:create'), a
     });
 
     await client.query('COMMIT');
+    await syncReceiptRecordedTag(physicalReceiptNo || invoiceNo, true);
     res.status(201).json({
       message: 'Goods receipt created successfully',
       grn_id: newGrnId,
@@ -747,7 +749,7 @@ router.delete('/goods-receipts/:id', protect, hasPermission('goods_receipt:void'
     await client.query('BEGIN');
 
     const { rows: grnRows } = await client.query(
-      'SELECT grn_id, grn_number, bill_id, freight_bill_id, supplier_id, po_id, status FROM goods_receipt WHERE grn_id = $1 FOR UPDATE',
+      'SELECT grn_id, grn_number, bill_id, freight_bill_id, supplier_id, po_id, status, physical_receipt_no, supplier_invoice_no FROM goods_receipt WHERE grn_id = $1 FOR UPDATE',
       [id]
     );
     if (grnRows.length === 0) {
@@ -945,6 +947,7 @@ router.delete('/goods-receipts/:id', protect, hasPermission('goods_receipt:void'
     );
 
     await client.query('COMMIT');
+    await syncReceiptRecordedTag(grn.physical_receipt_no || grn.supplier_invoice_no, false);
     res.json({ message: 'Goods receipt voided and stock reversed.' });
   } catch (err) {
     await client.query('ROLLBACK');
@@ -1431,7 +1434,7 @@ router.post('/goods-receipts/:id/post', protect, hasPermission('goods_receipt:po
     await client.query('BEGIN');
     const { rows: [grn] } = await client.query(
       `SELECT grn_id, grn_number, supplier_id, received_by, po_id, bill_id, receipt_date, is_backfill,
-              supplier_invoice_no, workflow_status, freight_amount, freight_allocation_method,
+              supplier_invoice_no, physical_receipt_no, workflow_status, freight_amount, freight_allocation_method,
               freight_supplier_id, overall_discount_percent, overall_discount_amount
        FROM goods_receipt WHERE grn_id = $1 FOR UPDATE`,
       [id],
@@ -1522,6 +1525,7 @@ router.post('/goods-receipts/:id/post', protect, hasPermission('goods_receipt:po
     });
 
     await client.query('COMMIT');
+    await syncReceiptRecordedTag(grn.physical_receipt_no || grn.supplier_invoice_no, true);
     res.json({
       message: 'Goods receipt posted.',
       grn_id: Number(id),

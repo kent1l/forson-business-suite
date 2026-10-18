@@ -31,6 +31,8 @@ jest.mock('../helpers/documentNumberGenerator', () => ({
 }));
 
 const db = require('../db');
+jest.mock('../services/paperlessService', () => ({ syncReceiptRecordedTag: jest.fn().mockResolvedValue(undefined) }));
+const { syncReceiptRecordedTag } = require('../services/paperlessService');
 const goodsReceiptRouter = require('../routes/goodsReceiptRoutes');
 
 const app = express();
@@ -219,6 +221,7 @@ describe('Goods Receipt Inventory & Pricing Routes', () => {
                     supplier_id: 1,
                     received_by: 2,
                     po_id: 5,
+                    physical_receipt_no: 'DR-42',
                     lines: [
                         { part_id: 10, quantity: 10, cost_price: 100, sale_price: 150 }
                     ]
@@ -228,6 +231,9 @@ describe('Goods Receipt Inventory & Pricing Routes', () => {
             expect(res.body.grn_id).toBe(101);
             expect(client.query).toHaveBeenCalledWith('BEGIN');
             expect(client.query).toHaveBeenCalledWith('COMMIT');
+            expect(syncReceiptRecordedTag).toHaveBeenCalledWith('DR-42', true);
+            const commitIndex = client.query.mock.calls.findIndex(c => c[0] === 'COMMIT');
+            expect(client.query.mock.invocationCallOrder[commitIndex]).toBeLessThan(syncReceiptRecordedTag.mock.invocationCallOrder[0]);
         });
     });
 });
