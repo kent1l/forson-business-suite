@@ -27,6 +27,14 @@ describe('GRN recorded tag synchronization', () => {
             if (parsed.pathname === '/api/documents/') return response({ results: documents });
             if (parsed.pathname === '/api/tags/' && options.method === 'GET') return response({ results: tags });
             if (parsed.pathname === '/api/tags/' && options.method === 'POST') return response({ id: 10, name: 'recorded' });
+            if (parsed.pathname === '/api/documents/bulk_edit/') {
+                const { parameters } = JSON.parse(options.body);
+                // The deployed Paperless API requires both arrays for modify_tags.
+                if (!Array.isArray(parameters.add_tags) || !Array.isArray(parameters.remove_tags)) {
+                    return { ok: false, status: 400, statusText: 'Bad Request',
+                        text: async () => 'add_tags and remove_tags must both be specified' };
+                }
+            }
             return response({ success: true });
         });
     });
@@ -92,7 +100,7 @@ describe('GRN recorded tag synchronization', () => {
         expect(mutations()[0].path).toBe('/api/documents/bulk_edit/');
         expect(JSON.parse(mutations()[0].options.body)).toEqual({
             documents: [42], method: 'modify_tags',
-            parameters: recorded ? { add_tags: [9] } : { remove_tags: [9] },
+            parameters: { add_tags: recorded ? [9] : [], remove_tags: recorded ? [] : [9] },
         });
         expect(mutations()[0].options.headers['Content-Type']).toBe('application/json');
     });
@@ -102,7 +110,7 @@ describe('GRN recorded tag synchronization', () => {
         await syncReceiptRecordedTag('DR-123', true, 7);
         expect(mutations()).toHaveLength(2);
         expect(JSON.parse(mutations()[0].options.body)).toEqual({ name: 'recorded' });
-        expect(JSON.parse(mutations()[1].options.body).parameters).toEqual({ add_tags: [10] });
+        expect(JSON.parse(mutations()[1].options.body).parameters).toEqual({ add_tags: [10], remove_tags: [] });
     });
 
     test('does not create a missing tag on void', async () => {

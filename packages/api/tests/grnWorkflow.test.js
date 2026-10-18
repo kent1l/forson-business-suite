@@ -109,12 +109,16 @@ describe('drafts have no financial effect', () => {
     const res = await request(app).post('/api/goods-receipts/drafts').send({
       supplier_id: 3,
       freight_amount: 500,
+      physical_receipt_no: '  dr / 00042  ',
       freight_supplier_id: 9,
       lines: [{ part_id: 1, quantity: 10, cost_price: 100 }],
     });
 
     expect(res.status).toBe(201);
     expect(res.body.grn_id).toBe(42);
+    const insert = mockClient.query.mock.calls.find(c => String(c[0]).includes('INSERT INTO goods_receipt ('));
+    expect(insert[1][6]).toBe('  dr / 00042  ');
+    expect(insert[1][7]).toBe('  dr / 00042  ');
 
     const sql = issuedSql();
     expect(sql).not.toContain('inventory_transaction');

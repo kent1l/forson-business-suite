@@ -203,10 +203,7 @@ async function findDocumentByReceiptNo(receiptNo, { exactOnly = false } = {}) {
         if (exactOnly && exactMatches.length !== 1) return null;
         const exactMatch = exactMatches[0];
         if (exactMatch) {
-            return {
-                ...exactMatch,
-                title: normalizeToHyphen(exactMatch.title) || exactMatch.title,
-            };
+            return exactMatch;
         }
 
         // Partial match of normalized hyphenated form
@@ -215,10 +212,7 @@ async function findDocumentByReceiptNo(receiptNo, { exactOnly = false } = {}) {
             (normalizedReceiptNo && normalizeToHyphen(doc.title).includes(normalizedReceiptNo))
         ));
         if (partialMatch) {
-            return {
-                ...partialMatch,
-                title: normalizeToHyphen(partialMatch.title) || partialMatch.title,
-            };
+            return partialMatch;
         }
 
         return null;
@@ -307,7 +301,10 @@ async function syncReceiptRecordedTag(receiptNo, recorded, supplierId, queryClie
             body: {
                 documents: [document.id],
                 method: 'modify_tags',
-                parameters: recorded ? { add_tags: [tag.id] } : { remove_tags: [tag.id] },
+                parameters: {
+                    add_tags: recorded ? [tag.id] : [],
+                    remove_tags: recorded ? [] : [tag.id],
+                },
             },
         });
     } catch (err) {

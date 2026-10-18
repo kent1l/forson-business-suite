@@ -8,6 +8,7 @@
 | Area | Status | Outcome |
 |---|---|---|
 | Matching | Implemented | Requires normalized receipt/title, supplier/correspondent, and Goods Receipt type |
+| Original text preservation | Implemented and locally migrated | GRN inputs and stored references retain original text; normalization is only used for checks |
 | Live audit | Completed | 49 suppliers, 34 correspondents, 27 matching pairs |
 | Verification | Completed | Focused tests, targeted ESLint, live read-only positive and wrong-supplier checks |
 | Master data | Outstanding | 22 suppliers and 7 correspondents lack normalized counterparts |
@@ -22,6 +23,8 @@
 
 ## 2. Objective and Decisions
 
+- User policy: never auto-normalize receipt inputs, stored records, supplier/correspondent names, or returned Paperless titles. Normalize temporary comparison values only. Goods receipt create/draft/update/header correction now preserve supplied text (blank-only references become NULL); existing records are not rewritten.
+- Migration `20261018_01_goods_receipt_check_only_normalization.sql` adds the immutable comparison function `goods_receipt_match_key` and a supplier-scoped unique expression index. The duplicate-check endpoint uses the same key. The original raw reference remains in the row, and normalized collisions still produce a 409. The targeted migration was applied locally, with no data rewrites.
 - Before this update, automatic tagging matched only a normalized exact receipt title. It did not check document type or supplier.
 - Both posting paths and voiding now pass the supplier ID. Supplier lookup reuses the committed route client to avoid acquiring a second database connection while holding one.
 - Automatically modify only a unique Paperless document of type `Goods Receipt` whose correspondent name equals the supplier name after normalization and whose title equals the receipt identifier after normalization.
@@ -31,6 +34,7 @@
 - Resolve type and correspondent IDs by name rather than hardcoding environment-specific IDs. Missing or ambiguous identity/type/document matches skip tagging.
 - Existing customer/SOA receipt lookup behavior remains unchanged; the supplier/type restriction applies to automatic GRN tagging.
 - Tag updates run after commit and preserve other tags. Failures are logged, without rollback or automatic retry.
+- The deployed Paperless `modify_tags` API requires both `add_tags` and `remove_tags` arrays, including an empty array for the unchanged direction. Omitting either causes HTTP 400. Regression tests enforce this contract for posting and voiding.
 - This audit is read-only. Candidate identity pairs below are inferences, not approved aliases or renames.
 
 ## 3. Live Supplier and Correspondent Audit
@@ -244,14 +248,22 @@ Files touched:
 - `packages/api/tests/paperlessRecordedTag.test.js`
 - `packages/api/tests/grnWorkflow.test.js`
 - `packages/api/tests/goodsReceiptInventory.test.js`
+- `packages/api/tests/goodsReceiptNormalization_db_test.js`
+- `packages/api/routes/arRoutes.js`
+- `packages/web/src/pages/GoodsReceiptPage.jsx`
+- `packages/web/src/pages/GoodsReceiptHistoryPage.jsx`
+- `database/migrations/20261018_01_goods_receipt_check_only_normalization.sql`
 
 Verification commands:
 
 ```bash
 node packages/api/scripts/auditPaperlessSuppliers.js --host 127.0.0.1 > /tmp/paperless-supplier-audit.json
+node packages/api/tests/goodsReceiptNormalization_db_test.js --host 127.0.0.1
+node -r dotenv/config packages/api/scripts/migrate.js up --host 127.0.0.1 --from 20261018_01_goods_receipt_check_only_normalization.sql --to 20261018_01_goods_receipt_check_only_normalization.sql
 npm run -w packages/api test -- --runInBand tests/paperlessMatching.test.js tests/paperlessService.test.js tests/paperlessRecordedTag.test.js tests/goodsReceiptInventory.test.js tests/grnWorkflow.test.js tests/goodsReceiptReturns.test.js
 (cd packages/api && npx eslint services/paperlessService.js helpers/paperlessMatching.js scripts/auditPaperlessSuppliers.js routes/goodsReceiptRoutes.js tests/paperlessMatching.test.js tests/paperlessRecordedTag.test.js tests/grnWorkflow.test.js tests/goodsReceiptInventory.test.js)
 git diff --check
+npm run -w packages/web build
 graphify update .
 ```
 
@@ -259,6 +271,7 @@ graphify update .
 
 - [x] Restrict automatic GRN tagging to supplier/correspondent and Goods Receipt type.
 - [x] Normalize all four comparison fields and verify against live data.
+- [x] Preserve raw receipt inputs and stored values, original returned titles, and use comparison-only normalization for duplicate protection. Verified with PostgreSQL temporary-object tests, focused route/service tests, and a production web build. Targeted lint has zero errors and existing warnings.
 - [x] Report all unmatched supplier/correspondent names and document/receipt blockers.
 - [ ] Reconcile shortened names and possible duplicate supplier identities. Review these pairs before introducing aliases, renaming, or merging.
 - [ ] Assign missing correspondents and resolve duplicate STARVOLT documents 1139 and 211 for receipt 15096.
@@ -268,3 +281,5 @@ graphify update .
 ## 7. Change Log
 
 - 2026-10-18: Added supplier/type-aware normalized matching, read-only live audit, and this as-built handoff.
+- 2026-10-18: Per user correction, removed GRN write/payload normalization and returned-title rewriting. Added and applied the comparison-only uniqueness migration; stored rows were not reformatted.
+- 2026-10-18: Investigated A76637 / GRN-202610-0033. Identity and type matched, but the posting request failed with HTTP 400 `remove_tags not specified`; an earlier void attempt failed with `add_tags not specified`. Fixed the request to always include both arrays. Retried only the active posted GRN, and verified Paperless document 1229 has recorded tag 4. Development backend reloaded the fix; 86 focused tests and targeted lint passed.

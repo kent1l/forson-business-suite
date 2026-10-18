@@ -9,9 +9,12 @@ const { recomputeWacForParts } = require('../services/transactionDateService');
 const grnCosting = require('../services/grnCostingService');
 const grnWorkflow = require('../services/grnWorkflowService');
 const { postReceipt } = require('../services/grnPostingService');
-const { formatPhysicalReceiptNumber } = require('../helpers/receiptNumberFormatter');
+const { normalizeReceiptIdentifier } = require('../helpers/paperlessMatching');
 const { syncReceiptRecordedTag } = require('../services/paperlessService');
 const router = express.Router();
+
+// Preserve the supplier's printed reference; only blank input becomes NULL.
+const receiptInputValue = value => value == null || !String(value).trim() ? null : String(value);
 
 // Shape a request's line payload into what grnCostingService expects, and back again.
 // The API and the DB use snake_case column names throughout, so the costing service
@@ -68,7 +71,10 @@ function assertMarkupFloor(costing) {
 }
 
 function isPhysicalReceiptConflict(err) {
-  return err?.code === '23505' && err.constraint === 'uq_goods_receipt_supplier_physical_receipt';
+  return err?.code === '23505' && [
+    'uq_goods_receipt_supplier_physical_receipt',
+    'uq_goods_receipt_supplier_physical_receipt_normalized',
+  ].includes(err.constraint);
 }
 
 function physicalReceiptConflictMessage(value) {
@@ -197,7 +203,7 @@ router.get('/goods-receipts', protect, hasPermission('goods_receipt:create'), as
 // GET /goods-receipts/:id/lines - Fetch line items for a specific GRN
 router.get('/goods-receipts/check-physical-receipt', protect, hasPermission('goods_receipt:create'), async (req, res) => {
   const supplierId = Number(req.query.supplier_id);
-  const receiptNo = formatPhysicalReceiptNumber(req.query.physical_receipt_no);
+  const receiptNo = normalizeReceiptIdentifier(req.query.physical_receipt_no);
   const excludeId = req.query.exclude_grn_id ? Number(req.query.exclude_grn_id) : null;
   if (!Number.isInteger(supplierId) || supplierId <= 0 || !receiptNo) {
     return res.status(400).json({ message: 'supplier_id and physical_receipt_no are required.' });
@@ -206,7 +212,7 @@ router.get('/goods-receipts/check-physical-receipt', protect, hasPermission('goo
     const { rows: [match] } = await db.query(
       `SELECT grn_id, grn_number, workflow_status
        FROM goods_receipt
-       WHERE supplier_id = $1 AND physical_receipt_no = $2 AND status <> 'Voided'
+       WHERE supplier_id = $1 AND public.goods_receipt_match_key(physical_receipt_no) = $2 AND status <> 'Voided'
          AND ($3::int IS NULL OR grn_id <> $3)
        LIMIT 1`,
       [supplierId, receiptNo, excludeId],
@@ -329,10 +335,10 @@ router.post('/goods-receipts', protect, hasPermission('goods_receipt:create'), a
   }
 
   const isBackfill = !!is_backfill;
-  const physicalReceiptNo = formatPhysicalReceiptNumber(req.body.physical_receipt_no);
+  const physicalReceiptNo = receiptInputValue(req.body.physical_receipt_no);
   // The entry screen deliberately has one supplier-document field. Keep the legacy
   // invoice column populated for backfills because AP posting still reads it.
-  const invoiceNo = supplier_invoice_no ? String(supplier_invoice_no).trim() : physicalReceiptNo;
+  const invoiceNo = receiptInputValue(supplier_invoice_no) || physicalReceiptNo;
   const freightCosts = parseFreightCosts(req.body);
   const totalFreight = freightCosts.length > 0
     ? freightCosts.reduce((s, f) => s + (Number(f.amount) || 0), 0)
@@ -549,7 +555,7 @@ router.post('/goods-receipts', protect, hasPermission('goods_receipt:create'), a
 
 // PATCH /goods-receipts/:id/physical-receipt-no - Safe post-posting header correction.
 router.patch('/goods-receipts/:id/physical-receipt-no', protect, hasPermission('goods_receipt:edit'), async (req, res) => {
-  const receiptNo = formatPhysicalReceiptNumber(req.body?.physical_receipt_no);
+  const receiptNo = receiptInputValue(req.body?.physical_receipt_no);
   const client = await db.getClient();
   try {
     await client.query('BEGIN');
@@ -1015,12 +1021,10 @@ function parseHeaderPayload(body) {
     bill_id: body.bill_id || null,
     receipt_date: body.receipt_date || null,
     is_backfill: !!body.is_backfill,
-    physical_receipt_no: formatPhysicalReceiptNumber(body.physical_receipt_no),
+    physical_receipt_no: receiptInputValue(body.physical_receipt_no),
     // Accept older callers that still send supplier_invoice_no, but treat the one
     // supplier document reference as the source of truth for new requests.
-    supplier_invoice_no: body.supplier_invoice_no
-      ? String(body.supplier_invoice_no).trim()
-      : (body.physical_receipt_no ? formatPhysicalReceiptNumber(body.physical_receipt_no) : null),
+    supplier_invoice_no: receiptInputValue(body.supplier_invoice_no) || receiptInputValue(body.physical_receipt_no),
     freight_amount: totalFreight > 0 ? totalFreight : (Number(body.freight_amount) > 0 ? Number(body.freight_amount) : 0),
     freight_allocation_method: body.freight_allocation_method || grnCosting.METHOD_A,
     freight_supplier_id: primarySupplierId,

@@ -3,6 +3,8 @@
 > **Forson Business Suite** | **Date:** 2026-09-22 | **Branch:** `master`
 > **Status:** Implemented and migration-verified against the configured PostgreSQL instance.
 
+> **2026-10-18 policy update:** Receipt inputs and stored references now preserve their original text. Normalization applies only to matching and duplicate checks, enforced by a unique comparison index. The original storage-formatting decisions below are superseded by [the Paperless matching handoff](2026-10-18_paperless-goods-receipt-matching.md).
+
 ## 0. Status at a Glance
 
 | Phase | Status | Outcome |
