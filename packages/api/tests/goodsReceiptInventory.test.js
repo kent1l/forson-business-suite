@@ -31,6 +31,8 @@ jest.mock('../helpers/documentNumberGenerator', () => ({
 }));
 
 const db = require('../db');
+jest.mock('../services/paperlessService', () => ({ syncReceiptRecordedTag: jest.fn().mockResolvedValue(undefined) }));
+const { syncReceiptRecordedTag } = require('../services/paperlessService');
 const goodsReceiptRouter = require('../routes/goodsReceiptRoutes');
 
 const app = express();
@@ -168,6 +170,21 @@ describe('Goods Receipt Inventory & Pricing Routes', () => {
     });
 
     describe('physical receipt number helpers', () => {
+        test('header correction preserves the receipt exactly as entered', async () => {
+            const client = await db.getClient();
+            const raw = '  si / 00042  ';
+            client.query
+                .mockResolvedValueOnce({})
+                .mockResolvedValueOnce({ rows: [{ grn_id: 9, status: 'Active' }] })
+                .mockResolvedValueOnce({ rows: [{ grn_id: 9, physical_receipt_no: raw }] })
+                .mockResolvedValueOnce({});
+            const res = await request(app).patch('/api/goods-receipts/9/physical-receipt-no')
+                .send({ physical_receipt_no: raw });
+            expect(res.status).toBe(200);
+            expect(res.body.physical_receipt_no).toBe(raw);
+            expect(client.query).toHaveBeenCalledWith(expect.stringContaining('SET physical_receipt_no = $1'), [raw, '9']);
+        });
+
         test('reports a normalized supplier-scoped physical receipt conflict', async () => {
             db.query.mockResolvedValueOnce({ rows: [{ grn_id: 9, grn_number: 'GRN-9', workflow_status: 'Posted' }] });
 
@@ -176,7 +193,7 @@ describe('Goods Receipt Inventory & Pricing Routes', () => {
 
             expect(res.status).toBe(200);
             expect(res.body).toEqual({ is_taken: true, grn_id: 9, grn_number: 'GRN-9', workflow_status: 'Posted' });
-            expect(db.query).toHaveBeenCalledWith(expect.stringContaining('physical_receipt_no = $2'), [7, 'DR-12', null]);
+            expect(db.query).toHaveBeenCalledWith(expect.stringContaining('goods_receipt_match_key(physical_receipt_no) = $2'), [7, 'DR12', null]);
         });
 
         test('rejects an availability lookup without supplier or receipt number', async () => {
@@ -219,6 +236,7 @@ describe('Goods Receipt Inventory & Pricing Routes', () => {
                     supplier_id: 1,
                     received_by: 2,
                     po_id: 5,
+                    physical_receipt_no: '  dr / 00042  ',
                     lines: [
                         { part_id: 10, quantity: 10, cost_price: 100, sale_price: 150 }
                     ]
@@ -228,6 +246,12 @@ describe('Goods Receipt Inventory & Pricing Routes', () => {
             expect(res.body.grn_id).toBe(101);
             expect(client.query).toHaveBeenCalledWith('BEGIN');
             expect(client.query).toHaveBeenCalledWith('COMMIT');
+            expect(syncReceiptRecordedTag).toHaveBeenCalledWith('  dr / 00042  ', true, 1, client);
+            const inserted = client.query.mock.calls.find(c => String(c[0]).includes('INSERT INTO goods_receipt ('));
+            expect(inserted[1][7]).toBe('  dr / 00042  ');
+            expect(inserted[1][8]).toBe('  dr / 00042  ');
+            const commitIndex = client.query.mock.calls.findIndex(c => c[0] === 'COMMIT');
+            expect(client.query.mock.invocationCallOrder[commitIndex]).toBeLessThan(syncReceiptRecordedTag.mock.invocationCallOrder[0]);
         });
     });
 });

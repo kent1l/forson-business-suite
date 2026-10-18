@@ -21,7 +21,6 @@ import PartForm from '../components/forms/PartForm';
 import { formatCurrency } from '../utils/currency';
 import { computeCosting, markupFromPrice, roundUpTo, DEFAULT_MARKUP_PERCENT, MIN_MARKUP_PERCENT, PRICE_ROUNDING_INCREMENT, METHOD_A } from '../utils/grnCosting';
 import { useAuth } from '../contexts/AuthContext';
-import { formatPhysicalReceiptNumber } from '../utils/receiptNumberFormatter';
 import usePartDuplicateResolution from '../hooks/usePartDuplicateResolution';
 
 const upperCatalogText = (value) => String(value || '').replace(/\s+/g, ' ').trim().toUpperCase();
@@ -295,8 +294,8 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
     }, [draftLoaded, draft]);
 
     useEffect(() => {
-        const normalized = formatPhysicalReceiptNumber(physicalReceiptNo);
-        if (!selectedSupplier || !normalized) {
+        const receiptNo = physicalReceiptNo;
+        if (!selectedSupplier || !receiptNo.trim()) {
             setPhysicalReceiptConflict(null);
             return undefined;
         }
@@ -304,7 +303,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
             try {
                 const { data } = await api.get('/goods-receipts/check-physical-receipt', { params: {
                     supplier_id: selectedSupplier,
-                    physical_receipt_no: normalized,
+                    physical_receipt_no: receiptNo,
                     exclude_grn_id: stagedGrn?.grn_id,
                 }});
                 setPhysicalReceiptConflict(data.is_taken ? data : null);
@@ -338,12 +337,12 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
     };
 
     const reviewDuplicateFromServer = async () => {
-        const normalized = formatPhysicalReceiptNumber(physicalReceiptNo);
-        if (!selectedSupplier || !normalized) return;
+        const receiptNo = physicalReceiptNo;
+        if (!selectedSupplier || !receiptNo.trim()) return;
         try {
             const { data } = await api.get('/goods-receipts/check-physical-receipt', { params: {
                 supplier_id: selectedSupplier,
-                physical_receipt_no: normalized,
+                physical_receipt_no: receiptNo,
                 exclude_grn_id: stagedGrn?.grn_id,
             }});
             if (data.is_taken) {
@@ -702,8 +701,8 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
         po_id: selectedPO ? selectedPO.po_id : null,
         receipt_date: receiptDate || null,
         is_backfill: isBackfill,
-        supplier_invoice_no: formatPhysicalReceiptNumber(physicalReceiptNo) || null,
-        physical_receipt_no: formatPhysicalReceiptNumber(physicalReceiptNo),
+        supplier_invoice_no: physicalReceiptNo || null,
+        physical_receipt_no: physicalReceiptNo || null,
         freight_amount: freightAmount || 0,
         freight_allocation_method: freightMethod,
         freight_supplier_id: freightSupplierId || null,
@@ -750,7 +749,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
             toast.error('Catalog or remove every uncataloged PO line before saving this receipt.');
             return false;
         }
-        if (isBackfill && !formatPhysicalReceiptNumber(physicalReceiptNo)) {
+        if (isBackfill && !physicalReceiptNo.trim()) {
             toast.error('Enter the supplier document number so this document cannot be entered twice.');
             return false;
         }
@@ -1690,7 +1689,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                             <>
                                 <dl className="grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-2 text-sm">
                                     <div><dt className="text-gray-500 dark:text-slate-400">Supplier</dt><dd className="font-semibold text-gray-900 dark:text-slate-100">{duplicateReview.supplier_name || '—'}</dd></div>
-                                    <div><dt className="text-gray-500 dark:text-slate-400">Supplier document</dt><dd className="font-mono font-semibold text-gray-900 dark:text-slate-100">{duplicateReview.physical_receipt_no || formatPhysicalReceiptNumber(physicalReceiptNo) || '—'}</dd></div>
+                                    <div><dt className="text-gray-500 dark:text-slate-400">Supplier document</dt><dd className="font-mono font-semibold text-gray-900 dark:text-slate-100">{duplicateReview.physical_receipt_no || physicalReceiptNo || '—'}</dd></div>
                                     <div><dt className="text-gray-500 dark:text-slate-400">Received</dt><dd className="font-semibold text-gray-900 dark:text-slate-100">{duplicateReview.receipt_date ? new Date(duplicateReview.receipt_date).toLocaleDateString() : '—'}</dd></div>
                                     <div><dt className="text-gray-500 dark:text-slate-400">Line items</dt><dd className="font-semibold text-gray-900 dark:text-slate-100">{duplicateReview.lines?.length ?? '—'}</dd></div>
                                 </dl>

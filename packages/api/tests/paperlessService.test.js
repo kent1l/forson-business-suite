@@ -94,29 +94,29 @@ describe('PaperlessService Unit Tests', () => {
                 };
             });
 
-            // 1. Searching for CI-1011 matches Paperless title CI_1011, normalized to CI-1011
+            // 1. Searching for CI-1011 matches Paperless title CI_1011, preserving the original CI_1011 title
             const docCIHyphen = await paperlessService.findDocumentByReceiptNo('CI-1011');
             expect(docCIHyphen).toBeDefined();
             expect(docCIHyphen.id).toBe(101);
-            expect(docCIHyphen.title).toBe('CI-1011');
+            expect(docCIHyphen.title).toBe('CI_1011');
 
-            // 2. Searching for CI_1011 matches Paperless title CI_1011, normalized to CI-1011
+            // 2. Searching for CI_1011 matches Paperless title CI_1011, preserving the original CI_1011 title
             const docCIUnderscore = await paperlessService.findDocumentByReceiptNo('CI_1011');
             expect(docCIUnderscore).toBeDefined();
             expect(docCIUnderscore.id).toBe(101);
-            expect(docCIUnderscore.title).toBe('CI-1011');
+            expect(docCIUnderscore.title).toBe('CI_1011');
 
-            // 3. DR-1011 match (should NOT clash with CI-1011), normalized to DR-1011
+            // 3. DR-1011 match (should NOT clash with CI-1011), preserving the original DR_1011 title
             const docDR = await paperlessService.findDocumentByReceiptNo('DR-1011');
             expect(docDR).toBeDefined();
             expect(docDR.id).toBe(102);
-            expect(docDR.title).toBe('DR-1011');
+            expect(docDR.title).toBe('DR_1011');
 
-            // 4. VAT-421 match, normalized to VAT-421
+            // 4. VAT-421 match, preserving the original VAT_421 title
             const docVAT = await paperlessService.findDocumentByReceiptNo('VAT-421');
             expect(docVAT).toBeDefined();
             expect(docVAT.id).toBe(104);
-            expect(docVAT.title).toBe('VAT-421');
+            expect(docVAT.title).toBe('VAT_421');
         });
     });
 });

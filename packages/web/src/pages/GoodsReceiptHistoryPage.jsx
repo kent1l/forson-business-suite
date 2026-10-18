@@ -12,7 +12,6 @@ import ChangeTransactionDateModal from '../components/common/ChangeTransactionDa
 import TransactionDateHistory from '../components/common/TransactionDateHistory';
 import ReturnLineModal from '../components/goods-receipt/ReturnLineModal';
 import { formatCurrency } from '../utils/currency';
-import { formatPhysicalReceiptNumber } from '../utils/receiptNumberFormatter';
 
 const num = (value) => parseFloat(value) || 0;
 const returnedQty = (line) => Math.max(0, num(line.return_quantity));
@@ -145,7 +144,7 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
         if (!selectedGrn) return;
         try {
             const { data } = await api.patch(`/goods-receipts/${selectedGrn.grn_id}/physical-receipt-no`, {
-                physical_receipt_no: formatPhysicalReceiptNumber(physicalReceiptNo),
+                physical_receipt_no: physicalReceiptNo || null,
             });
             setSelectedGrn(prev => ({ ...prev, physical_receipt_no: data.physical_receipt_no }));
             setGrns(prev => prev.map(grn => grn.grn_id === selectedGrn.grn_id

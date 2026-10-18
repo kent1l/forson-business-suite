@@ -3,6 +3,7 @@
 const https = require('https');
 const http = require('http');
 const { getPaperlessConfig } = require('../config/paperlessConfig');
+const { normalizePartyName, normalizeReceiptIdentifier } = require('../helpers/paperlessMatching');
 
 /**
  * Helper to make HTTP/HTTPS requests to Paperless-ngx REST API with timeout, SSL verification toggle, and Bearer/Token auth.
@@ -23,6 +24,7 @@ async function paperlessFetch(endpointPath, options = {}) {
     const headers = {
         'Authorization': `Token ${config.apiToken}`,
         'Accept': 'application/json',
+        ...(options.body ? { 'Content-Type': 'application/json' } : {}),
         ...(options.headers || {}),
     };
 
@@ -117,6 +119,8 @@ async function listDocuments(params = {}) {
     if (params.page) searchParams.set('page', String(params.page));
     if (params.pageSize || params.page_size) searchParams.set('page_size', String(params.pageSize || params.page_size || 25));
     if (params.ordering) searchParams.set('ordering', params.ordering);
+    if (params.correspondentId) searchParams.set('correspondent__id', String(params.correspondentId));
+    if (params.documentTypeId) searchParams.set('document_type__id', String(params.documentTypeId));
 
     const queryString = searchParams.toString();
     const path = `/documents/${queryString ? `?${queryString}` : ''}`;
@@ -165,7 +169,7 @@ function normalizeToHyphen(str) {
  * Match a physical receipt number against Paperless document titles.
  * Supports format variations like CI_xxxx, CI-xxxx, CI xxxx while preserving full prefixes.
  */
-async function findDocumentByReceiptNo(receiptNo) {
+async function findDocumentByReceiptNo(receiptNo, { exactOnly = false } = {}) {
     if (!isValidReceiptQuery(receiptNo)) return null;
     const cleanReceiptNo = receiptNo.trim();
 
@@ -178,25 +182,28 @@ async function findDocumentByReceiptNo(receiptNo) {
         // Query Paperless REST API trying the primary variants
         let results = [];
         for (const variant of searchVariants) {
-            const result = await listDocuments({ title: variant, pageSize: 10 });
-            if (result?.results?.length) {
-                results = results.concat(result.results);
-            }
+            let page = 1;
+            let result;
+            do {
+                result = await listDocuments({ title: variant, pageSize: exactOnly ? 100 : 10, page });
+                results = results.concat(result?.results || []);
+                page += 1;
+            } while (exactOnly && result?.next);
         }
 
         // Deduplicate results by ID
         const uniqueDocs = Array.from(new Map(results.map(d => [d.id, d])).values());
 
         // Exact match of clean or normalized hyphenated form
-        const exactMatch = uniqueDocs.find(doc => doc.title && (
+        const exactMatches = uniqueDocs.filter(doc => doc.title && (
             doc.title.trim() === cleanReceiptNo ||
             (normalizedReceiptNo && normalizeToHyphen(doc.title) === normalizedReceiptNo)
         ));
+        // Tag mutations must never choose an arbitrary document or a partial match.
+        if (exactOnly && exactMatches.length !== 1) return null;
+        const exactMatch = exactMatches[0];
         if (exactMatch) {
-            return {
-                ...exactMatch,
-                title: normalizeToHyphen(exactMatch.title) || exactMatch.title,
-            };
+            return exactMatch;
         }
 
         // Partial match of normalized hyphenated form
@@ -205,16 +212,103 @@ async function findDocumentByReceiptNo(receiptNo) {
             (normalizedReceiptNo && normalizeToHyphen(doc.title).includes(normalizedReceiptNo))
         ));
         if (partialMatch) {
-            return {
-                ...partialMatch,
-                title: normalizeToHyphen(partialMatch.title) || partialMatch.title,
-            };
+            return partialMatch;
         }
 
         return null;
     } catch (err) {
         console.error(`[PaperlessService] Error searching document for receiptNo "${cleanReceiptNo}":`, err.message);
         return null;
+    }
+}
+
+async function listAllPaperlessObjects(resource) {
+    const results = [];
+    let page = 1;
+    let data;
+    do {
+        data = await paperlessFetch(`/${resource}/?page_size=100&page=${page++}`);
+        results.push(...(data.results || []));
+    } while (data.next);
+    return results;
+}
+
+async function findGoodsReceiptDocument(receiptNo, supplierName) {
+    const receiptKey = normalizeReceiptIdentifier(receiptNo);
+    const supplierKey = normalizePartyName(supplierName);
+    if (!receiptKey || !supplierKey || !isValidReceiptQuery(supplierName)) return null;
+    const [correspondents, types] = await Promise.all([
+        listAllPaperlessObjects('correspondents'),
+        listAllPaperlessObjects('document_types'),
+    ]);
+    const matchingParties = correspondents.filter(c => normalizePartyName(c.name) === supplierKey);
+    const matchingTypes = types.filter(t => normalizePartyName(t.name) === normalizePartyName('Goods Receipt'));
+    if (matchingParties.length !== 1 || matchingTypes.length !== 1) return null;
+    const correspondentId = matchingParties[0].id;
+    const documentTypeId = matchingTypes[0].id;
+    const matches = new Map();
+    let page = 1;
+    let data;
+    // Fetch scoped metadata rather than filtering raw title text: leading zeros and
+    // punctuation can differ before normalization. Check IDs again defensively.
+    do {
+        data = await listDocuments({ correspondentId, documentTypeId, pageSize: 100, page: page++ });
+        for (const doc of data.results || []) {
+            if (doc.correspondent === correspondentId && doc.document_type === documentTypeId &&
+                normalizeReceiptIdentifier(doc.title) === receiptKey) matches.set(doc.id, doc);
+        }
+    } while (data.next);
+    return matches.size === 1 ? matches.values().next().value : null;
+}
+
+/** Best-effort post-commit synchronization: Paperless must not undo a posted GRN. */
+async function syncReceiptRecordedTag(receiptNo, recorded, supplierId, queryClient) {
+    if (!getPaperlessConfig().isConfigured || !isValidReceiptQuery(receiptNo) || !supplierId) return;
+    try {
+        const { rows: [supplier] } = await (queryClient || require('../db')).query(
+            'SELECT supplier_name FROM supplier WHERE supplier_id = $1', [supplierId],
+        );
+        if (!supplier) return;
+        const document = await findGoodsReceiptDocument(receiptNo, supplier.supplier_name);
+        if (!document) return;
+
+        const findRecordedTag = async () => {
+            let page = 1;
+            let data;
+            do {
+                data = await paperlessFetch(`/tags/?page_size=100&page=${page}`);
+                const tag = data.results?.find(t => t.name?.trim().toLowerCase() === 'recorded');
+                if (tag) return tag;
+                page += 1;
+            } while (data.next);
+            return null;
+        };
+        let tag = await findRecordedTag();
+        if (!tag && recorded) {
+            try {
+                tag = await paperlessFetch('/tags/', { method: 'POST', body: { name: 'recorded' } });
+            } catch (err) {
+                // Another receipt may have created the tag concurrently.
+                tag = await findRecordedTag();
+                if (!tag) throw err;
+            }
+        }
+        if (!tag) return;
+
+        // Modify only this tag, preserving concurrent changes to other document tags.
+        await paperlessFetch('/documents/bulk_edit/', {
+            method: 'POST',
+            body: {
+                documents: [document.id],
+                method: 'modify_tags',
+                parameters: {
+                    add_tags: recorded ? [tag.id] : [],
+                    remove_tags: recorded ? [] : [tag.id],
+                },
+            },
+        });
+    } catch (err) {
+        console.error(`[PaperlessService] Failed to ${recorded ? 'add' : 'remove'} recorded tag for receipt "${receiptNo}":`, err.message);
     }
 }
 
@@ -279,4 +373,7 @@ module.exports = {
     paperlessFetch,
     normalizeToHyphen,
     isValidReceiptQuery,
+    syncReceiptRecordedTag,
+    findGoodsReceiptDocument,
+    listAllPaperlessObjects,
 };
