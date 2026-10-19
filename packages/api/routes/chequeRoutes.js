@@ -1,7 +1,8 @@
 const express = require('express');
 const db = require('../db');
-const { protect, hasPermission } = require('../middleware/authMiddleware');
+const { protect, hasPermission, userHasPermission } = require('../middleware/authMiddleware');
 const { createChequePdf } = require('../helpers/pdf/chequePdf');
+const apPdcService = require('../services/apPdcService');
 
 const router = express.Router();
 const ALLOWED_FEED_TYPES = ['native', 'letter_center', 'letter_left', 'letter_right'];
@@ -170,23 +171,64 @@ router.delete('/cheques/templates/:id', protect, hasPermission('cheques:manage_s
     }
 });
 
-router.get('/cheques/history', protect, hasPermission('cheques:view'), async (_req, res) => {
+router.get('/cheques/history', protect, hasPermission('cheques:view'), async (req, res) => {
     try {
+        const includeDeleted = req.query.include_deleted === 'true' || req.query.include_deleted === '1';
+        const includeHiddenLegacy = req.query.include_hidden_legacy !== 'false' && req.query.include_hidden_legacy !== '0';
+        const search = req.query.search ? String(req.query.search).trim() : '';
+
+        const conditions = [];
+        const params = [];
+
+        if (!includeDeleted) {
+            conditions.push(`cr.status <> 'DELETED'`);
+            if (!includeHiddenLegacy) {
+                conditions.push(`COALESCE(cr.is_deleted, FALSE) = FALSE`);
+            } else {
+                conditions.push(`(COALESCE(cr.is_deleted, FALSE) = FALSE OR cr.ap_payment_id IS NOT NULL OR cr.expense_id IS NOT NULL OR cr.cheque_number IS NOT NULL)`);
+            }
+        }
+
+        if (search) {
+            params.push(`%${search}%`);
+            const idx = params.length;
+            conditions.push(`(cr.payee ILIKE $${idx} OR COALESCE(cr.cheque_number, '') ILIKE $${idx} OR COALESCE(cr.memo, '') ILIKE $${idx} OR COALESCE(prev_cr.cheque_number, '') ILIKE $${idx} OR COALESCE(next_cr.cheque_number, '') ILIKE $${idx})`);
+        }
+
+        const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+
         const { rows } = await db.query(
-            `SELECT cr.id, cr.payee, cr.amount, cr.cheque_date, cr.memo, cr.created_at, cr.template_id,
-                    cr.status, cr.cheque_number, cr.ap_payment_id, cr.bank_account_id,
+            `SELECT cr.id, cr.payee, cr.amount, TO_CHAR(cr.cheque_date, 'YYYY-MM-DD') AS cheque_date, cr.memo, cr.created_at, cr.template_id,
+                    cr.status, cr.cheque_number, cr.ap_payment_id, cr.expense_id, cr.bank_account_id,
+                    cr.replaces_cheque_id, cr.replaced_by_cheque_id,
+                    prev_cr.cheque_number AS replaces_cheque_number,
+                    next_cr.cheque_number AS replaced_by_cheque_number,
+                    cr.void_reason, cr.voided_at,
+                    cr.is_deleted, cr.deleted_at, cr.deleted_reason,
                     ct.bank_name AS bank_preset,
                     ba.account_name AS bank_account_name,
+                    CASE
+                        WHEN cr.ap_payment_id IS NOT NULL THEN 'SUPPLIER'
+                        WHEN cr.expense_id IS NOT NULL THEN 'EXPENSE'
+                        ELSE 'STANDALONE'
+                    END AS purpose_type,
                     EXISTS (
                         SELECT 1 FROM cheque_clearance_log ccl
-                        WHERE ccl.cheque_record_id = cr.id AND ccl.action = 'PRINTED'
-                    ) AS is_printed
+                        WHERE ccl.cheque_record_id = cr.id AND ccl.action IN ('PRINTED', 'PDF_GENERATED')
+                    ) AS is_printed,
+                    EXISTS (
+                        SELECT 1 FROM cheque_clearance_log ccl
+                        WHERE ccl.cheque_record_id = cr.id AND ccl.action = 'TEST_PDF_GENERATED'
+                    ) AS has_test_pdf
              FROM cheque_records cr
              LEFT JOIN cheque_templates ct ON ct.id = cr.template_id
              LEFT JOIN bank_account ba ON ba.bank_account_id = cr.bank_account_id
-             WHERE COALESCE(cr.is_deleted, FALSE) = FALSE
-             ORDER BY cr.created_at DESC
-             LIMIT 300`
+             LEFT JOIN cheque_records prev_cr ON prev_cr.id = cr.replaces_cheque_id
+             LEFT JOIN cheque_records next_cr ON next_cr.id = cr.replaced_by_cheque_id
+             ${whereClause}
+             ORDER BY cr.created_at DESC, cr.id DESC
+             LIMIT 300`,
+            params
         );
         res.json(rows);
     } catch (error) {
@@ -402,20 +444,18 @@ router.post('/cheques/generate-pdf', protect, hasPermission('cheques:create'), a
         return res.status(400).json({ message: 'At least one cheque record is required' });
     }
 
-    // Continuous printing lets several queued cheques (e.g. from the AP/PDC
-    // Treasury Desk) go out in one multi-page PDF/print job. Any row tied to a
-    // specific outbound cheque record is checked here: printing a VOID/REPLACED
-    // cheque would create a second live copy of one the business has already
-    // committed to never honoring, so the whole batch is rejected rather than
-    // silently dropping just that page (which would desync the print job from
-    // what the user reviewed).
     const linkedIds = Array.from(new Set(
         records.map((record) => record.cheque_record_id).filter(Boolean).map(Number)
     ));
     let linkedRecordsById = new Map();
     if (linkedIds.length) {
         const { rows: linkedRows } = await db.query(
-            `SELECT id, status, ap_payment_id, bank_account_id FROM cheque_records WHERE id = ANY($1::int[])`,
+            `SELECT cr.id, cr.status, cr.is_deleted, cr.ap_payment_id, cr.expense_id, cr.bank_account_id,
+                    cr.payee, cr.amount, TO_CHAR(cr.cheque_date, 'YYYY-MM-DD') AS cheque_date,
+                    cr.template_id, ba.default_cheque_template_id
+             FROM cheque_records cr
+             LEFT JOIN bank_account ba ON ba.bank_account_id = cr.bank_account_id
+             WHERE cr.id = ANY($1::int[])`,
             [linkedIds]
         );
         linkedRecordsById = new Map(linkedRows.map((row) => [row.id, row]));
@@ -423,9 +463,12 @@ router.post('/cheques/generate-pdf', protect, hasPermission('cheques:create'), a
         if (missing.length) {
             return res.status(404).json({ message: `Linked cheque record(s) not found: ${missing.join(', ')}` });
         }
-        const blocked = linkedRows.filter((row) => ['VOID', 'REPLACED'].includes(row.status));
+        const blocked = linkedRows.filter((row) => ['VOID', 'REPLACED', 'DELETED'].includes(row.status) || row.is_deleted === true);
         if (blocked.length) {
-            return res.status(409).json({ message: `Cannot print cheque(s) with status ${blocked.map((r) => r.status).join(', ')} (record id ${blocked.map((r) => r.id).join(', ')})` });
+            return res.status(409).json({
+                code: 'CHEQUE_PRINT_BLOCKED',
+                message: `Cannot print cheque(s) with status ${blocked.map((r) => r.is_deleted && !['VOID', 'REPLACED', 'DELETED'].includes(r.status) ? 'HIDDEN' : r.status).join(', ')} (record id ${blocked.map((r) => r.id).join(', ')})`,
+            });
         }
     }
 
@@ -455,8 +498,11 @@ router.post('/cheques/generate-pdf', protect, hasPermission('cheques:create'), a
         }
 
         const normalizedRows = records.map((record) => {
-            const amount = Math.round(Number(record.amount || 0) * 100) / 100;
-            if (!record.payee || !String(record.payee).trim()) {
+            const linked = record.cheque_record_id ? linkedRecordsById.get(Number(record.cheque_record_id)) : null;
+            const effectivePayee = linked ? linked.payee : record.payee;
+            const effectiveAmount = linked ? Number(linked.amount) : Number(record.amount || 0);
+            const amount = Math.round(effectiveAmount * 100) / 100;
+            if (!effectivePayee || !String(effectivePayee).trim()) {
                 throw new Error('Payee is required for every cheque');
             }
             if (Number.isNaN(amount)) {
@@ -469,7 +515,7 @@ router.post('/cheques/generate-pdf', protect, hasPermission('cheques:create'), a
             }
             return {
                 date: dateValue,
-                payee: String(record.payee).trim(),
+                payee: String(effectivePayee).trim(),
                 amount: amount.toFixed(2),
                 memo: record.memo || '',
                 cheque_record_id: record.cheque_record_id ? Number(record.cheque_record_id) : null
@@ -488,18 +534,51 @@ router.post('/cheques/generate-pdf', protect, hasPermission('cheques:create'), a
         const countSegment = `${normalizedRows.length}-cheque${normalizedRows.length > 1 ? 's' : ''}`;
         const pdfFilename = `${bankSegment}-${countSegment}-${dateSegment}.pdf`;
 
-        for (const row of normalizedRows) {
-            const linkedRecord = row.cheque_record_id ? linkedRecordsById.get(row.cheque_record_id) : null;
-            if (!linkedRecord || !linkedRecord.ap_payment_id) continue;
+        if (linkedIds.length) {
+            const client = await db.getClient();
             try {
-                await db.query(
-                    `INSERT INTO cheque_clearance_log (cheque_type, ap_payment_id, cheque_record_id, bank_account_id, action, notes, created_by)
-                     VALUES ('OUTBOUND_SUPPLIER', $1, $2, $3, 'PRINTED', $4, $5)`,
-                    [linkedRecord.ap_payment_id, linkedRecord.id, linkedRecord.bank_account_id,
-                     test_print ? 'Test print' : 'Cheque printed from Print Cheques queue', req.user?.employee_id]
+                await client.query('BEGIN');
+                const { rows: liveRows } = await client.query(
+                    `SELECT id, status, is_deleted, ap_payment_id, expense_id, bank_account_id
+                     FROM cheque_records
+                     WHERE id = ANY($1::int[])
+                     FOR UPDATE`,
+                    [linkedIds]
                 );
-            } catch (logErr) {
-                console.error('Failed to write PRINTED cheque_clearance_log:', logErr.message);
+                const liveBlocked = liveRows.filter((row) => ['VOID', 'REPLACED', 'DELETED'].includes(row.status) || row.is_deleted === true);
+                if (liveBlocked.length) {
+                    await client.query('ROLLBACK');
+                    return res.status(409).json({
+                        code: 'CHEQUE_PRINT_BLOCKED',
+                        message: `Cannot print cheque(s) with status ${liveBlocked.map((r) => r.status).join(', ')} (record id ${liveBlocked.map((r) => r.id).join(', ')})`,
+                    });
+                }
+                const liveById = new Map(liveRows.map((row) => [row.id, row]));
+                const actionName = test_print ? 'TEST_PDF_GENERATED' : 'PDF_GENERATED';
+                for (const row of normalizedRows) {
+                    const linkedRecord = row.cheque_record_id ? liveById.get(row.cheque_record_id) : null;
+                    if (!linkedRecord) continue;
+                    await apPdcService.logOutboundClearanceEvent(client, {
+                        apPaymentId: linkedRecord.ap_payment_id,
+                        expenseId: linkedRecord.expense_id,
+                        chequeRecordId: linkedRecord.id,
+                        bankAccountId: linkedRecord.bank_account_id,
+                        action: actionName,
+                        notes: test_print ? 'Test alignment PDF generated' : 'Cheque PDF generated from Print Cheques queue',
+                        metadata: {
+                            template_id: Number(template_id),
+                            printer_profile_id: printer_profile_id ? Number(printer_profile_id) : null,
+                            test_print: Boolean(test_print),
+                        },
+                        userId: req.user?.employee_id,
+                    });
+                }
+                await client.query('COMMIT');
+            } catch (txErr) {
+                await client.query('ROLLBACK');
+                throw txErr;
+            } finally {
+                client.release();
             }
         }
 
@@ -568,14 +647,17 @@ router.post('/cheques/records', protect, hasPermission('cheques:create'), async 
 
 router.post('/cheques/reprint/:id', protect, hasPermission('cheques:create'), async (req, res) => {
     const { id } = req.params;
-    const { template_id } = req.body;
+    const { template_id } = req.body || {};
 
     try {
         const { rows } = await db.query(
-            `SELECT cr.id, cr.payee, cr.amount, cr.cheque_date, cr.memo, cr.template_id,
-                    COALESCE($2::integer, cr.template_id) AS selected_template_id
+            `SELECT cr.id, cr.payee, cr.amount, TO_CHAR(cr.cheque_date, 'YYYY-MM-DD') AS cheque_date,
+                    cr.memo, cr.template_id, cr.status, cr.is_deleted, cr.cheque_number,
+                    cr.ap_payment_id, cr.expense_id, cr.bank_account_id,
+                    COALESCE($2::integer, cr.template_id, ba.default_cheque_template_id) AS selected_template_id
              FROM cheque_records cr
-             WHERE cr.id = $1 AND cr.is_deleted = FALSE`,
+             LEFT JOIN bank_account ba ON ba.bank_account_id = cr.bank_account_id
+             WHERE cr.id = $1`,
             [id, template_id || null]
         );
 
@@ -583,34 +665,102 @@ router.post('/cheques/reprint/:id', protect, hasPermission('cheques:create'), as
             return res.status(404).json({ message: 'Cheque record not found' });
         }
 
-        res.json({ record: rows[0] });
+        const record = rows[0];
+        if (['VOID', 'REPLACED', 'DELETED'].includes(record.status) || record.is_deleted === true) {
+            return res.status(409).json({
+                code: 'CHEQUE_REPRINT_BLOCKED',
+                message: `Cannot reprint a ${record.is_deleted && !['VOID', 'REPLACED', 'DELETED'].includes(record.status) ? 'hidden' : record.status} cheque.`,
+            });
+        }
+
+        res.json({ record });
     } catch (error) {
         console.error('Failed to prepare cheque reprint', error);
         res.status(500).json({ message: 'Unable to prepare cheque reprint' });
     }
 });
 
-router.delete('/cheques/history/:id', protect, hasPermission('cheques:manage_settings'), async (req, res) => {
-    const { id } = req.params;
+router.delete('/cheques/history/:id', protect, async (req, res) => {
+    const chequeId = parseInt(req.params.id, 10);
+    if (!chequeId) return res.status(400).json({ message: 'Invalid cheque record ID' });
 
+    const client = await db.getClient();
     try {
-        const { rowCount } = await db.query(
-            `UPDATE cheque_records
-             SET is_deleted = TRUE,
-                 deleted_at = CURRENT_TIMESTAMP,
-                 updated_at = CURRENT_TIMESTAMP
-             WHERE id = $1 AND is_deleted = FALSE`,
-            [id]
+        await client.query('BEGIN');
+        const { rows: [record] } = await client.query(
+            `SELECT id, status, is_deleted, ap_payment_id, expense_id, cheque_number, bank_account_id
+             FROM cheque_records
+             WHERE id = $1
+             FOR UPDATE`,
+            [chequeId]
         );
 
-        if (!rowCount) {
+        if (!record) {
+            await client.query('ROLLBACK');
             return res.status(404).json({ message: 'Cheque record not found' });
         }
 
-        res.json({ message: 'Cheque record deleted successfully' });
+        const isFinancialOrNumbered = Boolean(record.ap_payment_id || record.expense_id || record.cheque_number);
+        if (isFinancialOrNumbered) {
+            if (!userHasPermission(req, 'ap-pdc:delete') && !userHasPermission(req, 'ap-pdc:manage')) {
+                await client.query('ROLLBACK');
+                return res.status(403).json({
+                    code: 'PERMISSION_DENIED',
+                    message: 'Deleting a financial or numbered cheque requires ap-pdc:delete or ap-pdc:manage permission.',
+                });
+            }
+            const { reason, notes, confirm_delete = true, confirm_printed_not_released = false } = req.body || {};
+            const data = await apPdcService.deleteErroneousPayment(client, {
+                chequeRecordId: chequeId,
+                reason: reason || req.query.reason,
+                notes: notes || req.query.notes,
+                confirmDelete: Boolean(confirm_delete),
+                confirmPrintedNotReleased: Boolean(confirm_printed_not_released),
+                userId: req.user?.employee_id,
+            });
+            await client.query('COMMIT');
+            return res.json({
+                success: true,
+                message: 'Erroneous payment deleted and bill allocations released.',
+                data,
+            });
+        }
+
+        if (!userHasPermission(req, 'cheques:manage_settings') && !userHasPermission(req, 'cheques:create')) {
+            await client.query('ROLLBACK');
+            return res.status(403).json({ message: 'Permission denied' });
+        }
+
+        const reasonText = (req.body?.reason || req.query?.reason || 'Removed standalone print entry').trim();
+        await client.query(
+            `UPDATE cheque_records
+             SET status = 'DELETED',
+                 is_deleted = TRUE,
+                 deleted_at = CURRENT_TIMESTAMP,
+                 deleted_by = $2,
+                 deleted_reason = $3,
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE id = $1`,
+            [chequeId, req.user?.employee_id || null, reasonText]
+        );
+        await apPdcService.logOutboundClearanceEvent(client, {
+            chequeRecordId: chequeId,
+            bankAccountId: record.bank_account_id,
+            action: 'DELETED',
+            notes: reasonText,
+            userId: req.user?.employee_id,
+        });
+        await client.query('COMMIT');
+        res.json({ success: true, message: 'Standalone print entry removed.' });
     } catch (error) {
+        await client.query('ROLLBACK');
+        if (error.status) {
+            return res.status(error.status).json({ message: error.message, code: error.code, details: error.details });
+        }
         console.error('Failed to delete cheque record', error);
         res.status(500).json({ message: 'Unable to delete cheque record' });
+    } finally {
+        client.release();
     }
 });
 

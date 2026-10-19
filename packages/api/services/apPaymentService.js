@@ -184,48 +184,95 @@ async function recordDirectPayment(client, {
  * When none are supplied, applies the payment oldest-due-first across the
  * supplier's open bills. Locks each bill FOR UPDATE so two concurrent payments
  * cannot both allocate against the same remaining balance.
+ *
+ * Active pending cheques (ISSUED, HELD_FOR_RELEASE, DEPOSITED, BOUNCED, STALE)
+ * reserve bill balance so two issued cheques cannot promise the same payable.
+ * `excludePaymentId` excludes the retiring payment when revalidating a replacement.
  */
-async function resolveAllocations(client, { supplierId, amount, allocations, settledOn }) {
+async function resolveAllocations(client, {
+  supplierId,
+  amount,
+  allocations,
+  settledOn,
+  excludePaymentId = null,
+  checkSettledDateAgainstBill = true,
+}) {
   const requested = Array.isArray(allocations) ? allocations.filter((a) => a && a.bill_id != null) : null;
 
   const billIds = requested?.length
-    ? requested.map((a) => Number(a.bill_id))
+    ? requested.map((a) => Number(a.bill_id)).sort((a, b) => a - b)
     : null;
 
-  // A voided bill is not a liability any more, so it must never absorb a payment
-  // — neither by auto-allocation nor by being named explicitly.
-  const { rows: bills } = await client.query(
-    `SELECT bill_id, bill_number, bill_date, total_amount, amount_paid
+  // Lock supplier first, then bills in deterministic bill_id order to prevent deadlocks,
+  // then order by due_date/bill_date for allocation priority.
+  await client.query(`SELECT supplier_id FROM supplier WHERE supplier_id = $1 FOR UPDATE`, [supplierId]);
+
+  const { rows: lockedBills } = await client.query(
+    `SELECT bill_id, bill_number, bill_date, due_date, total_amount, amount_paid, status
        FROM supplier_bill
       WHERE supplier_id = $1
         AND status != 'Void'
         AND ($2::int[] IS NULL OR bill_id = ANY($2::int[]))
         AND ($2::int[] IS NOT NULL OR status != 'Paid')
-      ORDER BY due_date NULLS LAST, bill_date, bill_id
+      ORDER BY bill_id ASC
       FOR UPDATE`,
     [supplierId, billIds]
   );
 
   if (billIds) {
-    const found = new Set(bills.map((b) => b.bill_id));
+    const found = new Set(lockedBills.map((b) => b.bill_id));
     const missing = billIds.filter((id) => !found.has(id));
     if (missing.length) {
-      throw badRequest(`Bill(s) not found, voided, or not owned by this supplier: ${missing.join(', ')}`);
+      throw badRequest(
+        `Bill(s) not found, voided, or not owned by this supplier: ${missing.join(', ')}`,
+        'BILL_INVALID_OR_OWNERSHIP_CHANGED'
+      );
     }
   }
 
-  // A payment cannot settle a liability that did not exist yet on the day the
-  // money moved — that would produce a negative running balance in the ledger.
-  // `settledOn` must be a Date, not a date string: bill_date comes back from pg as
-  // a Date, and a Date-vs-string comparison is silently always false. Callers get
-  // one by casting through the database (see recordDirectPayment).
-  const premature = bills.filter((b) => b.bill_date > settledOn);
-  if (premature.length) {
-    const refs = premature.map((b) => b.bill_number || `#${b.bill_id}`).join(', ');
-    throw badRequest(`This payment is dated before the bill date of: ${refs}`);
+  // Compute active scheduled amounts per bill (excluding CLEARED, which is already in amount_paid,
+  // and excluding VOID, REPLACED, DELETED, plus any excludePaymentId being replaced).
+  const targetBillIds = lockedBills.map((b) => b.bill_id);
+  const scheduledMap = new Map();
+  if (targetBillIds.length > 0) {
+    const { rows: schedRows } = await client.query(
+      `SELECT apa.bill_id, COALESCE(SUM(apa.amount_allocated), 0) AS scheduled_amount
+         FROM ap_payment_allocation apa
+         JOIN ap_payment ap ON ap.payment_id = apa.payment_id
+         LEFT JOIN cheque_records cr ON cr.id = ap.cheque_record_id
+        WHERE apa.bill_id = ANY($1::int[])
+          AND ($2::int IS NULL OR ap.payment_id <> $2::int)
+          AND ap.pdc_status IN ('ISSUED', 'HELD_FOR_RELEASE', 'DEPOSITED', 'BOUNCED', 'STALE')
+          AND (cr.id IS NULL OR cr.status NOT IN ('VOID', 'REPLACED', 'DELETED'))
+        GROUP BY apa.bill_id`,
+      [targetBillIds, excludePaymentId]
+    );
+    for (const r of schedRows) {
+      scheduledMap.set(Number(r.bill_id), Number(r.scheduled_amount) || 0);
+    }
   }
 
-  const outstandingOf = (bill) => Number(bill.total_amount) - Number(bill.amount_paid);
+  const bills = [...lockedBills].sort((a, b) => {
+    const dA = a.due_date ? new Date(a.due_date).getTime() : Infinity;
+    const dB = b.due_date ? new Date(b.due_date).getTime() : Infinity;
+    if (dA !== dB) return dA - dB;
+    const bA = a.bill_date ? new Date(a.bill_date).getTime() : 0;
+    const bB = b.bill_date ? new Date(b.bill_date).getTime() : 0;
+    if (bA !== bB) return bA - bB;
+    return a.bill_id - b.bill_id;
+  });
+
+  if (checkSettledDateAgainstBill && settledOn) {
+    const premature = bills.filter((b) => b.bill_date > settledOn);
+    if (premature.length) {
+      const refs = premature.map((b) => b.bill_number || `#${b.bill_id}`).join(', ');
+      throw badRequest(`This payment is dated before the bill date of: ${refs}`, 'PAYMENT_BEFORE_BILL_DATE');
+    }
+  }
+
+  const outstandingOf = (bill) => Math.max(0, Number(bill.total_amount) - Number(bill.amount_paid));
+  const scheduledOf = (bill) => scheduledMap.get(bill.bill_id) || 0;
+  const availableOf = (bill) => Math.max(0, outstandingOf(bill) - scheduledOf(bill));
   const resolved = [];
 
   if (requested?.length) {
@@ -233,23 +280,30 @@ async function resolveAllocations(client, { supplierId, amount, allocations, set
     let total = 0;
     for (const entry of requested) {
       const bill = byId.get(Number(entry.bill_id));
-      const applied = Number(entry.amount);
+      const applied = Number(entry.amount ?? entry.amount_allocated);
       if (!Number.isFinite(applied) || applied <= 0) {
-        throw badRequest(`Invalid amount allocated to bill ${bill.bill_number || bill.bill_id}`);
+        throw badRequest(`Invalid amount allocated to bill ${bill.bill_number || bill.bill_id}`, 'INVALID_ALLOCATION_AMOUNT');
       }
       const outstanding = outstandingOf(bill);
-      if (applied - outstanding > 0.005) {
+      const scheduled = scheduledOf(bill);
+      const available = availableOf(bill);
+      if (applied - available > 0.005) {
+        const detail = scheduled > 0.005
+          ? `only ${available.toFixed(2)} is available (${outstanding.toFixed(2)} outstanding, ${scheduled.toFixed(2)} already scheduled by active cheques)`
+          : `only ${outstanding.toFixed(2)} is outstanding`;
         throw badRequest(
-          `Cannot allocate ${applied.toFixed(2)} to bill ${bill.bill_number || bill.bill_id}; only ${outstanding.toFixed(2)} is outstanding`
+          `Cannot allocate ${applied.toFixed(2)} to bill ${bill.bill_number || bill.bill_id}; ${detail}`,
+          'ALLOCATION_EXCEEDS_AVAILABLE'
         );
       }
       total += applied;
-      resolved.push({ billId: bill.bill_id, billNumber: bill.bill_number, amount: applied });
+      resolved.push({ billId: bill.bill_id, billNumber: bill.bill_number, amount: Number(applied.toFixed(2)) });
     }
     if (Math.abs(total - amount) > 0.005) {
       throw badRequest(
         `Allocations total ${total.toFixed(2)} but the payment is ${amount.toFixed(2)}. `
-        + 'Every peso of a payment must be applied to a bill.'
+        + 'Every peso of a payment must be applied to a bill.',
+        'ALLOCATION_SUM_MISMATCH'
       );
     }
     return resolved;
@@ -258,21 +312,19 @@ async function resolveAllocations(client, { supplierId, amount, allocations, set
   let remaining = amount;
   for (const bill of bills) {
     if (remaining <= 0.005) break;
-    const applied = Math.min(outstandingOf(bill), remaining);
-    if (applied <= 0) continue;
+    const avail = availableOf(bill);
+    const applied = Math.min(avail, remaining);
+    if (applied <= 0.005) continue;
     resolved.push({ billId: bill.bill_id, billNumber: bill.bill_number, amount: Number(applied.toFixed(2)) });
     remaining -= applied;
   }
 
-  // Anything left over would post to ap_ledger as a settlement with no bill
-  // behind it, silently turning a typo into a supplier prepayment and driving
-  // the balance negative. Supplier advances are not a supported concept here,
-  // so refuse rather than absorb it.
   if (remaining > 0.005) {
     const payable = amount - remaining;
     throw badRequest(
-      `Payment of ${amount.toFixed(2)} exceeds this supplier's total outstanding balance of ${payable.toFixed(2)}. `
-      + 'Record a bill for the difference first, or lower the amount.'
+      `Payment of ${amount.toFixed(2)} exceeds this supplier's available unscheduled balance of ${payable.toFixed(2)}. `
+      + 'Record a bill for the difference first, or lower the amount.',
+      'PAYMENT_EXCEEDS_AVAILABLE_BALANCE'
     );
   }
   return resolved;
@@ -283,15 +335,30 @@ async function resolveAllocations(client, { supplierId, amount, allocations, set
  * `channel` narrows to 'direct' (cash/transfer/e-wallet, no instrument) or
  * 'cheque' (backed by a cheque_records row whose lifecycle the Treasury desk
  * owns); anything else returns both.
+ * By default, REPLACED/VOID/DELETED attempts are excluded unless `includeHistory`
+ * or `includeDeleted` is set (or a specific `paymentId` is requested).
  */
-async function listPayments(db, { supplierId = null, paymentId = null, channel = 'all', limit = 100 } = {}) {
+async function listPayments(db, {
+  supplierId = null,
+  paymentId = null,
+  channel = 'all',
+  includeHistory = false,
+  includeDeleted = false,
+  limit = 100,
+} = {}) {
   const chequeOnly = channel === 'cheque' ? true : channel === 'direct' ? false : null;
   const { rows } = await db.query(
     `SELECT ap.payment_id, ap.supplier_id, s.supplier_name, ap.payment_date, ap.amount,
             ap.reference_number, ap.notes, ap.pdc_status, ap.cheque_record_id,
             ap.bank_account_id, ba.account_name AS bank_account_name,
+            ba.bank_name,
             pm.code AS method_code, pm.name AS method_name,
             e.first_name || ' ' || e.last_name AS recorded_by_name,
+            cr.cheque_number, cr.cheque_date, cr.status AS cheque_status,
+            cr.replaces_cheque_id, cr.replaced_by_cheque_id,
+            prev_cr.cheque_number AS replaces_cheque_number,
+            next_cr.cheque_number AS replaced_by_cheque_number,
+            ap.void_reason, ap.deleted_reason, ap.deleted_at,
             COALESCE(alloc.applied, 0) AS applied_amount,
             COALESCE(alloc.bills, '[]'::json) AS bills
        FROM ap_payment ap
@@ -299,6 +366,9 @@ async function listPayments(db, { supplierId = null, paymentId = null, channel =
        LEFT JOIN payment_methods pm ON pm.method_id = ap.method_id
        LEFT JOIN bank_account ba ON ba.bank_account_id = ap.bank_account_id
        LEFT JOIN employee e ON e.employee_id = ap.created_by
+       LEFT JOIN cheque_records cr ON cr.id = ap.cheque_record_id
+       LEFT JOIN cheque_records prev_cr ON prev_cr.id = cr.replaces_cheque_id
+       LEFT JOIN cheque_records next_cr ON next_cr.id = cr.replaced_by_cheque_id
        LEFT JOIN LATERAL (
          SELECT SUM(a.amount_allocated) AS applied,
                 json_agg(json_build_object(
@@ -312,10 +382,24 @@ async function listPayments(db, { supplierId = null, paymentId = null, channel =
         AND ($2::boolean IS NULL
              OR ($2::boolean AND ap.cheque_record_id IS NOT NULL)
              OR (NOT $2::boolean AND ap.cheque_record_id IS NULL))
-        AND ($3::int IS NULL OR ap.payment_id=$3::int)
+        AND ($3::int IS NULL OR ap.payment_id = $3::int)
+        AND (
+          $3::int IS NOT NULL
+          OR (
+            ($5::boolean OR ap.pdc_status NOT IN ('REPLACED', 'VOID'))
+            AND ($6::boolean OR ap.pdc_status <> 'DELETED')
+          )
+        )
       ORDER BY ap.payment_date DESC, ap.payment_id DESC
       LIMIT $4`,
-    [supplierId, chequeOnly, paymentId, Math.min(Number(limit) || 100, 500)]
+    [
+      supplierId,
+      chequeOnly,
+      paymentId,
+      Math.min(Number(limit) || 100, 500),
+      Boolean(includeHistory),
+      Boolean(includeDeleted),
+    ]
   );
   return rows;
 }

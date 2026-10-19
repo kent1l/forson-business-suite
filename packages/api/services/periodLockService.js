@@ -26,9 +26,10 @@ function periodMonthOf(date) {
  * anything dated into that period — creating, editing, voiding, or moving a date
  * into it.
  */
-async function assertPeriodOpen(date, { module = 'expenses' } = {}) {
+async function assertPeriodOpen(date, { module = 'expenses', client = null } = {}) {
+    const queryable = client || db;
     const periodMonth = periodMonthOf(date);
-    const { rows } = await db.query(
+    const { rows } = await queryable.query(
         `SELECT lock_id FROM period_lock WHERE module = $1 AND period_month = $2 AND is_locked = true`,
         [module, periodMonth]
     );
@@ -36,6 +37,8 @@ async function assertPeriodOpen(date, { module = 'expenses' } = {}) {
         const label = new Date(`${periodMonth}T00:00:00`).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
         const err = new Error(`${label} is locked. Reopen the period before making changes to it.`);
         err.statusCode = 423;
+        err.status = 423;
+        err.code = 'PERIOD_LOCKED';
         err.periodMonth = periodMonth;
         throw err;
     }
