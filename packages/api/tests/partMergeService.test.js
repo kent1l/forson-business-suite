@@ -222,7 +222,7 @@ describe('PartMergeService Unit Tests', () => {
         }
 
         // Full §4-A + §4-B chain when both mergePartNumbers and mergeApplications
-        // are true (14 query calls total):
+        // are true (18 query calls total):
         //   0  UPDATE part_number  – retire overlapping source numbers
         //   1  CTE ranked/retired/reassigned part_number
         //   2  DELETE part_application – remove overlapping source applications
@@ -240,8 +240,7 @@ describe('PartMergeService Unit Tests', () => {
         //  14  DELETE ai_match_cache
         //  15  DELETE ai_verification_queue
         //  16  INSERT part_exclusion
-        //  17  DELETE part_exclusion self-pair
-        //  18  DELETE part_exclusion source rows
+        //  17  DELETE part_exclusion source rows
 
         test('deduplicates overlapping source part numbers and applications before reassignment', async () => {
             mockChain(mockDb, [
@@ -262,8 +261,7 @@ describe('PartMergeService Unit Tests', () => {
                 { rowCount: 0 },                        // 14 ai_match_cache
                 { rowCount: 0 },                        // 15 ai_verification_queue
                 { rowCount: 0 },                        // 16 insert part_exclusion
-                { rowCount: 0 },                        // 17 delete self-pair
-                { rowCount: 0 },                        // 18 delete source exclusions
+                { rowCount: 0 },                        // 17 delete source exclusions
             ]);
 
             const counts = await service.mergeChildRecords(mockDb, 1, [2, 3, 4], {
@@ -345,7 +343,7 @@ describe('PartMergeService Unit Tests', () => {
 
             const queries = mockDb.query.mock.calls.map(([sql]) => sql);
             expect(queries[2]).toContain('DELETE FROM part_tag');
-            expect(queries[2]).toContain('SELECT tag_id FROM part_tag WHERE part_id = $1');
+            expect(queries[2]).toContain('other_tag.part_id < source_tag.part_id');
             expect(queries[3]).toContain('UPDATE part_tag SET part_id = $1');
             expect(counts.part_tags).toBe(5);
         });
@@ -454,7 +452,7 @@ describe('PartMergeService Unit Tests', () => {
             expect(queries[11]).toContain('DELETE FROM ai_verification_queue');
         });
 
-        test('§4-B: part_exclusion — transfers pairs to survivor, removes self-pairs and source rows', async () => {
+        test('§4-B: part_exclusion — filters internal pairs and orders transferred endpoints', async () => {
             mockChain(mockDb, [
                 { rowCount: 0 }, { rowCount: 0 },
                 { rowCount: 0 }, { rowCount: 0 },
@@ -463,7 +461,6 @@ describe('PartMergeService Unit Tests', () => {
                 { rowCount: 0, rows: [] },
                 { rowCount: 0 }, { rowCount: 0 }, { rowCount: 0 },
                 { rowCount: 1 },                    // insert part_exclusion
-                { rowCount: 0 },                    // delete self-pair
                 { rowCount: 2 },                    // delete source rows
             ]);
 
@@ -473,9 +470,9 @@ describe('PartMergeService Unit Tests', () => {
             expect(queries[12]).toContain('INSERT INTO part_exclusion');
             expect(queries[12]).toContain('ON CONFLICT DO NOTHING');
             expect(queries[13]).toContain('DELETE FROM part_exclusion');
-            expect(queries[13]).toContain('part_id_1 = $1 AND part_id_2 = $1');
-            expect(queries[14]).toContain('DELETE FROM part_exclusion');
-            expect(queries[14]).toContain('part_id_1 = ANY($1) OR part_id_2 = ANY($1)');
+            expect(queries[12]).toContain('WHERE mapped_id_1 <> mapped_id_2');
+            expect(queries[12]).toContain('LEAST(mapped_id_1, mapped_id_2)');
+            expect(queries[13]).toContain('part_id_1 = ANY($1) OR part_id_2 = ANY($1)');
         });
     });
 
