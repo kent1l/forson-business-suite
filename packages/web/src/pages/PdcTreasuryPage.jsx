@@ -8,6 +8,8 @@ import KPICard from '../components/ui/KPICard';
 import PdcClearanceDeskTable from '../components/accounts-receivable/PdcClearanceDeskTable';
 import PdcOutboundDeskTable from '../components/accounts-payable/PdcOutboundDeskTable';
 import IssueOutboundChequeModal from '../components/accounts-payable/IssueOutboundChequeModal';
+import ReplaceChequeModal from '../components/accounts-payable/ReplaceChequeModal';
+import DeletePaymentModal from '../components/accounts-payable/DeletePaymentModal';
 import Modal from '../components/ui/Modal';
 import SegmentedTabs from '../components/ui/SegmentedTabs';
 import StatusBadge from '../components/ui/StatusBadge';
@@ -32,6 +34,10 @@ const HISTORY_ACTION_TONE = {
     REDEPOSITED: 'info',
     VOID: 'neutral',
     REPLACED: 'warning',
+    DELETED: 'danger',
+    RESTORED: 'info',
+    PDF_GENERATED: 'info',
+    TEST_PDF_GENERATED: 'neutral',
 };
 
 const LABEL_CLASS = 'block text-xs font-semibold text-gray-700 dark:text-slate-300 mb-1';
@@ -41,6 +47,7 @@ const PdcTreasuryPage = ({ pageState }) => {
     const { hasPermission } = useAuth();
     const canManage = hasPermission('pdc:manage') || hasPermission('ar:manage');
     const canManageOutbound = hasPermission('ap-pdc:manage');
+    const canDeleteOutbound = hasPermission('ap-pdc:delete') || canManageOutbound;
     const canViewOutbound = hasPermission('ap-pdc:view') || canManageOutbound;
 
     const [activeTab, setActiveTab] = useState('inbound'); // 'inbound' | 'outbound'
@@ -59,12 +66,10 @@ const PdcTreasuryPage = ({ pageState }) => {
     const [outboundItems, setOutboundItems] = useState([]);
     const [outboundStatusFilter, setOutboundStatusFilter] = useState('ALL');
     const [outboundMaturityFilter, setOutboundMaturityFilter] = useState('ALL');
+    const [outboundIncludeDeleted, setOutboundIncludeDeleted] = useState(false);
     const [outboundLoading, setOutboundLoading] = useState(false);
 
-    // Deep link from a notification. The maturity/status filter matters as much
-    // as the tab: "4 cheques mature today" against a desk showing every open
-    // cheque leaves the reader to find the four themselves, which is the whole
-    // problem the notification was supposed to solve.
+    // Deep link from a notification.
     const [inboundHighlight, setInboundHighlight] = useState(null);
     const [outboundHighlight, setOutboundHighlight] = useState(null);
 
@@ -77,25 +82,21 @@ const PdcTreasuryPage = ({ pageState }) => {
         if (statusFilter) {
             (outbound ? setOutboundStatusFilter : setPdcStatusFilter)(statusFilter);
         }
-        // Filtering shows the right rows; this marks which ones the alert meant.
         (outbound ? setOutboundHighlight : setInboundHighlight)(highlight || null);
     });
     const [issueModalOpen, setIssueModalOpen] = useState(false);
     const [chequeTemplates, setChequeTemplates] = useState([]);
     const [defaultPrinterProfileId, setDefaultPrinterProfileId] = useState(null);
-    const [printingId, setPrintingId] = useState(null);
+    const [, setPrintingId] = useState(null);
 
     // Modal Action States (shared, parameterized by selectedItem.direction)
     const [selectedItem, setSelectedItem] = useState(null);
-    const [actionModalType, setActionModalType] = useState(null); // 'clear' | 'bounce' | 'redeposit' | 'void' | 'replace' | 'history'
+    const [actionModalType, setActionModalType] = useState(null); // 'clear' | 'bounce' | 'redeposit' | 'void' | 'replace' | 'delete' | 'history'
     const [bounceFeeInput, setBounceFeeInput] = useState('0');
     const [bounceReasonInput, setBounceReasonInput] = useState('');
     const [redepositNotesInput, setRedepositNotesInput] = useState('');
     const [liftHoldInput, setLiftHoldInput] = useState(false);
     const [voidReasonInput, setVoidReasonInput] = useState('');
-    const [replaceChequeNumberInput, setReplaceChequeNumberInput] = useState('');
-    const [replaceChequeDateInput, setReplaceChequeDateInput] = useState('');
-    const [replaceReasonInput, setReplaceReasonInput] = useState('');
     const [clearanceHistory, setClearanceHistory] = useState([]);
     const [historyLoading, setHistoryLoading] = useState(false);
     const [submittingAction, setSubmittingAction] = useState(false);
@@ -151,6 +152,7 @@ const PdcTreasuryPage = ({ pageState }) => {
                 params: {
                     pdc_status: outboundStatusFilter !== 'ALL' ? outboundStatusFilter : undefined,
                     maturity_status: outboundMaturityFilter !== 'ALL' ? outboundMaturityFilter : undefined,
+                    include_deleted: outboundIncludeDeleted ? 'true' : undefined,
                 },
             });
             if (res.data?.success && Array.isArray(res.data?.data)) setOutboundItems(res.data.data);
@@ -160,16 +162,13 @@ const PdcTreasuryPage = ({ pageState }) => {
         } finally {
             setOutboundLoading(false);
         }
-    }, [outboundStatusFilter, outboundMaturityFilter, canViewOutbound]);
+    }, [outboundStatusFilter, outboundMaturityFilter, outboundIncludeDeleted, canViewOutbound]);
 
     useEffect(() => { fetchStats(); fetchInboundItems(); }, [fetchStats, fetchInboundItems]);
     useEffect(() => { fetchOutboundStats(); fetchOutboundItems(); }, [fetchOutboundStats, fetchOutboundItems]);
     useEffect(() => {
         if (!canViewOutbound) return;
         api.get('/cheques/templates').then(res => setChequeTemplates(res.data || [])).catch(() => {});
-        // Same default-profile resolution as the Print Cheques page — without this,
-        // generate-pdf falls back to the raw native paper size instead of the
-        // calibrated Letter-backed canvas most printers here actually need.
         api.get('/cheques/printer-profiles').then(res => {
             const profiles = res.data || [];
             const defaultProfile = profiles.find(p => p.is_default) || profiles[0];
@@ -185,7 +184,7 @@ const PdcTreasuryPage = ({ pageState }) => {
         const inboundDueToday = inboundItems.filter(i => i.maturity_status === 'DUE_TODAY').length;
         const outboundDueToday = outboundItems.filter(i => i.maturity_status === 'DUE_TODAY').length;
         const needsReplacement = outboundItems.filter(i => i.bounce_count > 0 && ['BOUNCED', 'STALE'].includes(i.pdc_status)).length
-            + outboundItems.filter(i => i.maturity_status === 'STALE_CHEQUE' && !['CLEARED', 'VOID', 'REPLACED'].includes(i.pdc_status)).length;
+            + outboundItems.filter(i => i.maturity_status === 'STALE_CHEQUE' && !['CLEARED', 'VOID', 'REPLACED', 'DELETED'].includes(i.pdc_status)).length;
         return { inboundDueToday, outboundDueToday, needsReplacement };
     }, [inboundItems, outboundItems]);
 
@@ -239,14 +238,28 @@ const PdcTreasuryPage = ({ pageState }) => {
     const handleReplaceOutbound = (item) => {
         if (!canManageOutbound) return toast.error('You do not have permission to replace cheques');
         setSelectedItem({ ...item, direction: 'outbound' });
-        setReplaceChequeNumberInput('');
-        setReplaceChequeDateInput('');
-        setReplaceReasonInput('');
         setActionModalType('replace');
+    };
+    const handleDeleteOutbound = (item) => {
+        if (!canDeleteOutbound) return toast.error('You do not have permission to delete erroneous payments');
+        setSelectedItem({ ...item, direction: 'outbound' });
+        setActionModalType('delete');
+    };
+    const handleRestoreOutbound = async (item) => {
+        if (!canManageOutbound) return toast.error('You do not have permission to restore cheque visibility');
+        try {
+            await api.post(`/ap/outbound-clearance/${item.cheque_record_id}/restore`, {
+                notes: 'Restored hidden cheque visibility from Outbound Treasury Desk',
+            });
+            toast.success(`Cheque #${item.cheque_number || item.cheque_record_id} restored to Print History.`);
+            refreshAll();
+        } catch (err) {
+            toast.error(err.response?.data?.message || 'Failed to restore cheque visibility');
+        }
     };
 
     const handlePrintOutbound = async (item) => {
-        const template = chequeTemplates.find(t => String(t.id) === String(item.template_id));
+        const template = chequeTemplates.find(t => String(t.id) === String(item.template_id)) || chequeTemplates[0];
         if (!template) {
             toast.error('No print template linked to this cheque\'s bank account. Link one in Bank Accounts, or print manually from Cheque Printing.');
             return;
@@ -387,29 +400,6 @@ const PdcTreasuryPage = ({ pageState }) => {
         }
     };
 
-    const confirmReplace = async () => {
-        if (!selectedItem || !replaceChequeNumberInput || !replaceChequeDateInput) {
-            toast.error('New cheque number and date are required');
-            return;
-        }
-        setSubmittingAction(true);
-        try {
-            await api.post(`/ap/outbound-clearance/${selectedItem.cheque_record_id}/replace`, {
-                new_cheque_number: replaceChequeNumberInput,
-                new_cheque_date: replaceChequeDateInput,
-                reason: replaceReasonInput,
-            });
-            toast.success('Replacement cheque issued');
-            closeModal();
-            refreshAll();
-        } catch (err) {
-            console.error('Error replacing cheque:', err);
-            toast.error(err.response?.data?.message || 'Failed to replace cheque');
-        } finally {
-            setSubmittingAction(false);
-        }
-    };
-
     const activeStats = activeTab === 'outbound' ? outboundStats : stats;
     const activeStatsLoading = activeTab === 'outbound' ? outboundStatsLoading : statsLoading;
     const heldLabel = activeTab === 'outbound' ? 'Held for Release' : 'Held in Vault / Safe';
@@ -495,11 +485,15 @@ const PdcTreasuryPage = ({ pageState }) => {
                         onStatusFilterChange={setOutboundStatusFilter}
                         maturityFilter={outboundMaturityFilter}
                         onMaturityFilterChange={setOutboundMaturityFilter}
+                        includeDeleted={outboundIncludeDeleted}
+                        onToggleIncludeDeleted={setOutboundIncludeDeleted}
                         onVerifyClearance={handleVerifyOutbound}
                         onMarkBounced={handleBounceOutbound}
                         onRedepositCheque={handleRedepositOutbound}
-                        onVoidCheque={handleVoidOutbound}
-                        onReplaceCheque={handleReplaceOutbound}
+                        onVoidCheque={canManageOutbound ? handleVoidOutbound : undefined}
+                        onReplaceCheque={canManageOutbound ? handleReplaceOutbound : undefined}
+                        onDeleteCheque={canDeleteOutbound ? handleDeleteOutbound : undefined}
+                        onRestoreCheque={canManageOutbound ? handleRestoreOutbound : undefined}
                         onPrintCheque={handlePrintOutbound}
                         onViewHistory={(item) => handleViewHistory(item, 'outbound')}
                     />
@@ -624,16 +618,21 @@ const PdcTreasuryPage = ({ pageState }) => {
             </Modal>
 
             {/* 4. Void Cheque Modal (outbound only) */}
-            <Modal isOpen={actionModalType === 'void'} onClose={closeModal} title="Void Cheque">
+            <Modal isOpen={actionModalType === 'void'} onClose={closeModal} title="Void Physical Cheque">
                 {selectedItem && (
                     <div className="space-y-4">
-                        <div className="p-4 bg-gray-50 dark:bg-slate-700/50 border border-gray-200 dark:border-slate-600 rounded-xl text-xs text-gray-700 dark:text-slate-300">
-                            Voiding cheque <strong>#{selectedItem.cheque_number}</strong> marks it as spoiled/never issued. This keeps the cheque-number sequence explainable — the number will never be reused.
+                        <div className="p-4 bg-gray-50 dark:bg-slate-700/50 border border-gray-200 dark:border-slate-600 rounded-xl text-xs text-gray-700 dark:text-slate-300 space-y-1">
+                            <p>
+                                Voiding cheque <strong>#{selectedItem.cheque_number || selectedItem.cheque_record_id}</strong> marks the physical cheque leaf as spoiled or cancelled with no replacement.
+                            </p>
+                            <p>
+                                Its cheque number stays permanently reserved in the audit sequence, and any scheduled bill allocations are released back to open bills.
+                            </p>
                         </div>
                         <div>
                             <label className={LABEL_CLASS}>Reason (required):</label>
                             <input type="text" value={voidReasonInput} onChange={(e) => setVoidReasonInput(e.target.value)}
-                                className={`${TEXT_INPUT_CLASS} focus:ring-2 focus:ring-gray-500`} placeholder="e.g. Writing mistake, misprint" />
+                                className={`${TEXT_INPUT_CLASS} focus:ring-2 focus:ring-gray-500`} placeholder="e.g. Spoiled physical cheque leaf, payment cancelled" />
                         </div>
                         <div className="flex justify-end gap-3 pt-2">
                             <button type="button" onClick={closeModal} className="px-4 py-2 text-xs font-semibold text-gray-600 dark:text-slate-300 bg-gray-100 dark:bg-slate-700 hover:bg-gray-200 dark:hover:bg-slate-600 rounded-lg cursor-pointer">Cancel</button>
@@ -646,40 +645,35 @@ const PdcTreasuryPage = ({ pageState }) => {
                 )}
             </Modal>
 
-            {/* 5. Replace Cheque Modal (outbound only) */}
-            <Modal isOpen={actionModalType === 'replace'} onClose={closeModal} title="Replace Cheque">
-                {selectedItem && (
-                    <div className="space-y-4">
-                        <div className="p-4 bg-warning-50 dark:bg-warning-900/20 border border-warning-200 dark:border-warning-900/40 rounded-xl text-xs text-warning-900 dark:text-warning-300">
-                            Cheque <strong>#{selectedItem.cheque_number}</strong> is no longer usable. A new cheque will be issued for the same obligation, linked back to this one for a continuous audit trail.
-                        </div>
-                        <div className="grid grid-cols-2 gap-3">
-                            <div>
-                                <label className={LABEL_CLASS}>New Cheque Number:</label>
-                                <input type="text" value={replaceChequeNumberInput} onChange={(e) => setReplaceChequeNumberInput(e.target.value)}
-                                    className={`${TEXT_INPUT_CLASS} font-mono focus:ring-2 focus:ring-warning-500`} />
-                            </div>
-                            <div>
-                                <label className={LABEL_CLASS}>New Cheque Date:</label>
-                                <input type="date" value={replaceChequeDateInput} onChange={(e) => setReplaceChequeDateInput(e.target.value)}
-                                    className={`${TEXT_INPUT_CLASS} focus:ring-2 focus:ring-warning-500`} />
-                            </div>
-                        </div>
-                        <div>
-                            <label className={LABEL_CLASS}>Reason:</label>
-                            <input type="text" value={replaceReasonInput} onChange={(e) => setReplaceReasonInput(e.target.value)}
-                                className={`${TEXT_INPUT_CLASS} focus:ring-2 focus:ring-warning-500`} placeholder="e.g. Bounced twice, gone stale" />
-                        </div>
-                        <div className="flex justify-end gap-3 pt-2">
-                            <button type="button" onClick={closeModal} className="px-4 py-2 text-xs font-semibold text-gray-600 dark:text-slate-300 bg-gray-100 dark:bg-slate-700 hover:bg-gray-200 dark:hover:bg-slate-600 rounded-lg cursor-pointer">Cancel</button>
-                            <button type="button" disabled={submittingAction} onClick={confirmReplace}
-                                className="px-4 py-2 text-xs font-bold text-white bg-warning-600 hover:bg-warning-700 rounded-lg shadow-xs cursor-pointer disabled:opacity-50">
-                                {submittingAction ? 'Processing...' : 'Issue Replacement'}
-                            </button>
-                        </div>
-                    </div>
-                )}
-            </Modal>
+            {/* 5. Shared Replace Cheque Modal */}
+            <ReplaceChequeModal
+                isOpen={actionModalType === 'replace' && Boolean(selectedItem)}
+                onClose={closeModal}
+                chequeRecordId={selectedItem?.cheque_record_id}
+                apPaymentId={selectedItem?.ap_payment_id}
+                initialData={selectedItem}
+                onReplaced={refreshAll}
+                onPrintReplacement={handlePrintOutbound}
+            />
+
+            {/* 6. Shared Delete Erroneous Payment Modal */}
+            <DeletePaymentModal
+                isOpen={actionModalType === 'delete' && Boolean(selectedItem)}
+                onClose={closeModal}
+                chequeRecordId={selectedItem?.cheque_record_id}
+                apPaymentId={selectedItem?.ap_payment_id}
+                initialData={selectedItem}
+                onDeleted={refreshAll}
+                onSwitchToVoid={(target) => {
+                    setSelectedItem({ ...selectedItem, ...target, direction: 'outbound' });
+                    setVoidReasonInput('');
+                    setActionModalType('void');
+                }}
+                onSwitchToReplace={(target) => {
+                    setSelectedItem({ ...selectedItem, ...target, direction: 'outbound' });
+                    setActionModalType('replace');
+                }}
+            />
 
             {/* 6. Cheque History Modal */}
             <Modal isOpen={actionModalType === 'history'} onClose={closeModal} title="Cheque Audit & Clearance History">

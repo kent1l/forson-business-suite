@@ -197,9 +197,19 @@ const BillsTab = ({ supplier, canManage }) => {
                         <span className="font-mono text-sm text-gray-900 dark:text-slate-100">{bill.bill_number || `Bill #${bill.bill_id}`}</span>
                         <StatusBadge tone={BILL_STATUS_TONE[bill.status] || 'neutral'} label={bill.status} />
                     </div>
-                    <div className="mt-1 text-sm text-gray-600 dark:text-slate-400 flex justify-between">
+                    <div className="mt-1 text-sm text-gray-600 dark:text-slate-400 flex flex-wrap justify-between gap-2">
                         <span>Total: {formatCurrency(bill.total_amount)}</span>
                         <span>Paid: {formatCurrency(bill.amount_paid)}</span>
+                        {Number(bill.scheduled_amount) > 0 && (
+                            <span className="text-warning-700 dark:text-warning-400">
+                                Scheduled: {formatCurrency(bill.scheduled_amount)}
+                            </span>
+                        )}
+                        {bill.available_to_schedule !== undefined && bill.status !== 'Paid' && (
+                            <span className="font-semibold text-gray-900 dark:text-slate-100">
+                                Available: {formatCurrency(bill.available_to_schedule)}
+                            </span>
+                        )}
                     </div>
                     {/* The receipt behind the payable, named right on the row: before paying,
                         the question is which delivery this bill is charging for, and a bill
@@ -300,13 +310,16 @@ const BillsTab = ({ supplier, canManage }) => {
 
 const PaymentsTab = ({ supplierId }) => {
     const [payments, setPayments] = useState([]);
+    const [includeHistory, setIncludeHistory] = useState(false);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
         (async () => {
             setLoading(true);
             try {
-                const { data } = await api.get(`/ap/suppliers/${supplierId}/payments`);
+                const { data } = await api.get(`/ap/suppliers/${supplierId}/payments`, {
+                    params: { include_history: includeHistory ? 'true' : undefined },
+                });
                 setPayments(data?.data || []);
             } catch {
                 toast.error('Failed to load payments');
@@ -314,22 +327,40 @@ const PaymentsTab = ({ supplierId }) => {
                 setLoading(false);
             }
         })();
-    }, [supplierId]);
+    }, [supplierId, includeHistory]);
 
     if (loading) return <div className="p-4 text-sm text-gray-500 dark:text-slate-400">Loading payments...</div>;
 
     return (
         <div className="p-4 space-y-3">
+            <div className="flex justify-end">
+                <label className="flex items-center gap-1.5 text-xs text-gray-600 dark:text-slate-400 cursor-pointer select-none">
+                    <input
+                        type="checkbox"
+                        checked={includeHistory}
+                        onChange={(e) => setIncludeHistory(e.target.checked)}
+                        className="rounded text-primary-600 focus:ring-primary-500"
+                    />
+                    <span>Show replaced / voided attempts</span>
+                </label>
+            </div>
             {payments.length === 0 && <p className="text-sm text-gray-500 dark:text-slate-400">No payments recorded for this supplier.</p>}
             {payments.map((p) => (
                 <div key={p.payment_id} className="border border-gray-200 dark:border-slate-700 rounded-lg p-3 text-sm">
                     <div className="flex items-center justify-between">
                         <span className="text-gray-900 dark:text-slate-100 font-medium">{formatCurrency(p.amount)}</span>
-                        <StatusBadge tone={p.pdc_status === 'CLEARED' ? 'success' : p.pdc_status === 'BOUNCED' ? 'danger' : 'info'} label={p.pdc_status} />
+                        <StatusBadge tone={p.pdc_status === 'CLEARED' ? 'success' : p.pdc_status === 'BOUNCED' ? 'danger' : ['REPLACED', 'VOID'].includes(p.pdc_status) ? 'neutral' : 'info'} label={p.pdc_status} />
                     </div>
                     <div className="mt-1 text-gray-500 dark:text-slate-400">
-                        {new Date(p.payment_date).toLocaleDateString()} · {p.method_name || 'Unknown method'} {p.reference_number ? `· Ref ${p.reference_number}` : ''}
+                        {String(p.cheque_date || p.payment_date || '').slice(0, 10)} · {p.method_name || 'Unknown method'}
+                        {p.cheque_number ? ` · Cheque #${p.cheque_number}` : (p.reference_number ? ` · Ref ${p.reference_number}` : '')}
                     </div>
+                    {(p.replaces_cheque_number || p.replaced_by_cheque_number) && (
+                        <div className="mt-1 text-xs font-mono text-primary-700 dark:text-primary-400">
+                            {p.replaces_cheque_number && <span>↳ Replaces #{p.replaces_cheque_number} </span>}
+                            {p.replaced_by_cheque_number && <span>→ Replaced by #{p.replaced_by_cheque_number}</span>}
+                        </div>
+                    )}
                     {p.allocations?.length > 0 && (
                         <div className="mt-1 text-xs text-gray-500 dark:text-slate-500">
                             Applied to: {p.allocations.map(a => a.bill_number || `Bill #${a.bill_id}`).join(', ')}

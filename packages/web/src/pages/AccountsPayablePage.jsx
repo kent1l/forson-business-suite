@@ -163,7 +163,7 @@ const AccountsPayablePage = ({ onNavigate, pageState }) => {
                     <OverviewTab overview={overview} onOpenSupplier={handleOpenSupplier} />
                 )}
                 {activeTab === 'payments' && (
-                    <PaymentsRegisterTable refreshToken={paymentsRefreshToken} focusPaymentId={focusPaymentId} onClearFocus={() => setFocusPaymentId(null)} />
+                    <PaymentsRegisterTable refreshToken={paymentsRefreshToken} focusPaymentId={focusPaymentId} onClearFocus={() => setFocusPaymentId(null)} onDataMutated={handleRefresh} />
                 )}
             </ErrorBoundary>
 

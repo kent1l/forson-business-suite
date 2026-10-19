@@ -28,6 +28,8 @@ const PDC_STATUS_TONE = {
     DEPOSITED: 'info',
     VOID: 'neutral',
     REPLACED: 'neutral',
+    DELETED: 'neutral',
+    STALE: 'primary',
     ISSUED: 'warning',
     HELD_FOR_RELEASE: 'warning',
 };
@@ -46,11 +48,15 @@ const PdcOutboundDeskTable = ({
     onStatusFilterChange,
     maturityFilter = 'ALL',
     onMaturityFilterChange,
+    includeDeleted = false,
+    onToggleIncludeDeleted,
     onVerifyClearance,
     onMarkBounced,
     onRedepositCheque,
     onVoidCheque,
     onReplaceCheque,
+    onDeleteCheque,
+    onRestoreCheque,
     onViewHistory,
     onPrintCheque,
 }) => {
@@ -60,12 +66,12 @@ const PdcOutboundDeskTable = ({
 
     useEffect(() => {
         setPage(1);
-    }, [searchTerm, pdcStatusFilter, maturityFilter]);
+    }, [searchTerm, pdcStatusFilter, maturityFilter, includeDeleted]);
 
     const statusCounts = useMemo(() => {
         const counts = {
             ALL: items.length,
-            ISSUED: 0, HELD_FOR_RELEASE: 0, DEPOSITED: 0, CLEARED: 0, BOUNCED: 0, VOID: 0, REPLACED: 0,
+            ISSUED: 0, HELD_FOR_RELEASE: 0, DEPOSITED: 0, CLEARED: 0, BOUNCED: 0, VOID: 0, REPLACED: 0, DELETED: 0,
         };
         items.forEach(item => {
             const st = item.pdc_status || 'ISSUED';
@@ -80,10 +86,13 @@ const PdcOutboundDeskTable = ({
             if (searchLower) {
                 const payee = (item.company_name || item.payee || '').toLowerCase();
                 const chequeNo = (item.cheque_number || '').toLowerCase();
+                const prevNo = (item.replaces_cheque_number || '').toLowerCase();
+                const nextNo = (item.replaced_by_cheque_number || '').toLowerCase();
                 const bank = (item.bank_account_name || '').toLowerCase();
                 const amount = String(item.amount || '');
                 const matchesSearch =
                     payee.includes(searchLower) || chequeNo.includes(searchLower) ||
+                    prevNo.includes(searchLower) || nextNo.includes(searchLower) ||
                     bank.includes(searchLower) || amount.includes(searchLower);
                 if (!matchesSearch) return false;
             }
@@ -168,6 +177,17 @@ const PdcOutboundDeskTable = ({
                                 <option value="STALE_CHEQUE">Stale Cheques (&gt;6 mos)</option>
                             </select>
                         </div>
+                        {onToggleIncludeDeleted && (
+                            <label className="flex items-center gap-1.5 text-xs text-gray-600 dark:text-slate-300 cursor-pointer select-none">
+                                <input
+                                    type="checkbox"
+                                    checked={includeDeleted}
+                                    onChange={(e) => onToggleIncludeDeleted(e.target.checked)}
+                                    className="rounded text-primary-600 focus:ring-primary-500"
+                                />
+                                <span>Include deleted</span>
+                            </label>
+                        )}
                         {isFiltered && (
                             <button onClick={handleClearFilters} className="px-3 py-2 text-xs font-semibold text-gray-600 dark:text-slate-300 hover:text-gray-900 dark:hover:text-slate-100 bg-gray-100 dark:bg-slate-700 hover:bg-gray-200 dark:hover:bg-slate-600 rounded-lg transition-colors flex items-center gap-1">
                                 <span>✕</span> Reset Filters
@@ -175,7 +195,7 @@ const PdcOutboundDeskTable = ({
                         )}
                     </div>
                     <div className="flex flex-wrap items-center gap-1.5 overflow-x-auto pb-1 lg:pb-0">
-                        {['ALL', 'ISSUED', 'HELD_FOR_RELEASE', 'DEPOSITED', 'CLEARED', 'BOUNCED', 'VOID', 'REPLACED'].map(st => {
+                        {['ALL', 'ISSUED', 'HELD_FOR_RELEASE', 'DEPOSITED', 'CLEARED', 'BOUNCED', 'VOID', 'REPLACED', ...(includeDeleted ? ['DELETED'] : [])].map(st => {
                             const isActive = pdcStatusFilter === st;
                             const count = statusCounts[st] || 0;
                             return (
@@ -213,92 +233,124 @@ const PdcOutboundDeskTable = ({
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-200 dark:divide-slate-700">
-                            {paginatedItems.map(item => (
-                                <tr
-                                    key={item.cheque_record_id}
-                                    {...getHighlightProps(item.cheque_record_id, 'hover:bg-gray-50 dark:hover:bg-slate-700/40 transition-colors')}
-                                >
-                                    <td className="px-4 py-4 text-xs text-gray-600 dark:text-slate-400">{item.bank_account_name || '—'}</td>
-                                    <td className="px-4 py-4 font-mono font-medium text-gray-800 dark:text-slate-200">{item.cheque_number || `#${item.cheque_record_id}`}</td>
-                                    <td className="px-4 py-4 font-semibold text-gray-900 dark:text-slate-100">{item.company_name || item.payee}</td>
-                                    <td className="px-4 py-4 text-xs">
-                                        <span className="px-2 py-0.5 bg-gray-100 dark:bg-slate-700 text-gray-700 dark:text-slate-300 rounded-md border border-gray-200 dark:border-slate-600">
-                                            {PURPOSE_LABELS[item.purpose_type] || item.purpose_type}
-                                        </span>
-                                    </td>
-                                    <td className="px-4 py-4 font-semibold text-xs text-primary-900 dark:text-primary-400">
-                                        {item.cheque_date ? new Date(item.cheque_date).toLocaleDateString() : '—'}
-                                    </td>
-                                    <td className="px-4 py-4 font-mono text-right font-bold text-gray-900 dark:text-slate-100">{formatCurrency(item.amount)}</td>
-                                    <td className="px-4 py-4">
-                                        <StatusBadge tone={MATURITY_TONE[item.maturity_status] || 'warning'} label={item.maturity_label || 'Due for Clearance'} pill={false} />
-                                    </td>
-                                    <td className="px-4 py-4">
-                                        <div className="flex flex-col items-start gap-1">
-                                            <StatusBadge tone={PDC_STATUS_TONE[item.pdc_status] || 'warning'} label={item.pdc_status} />
-                                            {item.bounce_count > 0 && (
-                                                <span className="text-[10px] font-semibold text-danger-700 dark:text-danger-400 bg-danger-50 dark:bg-danger-900/20 border border-danger-200 dark:border-danger-900/40 px-2 py-0.5 rounded-md">
-                                                    ⚠️ {item.bounce_count} {item.bounce_count === 1 ? 'Bounce' : 'Bounces'}
-                                                </span>
-                                            )}
-                                        </div>
-                                    </td>
-                                    <td className="px-4 py-4 text-center whitespace-nowrap">
-                                        <div className="flex justify-center items-center gap-1.5 flex-wrap">
-                                            {['ISSUED', 'HELD_FOR_RELEASE', 'DEPOSITED'].includes(item.pdc_status) && (
-                                                <>
-                                                    <button type="button" onClick={() => onVerifyClearance && onVerifyClearance(item)}
-                                                        className="px-2.5 py-1.5 bg-success-600 hover:bg-success-700 text-white rounded-lg text-xs font-bold shadow-xs cursor-pointer">
-                                                        ✓ Clear
-                                                    </button>
-                                                    <button type="button" onClick={() => onMarkBounced && onMarkBounced(item)}
-                                                        className="px-2.5 py-1.5 bg-danger-600 hover:bg-danger-700 text-white rounded-lg text-xs font-bold shadow-xs cursor-pointer">
-                                                        ⚠️ Bounce
-                                                    </button>
-                                                </>
-                                            )}
-                                            {['ISSUED', 'HELD_FOR_RELEASE'].includes(item.pdc_status) && (
-                                                <button type="button" onClick={() => onVoidCheque && onVoidCheque(item)}
-                                                    className="px-2.5 py-1.5 bg-gray-200 dark:bg-slate-700 hover:bg-gray-300 dark:hover:bg-slate-600 text-gray-700 dark:text-slate-200 rounded-lg text-xs font-bold cursor-pointer"
-                                                    title="Void this cheque — written incorrectly, never handed over">
-                                                    ✕ Void
-                                                </button>
-                                            )}
-                                            {item.pdc_status === 'BOUNCED' && (
-                                                <>
+                            {paginatedItems.map(item => {
+                                const isHiddenLegacy = Boolean(item.is_deleted && item.pdc_status !== 'DELETED');
+                                const canReplaceRow = !['CLEARED', 'VOID', 'REPLACED', 'DELETED'].includes(item.pdc_status);
+                                const canDeleteRow = ['ISSUED', 'HELD_FOR_RELEASE', 'STALE'].includes(item.pdc_status);
+                                return (
+                                    <tr
+                                        key={item.cheque_record_id}
+                                        {...getHighlightProps(item.cheque_record_id, 'hover:bg-gray-50 dark:hover:bg-slate-700/40 transition-colors')}
+                                    >
+                                        <td className="px-4 py-4 text-xs text-gray-600 dark:text-slate-400">{item.bank_account_name || '—'}</td>
+                                        <td className="px-4 py-4 font-mono font-medium text-gray-800 dark:text-slate-200">
+                                            <div className="flex flex-col gap-0.5">
+                                                <span>{item.cheque_number || `#${item.cheque_record_id}`}</span>
+                                                {item.replaces_cheque_number && (
+                                                    <span className="text-[10px] font-sans text-primary-700 dark:text-primary-400">
+                                                        ↳ Replaces #{item.replaces_cheque_number}
+                                                    </span>
+                                                )}
+                                                {item.replaced_by_cheque_number && (
+                                                    <span className="text-[10px] font-sans text-warning-700 dark:text-warning-400">
+                                                        → Replaced by #{item.replaced_by_cheque_number}
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </td>
+                                        <td className="px-4 py-4 font-semibold text-gray-900 dark:text-slate-100">{item.company_name || item.payee}</td>
+                                        <td className="px-4 py-4 text-xs">
+                                            <span className="px-2 py-0.5 bg-gray-100 dark:bg-slate-700 text-gray-700 dark:text-slate-300 rounded-md border border-gray-200 dark:border-slate-600">
+                                                {PURPOSE_LABELS[item.purpose_type] || item.purpose_type}
+                                            </span>
+                                        </td>
+                                        <td className="px-4 py-4 font-semibold text-xs text-primary-900 dark:text-primary-400">
+                                            {item.cheque_date ? String(item.cheque_date).slice(0, 10) : '—'}
+                                        </td>
+                                        <td className="px-4 py-4 font-mono text-right font-bold text-gray-900 dark:text-slate-100">{formatCurrency(item.amount)}</td>
+                                        <td className="px-4 py-4">
+                                            <StatusBadge tone={MATURITY_TONE[item.maturity_status] || 'warning'} label={item.maturity_label || 'Due for Clearance'} pill={false} />
+                                        </td>
+                                        <td className="px-4 py-4">
+                                            <div className="flex flex-col items-start gap-1">
+                                                <StatusBadge tone={PDC_STATUS_TONE[item.pdc_status] || 'warning'} label={item.pdc_status} />
+                                                {isHiddenLegacy && (
+                                                    <span className="text-[10px] font-semibold text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800 px-1.5 py-0.5 rounded">
+                                                        Hidden in Print History
+                                                    </span>
+                                                )}
+                                                {item.bounce_count > 0 && (
+                                                    <span className="text-[10px] font-semibold text-danger-700 dark:text-danger-400 bg-danger-50 dark:bg-danger-900/20 border border-danger-200 dark:border-danger-900/40 px-2 py-0.5 rounded-md">
+                                                        ⚠️ {item.bounce_count} {item.bounce_count === 1 ? 'Bounce' : 'Bounces'}
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </td>
+                                        <td className="px-4 py-4 text-center whitespace-nowrap">
+                                            <div className="flex justify-center items-center gap-1.5 flex-wrap">
+                                                {['ISSUED', 'HELD_FOR_RELEASE', 'DEPOSITED'].includes(item.pdc_status) && !isHiddenLegacy && (
+                                                    <>
+                                                        <button type="button" onClick={() => onVerifyClearance && onVerifyClearance(item)}
+                                                            className="px-2.5 py-1.5 bg-success-600 hover:bg-success-700 text-white rounded-lg text-xs font-bold shadow-xs cursor-pointer">
+                                                            ✓ Clear
+                                                        </button>
+                                                        <button type="button" onClick={() => onMarkBounced && onMarkBounced(item)}
+                                                            className="px-2.5 py-1.5 bg-danger-600 hover:bg-danger-700 text-white rounded-lg text-xs font-bold shadow-xs cursor-pointer">
+                                                            ⚠️ Bounce
+                                                        </button>
+                                                    </>
+                                                )}
+                                                {item.pdc_status === 'BOUNCED' && (
                                                     <button type="button" onClick={() => onRedepositCheque && onRedepositCheque(item)}
                                                         className="px-2.5 py-1.5 bg-primary-600 hover:bg-primary-700 text-white rounded-lg text-xs font-bold shadow-xs cursor-pointer">
                                                         🔄 Re-deposit
                                                     </button>
-                                                    <button type="button" onClick={() => onReplaceCheque && onReplaceCheque(item)}
+                                                )}
+                                                {canReplaceRow && onReplaceCheque && (
+                                                    <button type="button" onClick={() => onReplaceCheque(item)}
                                                         className="px-2.5 py-1.5 bg-warning-600 hover:bg-warning-700 text-white rounded-lg text-xs font-bold shadow-xs cursor-pointer"
-                                                        title="Issue a replacement cheque for the same obligation">
+                                                        title="Replace this cheque (wrong date, spoiled leaf, wrong bank, bounced, or stale) and transfer bill allocations">
                                                         ⟳ Replace
                                                     </button>
-                                                </>
-                                            )}
-                                            {item.maturity_status === 'STALE_CHEQUE' && !['CLEARED', 'VOID', 'REPLACED'].includes(item.pdc_status) && (
-                                                <button type="button" onClick={() => onReplaceCheque && onReplaceCheque(item)}
-                                                    className="px-2.5 py-1.5 bg-warning-600 hover:bg-warning-700 text-white rounded-lg text-xs font-bold shadow-xs cursor-pointer">
-                                                    ⟳ Replace (Stale)
-                                                </button>
-                                            )}
-                                            {onPrintCheque && ['ISSUED', 'HELD_FOR_RELEASE'].includes(item.pdc_status) && (
-                                                <button type="button" onClick={() => onPrintCheque(item)}
-                                                    className="px-2.5 py-1.5 bg-gray-100 dark:bg-slate-700 hover:bg-gray-200 dark:hover:bg-slate-600 text-gray-700 dark:text-slate-200 rounded-lg text-xs font-semibold border border-gray-200 dark:border-slate-600 cursor-pointer">
-                                                    🖨️ Print
-                                                </button>
-                                            )}
-                                            {onViewHistory && (
-                                                <button type="button" onClick={() => onViewHistory(item)}
-                                                    className="px-2.5 py-1.5 bg-gray-100 dark:bg-slate-700 hover:bg-gray-200 dark:hover:bg-slate-600 text-gray-700 dark:text-slate-200 rounded-lg text-xs font-semibold border border-gray-200 dark:border-slate-600 cursor-pointer">
-                                                    📜 History
-                                                </button>
-                                            )}
-                                        </div>
-                                    </td>
-                                </tr>
-                            ))}
+                                                )}
+                                                {['ISSUED', 'HELD_FOR_RELEASE', 'BOUNCED', 'STALE'].includes(item.pdc_status) && onVoidCheque && (
+                                                    <button type="button" onClick={() => onVoidCheque(item)}
+                                                        className="px-2.5 py-1.5 bg-gray-200 dark:bg-slate-700 hover:bg-gray-300 dark:hover:bg-slate-600 text-gray-700 dark:text-slate-200 rounded-lg text-xs font-bold cursor-pointer"
+                                                        title="Void this physical cheque leaf — keeps the number reserved and releases bill allocations">
+                                                        ✕ Void
+                                                    </button>
+                                                )}
+                                                {canDeleteRow && onDeleteCheque && (
+                                                    <button type="button" onClick={() => onDeleteCheque(item)}
+                                                        className="px-2.5 py-1.5 bg-danger-50 dark:bg-danger-900/20 hover:bg-danger-100 dark:hover:bg-danger-900/40 text-danger-700 dark:text-danger-300 border border-danger-200 dark:border-danger-800 rounded-lg text-xs font-bold cursor-pointer"
+                                                        title="Delete erroneous payment entry and release bill allocations">
+                                                        🗑️ Delete
+                                                    </button>
+                                                )}
+                                                {isHiddenLegacy && onRestoreCheque && (
+                                                    <button type="button" onClick={() => onRestoreCheque(item)}
+                                                        className="px-2.5 py-1.5 bg-amber-100 dark:bg-amber-900/40 hover:bg-amber-200 text-amber-900 dark:text-amber-200 rounded-lg text-xs font-bold cursor-pointer"
+                                                        title="Restore visibility in Print History">
+                                                        👁️ Restore
+                                                    </button>
+                                                )}
+                                                {onPrintCheque && ['ISSUED', 'HELD_FOR_RELEASE'].includes(item.pdc_status) && !isHiddenLegacy && (
+                                                    <button type="button" onClick={() => onPrintCheque(item)}
+                                                        className="px-2.5 py-1.5 bg-gray-100 dark:bg-slate-700 hover:bg-gray-200 dark:hover:bg-slate-600 text-gray-700 dark:text-slate-200 rounded-lg text-xs font-semibold border border-gray-200 dark:border-slate-600 cursor-pointer">
+                                                        🖨️ Print
+                                                    </button>
+                                                )}
+                                                {onViewHistory && (
+                                                    <button type="button" onClick={() => onViewHistory(item)}
+                                                        className="px-2.5 py-1.5 bg-gray-100 dark:bg-slate-700 hover:bg-gray-200 dark:hover:bg-slate-600 text-gray-700 dark:text-slate-200 rounded-lg text-xs font-semibold border border-gray-200 dark:border-slate-600 cursor-pointer">
+                                                        📜 History
+                                                    </button>
+                                                )}
+                                            </div>
+                                        </td>
+                                    </tr>
+                                );
+                            })}
                             {filteredItems.length === 0 && (
                                 <tr>
                                     <td colSpan={9} className="px-6 py-12 text-center text-gray-500 dark:text-slate-400">

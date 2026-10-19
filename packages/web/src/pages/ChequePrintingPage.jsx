@@ -6,6 +6,8 @@ import api from '../api';
 import Icon from '../components/ui/Icon';
 import InfoTip from '../components/ui/InfoTip';
 import Modal from '../components/ui/Modal';
+import ReplaceChequeModal from '../components/accounts-payable/ReplaceChequeModal';
+import DeletePaymentModal from '../components/accounts-payable/DeletePaymentModal';
 import { ICONS } from '../constants';
 
 const blankRow = () => ({ date: format(new Date(), 'yyyy-MM-dd'), payee: '', amount: '', memo: '' });
@@ -13,6 +15,7 @@ const blankRow = () => ({ date: format(new Date(), 'yyyy-MM-dd'), payee: '', amo
 const STATUS_BADGE_CLASS = {
     VOID: 'bg-danger-100 text-danger-700 dark:bg-danger-900/30 dark:text-danger-400',
     REPLACED: 'bg-danger-100 text-danger-700 dark:bg-danger-900/30 dark:text-danger-400',
+    DELETED: 'bg-gray-200 text-gray-600 dark:bg-slate-700 dark:text-slate-400',
     BOUNCED: 'bg-warning-100 text-warning-700 dark:bg-warning-900/30 dark:text-warning-400',
     HELD_FOR_RELEASE: 'bg-warning-100 text-warning-700 dark:bg-warning-900/30 dark:text-warning-400'
 };
@@ -37,34 +40,52 @@ const ChequePrintingPage = () => {
     const [testPrintMode, setTestPrintMode] = useState(false);
     const [historyQuery, setHistoryQuery] = useState('');
     const [historyBankFilter, setHistoryBankFilter] = useState('all');
+    const [includeDeletedHistory, setIncludeDeletedHistory] = useState(false);
     const [pendingHistoryEntry, setPendingHistoryEntry] = useState(null);
     const [confirmOpen, setConfirmOpen] = useState(false);
-    // Cheques the user explicitly removed from the queue this session — kept out
-    // of state so a later re-render (e.g. typing in another row) doesn't cause the
-    // auto-append effect to silently bring them back.
+    const [replaceTarget, setReplaceTarget] = useState(null);
+    const [deleteTarget, setDeleteTarget] = useState(null);
     const dismissedQueueIdsRef = useRef(new Set());
 
     const selectedTemplate = useMemo(() => templates.find((tpl) => String(tpl.id) === String(selectedTemplateId)), [templates, selectedTemplateId]);
 
-    const loadData = async () => {
+    const loadData = async (showDeleted = includeDeletedHistory) => {
         try {
-            const [templatesRes, historyRes, profilesRes] = await Promise.all([api.get('/cheques/templates'), api.get('/cheques/history'), api.get('/cheques/printer-profiles')]);
+            const [templatesRes, historyRes, profilesRes] = await Promise.all([
+                api.get('/cheques/templates'),
+                api.get('/cheques/history', { params: { include_deleted: showDeleted ? 'true' : undefined } }),
+                api.get('/cheques/printer-profiles')
+            ]);
             const templateRows = templatesRes.data || [];
             const profileRows = profilesRes.data || [];
+            const historyRows = historyRes.data || [];
             setTemplates(templateRows);
-            setHistory(historyRes.data || []);
+            setHistory(historyRows);
             setPrinterProfiles(profileRows);
             if (!selectedTemplateId && templateRows.length) setSelectedTemplateId(String(templateRows[0].id));
             if (!selectedProfileId && profileRows.length) {
                 const defaultProfile = profileRows.find((profile) => profile.is_default) || profileRows[0];
                 setSelectedProfileId(String(defaultProfile.id));
             }
+            // Remove any queued cheque rows whose record was voided, replaced, or deleted
+            const invalidIds = new Set(
+                historyRows
+                    .filter((h) => ['VOID', 'REPLACED', 'DELETED'].includes(h.status) || h.is_deleted)
+                    .map((h) => h.id)
+            );
+            if (invalidIds.size > 0) {
+                setRows((prev) => {
+                    const filtered = prev.filter((r) => !r.cheque_record_id || !invalidIds.has(r.cheque_record_id));
+                    return filtered.length ? filtered : [blankRow()];
+                });
+            }
         } catch (error) {
             toast.error(error?.response?.data?.message || 'Failed to load cheque module.');
         }
     };
 
-    useEffect(() => { loadData(); }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    useEffect(() => { loadData(includeDeletedHistory); }, [includeDeletedHistory]);
 
     const updateRow = (idx, field, value) => {
         setRows((prev) => {
@@ -100,7 +121,7 @@ const ChequePrintingPage = () => {
     const normalizeHistoryEntryToRow = (entry) => ({
         payee: entry.payee || '',
         amount: Number(entry.amount || 0).toFixed(2),
-        date: entry.cheque_date ? format(new Date(entry.cheque_date), 'yyyy-MM-dd') : format(new Date(), 'yyyy-MM-dd'),
+        date: entry.cheque_date ? String(entry.cheque_date).slice(0, 10) : format(new Date(), 'yyyy-MM-dd'),
         memo: entry.memo || ''
     });
 
@@ -116,7 +137,7 @@ const ChequePrintingPage = () => {
             const matchesBank = historyBankFilter === 'all' || bank === historyBankFilter;
             if (!matchesBank) return false;
             if (!query) return true;
-            return [entry.payee, entry.memo, bank, entry.cheque_number, String(entry.amount)]
+            return [entry.payee, entry.memo, bank, entry.cheque_number, entry.replaces_cheque_number, entry.replaced_by_cheque_number, String(entry.amount)]
                 .filter(Boolean)
                 .some((value) => String(value).toLowerCase().includes(query));
         });
@@ -127,12 +148,9 @@ const ChequePrintingPage = () => {
         return banks.sort((a, b) => a.localeCompare(b));
     }, [history]);
 
-    // Cheques issued elsewhere (e.g. the AP/Treasury Desk) land here as
-    // already-persisted, unprinted cheque_records rows — this is the "continuous
-    // printing" queue: anything issued but not yet printed and still valid to
-    // print (not VOID/REPLACED) is a candidate to auto-populate into the editor.
+    // Both supplier and expense cheques issued from Treasury land here as unprinted cheque_records
     const pendingQueueEntries = useMemo(() => (
-        history.filter((entry) => entry.ap_payment_id && !entry.is_printed && !['VOID', 'REPLACED'].includes(entry.status))
+        history.filter((entry) => (entry.ap_payment_id || entry.expense_id) && !entry.is_printed && !entry.is_deleted && !['VOID', 'REPLACED', 'DELETED'].includes(entry.status))
     ), [history]);
 
     const queuedRecordIds = useMemo(() => (
@@ -226,11 +244,8 @@ const ChequePrintingPage = () => {
                 toast('Fallback PDF renderer was used because pdf-lib is unavailable.', { icon: '⚠️' });
             }
 
-            // Rows sourced from an already-issued (e.g. AP/Treasury) cheque record
-            // are already persisted — only ad-hoc rows entered directly in this
-            // queue need a new cheque_records row.
             const rowsToPersist = sourceRows.filter((row) => !row.cheque_record_id);
-            if (persist && rowsToPersist.length) {
+            if (!testPrintMode && persist && rowsToPersist.length) {
                 const dbPayloadRows = rowsToPersist.map((row) => ({
                     ...row,
                     payee: (row.payee || '').trim(),
@@ -241,9 +256,12 @@ const ChequePrintingPage = () => {
                     records: dbPayloadRows
                 });
             }
-            if (persist) {
+            if (!testPrintMode && persist) {
                 toast.success(rowsToPersist.length ? 'Cheque(s) generated and saved to history.' : 'Cheque(s) generated.');
                 setRows([blankRow()]);
+                await loadData();
+            } else if (testPrintMode) {
+                toast.success('Test alignment PDF generated — cheque(s) remain in the queue.');
                 await loadData();
             }
 
@@ -264,8 +282,8 @@ const ChequePrintingPage = () => {
     };
 
     const handleReprint = async (entry) => {
-        if (['VOID', 'REPLACED'].includes(entry.status)) {
-            return toast.error(`Cannot print a cheque with status ${entry.status}.`);
+        if (['VOID', 'REPLACED', 'DELETED'].includes(entry.status) || entry.is_deleted) {
+            return toast.error(`Cannot print a cheque with status ${entry.is_deleted && !['VOID', 'REPLACED', 'DELETED'].includes(entry.status) ? 'HIDDEN' : entry.status}.`);
         }
         const entryTemplate = templates.find((tpl) => String(tpl.id) === String(entry.template_id)) || selectedTemplate;
         if (!entryTemplate) return toast.error('Select a preset for reprint.');
@@ -273,19 +291,36 @@ const ChequePrintingPage = () => {
         await generatePdf([{
             payee: entry.payee,
             amount: Number(entry.amount).toFixed(2),
-            date: entry.cheque_date ? format(new Date(entry.cheque_date), 'yyyy-MM-dd') : format(new Date(), 'yyyy-MM-dd'),
+            date: entry.cheque_date ? String(entry.cheque_date).slice(0, 10) : format(new Date(), 'yyyy-MM-dd'),
             memo: entry.memo || '',
             cheque_record_id: entry.id
         }], false, entryTemplate);
     };
 
-    const handleDelete = async (id) => {
+    const handleDeleteOrRemove = async (entry) => {
+        const isFinancial = Boolean(entry.ap_payment_id || entry.expense_id || entry.cheque_number);
+        if (isFinancial) {
+            setDeleteTarget(entry);
+            return;
+        }
         try {
-            await api.delete(`/cheques/history/${id}`);
-            toast.success('Record removed.');
+            await api.delete(`/cheques/history/${entry.id}`);
+            toast.success('Standalone print entry removed.');
             await loadData();
         } catch (error) {
-            toast.error(error?.response?.data?.message || 'Delete failed.');
+            toast.error(error?.response?.data?.message || 'Remove failed.');
+        }
+    };
+
+    const handleRestoreVisibility = async (entry) => {
+        try {
+            await api.post(`/ap/outbound-clearance/${entry.id}/restore`, {
+                notes: 'Restored hidden cheque visibility from Print History',
+            });
+            toast.success(`Cheque #${entry.cheque_number || entry.id} restored.`);
+            await loadData();
+        } catch (error) {
+            toast.error(error?.response?.data?.message || 'Failed to restore visibility.');
         }
     };
 
@@ -308,6 +343,9 @@ const ChequePrintingPage = () => {
     };
 
     const handleEditFromHistory = (entry) => {
+        if (entry.ap_payment_id || entry.expense_id) {
+            return toast.error('Financial cheques cannot be edited as ad-hoc copies. Use Replace Cheque to change the date, bank, or cheque number.');
+        }
         const currentRows = rows.filter((row) => row.payee || row.amount || row.memo);
         if (currentRows.length) {
             setPendingHistoryEntry(entry);
@@ -410,7 +448,7 @@ const ChequePrintingPage = () => {
                                                     data-row={idx}
                                                     data-field-index={fieldIndex}
                                                     disabled={isQueued}
-                                                    title={isQueued ? 'Issued from Treasury — edit via Accounts Payable' : undefined}
+                                                    title={isQueued ? 'Issued from Treasury — use Replace Cheque to modify' : undefined}
                                                 />
                                             </div>
                                         ) : (
@@ -424,7 +462,7 @@ const ChequePrintingPage = () => {
                                                 data-row={idx}
                                                 data-field-index={fieldIndex}
                                                 disabled={isQueued}
-                                                title={isQueued ? 'Issued from Treasury — edit via Accounts Payable' : undefined}
+                                                title={isQueued ? 'Issued from Treasury — use Replace Cheque to modify' : undefined}
                                             />
                                         )}
                                     </div>
@@ -501,7 +539,7 @@ const ChequePrintingPage = () => {
                             <input type="checkbox" className="rounded text-primary-600 focus:ring-primary-500" checked={testPrintMode} onChange={(e) => setTestPrintMode(e.target.checked)} />
                             Test print mode
                             <InfoTip label="Test print mode">
-                                Watermarks the PDF and skips saving to history — use this to check alignment on plain paper before committing to real cheque stock.
+                                Watermarks the PDF and logs TEST_PDF_GENERATED without marking the cheque printed — use this to check alignment on plain paper before committing to real cheque stock.
                             </InfoTip>
                         </label>
                     </div>
@@ -515,13 +553,13 @@ const ChequePrintingPage = () => {
 
             <Modal isOpen={historyOpen} onClose={() => setHistoryOpen(false)} title="Cheque History" maxWidth="max-w-6xl">
                 <div className="space-y-4">
-                    <p className="text-xs text-gray-500 dark:text-slate-400 -mt-2">Review past cheque records and reprint as needed.</p>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                        <div className="relative">
+                    <p className="text-xs text-gray-500 dark:text-slate-400 -mt-2">Review past cheque records, replacement chains, and reprint or replace as needed.</p>
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-center">
+                        <div className="relative md:col-span-2">
                             <Icon path={ICONS.search} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 dark:text-slate-500" />
                             <input
                                 className={`${INPUT_BASE} pl-9`}
-                                placeholder="Search payee, memo, amount or bank"
+                                placeholder="Search payee, cheque #, replacement #, memo, amount or bank"
                                 value={historyQuery}
                                 onChange={(e) => setHistoryQuery(e.target.value)}
                             />
@@ -536,7 +574,18 @@ const ChequePrintingPage = () => {
                                 <option key={bank} value={bank}>{bank}</option>
                             ))}
                         </select>
-                        <div className="text-sm text-gray-600 dark:text-slate-400 flex items-center md:justify-end">{filteredHistory.length} of {history.length} records</div>
+                        <div className="flex items-center justify-between md:justify-end gap-3 text-xs text-gray-600 dark:text-slate-400">
+                            <label className="flex items-center gap-1.5 cursor-pointer select-none">
+                                <input
+                                    type="checkbox"
+                                    checked={includeDeletedHistory}
+                                    onChange={(e) => setIncludeDeletedHistory(e.target.checked)}
+                                    className="rounded text-primary-600 focus:ring-primary-500"
+                                />
+                                <span>Include deleted</span>
+                            </label>
+                            <span>{filteredHistory.length} of {history.length}</span>
+                        </div>
                     </div>
 
                     <div className="max-h-[55vh] overflow-auto border border-gray-200 dark:border-slate-700 rounded-lg">
@@ -549,32 +598,82 @@ const ChequePrintingPage = () => {
                                     <th className="p-2 text-left">Bank</th>
                                     <th className="p-2 text-left">Cheque #</th>
                                     <th className="p-2 text-left">Status</th>
-                                    <th className="p-2 text-left">Date Issued</th>
+                                    <th className="p-2 text-left">Cheque Date</th>
                                     <th className="p-2 text-right">Actions</th>
                                 </tr>
                             </thead>
                             <tbody className="text-gray-700 dark:text-slate-300">
                                 {filteredHistory.map((entry) => {
-                                    const blocked = ['VOID', 'REPLACED'].includes(entry.status);
+                                    const isHiddenLegacy = Boolean(entry.is_deleted && entry.status !== 'DELETED');
+                                    const isFinancial = Boolean(entry.ap_payment_id || entry.expense_id || entry.cheque_number);
+                                    const blockedPrint = ['VOID', 'REPLACED', 'DELETED'].includes(entry.status) || isHiddenLegacy;
+                                    const canReplace = isFinancial && !['CLEARED', 'VOID', 'REPLACED', 'DELETED'].includes(entry.status);
                                     return (
-                                        <tr key={entry.id} className="border-t border-gray-200 dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-700/40">
-                                            <td className="p-2 whitespace-nowrap">{format(new Date(entry.created_at), 'yyyy-MM-dd HH:mm')}</td>
-                                            <td className="p-2">{entry.payee}</td>
-                                            <td className="p-2">{entry.amount}</td>
-                                            <td className="p-2">{entry.bank_account_name || entry.bank_preset || '-'}</td>
-                                            <td className="p-2 font-mono whitespace-nowrap">{entry.cheque_number || '-'}</td>
-                                            <td className="p-2">
-                                                {entry.status && (
-                                                    <span className={`inline-block px-2 py-0.5 rounded-full text-[11px] font-semibold ${STATUS_BADGE_CLASS[entry.status] || DEFAULT_STATUS_BADGE_CLASS}`}>
-                                                        {entry.status}
-                                                    </span>
-                                                )}
+                                        <tr key={entry.id} className={`border-t border-gray-200 dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-700/40 ${entry.status === 'DELETED' ? 'opacity-60' : ''}`}>
+                                            <td className="p-2 whitespace-nowrap text-xs">{format(new Date(entry.created_at), 'yyyy-MM-dd HH:mm')}</td>
+                                            <td className="p-2 font-medium">{entry.payee}</td>
+                                            <td className="p-2 font-mono">{entry.amount}</td>
+                                            <td className="p-2 text-xs">{entry.bank_account_name || entry.bank_preset || '-'}</td>
+                                            <td className="p-2 font-mono whitespace-nowrap">
+                                                <div className="flex flex-col gap-0.5">
+                                                    <span>{entry.cheque_number || '-'}</span>
+                                                    {entry.replaces_cheque_number && (
+                                                        <span className="text-[10px] font-sans text-primary-700 dark:text-primary-400">
+                                                            ↳ Replaces #{entry.replaces_cheque_number}
+                                                        </span>
+                                                    )}
+                                                    {entry.replaced_by_cheque_number && (
+                                                        <span className="text-[10px] font-sans text-warning-700 dark:text-warning-400">
+                                                            → Replaced by #{entry.replaced_by_cheque_number}
+                                                        </span>
+                                                    )}
+                                                </div>
                                             </td>
-                                            <td className="p-2 whitespace-nowrap">{entry.cheque_date ? format(new Date(entry.cheque_date), 'yyyy-MM-dd') : '-'}</td>
-                                            <td className="p-2 text-right space-x-2 whitespace-nowrap">
-                                                <button className={BUTTON_PRIMARY} onClick={() => handleEditFromHistory(entry)}><Icon path={ICONS.edit} className="h-4 w-4" />Edit</button>
-                                                <button className={BUTTON_SECONDARY} onClick={() => handleReprint(entry)} disabled={blocked} title={blocked ? `Cannot print a cheque with status ${entry.status}` : undefined}><Icon path={ICONS.history} className="h-4 w-4" />Reprint</button>
-                                                <button className={BUTTON_DANGER} onClick={() => handleDelete(entry.id)}><Icon path={ICONS.trash} className="h-4 w-4" />Delete</button>
+                                            <td className="p-2">
+                                                <div className="flex flex-col items-start gap-1">
+                                                    {entry.status && (
+                                                        <span className={`inline-block px-2 py-0.5 rounded-full text-[11px] font-semibold ${STATUS_BADGE_CLASS[entry.status] || DEFAULT_STATUS_BADGE_CLASS}`}>
+                                                            {entry.status}
+                                                        </span>
+                                                    )}
+                                                    {isHiddenLegacy && (
+                                                        <span className="text-[10px] font-semibold text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800 px-1.5 py-0.5 rounded">
+                                                            Hidden in Print History
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            </td>
+                                            <td className="p-2 whitespace-nowrap font-mono text-xs">{entry.cheque_date ? String(entry.cheque_date).slice(0, 10) : '-'}</td>
+                                            <td className="p-2 text-right space-x-1.5 whitespace-nowrap">
+                                                {!isFinancial && entry.status !== 'DELETED' && (
+                                                    <button className={BUTTON_PRIMARY} onClick={() => handleEditFromHistory(entry)}>
+                                                        <Icon path={ICONS.edit} className="h-4 w-4" />Edit
+                                                    </button>
+                                                )}
+                                                {canReplace && (
+                                                    <button className={BUTTON_SECONDARY} onClick={() => setReplaceTarget(entry)} title="Replace cheque (change date, bank, or cheque number)">
+                                                        ⟳ Replace
+                                                    </button>
+                                                )}
+                                                {isHiddenLegacy && (
+                                                    <button className={BUTTON_SECONDARY} onClick={() => handleRestoreVisibility(entry)} title="Restore visibility in Print History">
+                                                        👁️ Restore
+                                                    </button>
+                                                )}
+                                                <button
+                                                    className={BUTTON_SECONDARY}
+                                                    onClick={() => handleReprint(entry)}
+                                                    disabled={blockedPrint}
+                                                    title={blockedPrint ? `Cannot print a ${isHiddenLegacy ? 'hidden' : entry.status} cheque` : undefined}
+                                                >
+                                                    <Icon path={ICONS.history} className="h-4 w-4" />Reprint
+                                                </button>
+                                                {entry.status !== 'DELETED' && (
+                                                    <button className={BUTTON_DANGER} onClick={() => handleDeleteOrRemove(entry)}>
+                                                        <Icon path={ICONS.trash} className="h-4 w-4" />
+                                                        {isFinancial ? 'Delete Payment' : 'Remove Entry'}
+                                                    </button>
+                                                )}
                                             </td>
                                         </tr>
                                     );
@@ -587,6 +686,33 @@ const ChequePrintingPage = () => {
                     </div>
                 </div>
             </Modal>
+
+            <ReplaceChequeModal
+                isOpen={Boolean(replaceTarget)}
+                onClose={() => setReplaceTarget(null)}
+                chequeRecordId={replaceTarget?.id}
+                apPaymentId={replaceTarget?.ap_payment_id}
+                initialData={replaceTarget}
+                onReplaced={() => loadData()}
+                onPrintReplacement={(newItem) => handleReprint({
+                    ...newItem,
+                    id: newItem.cheque_record_id || newItem.id,
+                })}
+            />
+
+            <DeletePaymentModal
+                isOpen={Boolean(deleteTarget)}
+                onClose={() => setDeleteTarget(null)}
+                chequeRecordId={deleteTarget?.id}
+                apPaymentId={deleteTarget?.ap_payment_id}
+                initialData={deleteTarget}
+                onDeleted={() => loadData()}
+                onSwitchToReplace={(target) => {
+                    const current = deleteTarget;
+                    setDeleteTarget(null);
+                    setReplaceTarget({ ...current, ...target });
+                }}
+            />
 
             <Modal isOpen={Boolean(pendingHistoryEntry)} onClose={() => setPendingHistoryEntry(null)} title="Load cheque from history">
                 <div className="space-y-4">
@@ -637,7 +763,7 @@ const ChequePrintingPage = () => {
                     {testPrintMode && (
                         <p className="text-xs text-primary-700 dark:text-primary-400 flex items-start gap-1.5">
                             <Icon path={ICONS.info} className="h-3.5 w-3.5 mt-0.5 shrink-0" />
-                            Test print mode is on — cheques will be watermarked and not saved to history as final.
+                            Test print mode is on — cheques will be watermarked and remain in the queue as unprinted.
                         </p>
                     )}
                     <div className="flex flex-wrap gap-2 justify-end">

@@ -27,7 +27,11 @@ const BLANK_FORM = {
 const inputClass = "w-full px-3 py-2 border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500";
 const labelClass = "block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1";
 
-const outstandingOf = (bill) => Number(bill.total_amount) - Number(bill.amount_paid);
+const outstandingOf = (bill) => Math.max(0, Number(bill.total_amount) - Number(bill.amount_paid));
+const scheduledOf = (bill) => Number(bill.scheduled_amount) || 0;
+const availableOf = (bill) => bill.available_to_schedule !== undefined
+    ? Math.max(0, Number(bill.available_to_schedule))
+    : Math.max(0, outstandingOf(bill) - scheduledOf(bill));
 
 /**
  * Settles supplier bills, whatever the payment was made with.
@@ -132,6 +136,14 @@ const RecordSupplierPaymentModal = ({ isOpen, onClose, onRecorded, presetSupplie
         () => bills.reduce((sum, b) => sum + outstandingOf(b), 0),
         [bills]
     );
+    const totalScheduled = useMemo(
+        () => bills.reduce((sum, b) => sum + scheduledOf(b), 0),
+        [bills]
+    );
+    const totalAvailable = useMemo(
+        () => bills.reduce((sum, b) => sum + availableOf(b), 0),
+        [bills]
+    );
     const allocatedTotal = useMemo(
         () => Object.values(allocations).reduce((sum, v) => sum + (parseFloat(v) || 0), 0),
         [allocations]
@@ -146,7 +158,9 @@ const RecordSupplierPaymentModal = ({ isOpen, onClose, onRecorded, presetSupplie
         const next = {};
         for (const bill of bills) {
             if (remaining <= 0.005) break;
-            const applied = Math.min(outstandingOf(bill), remaining);
+            const avail = availableOf(bill);
+            if (avail <= 0.005) continue;
+            const applied = Math.min(avail, remaining);
             next[bill.bill_id] = applied.toFixed(2);
             remaining -= applied;
         }
@@ -298,6 +312,11 @@ const RecordSupplierPaymentModal = ({ isOpen, onClose, onRecorded, presetSupplie
                         {supplierId && (
                             <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">
                                 Outstanding: {formatCurrency(totalOutstanding)}
+                                {totalScheduled > 0 && ` · Scheduled: ${formatCurrency(totalScheduled)}`}
+                                {' · '}
+                                <span className="font-semibold text-gray-800 dark:text-slate-200">
+                                    Available: {formatCurrency(totalAvailable)}
+                                </span>
                             </p>
                         )}
                     </div>
@@ -411,35 +430,48 @@ const RecordSupplierPaymentModal = ({ isOpen, onClose, onRecorded, presetSupplie
                         {autoAllocate ? (
                             <p className="text-xs text-gray-500 dark:text-slate-400">
                                 {isCheque ? 'The cheque will be applied to the' : 'The payment will be applied to the'} {bills.length} open
-                                bill{bills.length === 1 ? '' : 's'} in due-date order
+                                bill{bills.length === 1 ? '' : 's'} in due-date order against their available unscheduled balances
                                 {isCheque ? ', taking effect when it clears.' : '.'}
                             </p>
                         ) : (
                             <>
                                 <div className="max-h-56 overflow-y-auto divide-y divide-gray-100 dark:divide-slate-700">
-                                    {bills.map(bill => (
-                                        <div key={bill.bill_id} className="flex items-center gap-3 py-2">
-                                            <div className="flex-1 min-w-0">
-                                                <p className="text-sm text-gray-900 dark:text-slate-100 truncate">{bill.bill_number || `Bill #${bill.bill_id}`}</p>
-                                                <p className="text-xs text-gray-500 dark:text-slate-400">
-                                                    Outstanding {formatCurrency(outstandingOf(bill))}
-                                                    {bill.due_date ? ` · due ${new Date(bill.due_date).toLocaleDateString()}` : ''}
-                                                    {(bill.related_grns || []).length > 0
-                                                        ? ` · ${bill.related_grns.map(g => g.grn_number).join(', ')}`
-                                                        : ''}
-                                                </p>
+                                    {bills.map(bill => {
+                                        const out = outstandingOf(bill);
+                                        const sched = scheduledOf(bill);
+                                        const avail = availableOf(bill);
+                                        return (
+                                            <div key={bill.bill_id} className="flex items-center gap-3 py-2">
+                                                <div className="flex-1 min-w-0">
+                                                    <p className="text-sm text-gray-900 dark:text-slate-100 truncate">{bill.bill_number || `Bill #${bill.bill_id}`}</p>
+                                                    <p className="text-xs text-gray-500 dark:text-slate-400">
+                                                        Outstanding {formatCurrency(out)}
+                                                        {sched > 0 && (
+                                                            <span className="text-warning-700 dark:text-warning-400">
+                                                                {` · Scheduled ${formatCurrency(sched)}`}
+                                                            </span>
+                                                        )}
+                                                        <span className="font-semibold text-gray-800 dark:text-slate-200">
+                                                            {` · Available ${formatCurrency(avail)}`}
+                                                        </span>
+                                                        {bill.due_date ? ` · due ${new Date(bill.due_date).toLocaleDateString()}` : ''}
+                                                        {(bill.related_grns || []).length > 0
+                                                            ? ` · ${bill.related_grns.map(g => g.grn_number).join(', ')}`
+                                                            : ''}
+                                                    </p>
+                                                </div>
+                                                <MathExpressionInput
+                                                    precision={2}
+                                                    min={0}
+                                                    max={avail}
+                                                    value={allocations[bill.bill_id] || ''}
+                                                    onChange={(val) => setAllocations(prev => ({ ...prev, [bill.bill_id]: val }))}
+                                                    placeholder="0.00"
+                                                    className="w-32 px-2 py-1 text-sm text-right border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 rounded-md"
+                                                />
                                             </div>
-                                            <MathExpressionInput
-                                                precision={2}
-                                                min={0}
-                                                max={outstandingOf(bill)}
-                                                value={allocations[bill.bill_id] || ''}
-                                                onChange={(val) => setAllocations(prev => ({ ...prev, [bill.bill_id]: val }))}
-                                                placeholder="0.00"
-                                                className="w-32 px-2 py-1 text-sm text-right border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 rounded-md"
-                                            />
-                                        </div>
-                                    ))}
+                                        );
+                                    })}
                                 </div>
                                 <div className="flex justify-between text-sm pt-1 border-t border-gray-200 dark:border-slate-700">
                                     <span className="text-gray-600 dark:text-slate-400">Allocated</span>
