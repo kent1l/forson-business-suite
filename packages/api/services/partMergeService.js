@@ -835,14 +835,20 @@ class PartMergeService {
         counts.barcodes = barcodeResult.rowCount;
 
         // --- §4-A: part_tag (Move) ---
-        // PK is (part_id, tag_id). Delete source tags already on the keep part,
-        // then reassign the rest. Gated on rules.mergeTags (default: true).
+        // PK is (part_id, tag_id). Keep one source row per tag unless the
+        // survivor already has it. Deduplicate across sources BEFORE UPDATE:
+        // deleting only survivor overlaps misses tags shared by two sources.
         if (rules.mergeTags !== false) {
             await client.query(`
-                DELETE FROM part_tag
-                WHERE part_id = ANY($2)
-                  AND tag_id IN (
-                      SELECT tag_id FROM part_tag WHERE part_id = $1
+                DELETE FROM part_tag source_tag
+                WHERE source_tag.part_id = ANY($2::int[])
+                  AND EXISTS (
+                      SELECT 1 FROM part_tag other_tag
+                      WHERE other_tag.tag_id = source_tag.tag_id
+                        AND (other_tag.part_id = $1 OR (
+                            other_tag.part_id = ANY($2::int[])
+                            AND other_tag.part_id < source_tag.part_id
+                        ))
                   )
             `, [keepPartId, mergePartIds]);
             const tagResult = await client.query(`
@@ -938,24 +944,24 @@ class PartMergeService {
         `, [mergePartIds]);
 
         // --- §4-B: part_exclusion (Transfer) ---
-        // Remap exclusion pairs that reference source parts to the survivor.
-        // PK is (part_id_1, part_id_2) — ON CONFLICT DO NOTHING avoids
-        // duplicating pairs that already exist for the survivor.
-        // After insertion, remove self-pairs (survivor, survivor) and the
-        // original source rows.
+        // Remap both endpoints, discard internal pairs, and restore canonical
+        // order BEFORE insertion: chk_order rejects equal/reversed endpoints
+        // even with ON CONFLICT DO NOTHING. Preserve exclusion metadata.
         await client.query(`
-            INSERT INTO part_exclusion (part_id_1, part_id_2)
-            SELECT
-                CASE WHEN part_id_1 = ANY($2) THEN $1 ELSE part_id_1 END,
-                CASE WHEN part_id_2 = ANY($2) THEN $1 ELSE part_id_2 END
-            FROM part_exclusion
-            WHERE part_id_1 = ANY($2) OR part_id_2 = ANY($2)
+            INSERT INTO part_exclusion (part_id_1, part_id_2, created_at, source, reason)
+            SELECT LEAST(mapped_id_1, mapped_id_2),
+                   GREATEST(mapped_id_1, mapped_id_2), created_at, source, reason
+            FROM (
+                SELECT
+                    CASE WHEN part_id_1 = ANY($2::int[]) THEN $1 ELSE part_id_1 END AS mapped_id_1,
+                    CASE WHEN part_id_2 = ANY($2::int[]) THEN $1 ELSE part_id_2 END AS mapped_id_2,
+                    created_at, source, reason
+                FROM part_exclusion
+                WHERE part_id_1 = ANY($2::int[]) OR part_id_2 = ANY($2::int[])
+            ) remapped
+            WHERE mapped_id_1 <> mapped_id_2
             ON CONFLICT DO NOTHING
         `, [keepPartId, mergePartIds]);
-        await client.query(
-            `DELETE FROM part_exclusion WHERE part_id_1 = $1 AND part_id_2 = $1`,
-            [keepPartId]
-        );
         await client.query(`
             DELETE FROM part_exclusion
             WHERE part_id_1 = ANY($1) OR part_id_2 = ANY($1)
@@ -1083,17 +1089,29 @@ class PartMergeService {
         
         if (aliases.length > 0) {
             const values = aliases.map((alias, index) => 
-                `($${index * 4 + 1}, $${index * 4 + 2}, $${index * 4 + 3}, $${index * 4 + 4})`
+                `($${index * 4 + 1}::bigint, $${index * 4 + 2}::text, $${index * 4 + 3}::text, $${index * 4 + 4}::bigint)`
             ).join(', ');
             
             const params = aliases.flatMap(alias => [
                 alias.part_id, alias.alias_value, alias.alias_type, alias.source_part_id
             ]);
             
+            // Some installations have only the non-unique value/type lookup
+            // index. Do not require the optional legacy global unique index.
+            // Retain source provenance while making repeated inserts idempotent;
+            // untargeted ON CONFLICT also supports installations with that index.
             await client.query(`
                 INSERT INTO part_aliases (part_id, alias_value, alias_type, source_part_id)
-                VALUES ${values}
-                ON CONFLICT (alias_value, alias_type) DO NOTHING
+                SELECT DISTINCT incoming.*
+                FROM (VALUES ${values}) AS incoming(part_id, alias_value, alias_type, source_part_id)
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM part_aliases existing
+                    WHERE existing.part_id = incoming.part_id
+                      AND existing.alias_value = incoming.alias_value
+                      AND existing.alias_type = incoming.alias_type
+                      AND existing.source_part_id IS NOT DISTINCT FROM incoming.source_part_id
+                )
+                ON CONFLICT DO NOTHING
             `, params);
         }
     }
