@@ -22,6 +22,7 @@ import { formatCurrency } from '../utils/currency';
 import { computeCosting, markupFromPrice, roundUpTo, DEFAULT_MARKUP_PERCENT, MIN_MARKUP_PERCENT, PRICE_ROUNDING_INCREMENT, METHOD_A } from '../utils/grnCosting';
 import { useAuth } from '../contexts/AuthContext';
 import usePartDuplicateResolution from '../hooks/usePartDuplicateResolution';
+import { getNavContext, returnToOrigin, clearNavContext } from '../utils/apNavigationContract';
 
 const upperCatalogText = (value) => String(value || '').replace(/\s+/g, ' ').trim().toUpperCase();
 
@@ -76,6 +77,18 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
     const [posting, setPosting] = useState(false);
     const [receiptDate, setReceiptDate] = useState('');
     const [isBackfill, setIsBackfill] = useState(false);
+    const navCtx = useMemo(() => {
+        return (pageState?.action ? pageState : (getNavContext() || {}));
+    }, [pageState]);
+
+    const [documentType, setDocumentType] = useState('delivery_receipt');
+    const [relatedInvoiceNo, setRelatedInvoiceNo] = useState('');
+    const [attachedBillId, setAttachedBillId] = useState(navCtx?.billId || null);
+    const [attachedBillDetails, setAttachedBillDetails] = useState(null);
+    const [candidateMatches, setCandidateMatches] = useState([]);
+    const [matchesLoading, setMatchesLoading] = useState(false);
+    const [anotherDeliveryConfirmed, setAnotherDeliveryConfirmed] = useState(false);
+
     const [physicalReceiptNo, setPhysicalReceiptNo] = useState('');
     const [physicalReceiptConflict, setPhysicalReceiptConflict] = useState(null);
     const [duplicateReview, setDuplicateReview] = useState(null);
@@ -108,13 +121,14 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
     // and the receiver has to say which of the two they meant. Null the rest of the time.
     const [markupRounding, setMarkupRounding] = useState(null);
 
-    // Reusable draft hook
+    // Reusable draft hook with slot isolation per context
+    const slot = navCtx?.contextId || null;
     const draftData = useMemo(() => (stagedGrn ? {} : {
-        selectedSupplier, lines, selectedPO,
+        selectedSupplier, lines, selectedPO, attachedBillId, documentType, relatedInvoiceNo,
         freightAmount, freightSupplierId, freightCosts, freightMethod, overallDiscount, syncRetailPrices, physicalReceiptNo,
-    }), [stagedGrn, selectedSupplier, lines, selectedPO, freightAmount, freightSupplierId, freightCosts, freightMethod, overallDiscount, syncRetailPrices, physicalReceiptNo]);
-    const isEmpty = useMemo(() => (d) => (!d?.selectedSupplier && (!d?.lines || d.lines.length === 0) && !d?.selectedPO), []);
-    const { status: draftStatus, lastSavedAt, draft, loaded: draftLoaded, clearDraft } = useDraft('goods-receipt', { data: draftData, isEmpty, debounceMs: 750 });
+    }), [stagedGrn, selectedSupplier, lines, selectedPO, attachedBillId, documentType, relatedInvoiceNo, freightAmount, freightSupplierId, freightCosts, freightMethod, overallDiscount, syncRetailPrices, physicalReceiptNo]);
+    const isEmpty = useMemo(() => (d) => (!d?.selectedSupplier && (!d?.lines || d.lines.length === 0) && !d?.selectedPO && !d?.attachedBillId), []);
+    const { status: draftStatus, lastSavedAt, draft, loaded: draftLoaded, clearDraft } = useDraft('goods-receipt', { slot, data: draftData, isEmpty, debounceMs: 750 });
 
     // The same module the API uses, generated from it, so what is shown here is exactly
     // what will be posted. Recomputed on every keystroke rather than fetched.
@@ -247,6 +261,12 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
             setSyncRetailPrices(header.sync_retail_prices !== false);
             setIsBackfill(!!header.is_backfill);
             setPhysicalReceiptNo(header.physical_receipt_no || header.supplier_invoice_no || '');
+            if (header.bill_id) setAttachedBillId(header.bill_id);
+            if (header.supplier_document_type) setDocumentType(header.supplier_document_type);
+            if (header.supplier_document_no) setPhysicalReceiptNo(header.supplier_document_no);
+            if (header.supplier_invoice_no && header.supplier_invoice_no !== header.physical_receipt_no) {
+                setRelatedInvoiceNo(header.supplier_invoice_no);
+            }
             if (header.receipt_date) setReceiptDate(String(header.receipt_date).slice(0, 10));
             setLines((linesRes.data || []).map(l => ({
                 ...l,
@@ -289,9 +309,68 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
             if (draft.overallDiscount) setOverallDiscount(draft.overallDiscount);
             if (draft.syncRetailPrices !== undefined) setSyncRetailPrices(draft.syncRetailPrices);
             if (draft.physicalReceiptNo !== undefined) setPhysicalReceiptNo(draft.physicalReceiptNo);
+            if (draft.documentType) setDocumentType(draft.documentType);
+            if (draft.relatedInvoiceNo) setRelatedInvoiceNo(draft.relatedInvoiceNo);
+            if (draft.attachedBillId) setAttachedBillId(draft.attachedBillId);
             toast('Loaded your saved draft.', { icon: '📄' });
         }
     }, [draftLoaded, draft]);
+
+    useEffect(() => {
+        if (navCtx?.supplierId && !selectedSupplier) {
+            setSelectedSupplier(String(navCtx.supplierId));
+        }
+        if (navCtx?.billId && !attachedBillId) {
+            setAttachedBillId(Number(navCtx.billId));
+        }
+        if (navCtx?.action === 'resume' && navCtx?.grnId) {
+            loadStagedReceipt(navCtx.grnId);
+        }
+    }, [navCtx, selectedSupplier, attachedBillId, loadStagedReceipt]);
+
+    useEffect(() => {
+        if (attachedBillId) {
+            api.get(`/ap/supplier-bills/${attachedBillId}`)
+                .then(res => setAttachedBillDetails(res.data?.data || res.data || null))
+                .catch(() => setAttachedBillDetails(null));
+        } else {
+            setAttachedBillDetails(null);
+        }
+    }, [attachedBillId]);
+
+    useEffect(() => {
+        const docNo = (documentType === 'invoice' ? physicalReceiptNo : relatedInvoiceNo)?.trim();
+        if (!selectedSupplier || !docNo) {
+            setCandidateMatches([]);
+            setMatchesLoading(false);
+            return undefined;
+        }
+        let cancelled = false;
+        setMatchesLoading(true);
+        const timer = setTimeout(async () => {
+            try {
+                const { data } = await api.get('/ap/supplier-bills/matches', {
+                    params: {
+                        supplier_id: selectedSupplier,
+                        document_type: 'invoice',
+                        document_no: docNo,
+                    },
+                });
+                if (!cancelled) {
+                    setCandidateMatches(data?.data || []);
+                }
+            } catch {
+                if (!cancelled) setCandidateMatches([]);
+            } finally {
+                if (!cancelled) setMatchesLoading(false);
+            }
+        }, 400);
+
+        return () => {
+            cancelled = true;
+            clearTimeout(timer);
+        };
+    }, [selectedSupplier, documentType, physicalReceiptNo, relatedInvoiceNo]);
 
     useEffect(() => {
         const receiptNo = physicalReceiptNo;
@@ -685,6 +764,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
     const buildPayload = () => ({
         supplier_id: selectedSupplier,
         received_by: user.employee_id,
+        bill_id: attachedBillId || null,
         lines: lines.map(line => ({
             part_id: line.part_id,
             quantity: line.quantity,
@@ -701,8 +781,10 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
         po_id: selectedPO ? selectedPO.po_id : null,
         receipt_date: receiptDate || null,
         is_backfill: isBackfill,
-        supplier_invoice_no: physicalReceiptNo || null,
-        physical_receipt_no: physicalReceiptNo || null,
+        supplier_document_type: documentType,
+        supplier_document_no: physicalReceiptNo ? physicalReceiptNo.trim() : null,
+        supplier_invoice_no: (documentType === 'invoice' ? physicalReceiptNo?.trim() : relatedInvoiceNo?.trim()) || physicalReceiptNo?.trim() || null,
+        physical_receipt_no: physicalReceiptNo ? physicalReceiptNo.trim() : null,
         freight_amount: freightAmount || 0,
         freight_allocation_method: freightMethod,
         freight_supplier_id: freightSupplierId || null,
@@ -726,6 +808,11 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
         setReceiptDate('');
         setPhysicalReceiptNo('');
         setPhysicalReceiptConflict(null);
+        setDocumentType('delivery_receipt');
+        setRelatedInvoiceNo('');
+        setAttachedBillId(null);
+        setCandidateMatches([]);
+        setAnotherDeliveryConfirmed(false);
         setFreightAmount(0);
         setFreightSupplierId('');
         setFreightCosts([]);
@@ -872,6 +959,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                 resetForm();
                 fetchInitialData(); // Refresh PO list
                 clearDraft();
+                clearNavContext();
                 setPosting(false);
                 // The quantity deliberately did not move for these lines. Say so here —
                 // discovering it later on the stock report would look like a bug.
@@ -940,6 +1028,31 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                 </div>
             </div>
 
+            {navCtx?.source && (
+                <div className="p-3 bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 rounded-lg flex items-center justify-between gap-3">
+                    <div className="text-sm text-blue-900 dark:text-blue-100 flex items-center gap-2">
+                        <Icon path={ICONS.info} className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
+                        <span>
+                            Receiving goods for{' '}
+                            <strong>
+                                {suppliers.find(s => String(s.supplier_id) === String(selectedSupplier))?.supplier_name || 'selected supplier'}
+                            </strong>
+                            {attachedBillDetails && (
+                                <span className="ml-2 font-mono text-xs bg-blue-100 dark:bg-blue-900/60 px-1.5 py-0.5 rounded text-blue-800 dark:text-blue-200">
+                                    Linked to Bill #{attachedBillDetails.bill_number || attachedBillDetails.bill_id} ({formatCurrency(attachedBillDetails.total_amount)})
+                                </span>
+                            )}
+                        </span>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={() => returnToOrigin(onNavigate, navCtx)}
+                        className="text-xs font-semibold px-3 py-1.5 bg-white dark:bg-slate-800 border border-blue-300 dark:border-blue-700 rounded-md text-blue-700 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-slate-700 transition"
+                    >
+                        ← Return to {navCtx.source?.pageKey === 'suppliers' ? 'Suppliers' : 'Accounts Payable'}
+                    </button>
+                </div>
+            )}
 
             {expensePrefill && (
                 <div className="p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-300 dark:border-amber-900/40 rounded-lg flex items-start gap-2">
@@ -1066,19 +1179,72 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                                 className={selectClass}
                             />
                     </div>
-                    <div>
-                        <label className={labelClass}>Supplier Receipt / Invoice / DR No. {isBackfill ? '' : '(optional)'}</label>
-                        <input
-                            type="text"
-                            ref={supplierDocumentInputRef}
-                            value={physicalReceiptNo}
-                            onChange={e => setPhysicalReceiptNo(e.target.value)}
-                            placeholder="As printed on the supplier document"
-                            className={`${selectClass} ${physicalReceiptConflict ? 'border-danger-500' : ''}`}
-                        />
+                    <div className="space-y-3">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            <div>
+                                <label className={labelClass}>Document Type</label>
+                                <select
+                                    value={documentType}
+                                    onChange={e => setDocumentType(e.target.value)}
+                                    className={selectClass}
+                                >
+                                    <option value="delivery_receipt">Delivery Receipt (DR)</option>
+                                    <option value="invoice">Sales / Tax Invoice (SI)</option>
+                                    <option value="other">Other / Slip</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label className={labelClass}>
+                                    {documentType === 'invoice' ? 'Invoice Number' : 'Delivery Receipt No.'} {isBackfill ? '' : '(optional)'}
+                                </label>
+                                <input
+                                    type="text"
+                                    ref={supplierDocumentInputRef}
+                                    value={physicalReceiptNo}
+                                    onChange={e => setPhysicalReceiptNo(e.target.value)}
+                                    placeholder={documentType === 'invoice' ? "e.g. SI-12345" : "e.g. DR-98765"}
+                                    className={`${selectClass} ${physicalReceiptConflict ? 'border-danger-500' : ''}`}
+                                />
+                            </div>
+                        </div>
+
+                        {documentType !== 'invoice' && (
+                            <div>
+                                <label className={labelClass}>
+                                    Related Supplier Invoice No. <span className="text-xs text-gray-500">(optional)</span>
+                                </label>
+                                <input
+                                    type="text"
+                                    value={relatedInvoiceNo}
+                                    onChange={e => setRelatedInvoiceNo(e.target.value)}
+                                    placeholder="e.g. SI-12345 (if delivery has a known invoice)"
+                                    className={selectClass}
+                                />
+                                <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">
+                                    When DR and Invoice differ, linking the invoice connects this delivery to its payable.
+                                </p>
+                            </div>
+                        )}
+
+                        {attachedBillDetails && (
+                            <div className="flex items-center justify-between p-2 rounded-md bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 text-xs">
+                                <span className="text-emerald-800 dark:text-emerald-200 font-medium">
+                                    Linked to Bill #{attachedBillDetails.bill_number || attachedBillDetails.bill_id} ({formatCurrency(attachedBillDetails.total_amount)})
+                                </span>
+                                <button
+                                    type="button"
+                                    onClick={() => setAttachedBillId(null)}
+                                    className="text-danger-600 dark:text-danger-400 font-semibold hover:underline ml-2"
+                                >
+                                    Unlink
+                                </button>
+                            </div>
+                        )}
+
                         <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">
-                            {isBackfill ? 'Required for a backfill. ' : ''}Use the single supplier document reference to prevent duplicate receipts.
+                            {isBackfill ? 'Required for a backfill. ' : ''}Use the supplier document reference to verify against payables and prevent duplicates.
                         </p>
+
                         {physicalReceiptConflict && (
                             <div className="mt-2 rounded-lg border border-danger-200 dark:border-danger-800 bg-danger-50 dark:bg-danger-950/30 p-3" role="status" aria-live="polite">
                                 <p className="text-xs font-semibold text-danger-700 dark:text-danger-300">
@@ -1091,6 +1257,81 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                                 >
                                     Review existing GRN
                                 </button>
+                            </div>
+                        )}
+
+                        {matchesLoading && (
+                            <p className="text-xs text-gray-500">Checking for matching supplier bills…</p>
+                        )}
+
+                        {candidateMatches.length > 0 && (
+                            <div className="mt-2 space-y-2">
+                                {candidateMatches.map((match) => (
+                                    <div key={match.bill_id} className="p-3 bg-primary-50/70 dark:bg-primary-950/40 border border-primary-200 dark:border-primary-800 rounded-lg">
+                                        <div className="flex flex-wrap items-center justify-between gap-2">
+                                            <div>
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-xs font-semibold uppercase text-primary-700 dark:text-primary-300">
+                                                        Matching Supplier Bill
+                                                    </span>
+                                                    <span className="text-xs font-mono font-medium text-gray-900 dark:text-slate-100">
+                                                        {match.bill_number || `Bill #${match.bill_id}`}
+                                                    </span>
+                                                    <span className="text-xs text-gray-500">
+                                                        ({match.status})
+                                                    </span>
+                                                </div>
+                                                <p className="text-xs text-gray-600 dark:text-slate-400 mt-0.5">
+                                                    Total: <span className="font-semibold text-gray-900 dark:text-slate-100">{formatCurrency(match.total_amount)}</span> · {match.match_reason || 'Matches typed reference'}
+                                                </p>
+                                            </div>
+                                            <div>
+                                                {attachedBillId === match.bill_id ? (
+                                                    <span className="text-xs font-semibold px-2 py-1 rounded bg-success-100 text-success-800 dark:bg-success-900/30 dark:text-success-300">
+                                                        ✓ Using this bill
+                                                    </span>
+                                                ) : (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setAttachedBillId(match.bill_id)}
+                                                        className="px-2.5 py-1 text-xs font-semibold rounded bg-primary-600 text-white hover:bg-primary-700 transition"
+                                                    >
+                                                        Use this bill
+                                                    </button>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        {match.existing_receipts?.length > 0 && (
+                                            <div className="mt-2 pt-2 border-t border-primary-100 dark:border-primary-900/40 text-xs">
+                                                <p className="text-gray-600 dark:text-slate-400 font-medium mb-1">
+                                                    Prior deliveries recorded against this bill ({match.existing_receipts.length}):
+                                                </p>
+                                                <div className="flex flex-wrap gap-2">
+                                                    {match.existing_receipts.map(r => (
+                                                        <span key={r.grn_id} className="font-mono bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 px-2 py-0.5 rounded text-gray-700 dark:text-slate-300">
+                                                            {r.grn_number} ({r.workflow_status || r.status})
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                                {!anotherDeliveryConfirmed && (
+                                                    <div className="mt-2 flex items-center justify-between bg-amber-50 dark:bg-amber-950/40 p-2 rounded border border-amber-200 dark:border-amber-800">
+                                                        <span className="text-amber-800 dark:text-amber-200">
+                                                            This invoice already has deliveries recorded.
+                                                        </span>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setAnotherDeliveryConfirmed(true)}
+                                                            className="text-xs font-semibold px-2 py-1 bg-amber-600 text-white rounded hover:bg-amber-700"
+                                                        >
+                                                            Record another delivery
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+                                ))}
                             </div>
                         )}
                     </div>
