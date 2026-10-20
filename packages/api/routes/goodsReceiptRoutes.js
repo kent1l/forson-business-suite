@@ -16,6 +16,7 @@ const { syncReceiptRecordedTag } = require('../services/paperlessService');
 const supplierReceiptReference = require('../services/supplierReceiptReferenceService');
 const grnImportService = require('../services/grnImportService');
 const grnDraftService = require('../services/grnDraftService');
+const partCandidateService = require('../services/partCandidateService');
 const router = express.Router();
 
 // Preserve the supplier's printed reference; only blank input becomes NULL.
@@ -337,6 +338,71 @@ router.patch('/goods-receipts/imports/:importId', protect, hasPermission('goods_
     res.status(500).json({ message: 'Internal server error patching import review.' });
   } finally {
     client.release();
+  }
+});
+
+// POST /goods-receipts/imports/:importId/candidates
+router.post('/goods-receipts/imports/:importId/candidates', protect, hasPermission('goods_receipt:create'), async (req, res) => {
+  if (!grnImportService.isFeatureEnabled()) {
+    return res.status(503).json({
+      code: 'GRN_IMPORT_DISABLED',
+      message: 'External JSON import is currently disabled.',
+    });
+  }
+
+  const { version, row_id, query } = req.body || {};
+  if (!row_id) {
+    return res.status(400).json({ message: 'row_id is required.' });
+  }
+
+  try {
+    const { rows } = await db.query(
+      'SELECT import_id, created_by_employee_id, status, version, review_state FROM grn_import_review WHERE import_id = $1',
+      [req.params.importId]
+    );
+    if (!rows.length || rows[0].created_by_employee_id !== req.user.employee_id) {
+      return res.status(404).json({ message: 'Import review not found.' });
+    }
+    const review = rows[0];
+    if (review.status !== 'IN_REVIEW') {
+      return res.status(409).json({ message: `Import review is ${review.status}.` });
+    }
+    if (version !== undefined && review.version !== version) {
+      return res.status(409).json({
+        code: 'VERSION_CONFLICT',
+        message: `Version conflict: current version is ${review.version}, request had ${version}.`,
+        version: review.version,
+      });
+    }
+
+    const row = (review.review_state?.rows || []).find(r => r.row_id === row_id);
+    if (!row) {
+      return res.status(404).json({ message: `Row ${row_id} not found.` });
+    }
+
+    const brand = row.corrections?.brand?.new_value || row.brand;
+    const partNumber = row.corrections?.part_number?.new_value || row.part_number;
+    const description = row.corrections?.description?.new_value || row.description;
+    const rawText = row.raw_text;
+
+    const result = await partCandidateService.findPartCandidates({
+      brand,
+      partNumber,
+      description,
+      rawText,
+      query,
+    });
+
+    res.set('Cache-Control', 'no-store');
+    res.json({
+      row_id,
+      version: review.version,
+      ai_status: result.ai_status,
+      candidates: result.candidates,
+    });
+  } catch (err) {
+    console.error('Error fetching candidates:', err);
+    res.status(500).json({ message: 'Error fetching candidates.', error: err.message });
   }
 });
 
