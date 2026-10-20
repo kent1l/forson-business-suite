@@ -1,5 +1,7 @@
 # GRN External JSON Ingestion — Comparison, Technical Audit and Proofreading
 
+> Follow-up: the [final implementation plan](2026-10-20_grn-external-json-ingestion.final.md) resolves these findings at the design level and maps F1–F11 in §13. This review preserves the evidence about the original/v2; implementation and runtime verification remain outstanding.
+
 > Forson Business Suite | 2026-10-20 (Asia/Manila)
 > Reviewed: `2026-10-20_grn-external-json-ingestion.md` and `2026-10-20_grn-external-json-ingestion.v2.md` against the current checkout, branch `grn-json-ingestion`.
 > Result: use v2 as the basis for a consolidated revision; neither document is ready to serve as an unambiguous implementation contract. This review changes documentation only. Both input plans remain intact. No application tests, database migrations, browser checks or deployment were performed.

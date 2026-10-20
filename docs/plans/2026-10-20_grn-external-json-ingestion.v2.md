@@ -1,5 +1,7 @@
 # External Supplier Document JSON → Existing GRN — Final Feature Plan
 
+> Superseded: use the [final implementation plan](2026-10-20_grn-external-json-ingestion.final.md), which integrates the MVP decisions and resolves the audit findings. This amendment-style version is historical.
+
 > Forson Business Suite | Design status: finalized for developer handoff; implementation of this import feature **not verified / not started**. Repository branch observed: `ap-bug-fixes-and-improvements`. This document is a design, not a claim of code, database migration, live testing, commit, or deployment.
 
 ## 0. Status at a Glance
