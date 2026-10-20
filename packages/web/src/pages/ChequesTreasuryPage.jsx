@@ -22,13 +22,26 @@ const ChequesTreasuryPage = ({ pageState }) => {
         [sections, hasPermission]
     );
 
-    const [activeSection, setActiveSection] = useState(() => visibleSections[0]?.key);
+    const [activeSection, setActiveSection] = useState(() => {
+        const initial = pageState?.section;
+        if (initial && visibleSections.some((s) => s.key === initial)) {
+            return initial;
+        }
+        return visibleSections[0]?.key;
+    });
 
     // A deep link names both the section to open and whatever that section needs
     // to focus on. The remainder is held per-section so it reaches only the
     // component it was meant for, rather than every section as a dead prop. A
     // link to a section this user cannot see is ignored, not forced open.
-    const [sectionState, setSectionState] = useState(null);
+    const [sectionState, setSectionState] = useState(() => {
+        const initial = pageState?.section;
+        if (initial && visibleSections.some((s) => s.key === initial)) {
+            const { section, ...rest } = pageState;
+            return { section, state: rest };
+        }
+        return null;
+    });
     useDeepLink(pageState, ({ section, ...rest }) => {
         const target = visibleSections.some((s) => s.key === section) ? section : null;
         if (!target) return;

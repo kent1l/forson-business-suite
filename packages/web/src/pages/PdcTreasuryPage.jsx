@@ -50,7 +50,10 @@ const PdcTreasuryPage = ({ pageState }) => {
     const canDeleteOutbound = hasPermission('ap-pdc:delete') || canManageOutbound;
     const canViewOutbound = hasPermission('ap-pdc:view') || canManageOutbound;
 
-    const [activeTab, setActiveTab] = useState('inbound'); // 'inbound' | 'outbound'
+    const [activeTab, setActiveTab] = useState(() => {
+        if (pageState?.tab === 'outbound' && canViewOutbound) return 'outbound';
+        return 'inbound';
+    }); // 'inbound' | 'outbound'
 
     // Inbound (AR) KPI + list state
     const [stats, setStats] = useState(emptyStats);

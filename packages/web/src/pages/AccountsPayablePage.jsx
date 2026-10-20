@@ -157,7 +157,7 @@ const AccountsPayablePage = ({ onNavigate, pageState }) => {
                 <div className="flex items-center gap-3">
                     <span className="inline-flex items-center gap-1">
                         <button
-                            onClick={() => onNavigate && onNavigate('cheques_treasury')}
+                            onClick={() => onNavigate && onNavigate('cheques_treasury', { section: 'treasury', tab: 'outbound' })}
                             className="px-4 py-2 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-200 rounded-md hover:bg-gray-50 dark:hover:bg-slate-700 text-sm transition-colors font-medium flex items-center gap-1.5"
                         >
                             Outbound Cheques &amp; Treasury <Icon path={ICONS.chevronDown} className="w-3.5 h-3.5 -rotate-90" />
