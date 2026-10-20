@@ -161,13 +161,18 @@ flexible; adjust to fit your workflow.
    paper stock. Pending count badges indicate how many cheques await printing for each bank.
    Unfinished manual drafts entered under one preset are saved in memory and preserved when switching
    between presets.
-3. **Review Queued Cheques:** Cheques issued from the Treasury Desk or Accounts Payable appear
-   automatically under their bank's preset queue (tagged with an `AP` badge). For data integrity,
+3. **Review & Select Queued Cheques:** Cheques issued from the Treasury Desk or Accounts Payable
+   appear automatically under their bank's preset queue (tagged with an `AP` badge). For data integrity,
    queued financial cheques have their Date, Payee, and Amount locked — the server always uses the
    canonical database records when generating PDFs.
-   - If you do not want to print a queued cheque in the current batch, click the trash icon to remove
-     it. It remains safe and pending in the database. A **Restore removed cheques** button appears
-     immediately so you can bring back dismissed cheques at any time.
+   - **Bulk Selection & Checkboxes:** Use the checkboxes on each row or the master checkbox in the
+     header/toolbar to selectively include or exclude cheques from the PDF print run. The toolbar displays
+     `X of Y selected` and the selected sum. Clicking **Generate PDF** generates a document for only
+     the selected cheques.
+   - **Bulk Remove:** Select any number of cheques and click **Remove selected (X)** to dismiss them
+     all at once from the current print batch. Dismissed cheques remain safe and pending in the database.
+   - **Restore Removed Cheques:** A banner shows the count of dismissed cheques with a **Restore removed
+     cheques** button that immediately brings them back to the batch.
 4. **Setup-Required Cheques:** If cheques were issued from bank accounts lacking an active default
    print template, an amber **Setup Required** alert appears at the top.
    - Click **Go to Bank Accounts →** to assign a default template to the bank account.

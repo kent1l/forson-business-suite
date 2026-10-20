@@ -56,6 +56,8 @@ const ChequePrintingPage = ({ onNavigateSection }) => {
     const [batchesByTemplate, setBatchesByTemplate] = useState({});
     // Locally dismissed IDs per preset: map of templateId -> Set of chequeRecordId
     const [dismissedByTemplate, setDismissedByTemplate] = useState({});
+    // Row selection for print queue: map of templateId -> Set of rowKey
+    const [selectedKeysByTemplate, setSelectedKeysByTemplate] = useState({});
     // Queue pagination cursors per preset: map of templateId -> string | null
     const [cursorsByTemplate, setCursorsByTemplate] = useState({});
     const [hasMoreByTemplate, setHasMoreByTemplate] = useState({});
@@ -114,6 +116,63 @@ const ChequePrintingPage = ({ onNavigateSection }) => {
             amount: String(Math.round(Number(row.amount || 0) * 100) / 100)
         }))
     ), [rows]);
+
+    const getRowKey = useCallback((row, idx) => (
+        row.cheque_record_id ? `rec_${row.cheque_record_id}` : `draft_${idx}`
+    ), []);
+
+    const selectedKeysForCurrentPreset = selectedKeysByTemplate[selectedTemplateId];
+
+    const isRowSelected = useCallback((row, idx) => {
+        if (!selectedKeysForCurrentPreset) return true;
+        return selectedKeysForCurrentPreset.has(getRowKey(row, idx));
+    }, [selectedKeysForCurrentPreset, getRowKey]);
+
+    const selectedActiveRows = useMemo(() => {
+        return activeRows.filter((row, idx) => isRowSelected(row, idx));
+    }, [activeRows, isRowSelected]);
+
+    const isAllSelected = activeRows.length > 0 && selectedActiveRows.length === activeRows.length;
+    const isIndeterminate = selectedActiveRows.length > 0 && selectedActiveRows.length < activeRows.length;
+
+    const handleSelectRow = useCallback((row, idx) => {
+        if (!selectedTemplateId) return;
+        const key = getRowKey(row, idx);
+        setSelectedKeysByTemplate((prev) => {
+            const currentKeys = prev[selectedTemplateId] || new Set(activeRows.map(getRowKey));
+            const nextKeys = new Set(currentKeys);
+            if (nextKeys.has(key)) {
+                nextKeys.delete(key);
+            } else {
+                nextKeys.add(key);
+            }
+            return { ...prev, [selectedTemplateId]: nextKeys };
+        });
+    }, [selectedTemplateId, getRowKey, activeRows]);
+
+    const handleSelectAll = useCallback(() => {
+        if (!selectedTemplateId) return;
+        setSelectedKeysByTemplate((prev) => ({
+            ...prev,
+            [selectedTemplateId]: new Set(activeRows.map(getRowKey))
+        }));
+    }, [selectedTemplateId, activeRows, getRowKey]);
+
+    const handleDeselectAll = useCallback(() => {
+        if (!selectedTemplateId) return;
+        setSelectedKeysByTemplate((prev) => ({
+            ...prev,
+            [selectedTemplateId]: new Set()
+        }));
+    }, [selectedTemplateId]);
+
+    const toggleMasterCheckbox = useCallback(() => {
+        if (isAllSelected) {
+            handleDeselectAll();
+        } else {
+            handleSelectAll();
+        }
+    }, [isAllSelected, handleDeselectAll, handleSelectAll]);
 
     const normalizeQueueRecordToRow = (record) => ({
         payee: record.payee || '',
@@ -335,6 +394,13 @@ const ChequePrintingPage = ({ onNavigateSection }) => {
                 return { ...prev, [selectedTemplateId]: currentSet };
             });
         }
+        const targetKey = getRowKey(target, idx);
+        setSelectedKeysByTemplate((prev) => {
+            if (!prev[selectedTemplateId]) return prev;
+            const nextKeys = new Set(prev[selectedTemplateId]);
+            nextKeys.delete(targetKey);
+            return { ...prev, [selectedTemplateId]: nextKeys };
+        });
         setRowsForCurrentPreset((prev) => {
             if (prev.length === 1) return [blankRow()];
             const next = prev.filter((_, rowIndex) => rowIndex !== idx);
@@ -348,9 +414,45 @@ const ChequePrintingPage = ({ onNavigateSection }) => {
             ...prev,
             [selectedTemplateId]: new Set()
         }));
+        setSelectedKeysByTemplate((prev) => {
+            const next = { ...prev };
+            delete next[selectedTemplateId];
+            return next;
+        });
         // Re-fetch queue to restore removed entries
         fetchQueueForTemplate(selectedTemplateId, true);
         toast.success('Removed cheques restored to print queue.');
+    };
+
+    const handleBulkRemove = () => {
+        if (!selectedTemplateId || !selectedActiveRows.length) return;
+        const count = selectedActiveRows.length;
+        const selectedQueuedIds = selectedActiveRows.map((r) => r.cheque_record_id).filter(Boolean);
+        const selectedKeySet = new Set(selectedActiveRows.map(getRowKey));
+
+        if (selectedQueuedIds.length) {
+            setDismissedByTemplate((prev) => {
+                const currentSet = new Set(prev[selectedTemplateId] || []);
+                for (const id of selectedQueuedIds) {
+                    currentSet.add(id);
+                }
+                return { ...prev, [selectedTemplateId]: currentSet };
+            });
+        }
+
+        setRowsForCurrentPreset((prevRows) => {
+            const next = prevRows.filter((row, idx) => !selectedKeySet.has(getRowKey(row, idx)));
+            return next.length ? next : [blankRow()];
+        });
+
+        // Reset selection for this preset
+        setSelectedKeysByTemplate((prev) => {
+            const next = { ...prev };
+            delete next[selectedTemplateId];
+            return next;
+        });
+
+        toast.success(`Removed ${count} cheque${count === 1 ? '' : 's'} from this batch.`);
     };
 
     const validateRow = (row) => {
@@ -363,19 +465,24 @@ const ChequePrintingPage = ({ onNavigateSection }) => {
 
     const requestGeneratePdf = () => {
         if (!selectedTemplate) return toast.error('Select a bank preset first.');
-        if (!activeRows.length) return toast.error('Add at least one cheque line.');
-        for (const row of activeRows) {
+        if (!selectedActiveRows.length) {
+            if (activeRows.length) {
+                return toast.error('Select at least one cheque from the queue to print.');
+            }
+            return toast.error('Add at least one cheque line.');
+        }
+        for (const row of selectedActiveRows) {
             const validationError = validateRow(row);
             if (validationError) return toast.error(validationError);
         }
-        const mismatched = activeRows.filter((row) => row.sourceTemplateId && Number(row.sourceTemplateId) !== Number(selectedTemplateId));
+        const mismatched = selectedActiveRows.filter((row) => row.sourceTemplateId && Number(row.sourceTemplateId) !== Number(selectedTemplateId));
         if (mismatched.length) {
             return toast.error(`${mismatched.length} queued cheque(s) were issued for a different bank preset. Remove them or switch to that preset before printing.`);
         }
         setConfirmOpen(true);
     };
 
-    const generatePdf = async (sourceRows = activeRows, persist = persistRecords, templateOverride = null) => {
+    const generatePdf = async (sourceRows = selectedActiveRows, persist = persistRecords, templateOverride = null) => {
         const template = templateOverride || selectedTemplate;
         if (!template) return toast.error('Select a bank preset first.');
         if (!sourceRows.length) return toast.error('Add at least one cheque line.');
@@ -463,6 +570,11 @@ const ChequePrintingPage = ({ onNavigateSection }) => {
             // Remove successfully generated linked rows from the active batch
             if (!testPrintMode) {
                 const generatedLinkedIds = new Set(sourceRows.map((r) => r.cheque_record_id).filter(Boolean));
+                setSelectedKeysByTemplate((prev) => {
+                    const next = { ...prev };
+                    delete next[selectedTemplateId];
+                    return next;
+                });
                 setRowsForCurrentPreset((prev) => {
                     const filtered = prev.filter((r) => !r.cheque_record_id || !generatedLinkedIds.has(r.cheque_record_id));
                     // If standalone save succeeded, clear standalone rows as well
@@ -572,6 +684,8 @@ const ChequePrintingPage = ({ onNavigateSection }) => {
 
     const queueCount = activeRows.length;
     const queueTotal = activeRows.reduce((sum, row) => sum + (Number(row.amount) || 0), 0);
+    const selectedCount = selectedActiveRows.length;
+    const selectedTotal = selectedActiveRows.reduce((sum, row) => sum + (Number(row.amount) || 0), 0);
     const dismissedCount = dismissedIdsForCurrentPreset.size;
 
     const filteredHistory = useMemo(() => {
@@ -612,9 +726,14 @@ const ChequePrintingPage = ({ onNavigateSection }) => {
                             <Icon path={ICONS.history} className="h-4 w-4" />
                             View History
                         </button>
-                        <button className={BUTTON_PRIMARY} disabled={saving} onClick={requestGeneratePdf}>
+                        <button
+                            className={BUTTON_PRIMARY}
+                            disabled={saving || (activeRows.length > 0 && selectedCount === 0)}
+                            onClick={requestGeneratePdf}
+                            title={selectedCount === 0 && activeRows.length > 0 ? 'Select at least one cheque to print' : undefined}
+                        >
                             <Icon path={ICONS.receipt} className="h-4 w-4" />
-                            {saving ? 'Generating…' : 'Generate PDF'}
+                            {saving ? 'Generating…' : selectedCount > 0 && selectedCount < queueCount ? `Generate PDF (${selectedCount})` : 'Generate PDF'}
                         </button>
                     </div>
                 </div>
@@ -767,7 +886,15 @@ const ChequePrintingPage = ({ onNavigateSection }) => {
                         </div>
                         {queueCount > 0 && (
                             <span className="text-xs font-medium text-gray-500 dark:text-slate-400">
-                                {queueCount} cheque{queueCount === 1 ? '' : 's'} included · <span className="font-semibold text-gray-700 dark:text-slate-300 font-mono">₱{queueTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                                {selectedCount < queueCount ? (
+                                    <>
+                                        <strong className="text-gray-700 dark:text-slate-300 font-semibold">{selectedCount}</strong> of {queueCount} cheques selected · <span className="font-semibold text-gray-700 dark:text-slate-300 font-mono">₱{selectedTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                                    </>
+                                ) : (
+                                    <>
+                                        {queueCount} cheque{queueCount === 1 ? '' : 's'} included · <span className="font-semibold text-gray-700 dark:text-slate-300 font-mono">₱{queueTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                                    </>
+                                )}
                             </span>
                         )}
                     </div>
@@ -787,8 +914,61 @@ const ChequePrintingPage = ({ onNavigateSection }) => {
                         </div>
                     )}
 
-                    <div className="hidden md:grid grid-cols-[28px_120px_1fr_160px_1fr_90px] gap-3 px-2 text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide">
-                        <span></span>
+                    {/* Bulk Selection / Actions Toolbar */}
+                    {activeRows.length > 0 && (
+                        <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 bg-gray-50 dark:bg-slate-700/40 rounded-xl text-xs border border-gray-200 dark:border-slate-700">
+                            <div className="flex items-center gap-3">
+                                <label className="flex items-center gap-2 cursor-pointer font-medium text-gray-700 dark:text-slate-300 select-none">
+                                    <input
+                                        type="checkbox"
+                                        className="rounded border-gray-300 dark:border-slate-600 text-primary-600 focus:ring-primary-500 h-4 w-4 cursor-pointer"
+                                        checked={isAllSelected}
+                                        ref={(el) => { if (el) el.indeterminate = isIndeterminate; }}
+                                        onChange={toggleMasterCheckbox}
+                                    />
+                                    <span>Select all ({activeRows.length})</span>
+                                </label>
+                                {selectedCount > 0 && (
+                                    <button
+                                        type="button"
+                                        className="text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200 hover:underline"
+                                        onClick={handleDeselectAll}
+                                    >
+                                        Deselect all
+                                    </button>
+                                )}
+                            </div>
+                            <div className="flex items-center gap-2.5">
+                                <span className="text-gray-500 dark:text-slate-400">
+                                    <strong className="text-gray-800 dark:text-slate-200">{selectedCount}</strong> of {queueCount} selected · <span className="font-mono font-semibold text-gray-800 dark:text-slate-200">₱{selectedTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                                </span>
+                                {selectedCount > 0 && (
+                                    <button
+                                        type="button"
+                                        className="flex items-center gap-1.5 px-2.5 py-1 text-danger-700 bg-danger-50 hover:bg-danger-100 dark:bg-danger-950/40 dark:text-danger-400 dark:hover:bg-danger-900/50 border border-danger-200 dark:border-danger-800 rounded-lg font-medium transition-colors cursor-pointer"
+                                        onClick={handleBulkRemove}
+                                        title="Remove selected cheques from this batch (remains pending in database)"
+                                    >
+                                        <Icon path={ICONS.trash} className="h-3.5 w-3.5" />
+                                        <span>Remove selected ({selectedCount})</span>
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                    )}
+
+                    <div className="hidden md:grid grid-cols-[48px_120px_1fr_160px_1fr_90px] gap-3 px-2 text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide">
+                        <div className="flex items-center justify-center">
+                            <input
+                                type="checkbox"
+                                className="rounded border-gray-300 dark:border-slate-600 text-primary-600 focus:ring-primary-500 h-4 w-4 cursor-pointer"
+                                checked={isAllSelected}
+                                ref={(el) => { if (el) el.indeterminate = isIndeterminate; }}
+                                onChange={toggleMasterCheckbox}
+                                disabled={activeRows.length === 0}
+                                title={isAllSelected ? 'Deselect all cheques' : 'Select all cheques'}
+                            />
+                        </div>
                         <span>Date</span>
                         <span>Payee</span>
                         <span>Amount</span>
@@ -800,15 +980,44 @@ const ChequePrintingPage = ({ onNavigateSection }) => {
                         const isTrailingBlank = idx === rows.length - 1 && !row.payee && !row.amount && !row.memo;
                         const isQueued = Boolean(row.cheque_record_id);
                         return (
-                            <div key={idx} className={`border rounded-xl p-3 grid grid-cols-1 md:grid-cols-[28px_120px_1fr_160px_1fr_90px] gap-3 md:items-center transition-colors ${isTrailingBlank ? 'border-dashed border-gray-300 dark:border-slate-700 bg-transparent' : isQueued ? 'border-primary-200 dark:border-primary-900/50 bg-primary-50/40 dark:bg-primary-900/10' : 'border-gray-200 dark:border-slate-700 bg-gray-50/70 dark:bg-slate-900/40'}`}>
-                                <div className="hidden md:flex items-center justify-center">
+                            <div key={idx} className={`border rounded-xl p-3 grid grid-cols-1 md:grid-cols-[48px_120px_1fr_160px_1fr_90px] gap-3 md:items-center transition-colors ${isTrailingBlank ? 'border-dashed border-gray-300 dark:border-slate-700 bg-transparent' : isQueued ? 'border-primary-200 dark:border-primary-900/50 bg-primary-50/40 dark:bg-primary-900/10' : 'border-gray-200 dark:border-slate-700 bg-gray-50/70 dark:bg-slate-900/40'}`}>
+                                {/* Mobile inclusion toggle */}
+                                {!isTrailingBlank && (
+                                    <div className="flex md:hidden items-center justify-between pb-2 border-b border-gray-100 dark:border-slate-700/60">
+                                        <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-gray-700 dark:text-slate-300 select-none">
+                                            <input
+                                                type="checkbox"
+                                                className="rounded border-gray-300 dark:border-slate-600 text-primary-600 focus:ring-primary-500 h-4 w-4 cursor-pointer"
+                                                checked={isRowSelected(row, idx)}
+                                                onChange={() => handleSelectRow(row, idx)}
+                                            />
+                                            <span>Include in print batch</span>
+                                        </label>
+                                        {isQueued && (
+                                            <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold bg-primary-100 text-primary-700 dark:bg-primary-900/40 dark:text-primary-400">
+                                                AP Cheque
+                                            </span>
+                                        )}
+                                    </div>
+                                )}
+
+                                <div className="hidden md:flex items-center justify-center gap-1.5">
                                     {!isTrailingBlank && (
-                                        <span
-                                            className={`h-5 w-5 rounded-full text-[11px] font-bold flex items-center justify-center ${isQueued ? 'bg-primary-600 text-white' : 'bg-primary-100 dark:bg-primary-900/40 text-primary-700 dark:text-primary-400'}`}
-                                            title={isQueued ? `Cheque #${row.cheque_number || row.cheque_record_id} issued from Treasury` : undefined}
-                                        >
-                                            {isQueued ? <Icon path={ICONS.bank} className="h-3 w-3" /> : idx + 1}
-                                        </span>
+                                        <>
+                                            <input
+                                                type="checkbox"
+                                                className="rounded border-gray-300 dark:border-slate-600 text-primary-600 focus:ring-primary-500 h-4 w-4 cursor-pointer shrink-0"
+                                                checked={isRowSelected(row, idx)}
+                                                onChange={() => handleSelectRow(row, idx)}
+                                                title={isRowSelected(row, idx) ? 'Uncheck to exclude from PDF' : 'Check to include in PDF'}
+                                            />
+                                            <span
+                                                className={`h-5 w-5 rounded-full text-[10px] font-bold flex items-center justify-center shrink-0 ${isQueued ? 'bg-primary-600 text-white' : 'bg-primary-100 dark:bg-primary-900/40 text-primary-700 dark:text-primary-400'}`}
+                                                title={isQueued ? `Cheque #${row.cheque_number || row.cheque_record_id} issued from Treasury` : undefined}
+                                            >
+                                                {isQueued ? <Icon path={ICONS.bank} className="h-3 w-3" /> : idx + 1}
+                                            </span>
+                                        </>
                                     )}
                                 </div>
                                 {[
@@ -1186,8 +1395,8 @@ const ChequePrintingPage = ({ onNavigateSection }) => {
             <Modal isOpen={confirmOpen} onClose={() => setConfirmOpen(false)} title="Confirm cheque batch">
                 <div className="space-y-4">
                     <p className="text-sm text-gray-600 dark:text-slate-400">
-                        You are about to generate <span className="font-semibold text-gray-800 dark:text-slate-200">{queueCount} cheque{queueCount === 1 ? '' : 's'}</span> totaling{' '}
-                        <span className="font-mono font-semibold text-gray-800 dark:text-slate-200">₱{queueTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>{' '}
+                        You are about to generate <span className="font-semibold text-gray-800 dark:text-slate-200">{selectedCount} cheque{selectedCount === 1 ? '' : 's'}</span> totaling{' '}
+                        <span className="font-mono font-semibold text-gray-800 dark:text-slate-200">₱{selectedTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>{' '}
                         using preset <span className="font-semibold text-gray-800 dark:text-slate-200">{selectedTemplate?.bank_name || '—'}</span>.
                     </p>
                     <div className="max-h-64 overflow-auto border border-gray-200 dark:border-slate-700 rounded-lg">
@@ -1202,7 +1411,7 @@ const ChequePrintingPage = ({ onNavigateSection }) => {
                                 </tr>
                             </thead>
                             <tbody className="text-gray-700 dark:text-slate-300">
-                                {activeRows.map((row, idx) => (
+                                {selectedActiveRows.map((row, idx) => (
                                     <tr key={idx} className="border-t border-gray-200 dark:border-slate-700">
                                         <td className="p-2">
                                             {row.cheque_record_id && (
@@ -1226,7 +1435,7 @@ const ChequePrintingPage = ({ onNavigateSection }) => {
                     )}
                     <div className="flex flex-wrap gap-2 justify-end">
                         <button className={BUTTON_SECONDARY} onClick={() => setConfirmOpen(false)}>Cancel</button>
-                        <button className={BUTTON_PRIMARY} disabled={saving} onClick={() => { setConfirmOpen(false); generatePdf(); }}>
+                        <button className={BUTTON_PRIMARY} disabled={saving} onClick={() => { setConfirmOpen(false); generatePdf(selectedActiveRows); }}>
                             <Icon path={ICONS.receipt} className="h-4 w-4" />
                             Confirm &amp; Generate
                         </button>

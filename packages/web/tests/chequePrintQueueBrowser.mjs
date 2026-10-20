@@ -390,6 +390,82 @@ async function runBrowserTests() {
         assert.equal(apiCalls.externalPrint[0].body.confirmation, true);
         console.log('✓ "Record printed elsewhere" modal successfully invoked API with required notes & confirmation');
 
+        // Test Bulk Select/Deselect and Bulk Remove
+        console.log('Testing Bulk Select/Deselect and Bulk Remove...');
+        // 1. Verify toolbar shows all 2 selected
+        const toolbarText1 = await page.evaluate(() => document.body.innerText);
+        assert.ok(toolbarText1.includes('2 of 2 selected') || toolbarText1.includes('Select all (2)'), 'Toolbar must show 2 selected');
+
+        // 2. Deselect first row
+        await page.evaluate(() => {
+            const rowCheckboxes = Array.from(document.querySelectorAll('input[type="checkbox"][title*="exclude from PDF"], input[type="checkbox"][title*="Include in PDF"]'));
+            if (rowCheckboxes.length > 0) {
+                rowCheckboxes[0].click();
+            }
+        });
+        await new Promise(r => setTimeout(r, 200));
+
+        // Verify count updated to 1 of 2 selected
+        const toolbarText2 = await page.evaluate(() => document.body.innerText);
+        assert.ok(toolbarText2.includes('1 of 2 selected'), 'Deselecting a row must update toolbar to 1 of 2 selected');
+        console.log('✓ Deselecting individual cheque updates bulk toolbar to 1 of 2 selected');
+
+        // 3. Click "Deselect all"
+        await page.evaluate(() => {
+            const btns = Array.from(document.querySelectorAll('button'));
+            const deselectBtn = btns.find(b => b.textContent.includes('Deselect all'));
+            if (deselectBtn) deselectBtn.click();
+        });
+        await new Promise(r => setTimeout(r, 200));
+
+        const toolbarText3 = await page.evaluate(() => document.body.innerText);
+        assert.ok(toolbarText3.includes('0 of 2 selected'), 'Deselect all must set 0 selected');
+        console.log('✓ "Deselect all" sets 0 of 2 selected');
+
+        // 4. Click "Select all"
+        await page.evaluate(() => {
+            const selectAllLabel = Array.from(document.querySelectorAll('label')).find(l => l.textContent.includes('Select all'));
+            if (selectAllLabel) {
+                const cb = selectAllLabel.querySelector('input[type="checkbox"]');
+                if (cb) cb.click();
+            }
+        });
+        await new Promise(r => setTimeout(r, 200));
+
+        const toolbarText4 = await page.evaluate(() => document.body.innerText);
+        assert.ok(toolbarText4.includes('2 of 2 selected'), 'Select all must restore 2 selected');
+        console.log('✓ "Select all" restores 2 of 2 selected');
+
+        // 5. Bulk Remove selected (2)
+        console.log('Testing "Remove selected (2)" bulk action...');
+        await page.evaluate(() => {
+            const btns = Array.from(document.querySelectorAll('button'));
+            const bulkRemoveBtn = btns.find(b => b.textContent.includes('Remove selected'));
+            if (bulkRemoveBtn) bulkRemoveBtn.click();
+        });
+        await new Promise(r => setTimeout(r, 300));
+
+        // Verify both cheques are dismissed
+        const restoreBannerTextBulk = await page.evaluate(() => document.body.innerText);
+        assert.ok(restoreBannerTextBulk.includes('2 cheques removed from this mount batch'), 'Bulk removal must update dismissed count to 2');
+        console.log('✓ "Remove selected" bulk action dismissed both cheques and updated restore banner to 2');
+
+        // 6. Restore all dismissed cheques
+        await page.evaluate(() => {
+            const btns = Array.from(document.querySelectorAll('button'));
+            const restoreBtn = btns.find(b => b.textContent.includes('Restore removed cheques'));
+            if (restoreBtn) restoreBtn.click();
+        });
+        await new Promise(r => setTimeout(r, 400));
+
+        const payeesAfterBulkRestore = await page.evaluate(() => {
+            const inputs = Array.from(document.querySelectorAll('input[placeholder="Payee"]'));
+            return inputs.map(i => i.value).filter(Boolean);
+        });
+        assert.ok(payeesAfterBulkRestore.includes('Alpha Construction Supplies'), 'Alpha must be restored');
+        assert.ok(payeesAfterBulkRestore.includes('Beta Electric & Power'), 'Beta must be restored');
+        console.log('✓ Restoring removed cheques brought back all bulk-removed cheques');
+
         // Test Pop-up Blocker fallback banner
         console.log('Testing Pop-up Blocker fallback banner...');
         // Mock window.open to simulate popup blocker returning null
