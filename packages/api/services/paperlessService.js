@@ -265,6 +265,24 @@ async function findGoodsReceiptDocument(receiptNo, supplierName) {
 async function syncReceiptRecordedTag(receiptNo, recorded, supplierId, queryClient) {
     if (!getPaperlessConfig().isConfigured || !isValidReceiptQuery(receiptNo) || !supplierId) return;
     try {
+        if (!recorded) {
+            const dbExecutor = queryClient || require('../db');
+            const { rows: remaining } = await dbExecutor.query(
+                `SELECT 1 FROM goods_receipt
+                 WHERE supplier_id = $1
+                   AND status = 'Active' AND workflow_status = 'Posted'
+                   AND (
+                     public.goods_receipt_match_key(physical_receipt_no) = public.goods_receipt_match_key($2)
+                     OR lower(trim(both from supplier_invoice_no)) = lower(trim(both from $2))
+                   )
+                 LIMIT 1`,
+                [supplierId, receiptNo],
+            );
+            if (remaining.length > 0) {
+                return;
+            }
+        }
+
         const { rows: [supplier] } = await (queryClient || require('../db')).query(
             'SELECT supplier_name FROM supplier WHERE supplier_id = $1', [supplierId],
         );

@@ -9,6 +9,7 @@ const { recomputeWacForParts } = require('../services/transactionDateService');
 const grnCosting = require('../services/grnCostingService');
 const grnWorkflow = require('../services/grnWorkflowService');
 const { postReceipt } = require('../services/grnPostingService');
+const supplierBillService = require('../services/supplierBillService');
 const { normalizeReceiptIdentifier } = require('../helpers/paperlessMatching');
 const { syncReceiptRecordedTag } = require('../services/paperlessService');
 const router = express.Router();
@@ -212,7 +213,8 @@ router.get('/goods-receipts/check-physical-receipt', protect, hasPermission('goo
     const { rows: [match] } = await db.query(
       `SELECT grn_id, grn_number, workflow_status
        FROM goods_receipt
-       WHERE supplier_id = $1 AND public.goods_receipt_match_key(physical_receipt_no) = $2 AND status <> 'Voided'
+       WHERE supplier_id = $1 AND public.goods_receipt_match_key(physical_receipt_no) = $2
+         AND status <> 'Voided' AND workflow_status <> 'Cancelled'
          AND ($3::int IS NULL OR grn_id <> $3)
        LIMIT 1`,
       [supplierId, receiptNo, excludeId],
@@ -401,13 +403,7 @@ router.post('/goods-receipts', protect, hasPermission('goods_receipt:create'), a
     await client.query('BEGIN');
 
     if (bill_id) {
-      const { rows: [bill] } = await client.query(
-        `SELECT bill_id FROM supplier_bill WHERE bill_id = $1 AND supplier_id = $2 AND status != 'Paid'`,
-        [bill_id, supplier_id]
-      );
-      if (!bill) {
-        throw new Error('The selected payable was not found for this supplier, or is already fully paid.');
-      }
+      await supplierBillService.validateBillForReceiving(client, { billId: bill_id, supplierId: supplier_id });
     }
 
     const grn_number = await getNextDocumentNumber(client, 'GRN');
@@ -505,13 +501,15 @@ router.post('/goods-receipts', protect, hasPermission('goods_receipt:create'), a
       isBackfill,
       receiptDate,
       supplierInvoiceNo: invoiceNo,
+      physicalReceiptNo: physicalReceiptNo || null,
       freightAmount,
       freightSupplierId: isBackfill ? null : freightSupplierId,
       netGoodsValue: costing.totals.net_goods_value,
     });
 
     await client.query('COMMIT');
-    await syncReceiptRecordedTag(physicalReceiptNo || invoiceNo, true, supplier_id, client);
+    if (physicalReceiptNo) await syncReceiptRecordedTag(physicalReceiptNo, true, supplier_id, client);
+    if (invoiceNo && invoiceNo !== physicalReceiptNo) await syncReceiptRecordedTag(invoiceNo, true, supplier_id, client);
     res.status(201).json({
       message: 'Goods receipt created successfully',
       grn_id: newGrnId,
@@ -661,6 +659,18 @@ router.put('/goods-receipts/:id', protect, hasPermission('goods_receipt:edit'), 
       // silently re-dating the receipt to "now" on every edit would fight
       // the transaction-date-override feature (transactionDateService.js),
       // which is the only path that should ever move receipt_date.
+      // Server guard: cannot change supplier or erase return provenance on posted receipts
+      if (supplier_id && Number(supplier_id) !== Number(grnRow.supplier_id)) {
+        throw new Error('Cannot change the supplier on an already posted goods receipt.');
+      }
+      const { rows: returnRows } = await client.query(
+        'SELECT COUNT(*)::int AS cnt FROM goods_receipt_line WHERE grn_id = $1 AND return_quantity > 0',
+        [id]
+      );
+      if (returnRows[0].cnt > 0) {
+        throw new Error('Cannot rewrite lines on a goods receipt that has active return history.');
+      }
+
       const updateGrnQuery = `
         UPDATE goods_receipt
         SET ${supplier_id ? 'supplier_id = $1,' : ''} received_by = $${supplier_id ? '2' : '1'}
@@ -790,26 +800,44 @@ router.delete('/goods-receipts/:id', protect, hasPermission('goods_receipt:void'
     // reversing a paid bill's liability without also reversing the payment/allocation
     // would leave the AP ledger internally inconsistent.
     let bill = null;
+    let shouldVoidBill = false;
     if (grn.bill_id) {
       const { rows: billRows } = await client.query(
-        'SELECT bill_id, bill_number, supplier_id, amount_paid, status FROM supplier_bill WHERE bill_id = $1 FOR UPDATE',
+        'SELECT bill_id, bill_number, supplier_id, amount_paid, status, liability_basis FROM supplier_bill WHERE bill_id = $1 FOR UPDATE',
         [grn.bill_id]
       );
       bill = billRows[0] || null;
       if (bill && bill.status !== 'Void') {
-        if (parseFloat(bill.amount_paid) > 0) {
+        if (bill.liability_basis === 'legacy_unknown') {
           await client.query('ROLLBACK');
-          return res.status(400).json({ message: `Cannot void: linked supplier bill ${bill.bill_number} already has payments applied. Reverse the payment first.` });
+          return res.status(400).json({
+            message: `Cannot void goods receipt: linked bill ${bill.bill_number} has unknown liability basis. Please review and classify the bill before voiding.`,
+          });
         }
-        // A bill is header-only (no per-line detail), so a partial reversal can't be
-        // computed accurately when other active receipts still share it.
-        const { rows: otherRows } = await client.query(
-          `SELECT COUNT(*)::int AS cnt FROM goods_receipt WHERE bill_id = $1 AND grn_id != $2 AND status = 'Active'`,
-          [grn.bill_id, id]
-        );
-        if (otherRows[0].cnt > 0) {
-          await client.query('ROLLBACK');
-          return res.status(400).json({ message: `Cannot void: supplier bill ${bill.bill_number} has other active goods receipts attached to it. Void those first, or handle this bill manually.` });
+        if (bill.liability_basis === 'receipt_derived') {
+          if (parseFloat(bill.amount_paid) > 0) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ message: `Cannot void: linked supplier bill ${bill.bill_number} already has payments applied. Reverse the payment first.` });
+          }
+          const scheduledMap = await supplierBillService.getScheduledAmounts(client, [bill.bill_id]);
+          if ((scheduledMap.get(bill.bill_id) || 0) > 0) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ message: `Cannot void: linked supplier bill ${bill.bill_number} has scheduled payments. Cancel the cheques first.` });
+          }
+          // A bill is header-only (no per-line detail), so a partial reversal can't be
+          // computed accurately when other active receipts still share it.
+          const { rows: otherRows } = await client.query(
+            `SELECT COUNT(*)::int AS cnt FROM goods_receipt WHERE bill_id = $1 AND grn_id != $2 AND status = 'Active'`,
+            [grn.bill_id, id]
+          );
+          if (otherRows[0].cnt > 0) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ message: `Cannot void: supplier bill ${bill.bill_number} has other active goods receipts attached to it. Void those first, or handle this bill manually.` });
+          }
+          shouldVoidBill = true;
+        } else {
+          // 'independent' or freight bill: voiding GR reverses only receipt's inventory and PO effects
+          shouldVoidBill = false;
         }
       }
     }
@@ -853,7 +881,7 @@ router.delete('/goods-receipts/:id', protect, hasPermission('goods_receipt:void'
     // Reverse this receipt's AP liability with a single offsetting adjustment entry
     // rather than touching (immutable) historical ap_ledger rows, then void the bill —
     // only reachable once we've established this GRN is the bill's sole active basis.
-    if (bill && bill.status !== 'Void') {
+    if (bill && bill.status !== 'Void' && shouldVoidBill) {
       const { rows: ledgerRows } = await client.query(
         'SELECT COALESCE(SUM(amount), 0) AS net FROM ap_ledger WHERE bill_id = $1',
         [bill.bill_id]
@@ -872,6 +900,7 @@ router.delete('/goods-receipts/:id', protect, hasPermission('goods_receipt:void'
         });
       }
       await client.query(`UPDATE supplier_bill SET status = 'Void' WHERE bill_id = $1`, [bill.bill_id]);
+      await supplierBillService.releaseBillIdentities(client, bill.bill_id);
     }
 
     // Freight rides on its own bill(s) against the carrier(s), so voiding the receipt has to
@@ -953,7 +982,10 @@ router.delete('/goods-receipts/:id', protect, hasPermission('goods_receipt:void'
     );
 
     await client.query('COMMIT');
-    await syncReceiptRecordedTag(grn.physical_receipt_no || grn.supplier_invoice_no, false, grn.supplier_id, client);
+    if (grn.physical_receipt_no) await syncReceiptRecordedTag(grn.physical_receipt_no, false, grn.supplier_id, client);
+    if (grn.supplier_invoice_no && grn.supplier_invoice_no !== grn.physical_receipt_no) {
+      await syncReceiptRecordedTag(grn.supplier_invoice_no, false, grn.supplier_id, client);
+    }
     res.json({ message: 'Goods receipt voided and stock reversed.' });
   } catch (err) {
     await client.query('ROLLBACK');
@@ -1022,8 +1054,6 @@ function parseHeaderPayload(body) {
     receipt_date: body.receipt_date || null,
     is_backfill: !!body.is_backfill,
     physical_receipt_no: receiptInputValue(body.physical_receipt_no),
-    // Accept older callers that still send supplier_invoice_no, but treat the one
-    // supplier document reference as the source of truth for new requests.
     supplier_invoice_no: receiptInputValue(body.supplier_invoice_no) || receiptInputValue(body.physical_receipt_no),
     freight_amount: totalFreight > 0 ? totalFreight : (Number(body.freight_amount) > 0 ? Number(body.freight_amount) : 0),
     freight_allocation_method: body.freight_allocation_method || grnCosting.METHOD_A,
@@ -1143,14 +1173,14 @@ router.post('/goods-receipts/drafts', protect, hasPermission('goods_receipt:crea
       `INSERT INTO goods_receipt (grn_number, supplier_id, received_by, po_id, receipt_date, is_backfill,
                                   supplier_invoice_no, physical_receipt_no, workflow_status, freight_amount, freight_allocation_method,
                                   freight_supplier_id, overall_discount_percent, overall_discount_amount,
-                                  sync_retail_prices, created_by)
+                                  sync_retail_prices, created_by, bill_id)
        VALUES ($1, $2, $3, $4, COALESCE($5::timestamptz, CURRENT_TIMESTAMP), $6, $7, $8, 'Draft',
-               $9, $10, $11, $12, $13, $14, $15)
+               $9, $10, $11, $12, $13, $14, $15, $16)
        RETURNING grn_id, grn_number`,
       [draftNumber, header.supplier_id, header.received_by || employeeId, header.po_id, header.receipt_date,
        header.is_backfill, header.supplier_invoice_no, header.physical_receipt_no, header.freight_amount, header.freight_allocation_method,
        header.freight_supplier_id, header.overall_discount_percent, header.overall_discount_amount,
-       header.sync_retail_prices, employeeId],
+       header.sync_retail_prices, employeeId, header.bill_id || null],
     );
 
     await writeDraftLines(client, draft.grn_id, lines, costing);
@@ -1245,19 +1275,24 @@ router.get('/goods-receipts/:id', protect, hasPermission('goods_receipt:create')
     const { rows } = await db.query(
       `SELECT gr.grn_id, gr.grn_number, gr.receipt_date, gr.supplier_id, gr.received_by, gr.po_id,
               gr.bill_id, gr.freight_bill_id, gr.status, gr.workflow_status, gr.is_backfill,
-              ${includePhysicalReceipt
-                ? 'COALESCE(gr.supplier_invoice_no, gr.physical_receipt_no) AS supplier_invoice_no, COALESCE(gr.physical_receipt_no, gr.supplier_invoice_no) AS physical_receipt_no,'
-                : 'gr.supplier_invoice_no, gr.supplier_invoice_no AS physical_receipt_no,'}
+              gr.supplier_invoice_no,
+              ${includePhysicalReceipt ? 'gr.physical_receipt_no,' : 'NULL::varchar AS physical_receipt_no,'}
               gr.freight_amount, gr.freight_allocation_method,
               gr.freight_supplier_id, gr.overall_discount_percent, gr.overall_discount_amount,
               gr.sync_retail_prices, gr.created_at, gr.submitted_at, gr.posted_at,
               s.supplier_name,
               fs.supplier_name AS freight_supplier_name,
-              CONCAT(e.first_name, ' ', e.last_name) AS received_by_name
+              CONCAT(e.first_name, ' ', e.last_name) AS received_by_name,
+              sb.bill_number,
+              sb.total_amount AS bill_total_amount,
+              sb.amount_paid AS bill_amount_paid,
+              sb.status AS bill_status,
+              sb.liability_basis AS bill_liability_basis
        FROM goods_receipt gr
        JOIN supplier s ON gr.supplier_id = s.supplier_id
        LEFT JOIN supplier fs ON gr.freight_supplier_id = fs.supplier_id
        LEFT JOIN employee e ON gr.received_by = e.employee_id
+       LEFT JOIN supplier_bill sb ON gr.bill_id = sb.bill_id
        WHERE gr.grn_id = $1`,
       [req.params.id],
     );
@@ -1332,24 +1367,25 @@ router.put('/goods-receipts/:id/draft', protect, hasPermission('goods_receipt:cr
        SET supplier_id = COALESCE($1, supplier_id),
            received_by = COALESCE($2, received_by),
            po_id = $3,
-           receipt_date = COALESCE($4::timestamptz, receipt_date),
-           is_backfill = $5,
-           supplier_invoice_no = $6,
-           physical_receipt_no = $7,
-           freight_amount = $8,
-           freight_allocation_method = $9,
-           freight_supplier_id = $10,
-           overall_discount_percent = $11,
-           overall_discount_amount = $12,
-           sync_retail_prices = $13,
-           workflow_status = $15,
+           bill_id = $4,
+           receipt_date = COALESCE($5::timestamptz, receipt_date),
+           is_backfill = $6,
+           supplier_invoice_no = $7,
+           physical_receipt_no = $8,
+           freight_amount = $9,
+           freight_allocation_method = $10,
+           freight_supplier_id = $11,
+           overall_discount_percent = $12,
+           overall_discount_amount = $13,
+           sync_retail_prices = $14,
+           workflow_status = $16,
            -- The edit leaves it a draft, and a draft has no submission behind it, so the
            -- previous approval trail is cleared unconditionally rather than conditionally.
            submitted_by = NULL,
            submitted_at = NULL,
            updated_at = CURRENT_TIMESTAMP
-       WHERE grn_id = $14`,
-      [header.supplier_id, header.received_by, header.po_id, header.receipt_date, header.is_backfill,
+       WHERE grn_id = $15`,
+      [header.supplier_id, header.received_by, header.po_id, header.bill_id || null, header.receipt_date, header.is_backfill,
        header.supplier_invoice_no, header.physical_receipt_no, header.freight_amount, header.freight_allocation_method,
        header.freight_supplier_id, header.overall_discount_percent, header.overall_discount_amount,
        header.sync_retail_prices, id, grnWorkflow.DRAFT],
@@ -1523,13 +1559,17 @@ router.post('/goods-receipts/:id/post', protect, hasPermission('goods_receipt:po
       isBackfill: grn.is_backfill,
       receiptDate: grn.receipt_date,
       supplierInvoiceNo: grn.supplier_invoice_no,
+      physicalReceiptNo: grn.physical_receipt_no,
       freightAmount: Number(grn.freight_amount) || 0,
       freightSupplierId: grn.is_backfill ? null : grn.freight_supplier_id,
       netGoodsValue: costing.totals.net_goods_value,
     });
 
     await client.query('COMMIT');
-    await syncReceiptRecordedTag(grn.physical_receipt_no || grn.supplier_invoice_no, true, grn.supplier_id, client);
+    if (grn.physical_receipt_no) await syncReceiptRecordedTag(grn.physical_receipt_no, true, grn.supplier_id, client);
+    if (grn.supplier_invoice_no && grn.supplier_invoice_no !== grn.physical_receipt_no) {
+      await syncReceiptRecordedTag(grn.supplier_invoice_no, true, grn.supplier_id, client);
+    }
     res.json({
       message: 'Goods receipt posted.',
       grn_id: Number(id),
@@ -1653,6 +1693,16 @@ router.post('/goods-receipts/:id/lines/:lineId/return', protect, hasPermission('
       }
     }
 
+    // Compute costing before the return to determine the exact net goods value delta
+    const costingBefore = grnCosting.computeCosting({
+      lines: costingInputFromLines(allLines),
+      freightAmount: Number(grn.freight_amount) || 0,
+      freightMethod: grn.freight_allocation_method,
+      overallDiscountPercent: grn.overall_discount_percent,
+      overallDiscountAmount: grn.overall_discount_amount,
+      recomputeSalePrice: false,
+    });
+
     // Apply the return, then recompute the whole document — freight and the header
     // discount are shared across lines, so one line going back changes every other
     // line's landed cost.
@@ -1716,39 +1766,61 @@ router.post('/goods-receipts/:id/lines/:lineId/return', protect, hasPermission('
         );
       }
 
-      // Credit the payable at the goods value of the returned units — net of the line's
-      // own discount, but excluding freight, which the carrier still charged for
-      // carrying them and does not refund.
-      const targetIndex = updatedLines.findIndex((l) => String(l.grn_line_id) === String(lineId));
-      const targetComputed = costing.lines[targetIndex];
-      const unitNetCost = targetComputed && targetComputed.accepted_quantity > 0
-        ? targetComputed.net_line_value / targetComputed.accepted_quantity
-        : Number(target.cost_price);
-      creditAmount = Math.round(returnQty * unitNetCost * 100) / 100;
+      // Credit the payable at the net goods difference between before and after the return —
+      // net of header/line discounts and cent rounding, excluding freight.
+      creditAmount = Math.max(0, Math.round(((costingBefore.totals.net_goods_value || 0) - (costing.totals.net_goods_value || 0)) * 100) / 100);
 
       if (grn.bill_id && creditAmount > 0) {
         const { rows: [bill] } = await client.query(
-          'SELECT bill_id, bill_number, supplier_id, total_amount, amount_paid, status FROM supplier_bill WHERE bill_id = $1 FOR UPDATE',
+          'SELECT bill_id, bill_number, supplier_id, total_amount, amount_paid, status, liability_basis FROM supplier_bill WHERE bill_id = $1 FOR UPDATE',
           [grn.bill_id],
         );
         if (bill && bill.status !== 'Void') {
-          const newTotal = Math.max(0, Number(bill.total_amount) - creditAmount);
-          if (newTotal < Number(bill.amount_paid)) {
-            await client.query('ROLLBACK');
-            return res.status(400).json({
-              message: `Returning these goods would take bill ${bill.bill_number} below what has already been paid on it. Handle the refund with the supplier first.`,
+          const basis = bill.liability_basis || 'receipt_derived';
+          if (basis === 'independent') {
+            // Independent bill: preserve recorded invoice total; surface pending credit
+            await apLedgerService.appendEntry(client, {
+              supplierId: bill.supplier_id,
+              billId: bill.bill_id,
+              entryType: 'CREDIT_ADJUSTMENT',
+              amount: 0,
+              referenceNo: grn.grn_number,
+              notes: `PHYSICAL RETURN: Goods receipt ${grn.grn_number} returned goods value ₱${creditAmount.toFixed(2)}. Supplier credit requires review.`,
+              createdBy: req.user.employee_id,
+            });
+          } else if (basis === 'receipt_derived') {
+            const scheduledMap = await supplierBillService.getScheduledAmounts(client, [bill.bill_id]);
+            const scheduledAmount = scheduledMap.get(bill.bill_id) || 0;
+            const minCommitted = Number(bill.amount_paid) + scheduledAmount;
+            const newTotal = Math.max(0, Number(bill.total_amount) - creditAmount);
+            if (newTotal < minCommitted - 0.005) {
+              await client.query('ROLLBACK');
+              return res.status(400).json({
+                message: `Returning these goods would take bill ${bill.bill_number} below what has already been paid on it (paid + scheduled cheques: ₱${minCommitted.toFixed(2)}). Handle the refund with the supplier first.`,
+              });
+            }
+            await client.query('UPDATE supplier_bill SET total_amount = $1 WHERE bill_id = $2', [newTotal, bill.bill_id]);
+            await apLedgerService.appendEntry(client, {
+              supplierId: bill.supplier_id,
+              billId: bill.bill_id,
+              entryType: 'RETURN_CREDIT',
+              amount: -creditAmount,
+              referenceNo: grn.grn_number,
+              notes: `Return on goods receipt ${grn.grn_number}: ${reasonText}`,
+              createdBy: req.user.employee_id,
+            });
+          } else {
+            // legacy_unknown: record review note without altering total_amount
+            await apLedgerService.appendEntry(client, {
+              supplierId: bill.supplier_id,
+              billId: bill.bill_id,
+              entryType: 'CREDIT_ADJUSTMENT',
+              amount: 0,
+              referenceNo: grn.grn_number,
+              notes: `PHYSICAL RETURN: Goods receipt ${grn.grn_number} returned goods value ₱${creditAmount.toFixed(2)}. Bill basis unverified; credit note review required.`,
+              createdBy: req.user.employee_id,
             });
           }
-          await client.query('UPDATE supplier_bill SET total_amount = $1 WHERE bill_id = $2', [newTotal, bill.bill_id]);
-          await apLedgerService.appendEntry(client, {
-            supplierId: bill.supplier_id,
-            billId: bill.bill_id,
-            entryType: 'RETURN_CREDIT',
-            amount: -creditAmount,
-            referenceNo: grn.grn_number,
-            notes: `Return on goods receipt ${grn.grn_number}: ${reasonText}`,
-            createdBy: req.user.employee_id,
-          });
         }
       }
     }

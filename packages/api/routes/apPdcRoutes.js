@@ -615,7 +615,18 @@ router.get('/ap/supplier-bills', protect, hasPermission(['ap-pdc:view', 'ap:view
 
 // POST /ap/supplier-bills - Create a payable directly against a supplier
 router.post('/ap/supplier-bills', protect, hasPermission(['ap:manage']), async (req, res) => {
-    const { supplier_id, po_id, grn_id, bill_number, bill_date, due_date, total_amount, notes } = req.body;
+    const {
+        supplier_id,
+        po_id,
+        grn_id,
+        bill_number,
+        bill_date,
+        due_date,
+        total_amount,
+        notes,
+        supplier_document_type,
+        supplier_document_no,
+    } = req.body;
     const parsedAmount = parseFloat(total_amount);
     if (!supplier_id || !parsedAmount || parsedAmount <= 0) {
         return res.status(400).json({ message: 'supplier_id and a positive total_amount are required' });
@@ -640,12 +651,27 @@ router.post('/ap/supplier-bills', protect, hasPermission(['ap:manage']), async (
         }
 
         const resolvedBillNumber = bill_number || await getNextDocumentNumber(client, 'BILL');
+        const resolvedDocType = supplier_document_type || (supplier_document_no ? 'invoice' : null);
+        const resolvedDocNo = supplier_document_no ? String(supplier_document_no).trim() : null;
 
         const { rows: [bill] } = await client.query(
-            `INSERT INTO supplier_bill (supplier_id, po_id, grn_id, bill_number, bill_date, due_date, total_amount, notes, created_by)
-             VALUES ($1, $2, $3, $4, COALESCE($5, CURRENT_DATE), $6, $7, $8, $9) RETURNING *`,
-            [supplier_id, po_id || null, grn_id || null, resolvedBillNumber, bill_date || null, resolvedDueDate, parsedAmount, notes || null, req.user?.employee_id]
+            `INSERT INTO supplier_bill (supplier_id, po_id, grn_id, bill_number, bill_date, due_date, total_amount, notes, created_by,
+                                       liability_basis, supplier_document_type, supplier_document_no)
+             VALUES ($1, $2, $3, $4, COALESCE($5, CURRENT_DATE), $6, $7, $8, $9, 'independent', $10, $11) RETURNING *`,
+            [supplier_id, po_id || null, grn_id || null, resolvedBillNumber, bill_date || null, resolvedDueDate, parsedAmount, notes || null, req.user?.employee_id,
+             resolvedDocType, resolvedDocNo]
         );
+
+        if (resolvedDocType && resolvedDocNo) {
+            const supplierBillService = require('../services/supplierBillService');
+            await supplierBillService.registerBillIdentity(client, {
+                billId: bill.bill_id,
+                supplierId,
+                documentType: resolvedDocType,
+                documentNo: resolvedDocNo,
+                isPrimary: true,
+            });
+        }
 
         await apLedgerService.appendEntry(client, {
             supplierId: supplier_id,
@@ -662,6 +688,13 @@ router.post('/ap/supplier-bills', protect, hasPermission(['ap:manage']), async (
     } catch (err) {
         await client.query('ROLLBACK');
         console.error('Create Supplier Bill Error:', err.message);
+        if (err.code === 'BILL_IDENTITY_CONFLICT') {
+            return res.status(409).json({
+                code: 'BILL_IDENTITY_CONFLICT',
+                message: err.message,
+                conflictingBill: err.conflictingBill,
+            });
+        }
         if (err.code === '23505') {
             return res.status(409).json({ message: 'A bill with this number already exists.' });
         }

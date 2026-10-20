@@ -462,7 +462,8 @@ describe('MasterDataMergeService against PostgreSQL', () => {
                 [grn.grn_id, id]);
             await client.query('INSERT INTO purchase_order (po_number, supplier_id, employee_id, total_amount) ' +
                 'VALUES ($1, $2, $3, 0)', [`REG-PO-${suffix}`, id, actorId]);
-            await client.query('INSERT INTO supplier_bill (supplier_id, total_amount) VALUES ($1, 0)', [id]);
+            const { rows: [bill] } = await client.query('INSERT INTO supplier_bill (supplier_id, total_amount) VALUES ($1, 0) RETURNING bill_id', [id]);
+            await client.query("INSERT INTO supplier_bill_document_identity (bill_id, supplier_id, document_type, document_no, normalized_key) VALUES ($1, $2, 'invoice', $3, $3)", [bill.bill_id, id, `INV-${suffix}`]);
             await client.query("INSERT INTO ap_ledger (supplier_id, entry_type, amount, balance_after) " +
                 "VALUES ($1, 'BILL_POSTED', 0, 0)", [id]);
             await client.query('INSERT INTO ap_payment (supplier_id, amount) VALUES ($1, 0)', [id]);

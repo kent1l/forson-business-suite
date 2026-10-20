@@ -6,6 +6,7 @@ const { parsePaginationQuery, paginatedResponse } = require('../helpers/paginati
 const apPaymentService = require('../services/apPaymentService');
 const apPdcService = require('../services/apPdcService');
 const grnCosting = require('../services/grnCostingService');
+const supplierBillService = require('../services/supplierBillService');
 const router = express.Router();
 
 // GET /ap/aging-summary - Open supplier_bill balances bucketed by age (mirrors /ar/aging-summary)
@@ -323,6 +324,80 @@ router.patch('/ap/suppliers/:supplierId/payment-hold', protect, hasPermission('a
     }
 });
 
+// GET /ap/supplier-bills/matches - Resolve matching bills by typed supplier reference
+// Declared before :billId routes to avoid path collision.
+router.get('/ap/supplier-bills/matches', protect, hasPermission(['ap:view', 'ap-pdc:view']), async (req, res) => {
+    const { supplier_id, document_type, document_no } = req.query;
+    try {
+        const matches = await supplierBillService.resolveDocumentMatches(db, {
+            supplierId: supplier_id,
+            documentType: document_type || 'invoice',
+            documentNo: document_no,
+        });
+        res.json({ success: true, data: matches });
+    } catch (err) {
+        console.error('AP Bill Matches Error:', err.message);
+        res.status(500).json({ message: 'Failed to resolve document matches' });
+    }
+});
+
+// PATCH /ap/supplier-bills/:billId/amount - Audited amount and reference correction
+router.patch('/ap/supplier-bills/:billId/amount', protect, hasPermission('ap:manage'), async (req, res) => {
+    const billId = parseInt(req.params.billId, 10);
+    if (!billId) return res.status(400).json({ message: 'Invalid bill ID' });
+    const { new_amount, reason, confirm_independent, document_type, document_no } = req.body;
+    if (!reason || !reason.trim()) {
+        return res.status(400).json({ message: 'reason is required for amount or reference correction' });
+    }
+
+    const client = await db.getClient();
+    try {
+        await client.query('BEGIN');
+        const updated = await supplierBillService.recordBillAmountCorrection(client, {
+            billId,
+            newAmount: new_amount,
+            reason: reason.trim(),
+            actorId: req.user?.employee_id,
+            confirmIndependent: !!confirm_independent,
+            documentType: document_type || null,
+            documentNo: document_no || null,
+        });
+        await client.query('COMMIT');
+        res.json({ success: true, message: 'Bill correction recorded', data: updated });
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error('AP Bill Amount Correction Error:', err.message);
+        if (err.statusCode) {
+            return res.status(err.statusCode).json({ message: err.message, code: err.code });
+        }
+        res.status(500).json({ message: 'Failed to record bill correction' });
+    } finally {
+        client.release();
+    }
+});
+
+// GET /ap/supplier-bills/:billId/correction-history - Audit trail for bill corrections
+router.get('/ap/supplier-bills/:billId/correction-history', protect, hasPermission(['ap:view', 'ap-pdc:view']), async (req, res) => {
+    const billId = parseInt(req.params.billId, 10);
+    if (!billId) return res.status(400).json({ message: 'Invalid bill ID' });
+    try {
+        const { rows } = await db.query(`
+            SELECT cl.correction_id, cl.correction_type, cl.old_total_amount, cl.new_total_amount,
+                   cl.old_document_type, cl.new_document_type, cl.old_document_no, cl.new_document_no,
+                   cl.old_basis, cl.new_basis, cl.reason, cl.created_at,
+                   e.first_name, e.last_name
+            FROM supplier_bill_correction_log cl
+            LEFT JOIN employee e ON e.employee_id = cl.actor_id
+            WHERE cl.bill_id = $1
+            ORDER BY cl.created_at DESC
+        `, [billId]);
+        res.json({ success: true, data: rows });
+    } catch (err) {
+        console.error('AP Bill Correction History Error:', err.message);
+        res.status(500).json({ message: 'Failed to fetch correction history' });
+    }
+});
+
 // PATCH /ap/supplier-bills/:billId/due-date - Edit a bill's due date, with an audit log entry
 router.patch('/ap/supplier-bills/:billId/due-date', protect, hasPermission('ap:manage'), async (req, res) => {
     const billId = parseInt(req.params.billId, 10);
@@ -386,20 +461,21 @@ router.get('/ap/supplier-bills/:billId/due-date-history', protect, hasPermission
     }
 });
 
-// GET /ap/supplier-bills/:billId/items - Items attached to a manually-created bill via
-// one or more linked goods receipts (goods_receipt.bill_id), plus a variance check
+// GET /ap/supplier-bills/:billId/items - Items attached to a bill via
+// active Posted goods receipts (goods_receipt.bill_id), plus a net goods variance check
 // against the bill's recorded total_amount.
 router.get('/ap/supplier-bills/:billId/items', protect, hasPermission('ap:view'), async (req, res) => {
     const billId = parseInt(req.params.billId, 10);
     if (!billId) return res.status(400).json({ message: 'Invalid bill ID' });
     try {
-        const { rows: [bill] } = await db.query('SELECT bill_id, total_amount FROM supplier_bill WHERE bill_id = $1', [billId]);
+        const { rows: [bill] } = await db.query('SELECT bill_id, total_amount, liability_basis FROM supplier_bill WHERE bill_id = $1', [billId]);
         if (!bill) return res.status(404).json({ message: 'Bill not found' });
 
         const { rows } = await db.query(`
             SELECT
                 grl.grn_line_id, grl.grn_id, gr.grn_number, gr.receipt_date,
-                grl.part_id, grl.quantity, grl.cost_price,
+                grl.part_id, grl.quantity, grl.return_quantity, grl.cost_price,
+                grl.line_discount_percent, grl.line_discount_amount,
                 p.internal_sku, p.detail,
                 CASE
                     WHEN pn.part_number IS NOT NULL THEN
@@ -426,17 +502,18 @@ router.get('/ap/supplier-bills/:billId/items', protect, hasPermission('ap:view')
             LEFT JOIN part_number pn ON pn.part_id = p.part_id AND pn.deleted_at IS NULL AND pn.display_order = (
                 SELECT MIN(pn2.display_order) FROM part_number pn2 WHERE pn2.part_id = p.part_id AND pn2.deleted_at IS NULL
             )
-            WHERE gr.bill_id = $1
+            WHERE gr.bill_id = $1 AND gr.status = 'Active' AND gr.workflow_status = 'Posted'
             ORDER BY gr.receipt_date ASC, grl.grn_line_id ASC
         `, [billId]);
 
-        const itemsTotal = rows.reduce((sum, r) => sum + (parseFloat(r.quantity) * parseFloat(r.cost_price)), 0);
+        const { netGoodsTotal } = await supplierBillService.getNetPostedGoodsValue(db, billId);
         res.json({
             success: true,
             data: rows,
-            itemsTotal,
+            itemsTotal: netGoodsTotal,
             billTotal: parseFloat(bill.total_amount),
-            variance: parseFloat(bill.total_amount) - itemsTotal,
+            variance: parseFloat(bill.total_amount) - netGoodsTotal,
+            liabilityBasis: bill.liability_basis,
         });
     } catch (err) {
         console.error('AP Bill Items Error:', err.message);
