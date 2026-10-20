@@ -83,7 +83,7 @@ const MainLayout = ({ user, onLogout, onNavigate, currentPage, pageState, posLin
             case 'purchase_orders': return <PurchaseOrderPage />;
             case 'ar': return <AccountsReceivablePage pageState={currentPage === 'ar' ? pageState : null} onNavigate={onNavigate} />;
             case 'ap': return <AccountsPayablePage onNavigate={onNavigate} pageState={currentPage === 'ap' ? pageState : null} />;
-            case 'cheques_treasury': return <ChequesTreasuryPage pageState={currentPage === 'cheques_treasury' ? pageState : null} />;
+            case 'cheques_treasury': return <ChequesTreasuryPage onNavigate={onNavigate} pageState={currentPage === 'cheques_treasury' ? pageState : null} />;
             case 'soa_gen': return <SoaGenPage />;
             case 'withholding_tax': return <WithholdingTaxPage />;
             case 'ar_concessions': return <ARConcessionsPage />;

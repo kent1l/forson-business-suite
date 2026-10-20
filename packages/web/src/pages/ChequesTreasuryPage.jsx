@@ -7,7 +7,7 @@ import BankAccountsPage from './BankAccountsPage';
 import ChequeSettingsPanel from '../components/cheques/ChequeSettingsPanel';
 import useDeepLink from '../hooks/useDeepLink';
 
-const ChequesTreasuryPage = ({ pageState }) => {
+const ChequesTreasuryPage = ({ pageState, onNavigate }) => {
     const { hasPermission } = useAuth();
 
     const sections = useMemo(() => ([
@@ -73,6 +73,8 @@ const ChequesTreasuryPage = ({ pageState }) => {
                     {current && (
                         <current.Component
                             pageState={sectionState?.section === current.key ? sectionState.state : null}
+                            onNavigate={onNavigate}
+                            onNavigateSection={setActiveSection}
                         />
                     )}
                 </>
