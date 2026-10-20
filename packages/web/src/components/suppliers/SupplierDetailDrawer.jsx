@@ -5,11 +5,12 @@ import Modal from '../ui/Modal';
 import SegmentedTabs from '../ui/SegmentedTabs';
 import StatusBadge from '../ui/StatusBadge';
 import Icon from '../ui/Icon';
+import PaginationControls from '../ui/PaginationControls';
 import { ICONS } from '../../constants';
 import { formatCurrency } from '../../utils/currency';
 import { useAuth } from '../../contexts/AuthContext';
+import { makeNavContext } from '../../utils/apNavigationContract';
 import AddPayableModal from '../accounts-payable/AddPayableModal';
-import AttachItemsModal from '../accounts-payable/AttachItemsModal';
 import BillGoodsReceiptsModal from '../accounts-payable/BillGoodsReceiptsModal';
 
 const BILL_STATUS_TONE = { 'Unpaid': 'danger', 'Partially Paid': 'warning', 'Paid': 'success' };
@@ -133,7 +134,7 @@ const BillItemsPanel = ({ billId }) => {
     );
 };
 
-const BillsTab = ({ supplier, canManage }) => {
+const BillsTab = ({ supplier, canManage, onNavigate, onRecordPayment, hostPageKey }) => {
     const supplierId = supplier.supplier_id;
     const [bills, setBills] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -141,7 +142,6 @@ const BillsTab = ({ supplier, canManage }) => {
     const [newDueDate, setNewDueDate] = useState('');
     const [reason, setReason] = useState('');
     const [isAddPayableOpen, setIsAddPayableOpen] = useState(false);
-    const [attachItemsBill, setAttachItemsBill] = useState(null);
     const [grnBill, setGrnBill] = useState(null);
     const [expandedBillId, setExpandedBillId] = useState(null);
 
@@ -158,6 +158,24 @@ const BillsTab = ({ supplier, canManage }) => {
     }, [supplierId]);
 
     useEffect(() => { fetchBills(); }, [fetchBills]);
+
+    const handleAttachItems = (bill) => {
+        const nav = makeNavContext({
+            action: 'receive',
+            supplierId: supplier.supplier_id,
+            billId: bill.bill_id,
+            source: { pageKey: hostPageKey, tab: 'bills' },
+        });
+        if (onNavigate) {
+            onNavigate('goods-receipts', nav);
+        }
+    };
+
+    const handlePayBill = (bill) => {
+        if (onRecordPayment) {
+            onRecordPayment({ supplier, billId: bill.bill_id });
+        }
+    };
 
     const startEdit = (bill) => {
         setEditingBillId(bill.bill_id);
@@ -257,7 +275,7 @@ const BillsTab = ({ supplier, canManage }) => {
                         </div>
                     )}
 
-                    <div className="mt-2 flex items-center gap-3 border-t border-gray-100 dark:border-slate-700 pt-2">
+                    <div className="mt-2 flex flex-wrap items-center gap-3 border-t border-gray-100 dark:border-slate-700 pt-2">
                         <button
                             onClick={() => setExpandedBillId(expandedBillId === bill.bill_id ? null : bill.bill_id)}
                             className="text-xs font-semibold text-gray-500 dark:text-slate-400 hover:underline"
@@ -273,12 +291,20 @@ const BillsTab = ({ supplier, canManage }) => {
                             </button>
                         )}
                         {canManage && bill.status !== 'Paid' && (
-                            <button
-                                onClick={() => setAttachItemsBill(bill)}
-                                className="text-xs font-semibold text-success-600 dark:text-success-400 hover:underline"
-                            >
-                                Attach Items
-                            </button>
+                            <>
+                                <button
+                                    onClick={() => handleAttachItems(bill)}
+                                    className="text-xs font-semibold text-success-600 dark:text-success-400 hover:underline"
+                                >
+                                    Attach Items
+                                </button>
+                                <button
+                                    onClick={() => handlePayBill(bill)}
+                                    className="text-xs font-semibold text-primary-600 dark:text-primary-400 hover:underline"
+                                >
+                                    Pay This Bill
+                                </button>
+                            </>
                         )}
                     </div>
                     {expandedBillId === bill.bill_id && <BillItemsPanel billId={bill.bill_id} />}
@@ -290,14 +316,6 @@ const BillsTab = ({ supplier, canManage }) => {
                 onClose={() => setIsAddPayableOpen(false)}
                 onCreated={fetchBills}
                 presetSupplier={{ supplier_id: supplier.supplier_id, supplier_name: supplier.supplier_name }}
-            />
-            <AttachItemsModal
-                isOpen={!!attachItemsBill}
-                onClose={() => setAttachItemsBill(null)}
-                supplierId={supplierId}
-                supplierName={supplier.supplier_name}
-                bill={attachItemsBill}
-                onAttached={fetchBills}
             />
             <BillGoodsReceiptsModal
                 isOpen={!!grnBill}
@@ -415,7 +433,264 @@ const LedgerTab = ({ supplierId }) => {
     );
 };
 
-const SupplierDetailDrawer = ({ supplier, isOpen, onClose, onSupplierUpdated, initialTab = 'profile' }) => {
+const ReceiptsTab = ({ supplier, onNavigate, hostPageKey }) => {
+    const { hasPermission } = useAuth();
+    const canCreateReceipt = hasPermission('goods_receipt:create');
+    const [receipts, setReceipts] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [page, setPage] = useState(1);
+    const [pageSize, setPageSize] = useState(10);
+    const [total, setTotal] = useState(0);
+    const [statusFilter, setStatusFilter] = useState('all');
+    const [selectedGrn, setSelectedGrn] = useState(null);
+    const [detailLoading, setDetailLoading] = useState(false);
+    const [grnDetails, setGrnDetails] = useState(null);
+    const [grnLines, setGrnLines] = useState([]);
+
+    const fetchReceipts = useCallback(async () => {
+        setLoading(true);
+        try {
+            const { data } = await api.get('/goods-receipts', {
+                params: {
+                    supplier_id: supplier.supplier_id,
+                    workflow_status: statusFilter,
+                    page,
+                    pageSize,
+                    paginated: 1,
+                },
+            });
+            setReceipts(data?.data || []);
+            setTotal(data?.total || 0);
+        } catch {
+            toast.error('Failed to load goods receipts');
+        } finally {
+            setLoading(false);
+        }
+    }, [supplier.supplier_id, statusFilter, page, pageSize]);
+
+    useEffect(() => {
+        fetchReceipts();
+    }, [fetchReceipts]);
+
+    const handleViewDetails = async (grn) => {
+        setSelectedGrn(grn);
+        setDetailLoading(true);
+        try {
+            const [linesRes, headerRes] = await Promise.all([
+                api.get(`/goods-receipts/${grn.grn_id}/lines`),
+                api.get(`/goods-receipts/${grn.grn_id}`),
+            ]);
+            setGrnLines(linesRes.data || []);
+            setGrnDetails(headerRes.data || grn);
+        } catch {
+            toast.error('Failed to load receipt details');
+        } finally {
+            setDetailLoading(false);
+        }
+    };
+
+    const handleResumeDraft = (grn) => {
+        const nav = makeNavContext({
+            action: 'resume',
+            grnId: grn.grn_id,
+            supplierId: supplier.supplier_id,
+            source: { pageKey: hostPageKey, tab: 'receipts' },
+        });
+        if (onNavigate) onNavigate('goods-receipts', nav);
+    };
+
+    return (
+        <div className="p-4 space-y-3">
+            <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                    <label className="text-xs text-gray-500 dark:text-slate-400">Status:</label>
+                    <select
+                        value={statusFilter}
+                        onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
+                        className="text-xs px-2 py-1 border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 rounded-md text-gray-900 dark:text-slate-100"
+                    >
+                        <option value="all">All Statuses</option>
+                        <option value="Posted">Posted</option>
+                        <option value="Draft">Draft</option>
+                        <option value="Submitted">Submitted</option>
+                        <option value="Cancelled">Cancelled</option>
+                        <option value="Voided">Voided</option>
+                    </select>
+                </div>
+                {canCreateReceipt && (
+                    <button
+                        onClick={() => {
+                            const nav = makeNavContext({
+                                action: 'receive',
+                                supplierId: supplier.supplier_id,
+                                source: { pageKey: hostPageKey, tab: 'receipts' },
+                            });
+                            if (onNavigate) onNavigate('goods-receipts', nav);
+                        }}
+                        className="px-2.5 py-1 text-xs font-semibold rounded-md border border-dashed border-primary-500 text-primary-600 dark:text-primary-400 hover:bg-primary-50 dark:hover:bg-primary-900/20 flex items-center gap-1"
+                    >
+                        <Icon path={ICONS.plus} className="h-3.5 w-3.5" /> Receive Goods
+                    </button>
+                )}
+            </div>
+
+            {loading ? (
+                <div className="p-4 text-sm text-gray-500 dark:text-slate-400">Loading goods receipts...</div>
+            ) : receipts.length === 0 ? (
+                <p className="p-4 text-sm text-gray-500 dark:text-slate-400">No goods receipts found for this supplier.</p>
+            ) : (
+                <div className="space-y-2">
+                    {receipts.map((grn) => {
+                        const isDraft = ['Draft', 'Submitted'].includes(grn.workflow_status);
+                        const isVoided = grn.status === 'Voided' || grn.workflow_status === 'Voided';
+                        const docRef = grn.physical_receipt_no || grn.supplier_invoice_no;
+                        return (
+                            <div key={grn.grn_id} className="border border-gray-200 dark:border-slate-700 rounded-lg p-3 text-sm">
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                        <span className={`font-mono font-medium ${isVoided ? 'line-through text-gray-400' : 'text-gray-900 dark:text-slate-100'}`}>
+                                            {grn.grn_number}
+                                        </span>
+                                        {isDraft && (
+                                            <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-400">
+                                                {grn.workflow_status} (In progress)
+                                            </span>
+                                        )}
+                                        {isVoided && (
+                                            <span className="text-xs px-2 py-0.5 rounded-full bg-slate-200 dark:bg-slate-800 text-slate-500">
+                                                Voided
+                                            </span>
+                                        )}
+                                        {grn.workflow_status === 'Posted' && !isVoided && (
+                                            <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/30 text-emerald-800 dark:text-emerald-400">
+                                                Posted
+                                            </span>
+                                        )}
+                                        {grn.workflow_status === 'Cancelled' && (
+                                            <span className="text-xs px-2 py-0.5 rounded-full bg-gray-200 dark:bg-gray-800 text-gray-600">
+                                                Cancelled
+                                            </span>
+                                        )}
+                                    </div>
+                                    <span className="text-xs text-gray-500 dark:text-slate-400">
+                                        {new Date(grn.receipt_date).toLocaleDateString()}
+                                    </span>
+                                </div>
+                                <div className="mt-1 flex flex-wrap items-center justify-between gap-2 text-xs text-gray-600 dark:text-slate-400">
+                                    <div>
+                                        <span className="text-gray-500 mr-1">Doc:</span>
+                                        {docRef ? (
+                                            <span className="font-mono bg-gray-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-gray-900 dark:text-slate-200">
+                                                {docRef}
+                                            </span>
+                                        ) : (
+                                            <span className="italic text-gray-400">No supplier document available</span>
+                                        )}
+                                    </div>
+                                    {grn.bill_number && (
+                                        <div>
+                                            <span className="text-gray-500 mr-1">Linked Bill:</span>
+                                            <span className="font-mono text-primary-600 dark:text-primary-400">
+                                                {grn.bill_number}
+                                            </span>
+                                        </div>
+                                    )}
+                                </div>
+                                <div className="mt-2 flex items-center justify-end gap-3 pt-2 border-t border-gray-100 dark:border-slate-700/60">
+                                    <button
+                                        onClick={() => handleViewDetails(grn)}
+                                        className="text-xs font-semibold text-primary-600 dark:text-primary-400 hover:underline"
+                                    >
+                                        View Details
+                                    </button>
+                                    {isDraft && canCreateReceipt && (
+                                        <button
+                                            onClick={() => handleResumeDraft(grn)}
+                                            className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 hover:underline"
+                                        >
+                                            Resume Draft
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+                        );
+                    })}
+                    <PaginationControls
+                        page={page}
+                        pageSize={pageSize}
+                        total={total}
+                        onPageChange={setPage}
+                        onPageSizeChange={(v) => { setPageSize(v); setPage(1); }}
+                    />
+                </div>
+            )}
+
+            {selectedGrn && (
+                <Modal
+                    isOpen={!!selectedGrn}
+                    onClose={() => { setSelectedGrn(null); setGrnDetails(null); setGrnLines([]); }}
+                    title={`Receipt Details — ${selectedGrn.grn_number}`}
+                    maxWidth="max-w-4xl"
+                >
+                    {detailLoading ? (
+                        <div className="p-4 text-center text-gray-500">Loading details...</div>
+                    ) : (
+                        <div className="space-y-4 text-sm">
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 p-3 bg-gray-50 dark:bg-slate-900/50 rounded-lg border border-gray-100 dark:border-slate-700">
+                                <div><span className="text-gray-500 text-xs">Receipt Date:</span><p className="font-medium">{new Date(selectedGrn.receipt_date).toLocaleDateString()}</p></div>
+                                <div><span className="text-gray-500 text-xs">Workflow:</span><p className="font-medium">{selectedGrn.workflow_status || selectedGrn.status}</p></div>
+                                <div><span className="text-gray-500 text-xs">Supplier Document:</span><p className="font-mono">{selectedGrn.physical_receipt_no || selectedGrn.supplier_invoice_no || '—'}</p></div>
+                                <div><span className="text-gray-500 text-xs">Received By:</span><p className="font-medium">{grnDetails?.received_by_name || selectedGrn.employee_name || '—'}</p></div>
+                                {selectedGrn.bill_number && (
+                                    <div><span className="text-gray-500 text-xs">Linked Bill:</span><p className="font-mono text-primary-600">{selectedGrn.bill_number}</p></div>
+                                )}
+                                {Number(selectedGrn.freight_amount) > 0 && (
+                                    <div><span className="text-gray-500 text-xs">Freight Amount:</span><p className="font-mono">{formatCurrency(selectedGrn.freight_amount)}</p></div>
+                                )}
+                            </div>
+
+                            <div className="overflow-x-auto border border-gray-200 dark:border-slate-700 rounded-lg">
+                                <table className="w-full text-left text-xs">
+                                    <thead className="bg-gray-50 dark:bg-slate-800 text-gray-600 dark:text-slate-300">
+                                        <tr>
+                                            <th className="p-2">Part</th>
+                                            <th className="p-2 text-right">Quantity</th>
+                                            <th className="p-2 text-right">Returned</th>
+                                            <th className="p-2 text-right">Cost Price</th>
+                                            <th className="p-2 text-right">Landed Cost</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-100 dark:divide-slate-700">
+                                        {grnLines.map((l) => (
+                                            <tr key={l.grn_line_id}>
+                                                <td className="p-2 font-mono">{l.internal_sku || l.display_name || `Part #${l.part_id}`}</td>
+                                                <td className="p-2 text-right font-mono">{l.quantity}</td>
+                                                <td className="p-2 text-right font-mono text-amber-600">{l.return_quantity || 0}</td>
+                                                <td className="p-2 text-right font-mono">{formatCurrency(l.cost_price)}</td>
+                                                <td className="p-2 text-right font-mono">{formatCurrency(l.landed_unit_cost || l.cost_price)}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    )}
+                </Modal>
+            )}
+        </div>
+    );
+};
+
+const SupplierDetailDrawer = ({
+    supplier,
+    isOpen,
+    onClose,
+    onSupplierUpdated,
+    initialTab = 'profile',
+    onNavigate = null,
+    onRecordPayment = null,
+    hostPageKey = 'accounts-payable',
+}) => {
     const { hasPermission } = useAuth();
     const [activeTab, setActiveTab] = useState(initialTab);
 
@@ -426,19 +701,51 @@ const SupplierDetailDrawer = ({ supplier, isOpen, onClose, onSupplierUpdated, in
     const tabs = [
         { key: 'profile', label: 'Profile' },
         { key: 'bills', label: 'Bills' },
+        { key: 'receipts', label: 'Goods Receipts' },
         { key: 'payments', label: 'Payments' },
         { key: 'ledger', label: 'Ledger' },
     ];
 
     const modalTitle = (
-        <span className="flex items-center gap-2">
-            {supplier.supplier_name}
-            {supplier.payment_hold && <StatusBadge tone="danger" label="ON HOLD" />}
-        </span>
+        <div className="flex flex-wrap items-center justify-between gap-3 w-full pr-6">
+            <span className="flex items-center gap-2">
+                {supplier.supplier_name}
+                {supplier.payment_hold && <StatusBadge tone="danger" label="ON HOLD" />}
+            </span>
+            <div className="flex items-center gap-2">
+                {hasPermission('goods_receipt:create') && (
+                    <button
+                        type="button"
+                        onClick={() => {
+                            const nav = makeNavContext({
+                                action: 'receive',
+                                supplierId: supplier.supplier_id,
+                                source: { pageKey: hostPageKey, tab: 'receipts' },
+                            });
+                            if (onNavigate) onNavigate('goods-receipts', nav);
+                        }}
+                        className="px-2.5 py-1 text-xs font-semibold rounded-md border border-primary-500 text-primary-600 dark:text-primary-400 hover:bg-primary-50 dark:hover:bg-primary-900/20 flex items-center gap-1"
+                    >
+                        <Icon path={ICONS.plus} className="h-3.5 w-3.5" /> Receive Goods
+                    </button>
+                )}
+                {hasPermission('ap:manage') && (
+                    <button
+                        type="button"
+                        onClick={() => {
+                            if (onRecordPayment) onRecordPayment({ supplier, billId: null });
+                        }}
+                        className="px-2.5 py-1 text-xs font-semibold rounded-md bg-success-600 text-white hover:bg-success-700 flex items-center gap-1"
+                    >
+                        <Icon path={ICONS.dollar} className="h-3.5 w-3.5" /> Record Payment
+                    </button>
+                )}
+            </div>
+        </div>
     );
 
     return (
-        <Modal isOpen={isOpen} onClose={onClose} title={modalTitle} maxWidth="max-w-2xl">
+        <Modal isOpen={isOpen} onClose={onClose} title={modalTitle} maxWidth="max-w-3xl">
             <div className="-mt-2 mb-3">
                 <SegmentedTabs tabs={tabs} active={activeTab} onChange={setActiveTab} variant="pills" />
             </div>
@@ -446,7 +753,22 @@ const SupplierDetailDrawer = ({ supplier, isOpen, onClose, onSupplierUpdated, in
                 {activeTab === 'profile' && (
                     <ProfileTab supplier={supplier} onSupplierUpdated={onSupplierUpdated} canManage={hasPermission('ap:manage')} />
                 )}
-                {activeTab === 'bills' && <BillsTab supplier={supplier} canManage={hasPermission('ap:manage')} />}
+                {activeTab === 'bills' && (
+                    <BillsTab
+                        supplier={supplier}
+                        canManage={hasPermission('ap:manage')}
+                        onNavigate={onNavigate}
+                        onRecordPayment={onRecordPayment}
+                        hostPageKey={hostPageKey}
+                    />
+                )}
+                {activeTab === 'receipts' && (
+                    <ReceiptsTab
+                        supplier={supplier}
+                        onNavigate={onNavigate}
+                        hostPageKey={hostPageKey}
+                    />
+                )}
                 {activeTab === 'payments' && <PaymentsTab supplierId={supplier.supplier_id} />}
                 {activeTab === 'ledger' && <LedgerTab supplierId={supplier.supplier_id} />}
             </div>

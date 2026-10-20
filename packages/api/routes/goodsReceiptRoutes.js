@@ -84,12 +84,12 @@ function physicalReceiptConflictMessage(value) {
 }
 
 // GET /goods-receipts - Fetch list of posted GRNs with search and sorting
-router.get('/goods-receipts', protect, hasPermission('goods_receipt:create'), async (req, res) => {
+router.get('/goods-receipts', protect, hasPermission(['goods_receipt:create', 'goods_receipt:view', 'ap:view', 'suppliers:view']), async (req, res) => {
   const { q: search = '', sortBy = 'receipt_date', sortOrder = 'desc' } = req.query;
-  // Receipt history means posted documents. Drafts live behind their own review queue
-  // (GET /goods-receipts/drafts) and must not appear here, where every row is assumed
-  // to have already moved stock.
-  const workflowStatus = req.query.workflow_status || grnWorkflow.POSTED;
+  const supplierId = req.query.supplier_id ? parseInt(req.query.supplier_id, 10) : null;
+  // Receipt history means posted documents by default. When filtering by supplier or explicitly requested,
+  // all statuses (including Draft, Cancelled, Voided) can be fetched.
+  const workflowStatus = req.query.workflow_status || (supplierId ? 'all' : grnWorkflow.POSTED);
   if (workflowStatus !== 'all' && !grnWorkflow.STATUSES.includes(workflowStatus)) {
     return res.status(400).json({ message: 'Invalid workflow_status parameter' });
   }
@@ -120,7 +120,11 @@ router.get('/goods-receipts', protect, hasPermission('goods_receipt:create'), as
         gr.voided_at,
         gr.void_reason,
         gr.is_backfill,
+        gr.supplier_id,
         gr.supplier_invoice_no,
+        gr.bill_id,
+        sb.bill_number,
+        sb.status AS bill_status,
         ${includePhysicalReceipt
           ? 'COALESCE(gr.physical_receipt_no, gr.supplier_invoice_no) AS physical_receipt_no,'
           : 'gr.supplier_invoice_no AS physical_receipt_no,'}
@@ -131,6 +135,7 @@ router.get('/goods-receipts', protect, hasPermission('goods_receipt:create'), as
       JOIN supplier s ON gr.supplier_id = s.supplier_id
       JOIN employee e ON gr.received_by = e.employee_id
       LEFT JOIN employee ve ON gr.voided_by = ve.employee_id
+      LEFT JOIN supplier_bill sb ON gr.bill_id = sb.bill_id
     `;
 
     const params = [];
@@ -141,6 +146,12 @@ router.get('/goods-receipts', protect, hasPermission('goods_receipt:create'), as
     } else {
       query += ` WHERE gr.workflow_status = $${paramIndex}`;
       params.push(workflowStatus);
+      paramIndex += 1;
+    }
+
+    if (supplierId) {
+      query += ` AND gr.supplier_id = $${paramIndex}`;
+      params.push(supplierId);
       paramIndex += 1;
     }
 
@@ -227,7 +238,7 @@ router.get('/goods-receipts/check-physical-receipt', protect, hasPermission('goo
   }
 });
 
-router.get('/goods-receipts/:id/lines', protect, hasPermission('goods_receipt:create'), async (req, res) => {
+router.get('/goods-receipts/:id/lines', protect, hasPermission(['goods_receipt:create', 'goods_receipt:view', 'ap:view', 'suppliers:view']), async (req, res) => {
   const { id } = req.params;
 
   try {
@@ -1303,7 +1314,7 @@ router.get('/goods-receipts/drafts', protect, hasPermission('goods_receipt:creat
 // GET /goods-receipts/:id - One receipt's header, so a staged document can be reopened
 // in the entry screen with its freight, discounts and price-sync choice intact. Declared
 // after /goods-receipts/drafts so that literal path is not captured by :id.
-router.get('/goods-receipts/:id', protect, hasPermission('goods_receipt:create'), async (req, res) => {
+router.get('/goods-receipts/:id', protect, hasPermission(['goods_receipt:create', 'goods_receipt:view', 'ap:view', 'suppliers:view']), async (req, res) => {
   const fetchHeader = async (includePhysicalReceipt) => {
     const { rows } = await db.query(
       `SELECT gr.grn_id, gr.grn_number, gr.receipt_date, gr.supplier_id, gr.received_by, gr.po_id,

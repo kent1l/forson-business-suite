@@ -24,6 +24,8 @@ export function createApNavigationPayload({
   };
 }
 
+export const makeNavContext = createApNavigationPayload;
+
 export function saveNavContext(payload) {
   if (!payload || typeof window === 'undefined') return;
   try {

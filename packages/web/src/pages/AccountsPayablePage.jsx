@@ -1,5 +1,6 @@
 import { CASH_BOX_ENABLED } from '../config/features';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import api from '../api';
 import { useAuth } from '../contexts/AuthContext';
 import Icon from '../components/ui/Icon';
 import InfoTip from '../components/ui/InfoTip';
@@ -56,6 +57,8 @@ const AccountsPayablePage = ({ onNavigate, pageState }) => {
     const { hasPermission } = useAuth();
     const [activeTab, setActiveTab] = useState('overview');
     const [presetPaymentSupplier, setPresetPaymentSupplier] = useState(null);
+    const [presetPaymentBillId, setPresetPaymentBillId] = useState(null);
+    const [suspendedSupplier, setSuspendedSupplier] = useState(null);
     const [focusPaymentId, setFocusPaymentId] = useState(pageState?.payment_id || null);
     // Lets a notification land on the tab where the alert is actionable, and lets
     // the expense guardrail hand a misfiled bill payment straight to the AP flow
@@ -75,6 +78,14 @@ const AccountsPayablePage = ({ onNavigate, pageState }) => {
 
     const overview = useAPOverviewData({ hasPermission });
 
+    useEffect(() => {
+        if (pageState?.selectedSupplierId) {
+            api.get(`/suppliers/${pageState.selectedSupplierId}`)
+                .then(res => setSelectedSupplier(res.data?.data || res.data || null))
+                .catch(() => {});
+        }
+    }, [pageState?.selectedSupplierId, pageState?.refetchTimestamp]);
+
     const handleOpenSupplier = useCallback((supplier) => setSelectedSupplier(supplier), []);
     const handleCloseSupplier = useCallback(() => setSelectedSupplier(null), []);
     const handleSupplierUpdated = useCallback((updated) => {
@@ -87,10 +98,37 @@ const AccountsPayablePage = ({ onNavigate, pageState }) => {
         overview.fetchSupplierSummary();
     }, [overview]);
 
+    const handleRecordPaymentFromDrawer = useCallback(({ supplier, billId }) => {
+        setSuspendedSupplier(supplier);
+        setSelectedSupplier(null);
+        setPresetPaymentSupplier(supplier);
+        setPresetPaymentBillId(billId || null);
+        setIsRecordPaymentOpen(true);
+    }, []);
+
+    const handleCloseRecordPayment = useCallback(() => {
+        setIsRecordPaymentOpen(false);
+        setPresetPaymentSupplier(null);
+        setPresetPaymentBillId(null);
+        if (suspendedSupplier) {
+            setSelectedSupplier(suspendedSupplier);
+            setSuspendedSupplier(null);
+        }
+    }, [suspendedSupplier]);
+
     const handlePaymentRecorded = useCallback(() => {
         setPaymentsRefreshToken((n) => n + 1);
         handleRefresh();
-    }, [handleRefresh]);
+        if (suspendedSupplier) {
+            api.get(`/suppliers/${suspendedSupplier.supplier_id}`)
+                .then(res => {
+                    const fresh = res.data?.data || res.data;
+                    setSelectedSupplier(fresh || suspendedSupplier);
+                })
+                .catch(() => setSelectedSupplier(suspendedSupplier))
+                .finally(() => setSuspendedSupplier(null));
+        }
+    }, [handleRefresh, suspendedSupplier]);
 
     const tabs = useMemo(() => ([
         { key: 'overview', label: 'Overview & Aging' },
@@ -172,7 +210,10 @@ const AccountsPayablePage = ({ onNavigate, pageState }) => {
                 isOpen={!!selectedSupplier}
                 onClose={handleCloseSupplier}
                 onSupplierUpdated={handleSupplierUpdated}
-                initialTab="bills"
+                initialTab={pageState?.activeTab || "bills"}
+                onNavigate={onNavigate}
+                onRecordPayment={handleRecordPaymentFromDrawer}
+                hostPageKey="accounts-payable"
             />
 
             <AddPayableModal
@@ -183,9 +224,11 @@ const AccountsPayablePage = ({ onNavigate, pageState }) => {
 
             <RecordSupplierPaymentModal
                 isOpen={isRecordPaymentOpen}
-                onClose={() => { setIsRecordPaymentOpen(false); setPresetPaymentSupplier(null); }}
+                onClose={handleCloseRecordPayment}
                 onRecorded={handlePaymentRecorded}
                 presetSupplier={presetPaymentSupplier}
+                presetBillId={presetPaymentBillId}
+                onNavigate={onNavigate}
             />
         </div>
     );
