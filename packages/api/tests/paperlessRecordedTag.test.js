@@ -16,7 +16,9 @@ describe('GRN recorded tag synchronization', () => {
         documents = [{ id: 42, title: 'DR_123', tags: [7], correspondent: 3, document_type: 1 }];
         correspondents = [{ id: 3, name: 'Supplier, Inc.' }];
         types = [{ id: 1, name: 'Goods Receipt' }];
-        db.query.mockResolvedValue({ rows: [{ supplier_name: 'SUPPLIER INC.' }] });
+        db.query.mockImplementation(async (sql) => (String(sql).includes('FROM goods_receipt')
+            ? { rows: [] }
+            : { rows: [{ supplier_name: 'SUPPLIER INC.' }] }));
         tags = [{ id: 9, name: 'recorded' }];
         requests = [];
         global.fetch = jest.fn(async (url, options) => {

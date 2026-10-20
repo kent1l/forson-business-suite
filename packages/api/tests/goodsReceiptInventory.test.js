@@ -214,21 +214,15 @@ describe('Goods Receipt Inventory & Pricing Routes', () => {
 
         test('should post Goods Receipt, insert StockIn transactions, and update PO status', async () => {
             const client = await db.getClient();
-            client.query
-                .mockResolvedValueOnce({}) // BEGIN
-                .mockResolvedValueOnce({ rows: [{ grn_id: 101 }] }) // INSERT goods_receipt
-                .mockResolvedValueOnce({}) // INSERT goods_receipt_line
-                .mockResolvedValueOnce({}) // INSERT inventory_transaction (StockIn)
-                .mockResolvedValueOnce({}) // UPDATE purchase_order_line
-                .mockResolvedValueOnce({ rows: [{ total_ordered: 10, total_received: 10 }] }) // SELECT PO sums
-                .mockResolvedValueOnce({}) // UPDATE purchase_order status
-                .mockResolvedValueOnce({ rows: [{ payment_terms_days: null }] }) // SELECT supplier.payment_terms_days
-                .mockResolvedValueOnce({ rows: [{ bill_id: 555 }] }) // INSERT supplier_bill RETURNING bill_id
-                .mockResolvedValueOnce({}) // UPDATE goods_receipt SET bill_id
-                .mockResolvedValueOnce({ rows: [{ ledger_id: 1 }] }) // apLedgerService.appendEntry -> append_ap_ledger_entry()
-                .mockResolvedValueOnce({ rows: [] }) // SELECT goods_receipt_freight rows (none for this receipt)
-                .mockResolvedValueOnce({}) // DELETE FROM part_tag (pending_costing)
-                .mockResolvedValueOnce({}); // COMMIT
+            client.query.mockImplementation(async (sql) => {
+                const q = String(sql);
+                if (q.includes('INSERT INTO goods_receipt (')) return { rows: [{ grn_id: 101 }] };
+                if (q.includes('total_ordered')) return { rows: [{ total_ordered: 10, total_received: 10 }] };
+                if (q.includes('payment_terms_days')) return { rows: [{ payment_terms_days: null }] };
+                if (q.includes('INSERT INTO supplier_bill')) return { rows: [{ bill_id: 555 }] };
+                if (q.includes('append_ap_ledger_entry')) return { rows: [{ ledger_id: 1 }] };
+                return { rows: [] };
+            });
 
             const res = await request(app)
                 .post('/api/goods-receipts')
