@@ -809,6 +809,17 @@ router.post('/ap/payments', protect, hasPermission('ap:manage'), async (req, res
         await client.query('BEGIN');
         await cashDrawer.reserveSourceSession(client, req.body.cash_session_id);
         const sourceRequest = await cashDrawer.beginSourceRequest(client, req);
+        const apIdempotency = require('../services/apOperationIdempotencyService');
+        const requestId = req.get('Idempotency-Key') || req.body?.idempotency_key;
+        let apOpId = null;
+        if (!sourceRequest && requestId) {
+            apOpId = await apIdempotency.beginOperation(client, {
+                requestId,
+                actorId: req.user.employee_id,
+                operation: 'AP_RECORD_PAYMENT',
+                payload: { supplier_id, method_id, amount, allocations, reference_number },
+            });
+        }
         if (req.body.funding_source === 'ADVANCE') {
             if (Number(req.user.permission_level_id) !== 10 && !req.user.permissions?.includes('cash_drawer:settle_advance')) cashDrawer.fail(403, 'ADVANCE_PERMISSION_REQUIRED', 'Advance settlement permission is required.');
             await cashDrawer.reserveAdvance(client, req.body.advance_id);
@@ -830,10 +841,18 @@ router.post('/ap/payments', protect, hasPermission('ap:manage'), async (req, res
             kind: 'ap', sourceId: result.paymentId, actorId: req.user.employee_id });
         const responseBody = { success: true, message: 'Supplier payment recorded', data: result };
         await cashDrawer.finishSourceRequest(client, sourceRequest, 201, responseBody);
+        if (apOpId) {
+            await apIdempotency.finishOperation(client, {
+                requestId: apOpId,
+                statusCode: 201,
+                responseBody,
+            });
+        }
         await client.query('COMMIT');
         res.status(201).json(responseBody);
     } catch (err) {
         await client.query('ROLLBACK');
+        if (err.isReplay) return res.status(err.statusCode).json(err.response);
         if (err.replay) return res.status(err.replay.status).json(err.replay.body);
         console.error('AP Record Payment Error:', err.message);
         if (err.status) {

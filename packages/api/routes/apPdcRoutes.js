@@ -666,7 +666,7 @@ router.post('/ap/supplier-bills', protect, hasPermission(['ap:manage']), async (
             const supplierBillService = require('../services/supplierBillService');
             await supplierBillService.registerBillIdentity(client, {
                 billId: bill.bill_id,
-                supplierId,
+                supplierId: supplier_id,
                 documentType: resolvedDocType,
                 documentNo: resolvedDocNo,
                 isPrimary: true,

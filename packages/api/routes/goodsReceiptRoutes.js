@@ -10,6 +10,7 @@ const grnCosting = require('../services/grnCostingService');
 const grnWorkflow = require('../services/grnWorkflowService');
 const { postReceipt } = require('../services/grnPostingService');
 const supplierBillService = require('../services/supplierBillService');
+const apOperationIdempotency = require('../services/apOperationIdempotencyService');
 const { normalizeReceiptIdentifier } = require('../helpers/paperlessMatching');
 const { syncReceiptRecordedTag } = require('../services/paperlessService');
 const router = express.Router();
@@ -402,6 +403,27 @@ router.post('/goods-receipts', protect, hasPermission('goods_receipt:create'), a
   try {
     await client.query('BEGIN');
 
+    const requestId = req.get('Idempotency-Key') || req.body?.idempotency_key;
+    let apOpId = null;
+    if (requestId) {
+      apOpId = await apOperationIdempotency.beginOperation(client, {
+        requestId,
+        actorId: req.user.employee_id,
+        operation: 'GRN_CREATE_AND_POST',
+        payload: {
+          supplier_id,
+          lines: lines.map((l) => ({ part_id: l.part_id, quantity: l.quantity, cost_price: l.cost_price })),
+          po_id,
+          bill_id,
+          invoiceNo,
+          physicalReceiptNo,
+          freightAmount,
+          overallDiscountPercent,
+          overallDiscountAmount,
+        },
+      });
+    }
+
     if (bill_id) {
       await supplierBillService.validateBillForReceiving(client, { billId: bill_id, supplierId: supplier_id });
     }
@@ -507,10 +529,7 @@ router.post('/goods-receipts', protect, hasPermission('goods_receipt:create'), a
       netGoodsValue: costing.totals.net_goods_value,
     });
 
-    await client.query('COMMIT');
-    if (physicalReceiptNo) await syncReceiptRecordedTag(physicalReceiptNo, true, supplier_id, client);
-    if (invoiceNo && invoiceNo !== physicalReceiptNo) await syncReceiptRecordedTag(invoiceNo, true, supplier_id, client);
-    res.status(201).json({
+    const responseBody = {
       message: 'Goods receipt created successfully',
       grn_id: newGrnId,
       totals: costing.totals,
@@ -527,10 +546,24 @@ router.post('/goods-receipts', protect, hasPermission('goods_receipt:create'), a
         counted_at: r.counted_at,
         unexplained_shortfall: r.unexplained_shortfall,
       })),
-    });
+    };
+
+    if (apOpId) {
+      await apOperationIdempotency.finishOperation(client, {
+        requestId: apOpId,
+        statusCode: 201,
+        responseBody,
+      });
+    }
+
+    await client.query('COMMIT');
+    if (physicalReceiptNo) await syncReceiptRecordedTag(physicalReceiptNo, true, supplier_id, client);
+    if (invoiceNo && invoiceNo !== physicalReceiptNo) await syncReceiptRecordedTag(invoiceNo, true, supplier_id, client);
+    res.status(201).json(responseBody);
 
   } catch (err) {
     await client.query('ROLLBACK');
+    if (err.isReplay) return res.status(err.statusCode).json(err.response);
     // The whole point of recording the supplier's document number is to make a repeat
     // entry impossible, so say plainly what happened rather than surfacing a 500.
     if (isPhysicalReceiptConflict(err)) {
@@ -1472,6 +1505,17 @@ router.post('/goods-receipts/:id/post', protect, hasPermission('goods_receipt:po
 
   try {
     await client.query('BEGIN');
+    const requestId = req.get('Idempotency-Key') || req.body?.idempotency_key;
+    let apOpId = null;
+    if (requestId) {
+      apOpId = await apOperationIdempotency.beginOperation(client, {
+        requestId,
+        actorId: req.user.employee_id,
+        operation: 'GRN_POST',
+        payload: { grn_id: id },
+      });
+    }
+
     const { rows: [grn] } = await client.query(
       `SELECT grn_id, grn_number, supplier_id, received_by, po_id, bill_id, receipt_date, is_backfill,
               supplier_invoice_no, physical_receipt_no, workflow_status, freight_amount, freight_allocation_method,
@@ -1565,12 +1609,7 @@ router.post('/goods-receipts/:id/post', protect, hasPermission('goods_receipt:po
       netGoodsValue: costing.totals.net_goods_value,
     });
 
-    await client.query('COMMIT');
-    if (grn.physical_receipt_no) await syncReceiptRecordedTag(grn.physical_receipt_no, true, grn.supplier_id, client);
-    if (grn.supplier_invoice_no && grn.supplier_invoice_no !== grn.physical_receipt_no) {
-      await syncReceiptRecordedTag(grn.supplier_invoice_no, true, grn.supplier_id, client);
-    }
-    res.json({
+    const responseBody = {
       message: 'Goods receipt posted.',
       grn_id: Number(id),
       grn_number: grnNumber,
@@ -1582,9 +1621,25 @@ router.post('/goods-receipts/:id/post', protect, hasPermission('goods_receipt:po
         part_id: r.part_id, backfill_qty: r.backfill_qty, reconcile_qty: r.reconcile_qty,
         counted_at: r.counted_at, unexplained_shortfall: r.unexplained_shortfall,
       })),
-    });
+    };
+
+    if (apOpId) {
+      await apOperationIdempotency.finishOperation(client, {
+        requestId: apOpId,
+        statusCode: 200,
+        responseBody,
+      });
+    }
+
+    await client.query('COMMIT');
+    if (grn.physical_receipt_no) await syncReceiptRecordedTag(grn.physical_receipt_no, true, grn.supplier_id, client);
+    if (grn.supplier_invoice_no && grn.supplier_invoice_no !== grn.physical_receipt_no) {
+      await syncReceiptRecordedTag(grn.supplier_invoice_no, true, grn.supplier_id, client);
+    }
+    res.json(responseBody);
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
+    if (err.isReplay) return res.status(err.statusCode).json(err.response);
     if (err.code === '23505' && err.constraint === 'uq_goods_receipt_supplier_invoice') {
       return res.status(409).json({ message: 'That supplier invoice has already been recorded.' });
     }
