@@ -9,9 +9,11 @@ import PaginationControls from '../ui/PaginationControls';
 import { ICONS } from '../../constants';
 import { formatCurrency } from '../../utils/currency';
 import { useAuth } from '../../contexts/AuthContext';
+import { supplierDocumentReference, supplierReference } from '../../utils/supplierReference';
 import { makeNavContext } from '../../utils/apNavigationContract';
 import AddPayableModal from '../accounts-payable/AddPayableModal';
 import BillGoodsReceiptsModal from '../accounts-payable/BillGoodsReceiptsModal';
+import BillReceiptViewer from '../accounts-payable/BillReceiptViewer';
 
 const BILL_STATUS_TONE = { 'Unpaid': 'danger', 'Partially Paid': 'warning', 'Paid': 'success' };
 
@@ -135,8 +137,12 @@ const BillItemsPanel = ({ billId }) => {
 };
 
 const BillsTab = ({ supplier, canManage, onNavigate, onRecordPayment, hostPageKey }) => {
+    const { hasPermission } = useAuth();
+    const [receiptBill, setReceiptBill] = useState(null);
+    const closeReceipt = useCallback(() => setReceiptBill(null), []);
     const supplierId = supplier.supplier_id;
     const [bills, setBills] = useState([]);
+    const [billSearch, setBillSearch] = useState('');
     const [loading, setLoading] = useState(true);
     const [editingBillId, setEditingBillId] = useState(null);
     const [newDueDate, setNewDueDate] = useState('');
@@ -167,7 +173,7 @@ const BillsTab = ({ supplier, canManage, onNavigate, onRecordPayment, hostPageKe
             source: { pageKey: hostPageKey, tab: 'bills' },
         });
         if (onNavigate) {
-            onNavigate('goods-receipts', nav);
+            onNavigate('goods_receipt', nav);
         }
     };
 
@@ -209,10 +215,20 @@ const BillsTab = ({ supplier, canManage, onNavigate, onRecordPayment, hostPageKe
             )}
 
             {bills.length === 0 && <p className="text-sm text-gray-500 dark:text-slate-400">No bills recorded for this supplier.</p>}
-            {bills.map((bill) => (
+            <label className="block text-sm text-gray-700 dark:text-slate-300">Find supplier document
+                <input type="search" value={billSearch} onChange={e => setBillSearch(e.target.value)} placeholder="Supplier document number"
+                    className="mt-1 w-full rounded-md border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2" />
+            </label>
+            {bills.filter(b => !billSearch.trim() || [supplierReference(b), b.bill_number, ...(b.document_references || [])].some(ref => String(ref || '').toLowerCase().includes(billSearch.trim().toLowerCase()))).map((bill) => (
                 <div key={bill.bill_id} className="border border-gray-200 dark:border-slate-700 rounded-lg p-3">
-                    <div className="flex items-center justify-between">
-                        <span className="font-mono text-sm text-gray-900 dark:text-slate-100">{bill.bill_number || `Bill #${bill.bill_id}`}</span>
+                    <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                            <p className="text-xs font-medium text-gray-500 dark:text-slate-400">Supplier reference</p>
+                            <p data-supplier-reference className="mt-0.5 break-words font-mono text-lg font-bold leading-snug text-gray-900 dark:text-slate-100">
+                                {supplierDocumentReference(bill) || 'No supplier reference recorded'}
+                            </p>
+                            <p data-internal-bill className="mt-1 text-xs text-gray-500 dark:text-slate-400">Internal bill: {bill.bill_number}</p>
+                        </div>
                         <StatusBadge tone={BILL_STATUS_TONE[bill.status] || 'neutral'} label={bill.status} />
                     </div>
                     <div className="mt-1 text-sm text-gray-600 dark:text-slate-400 flex flex-wrap justify-between gap-2">
@@ -276,6 +292,12 @@ const BillsTab = ({ supplier, canManage, onNavigate, onRecordPayment, hostPageKe
                     )}
 
                     <div className="mt-2 flex flex-wrap items-center gap-3 border-t border-gray-100 dark:border-slate-700 pt-2">
+                        {hasPermission('documents:view') && (
+                            <button type="button" onClick={() => setReceiptBill(bill)}
+                                className="text-xs font-semibold text-primary-600 dark:text-primary-400 hover:underline">
+                                View receipt
+                            </button>
+                        )}
                         <button
                             onClick={() => setExpandedBillId(expandedBillId === bill.bill_id ? null : bill.bill_id)}
                             className="text-xs font-semibold text-gray-500 dark:text-slate-400 hover:underline"
@@ -317,6 +339,7 @@ const BillsTab = ({ supplier, canManage, onNavigate, onRecordPayment, hostPageKe
                 onCreated={fetchBills}
                 presetSupplier={{ supplier_id: supplier.supplier_id, supplier_name: supplier.supplier_name }}
             />
+            {receiptBill && <BillReceiptViewer bill={receiptBill} onClose={closeReceipt} />}
             <BillGoodsReceiptsModal
                 isOpen={!!grnBill}
                 onClose={() => setGrnBill(null)}
@@ -381,7 +404,7 @@ const PaymentsTab = ({ supplierId }) => {
                     )}
                     {p.allocations?.length > 0 && (
                         <div className="mt-1 text-xs text-gray-500 dark:text-slate-500">
-                            Applied to: {p.allocations.map(a => a.bill_number || `Bill #${a.bill_id}`).join(', ')}
+                            Applied to: {p.allocations.map(a => supplierReference(a)).join(', ')}
                         </div>
                     )}
                 </div>
@@ -418,7 +441,7 @@ const LedgerTab = ({ supplierId }) => {
                     <div key={r.ledger_id} className="flex items-center justify-between text-sm border-b border-gray-100 dark:border-slate-700 pb-2">
                         <div>
                             <p className="text-gray-900 dark:text-slate-100 font-medium">{r.entry_type.replace(/_/g, ' ')}</p>
-                            <p className="text-xs text-gray-500 dark:text-slate-400">{new Date(r.created_at).toLocaleString()} {r.bill_number ? `· ${r.bill_number}` : ''}</p>
+                            <p className="text-xs text-gray-500 dark:text-slate-400">{new Date(r.created_at).toLocaleString()} {r.bill_number ? `· ${supplierReference(r)}` : ''}</p>
                         </div>
                         <div className="text-right">
                             <p className={`font-mono font-semibold ${Number(r.amount) >= 0 ? 'text-danger-600 dark:text-danger-400' : 'text-success-600 dark:text-success-400'}`}>
@@ -496,7 +519,7 @@ const ReceiptsTab = ({ supplier, onNavigate, hostPageKey }) => {
             supplierId: supplier.supplier_id,
             source: { pageKey: hostPageKey, tab: 'receipts' },
         });
-        if (onNavigate) onNavigate('goods-receipts', nav);
+        if (onNavigate) onNavigate('goods_receipt', nav);
     };
 
     return (
@@ -525,7 +548,7 @@ const ReceiptsTab = ({ supplier, onNavigate, hostPageKey }) => {
                                 supplierId: supplier.supplier_id,
                                 source: { pageKey: hostPageKey, tab: 'receipts' },
                             });
-                            if (onNavigate) onNavigate('goods-receipts', nav);
+                            if (onNavigate) onNavigate('goods_receipt', nav);
                         }}
                         className="px-2.5 py-1 text-xs font-semibold rounded-md border border-dashed border-primary-500 text-primary-600 dark:text-primary-400 hover:bg-primary-50 dark:hover:bg-primary-900/20 flex items-center gap-1"
                     >
@@ -543,7 +566,7 @@ const ReceiptsTab = ({ supplier, onNavigate, hostPageKey }) => {
                     {receipts.map((grn) => {
                         const isDraft = ['Draft', 'Submitted'].includes(grn.workflow_status);
                         const isVoided = grn.status === 'Voided' || grn.workflow_status === 'Voided';
-                        const docRef = grn.physical_receipt_no || grn.supplier_invoice_no;
+                        const docRef = grn.supplier_document_no || grn.physical_receipt_no || grn.supplier_invoice_no;
                         return (
                             <div key={grn.grn_id} className="border border-gray-200 dark:border-slate-700 rounded-lg p-3 text-sm">
                                 <div className="flex items-center justify-between">
@@ -591,7 +614,7 @@ const ReceiptsTab = ({ supplier, onNavigate, hostPageKey }) => {
                                         <div>
                                             <span className="text-gray-500 mr-1">Linked Bill:</span>
                                             <span className="font-mono text-primary-600 dark:text-primary-400">
-                                                {grn.bill_number}
+                                                {grn.bill_supplier_document_no || grn.bill_number}
                                             </span>
                                         </div>
                                     )}
@@ -639,10 +662,10 @@ const ReceiptsTab = ({ supplier, onNavigate, hostPageKey }) => {
                             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 p-3 bg-gray-50 dark:bg-slate-900/50 rounded-lg border border-gray-100 dark:border-slate-700">
                                 <div><span className="text-gray-500 text-xs">Receipt Date:</span><p className="font-medium">{new Date(selectedGrn.receipt_date).toLocaleDateString()}</p></div>
                                 <div><span className="text-gray-500 text-xs">Workflow:</span><p className="font-medium">{selectedGrn.workflow_status || selectedGrn.status}</p></div>
-                                <div><span className="text-gray-500 text-xs">Supplier Document:</span><p className="font-mono">{selectedGrn.physical_receipt_no || selectedGrn.supplier_invoice_no || '—'}</p></div>
+                                <div><span className="text-gray-500 text-xs">Supplier Document:</span><p className="font-mono">{selectedGrn.supplier_document_no || selectedGrn.physical_receipt_no || selectedGrn.supplier_invoice_no || '—'}</p></div>
                                 <div><span className="text-gray-500 text-xs">Received By:</span><p className="font-medium">{grnDetails?.received_by_name || selectedGrn.employee_name || '—'}</p></div>
                                 {selectedGrn.bill_number && (
-                                    <div><span className="text-gray-500 text-xs">Linked Bill:</span><p className="font-mono text-primary-600">{selectedGrn.bill_number}</p></div>
+                                    <div><span className="text-gray-500 text-xs">Linked Bill:</span><p className="font-mono text-primary-600">{selectedGrn.bill_supplier_document_no || selectedGrn.bill_number}</p></div>
                                 )}
                                 {Number(selectedGrn.freight_amount) > 0 && (
                                     <div><span className="text-gray-500 text-xs">Freight Amount:</span><p className="font-mono">{formatCurrency(selectedGrn.freight_amount)}</p></div>
@@ -689,7 +712,7 @@ const SupplierDetailDrawer = ({
     initialTab = 'profile',
     onNavigate = null,
     onRecordPayment = null,
-    hostPageKey = 'accounts-payable',
+    hostPageKey = 'ap',
 }) => {
     const { hasPermission } = useAuth();
     const [activeTab, setActiveTab] = useState(initialTab);
@@ -722,7 +745,7 @@ const SupplierDetailDrawer = ({
                                 supplierId: supplier.supplier_id,
                                 source: { pageKey: hostPageKey, tab: 'receipts' },
                             });
-                            if (onNavigate) onNavigate('goods-receipts', nav);
+                            if (onNavigate) onNavigate('goods_receipt', nav);
                         }}
                         className="px-2.5 py-1 text-xs font-semibold rounded-md border border-primary-500 text-primary-600 dark:text-primary-400 hover:bg-primary-50 dark:hover:bg-primary-900/20 flex items-center gap-1"
                     >

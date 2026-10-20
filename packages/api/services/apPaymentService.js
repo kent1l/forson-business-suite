@@ -208,7 +208,7 @@ async function resolveAllocations(client, {
   await client.query(`SELECT supplier_id FROM supplier WHERE supplier_id = $1 FOR UPDATE`, [supplierId]);
 
   const { rows: lockedBills } = await client.query(
-    `SELECT bill_id, bill_number, bill_date, due_date, total_amount, amount_paid, status
+    `SELECT bill_id, bill_number, supplier_document_no, bill_date, due_date, total_amount, amount_paid, status
        FROM supplier_bill
       WHERE supplier_id = $1
         AND status != 'Void'
@@ -265,7 +265,7 @@ async function resolveAllocations(client, {
   if (checkSettledDateAgainstBill && settledOn) {
     const premature = bills.filter((b) => b.bill_date > settledOn);
     if (premature.length) {
-      const refs = premature.map((b) => b.bill_number || `#${b.bill_id}`).join(', ');
+      const refs = premature.map((b) => b.supplier_document_no || b.bill_number || `#${b.bill_id}`).join(', ');
       throw badRequest(`This payment is dated before the bill date of: ${refs}`, 'PAYMENT_BEFORE_BILL_DATE');
     }
   }
@@ -282,7 +282,7 @@ async function resolveAllocations(client, {
       const bill = byId.get(Number(entry.bill_id));
       const applied = Number(entry.amount ?? entry.amount_allocated);
       if (!Number.isFinite(applied) || applied <= 0) {
-        throw badRequest(`Invalid amount allocated to bill ${bill.bill_number || bill.bill_id}`, 'INVALID_ALLOCATION_AMOUNT');
+        throw badRequest(`Invalid amount allocated to bill ${bill.supplier_document_no || bill.bill_number || bill.bill_id}`, 'INVALID_ALLOCATION_AMOUNT');
       }
       const outstanding = outstandingOf(bill);
       const scheduled = scheduledOf(bill);
@@ -292,7 +292,7 @@ async function resolveAllocations(client, {
           ? `only ${available.toFixed(2)} is available (${outstanding.toFixed(2)} outstanding, ${scheduled.toFixed(2)} already scheduled by active cheques)`
           : `only ${outstanding.toFixed(2)} is outstanding`;
         throw badRequest(
-          `Cannot allocate ${applied.toFixed(2)} to bill ${bill.bill_number || bill.bill_id}; ${detail}`,
+          `Cannot allocate ${applied.toFixed(2)} to bill ${bill.supplier_document_no || bill.bill_number || bill.bill_id}; ${detail}`,
           'ALLOCATION_EXCEEDS_AVAILABLE'
         );
       }
@@ -372,7 +372,7 @@ async function listPayments(db, {
        LEFT JOIN LATERAL (
          SELECT SUM(a.amount_allocated) AS applied,
                 json_agg(json_build_object(
-                  'bill_id', sb.bill_id, 'bill_number', sb.bill_number, 'amount', a.amount_allocated
+                  'bill_id', sb.bill_id, 'bill_number', sb.bill_number, 'supplier_document_no', sb.supplier_document_no, 'amount', a.amount_allocated
                 ) ORDER BY sb.bill_id) AS bills
            FROM ap_payment_allocation a
            JOIN supplier_bill sb ON sb.bill_id = a.bill_id

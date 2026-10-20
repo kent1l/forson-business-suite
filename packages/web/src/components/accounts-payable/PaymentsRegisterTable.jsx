@@ -1,3 +1,4 @@
+import { supplierReference } from '../../utils/supplierReference';
 import { useCallback, useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import api from '../../api';
@@ -145,7 +146,7 @@ const PaymentsRegisterTable = ({ refreshToken, focusPaymentId, onClearFocus, onD
                                         </div>
                                     </td>
                                     <td className="px-4 py-3 text-gray-600 dark:text-slate-300">
-                                        {(p.bills || []).map(b => b.bill_number || `#${b.bill_id}`).join(', ') || '—'}
+                                        {(p.bills || []).map(b => supplierReference(b)).join(', ') || '—'}
                                     </td>
                                     <td className="px-4 py-3 text-right font-medium text-gray-900 dark:text-slate-100">{formatCurrency(p.amount)}</td>
                                     <td className="px-4 py-3 text-gray-600 dark:text-slate-300">{p.recorded_by_name || '—'}</td>

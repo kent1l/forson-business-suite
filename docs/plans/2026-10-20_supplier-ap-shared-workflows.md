@@ -4,6 +4,8 @@
 > Status: Implementation and verification complete. Real-database integration test passing.
 > Source baseline reviewed: `ea9c3c4`; implemented on branch `ap-bug-fixes-and-improvements`.
 
+> Supplier reference update (2026-10-20): [Supplier Reference First](2026-10-20_supplier-reference-first.md) supersedes the mandatory document classification and invoice-only matching assumptions below. It records the implementation and local verification; production deployment remains pending.
+
 This document supersedes the recommendations in `scratch/payable-goods-receipt-workflow-review.md`. In particular, it replaces the initial Paid-receiving restriction, prominent posted-receipt linking action, mixed reference semantics, and description of session autosave as browser-local storage.
 
 ## 0. Status at a Glance

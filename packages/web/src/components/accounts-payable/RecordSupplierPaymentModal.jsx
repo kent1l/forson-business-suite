@@ -6,6 +6,7 @@ import Modal from '../ui/Modal';
 import Combobox from '../ui/Combobox';
 import InfoTip from '../ui/InfoTip';
 import MathExpressionInput from '../ui/MathExpressionInput';
+import { supplierReference } from '../../utils/supplierReference';
 import { formatCurrency } from '../../utils/currency';
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -58,10 +59,11 @@ const RecordSupplierPaymentModal = ({ isOpen, onClose, onRecorded, presetSupplie
     const [methods, setMethods] = useState([]);
     const [bankAccounts, setBankAccounts] = useState([]);
     const [bills, setBills] = useState([]);
+    const [billSearch, setBillSearch] = useState('');
     const [billsLoading, setBillsLoading] = useState(false);
     const [billsError, setBillsError] = useState(null);
     const [allocations, setAllocations] = useState({});
-    const [autoAllocate, setAutoAllocate] = useState(true);
+    const [autoAllocate, setAutoAllocate] = useState(false);
     const [chooseOtherBills, setChooseOtherBills] = useState(false);
     const [form, setForm] = useState(BLANK_FORM);
     const [saving, setSaving] = useState(false);
@@ -70,9 +72,10 @@ const RecordSupplierPaymentModal = ({ isOpen, onClose, onRecorded, presetSupplie
         if (!isOpen) return;
         setForm({ ...BLANK_FORM, supplier_id: presetSupplier?.supplier_id || '' });
         setAllocations({});
-        setAutoAllocate(!presetBillId);
+        setAutoAllocate(false);
         setChooseOtherBills(!presetBillId);
         setBills([]);
+        setBillSearch('');
         setBillsError(null);
 
         api.get('/ap/payment-methods')
@@ -529,15 +532,20 @@ const RecordSupplierPaymentModal = ({ isOpen, onClose, onRecorded, presetSupplie
                             </p>
                         ) : (
                             <>
+                                <label className={labelClass} htmlFor="payment-bill-search">Find supplier document</label>
+                                <input id="payment-bill-search" type="search" value={billSearch} onChange={e => setBillSearch(e.target.value)}
+                                    placeholder="Search supplier document number" className={inputClass} />
+                                <p className="text-xs text-gray-500">Search filters this list. Payment uses the amounts you select, including any selected bills outside the search results.</p>
                                 <div className="max-h-56 overflow-y-auto divide-y divide-gray-100 dark:divide-slate-700">
-                                    {((presetBillId && !chooseOtherBills) ? bills.filter(b => Number(b.bill_id) === Number(presetBillId)) : bills).map(bill => {
+                                    {((presetBillId && !chooseOtherBills) ? bills.filter(b => Number(b.bill_id) === Number(presetBillId)) : bills).filter(b => !billSearch.trim() || [supplierReference(b), b.bill_number, ...(b.document_references || [])].some(ref => String(ref || '').toLowerCase().includes(billSearch.trim().toLowerCase()))).map(bill => {
                                         const out = outstandingOf(bill);
                                         const sched = scheduledOf(bill);
                                         const avail = availableOf(bill);
                                         return (
                                             <div key={bill.bill_id} className="flex items-center gap-3 py-2">
                                                 <div className="flex-1 min-w-0">
-                                                    <p className="text-sm text-gray-900 dark:text-slate-100 truncate">{bill.bill_number || `Bill #${bill.bill_id}`}</p>
+                                                    <p className="text-sm text-gray-900 dark:text-slate-100 truncate">{supplierReference(bill)}</p>
+                                                    <p className="text-xs text-gray-500 dark:text-slate-400">Internal bill: {bill.bill_number}</p>
                                                     <p className="text-xs text-gray-500 dark:text-slate-400">
                                                         Outstanding {formatCurrency(out)}
                                                         {sched > 0 && (

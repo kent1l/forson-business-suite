@@ -210,7 +210,7 @@ router.get('/ap/suppliers/:supplierId/ledger', protect, hasPermission('ap:view')
             SELECT
                 l.ledger_id, l.entry_type, l.amount, l.balance_after,
                 l.payment_channel, l.reference_no, l.notes, l.entry_date,
-                l.bill_id, sb.bill_number,
+                l.bill_id, sb.bill_number, sb.supplier_document_no,
                 l.payment_id, ap.reference_number AS payment_reference_number,
                 e.first_name || ' ' || COALESCE(e.last_name, '') AS created_by_name
             FROM ap_ledger l
@@ -261,7 +261,7 @@ router.get('/ap/suppliers/:supplierId/payments', protect, hasPermission('ap:view
                 next_cr.cheque_number AS replaced_by_cheque_number,
                 COALESCE(
                     json_agg(
-                        json_build_object('bill_id', a.bill_id, 'bill_number', sb.bill_number, 'amount_allocated', a.amount_allocated)
+                        json_build_object('bill_id', a.bill_id, 'bill_number', sb.bill_number, 'supplier_document_no', sb.supplier_document_no, 'amount_allocated', a.amount_allocated)
                     ) FILTER (WHERE a.allocation_id IS NOT NULL), '[]'
                 ) AS allocations
             FROM ap_payment p
@@ -331,13 +331,39 @@ router.get('/ap/supplier-bills/matches', protect, hasPermission(['ap:view', 'ap-
     try {
         const matches = await supplierBillService.resolveDocumentMatches(db, {
             supplierId: supplier_id,
-            documentType: document_type || 'invoice',
+            documentType: document_type || null,
             documentNo: document_no,
         });
         res.json({ success: true, data: matches });
     } catch (err) {
         console.error('AP Bill Matches Error:', err.message);
         res.status(500).json({ message: 'Failed to resolve document matches' });
+    }
+});
+
+// Resolve scans only through this payable's supplier-scoped document evidence.
+router.get('/ap/supplier-bills/:billId/receipts', protect, hasPermission(['ap:view', 'ap-pdc:view']), hasPermission('documents:view'), async (req, res) => {
+    const billId = Number(req.params.billId);
+    if (!Number.isInteger(billId) || billId <= 0) return res.status(400).json({ message: 'Invalid bill ID' });
+    try {
+        const result = await require('../services/supplierBillReceiptService').getBillReceipts(billId);
+        res.json({ success: true, data: result });
+    } catch (err) {
+        console.error('Supplier bill receipt lookup failed:', err.message);
+        res.status(err.statusCode || 502).json({ message: err.statusCode ? err.message : 'Could not load supplier receipts from Paperless. Please try again.' });
+    }
+});
+
+// GET a selected payable without depending on a list search.
+router.get('/ap/supplier-bills/:billId', protect, hasPermission(['ap:view', 'ap-pdc:view']), async (req, res) => {
+    const billId = Number(req.params.billId);
+    if (!Number.isInteger(billId) || billId <= 0) return res.status(400).json({ message: 'Invalid bill ID' });
+    try {
+        const { rows: [bill] } = await db.query('SELECT * FROM supplier_bill WHERE bill_id = $1', [billId]);
+        if (!bill) return res.status(404).json({ message: 'Payable not found' });
+        res.json({ success: true, data: bill });
+    } catch {
+        res.status(500).json({ message: 'Could not load payable' });
     }
 });
 
@@ -548,7 +574,7 @@ router.get('/ap/supplier-bills/:billId/goods-receipts', protect, hasPermission('
         const { rows: receipts } = await db.query(`
             SELECT
                 gr.grn_id, gr.grn_number, gr.receipt_date, gr.status, gr.workflow_status,
-                gr.is_backfill, gr.supplier_invoice_no, gr.po_id, gr.freight_amount,
+                gr.is_backfill, gr.supplier_document_no, gr.supplier_document_type, gr.physical_receipt_no, gr.supplier_invoice_no, gr.po_id, gr.freight_amount,
                 gr.freight_allocation_method, gr.overall_discount_percent, gr.overall_discount_amount,
                 gr.voided_at, gr.void_reason,
                 s.supplier_name,

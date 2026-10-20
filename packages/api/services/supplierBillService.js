@@ -23,9 +23,17 @@ async function registerBillIdentity(client, {
   documentNo,
   isPrimary = true,
 }) {
-  if (!documentNo || !documentType) return null;
+  if (!documentNo) return null;
+  documentType = documentType || 'other';
   const normalizedKey = normalizeDocumentKey(documentNo);
   if (!normalizedKey) return null;
+
+  // Serialize reference checks across manual payable and receiving entry points.
+  await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',
+    [`supplier-reference:${supplierId}:${normalizedKey}`]);
+
+  // Unknown document labels must not bypass a previously recorded reference.
+  await assertBillReferenceAvailable(client, { supplierId, documentType, documentNo, billId });
 
   // Check for active conflict with another bill
   const { rows: conflicts } = await client.query(
@@ -34,7 +42,7 @@ async function registerBillIdentity(client, {
      FROM supplier_bill_document_identity id
      JOIN supplier_bill sb ON sb.bill_id = id.bill_id
      WHERE id.supplier_id = $1
-       AND id.document_type = $2
+       AND ($2::text IS NULL OR id.document_type = $2 OR id.document_type = 'other')
        AND id.normalized_key = $3
        AND id.status = 'active'
        AND id.bill_id <> $4`,
@@ -62,12 +70,43 @@ async function registerBillIdentity(client, {
        (bill_id, supplier_id, document_type, document_no, normalized_key, is_primary, status)
      VALUES ($1, $2, $3, $4, $5, $6, 'active')
      ON CONFLICT (supplier_id, document_type, normalized_key) WHERE (status = 'active')
-     DO UPDATE SET is_primary = EXCLUDED.is_primary, status = 'active', document_no = EXCLUDED.document_no
+     DO UPDATE SET is_primary = supplier_bill_document_identity.is_primary OR EXCLUDED.is_primary
+     WHERE supplier_bill_document_identity.bill_id = EXCLUDED.bill_id
      RETURNING identity_id`,
     [billId, supplierId, documentType, String(documentNo).trim(), normalizedKey, !!isPrimary],
   );
 
   return identity?.identity_id || null;
+}
+
+async function assertBillReferenceAvailable(client, { supplierId, documentType = 'other', documentNo, billId = null }) {
+  const key = normalizeDocumentKey(documentNo);
+  if (!key) return;
+  await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',
+    [`supplier-reference:${supplierId}:${key}`]);
+  const { rows: [conflict] } = await client.query(
+    `SELECT sb.bill_id, sb.bill_number, sb.supplier_document_no, sb.status
+     FROM supplier_bill sb
+     WHERE sb.supplier_id = $1 AND sb.status <> 'Void'
+       AND ($4::int IS NULL OR sb.bill_id <> $4)
+       AND (EXISTS (
+         SELECT 1 FROM supplier_bill_document_identity di
+         WHERE di.bill_id = sb.bill_id AND di.status = 'active' AND di.normalized_key = $2
+           AND ($3 = 'other' OR di.document_type = 'other' OR di.document_type = $3)
+       ) OR (supplier_bill_match_key(sb.supplier_document_no) = $2
+             AND ($3 = 'other' OR sb.supplier_document_type IS NULL OR sb.supplier_document_type = 'other' OR sb.supplier_document_type = $3))
+         OR (sb.supplier_document_no IS NULL AND sb.bill_number NOT LIKE 'BILL-%'
+             AND supplier_bill_match_key(sb.bill_number) = $2))
+     LIMIT 1`,
+    [supplierId, key, documentType || 'other', billId],
+  );
+  if (conflict) {
+    const err = new Error(`Supplier reference "${documentNo}" is already recorded. Open the existing payable instead of creating another debt.`);
+    err.statusCode = 409;
+    err.code = 'BILL_IDENTITY_CONFLICT';
+    err.conflictingBill = conflict;
+    throw err;
+  }
 }
 
 /**
@@ -129,8 +168,10 @@ async function getScheduledAmounts(executor, billIds) {
     `SELECT apa.bill_id, COALESCE(SUM(apa.amount_allocated), 0) AS scheduled_amount
      FROM ap_payment_allocation apa
      JOIN ap_payment ap ON ap.payment_id = apa.payment_id
+     LEFT JOIN cheque_records cr ON cr.id = ap.cheque_record_id
      WHERE apa.bill_id = ANY($1)
-       AND ap.pdc_status IN ('ISSUED', 'HELD_FOR_RELEASE', 'DEPOSITED')
+       AND ap.pdc_status IN ('ISSUED', 'HELD_FOR_RELEASE', 'DEPOSITED', 'BOUNCED', 'STALE')
+       AND (cr.id IS NULL OR cr.status NOT IN ('VOID', 'REPLACED', 'DELETED'))
      GROUP BY apa.bill_id`,
     [billIds],
   );
@@ -140,7 +181,7 @@ async function getScheduledAmounts(executor, billIds) {
 /**
  * Resolves exact, similar, and legacy candidate bills for a supplier document reference.
  */
-async function resolveDocumentMatches(executor, { supplierId, documentType = 'invoice', documentNo }) {
+async function resolveDocumentMatches(executor, { supplierId, documentType = null, documentNo }) {
   if (!supplierId || !documentNo) {
     return { exact: [], similar: [], legacy: [] };
   }
@@ -159,7 +200,7 @@ async function resolveDocumentMatches(executor, { supplierId, documentType = 'in
      FROM supplier_bill_document_identity id
      JOIN supplier_bill sb ON sb.bill_id = id.bill_id
      WHERE id.supplier_id = $1
-       AND id.document_type = $2
+       AND ($2::text IS NULL OR id.document_type = $2 OR id.document_type = 'other')
        AND id.normalized_key = $3
        AND id.status = 'active'
        AND sb.status <> 'Void'`,
@@ -175,7 +216,7 @@ async function resolveDocumentMatches(executor, { supplierId, documentType = 'in
      FROM supplier_bill_document_identity id
      JOIN supplier_bill sb ON sb.bill_id = id.bill_id
      WHERE id.supplier_id = $1
-       AND id.document_type <> $2
+       AND $2::text IS NOT NULL AND id.document_type <> $2 AND id.document_type <> 'other'
        AND id.normalized_key = $3
        AND id.status = 'active'
        AND sb.status <> 'Void'`,
@@ -189,11 +230,14 @@ async function resolveDocumentMatches(executor, { supplierId, documentType = 'in
   const { rows: legacyRows } = await executor.query(
     `SELECT sb.bill_id, sb.bill_number, sb.bill_date, sb.due_date, sb.total_amount, sb.amount_paid,
             sb.status, sb.liability_basis, sb.supplier_document_type, sb.supplier_document_no,
-            NULL::int AS identity_id, 'legacy' AS matched_doc_type, sb.bill_number AS matched_doc_no,
+            NULL::int AS identity_id, COALESCE(sb.supplier_document_type, 'legacy') AS matched_doc_type,
+            COALESCE(sb.supplier_document_no, sb.bill_number) AS matched_doc_no,
             'legacy_bill_number' AS match_reason
      FROM supplier_bill sb
      WHERE sb.supplier_id = $1
-       AND supplier_bill_match_key(sb.bill_number) = $2
+       AND (supplier_bill_match_key(sb.supplier_document_no) = $2
+            OR (sb.supplier_document_no IS NULL AND sb.bill_number NOT LIKE 'BILL-%'
+                AND supplier_bill_match_key(sb.bill_number) = $2))
        AND sb.status <> 'Void'`,
     [supplierId, normalizedKey],
   );
@@ -214,10 +258,10 @@ async function resolveDocumentMatches(executor, { supplierId, documentType = 'in
 
   const { rows: receipts } = await executor.query(
     `SELECT gr.bill_id, gr.grn_id, gr.grn_number, gr.receipt_date, gr.status, gr.workflow_status,
-            gr.supplier_invoice_no, gr.physical_receipt_no
+            gr.supplier_invoice_no, gr.physical_receipt_no, gr.supplier_document_no
      FROM goods_receipt gr
      WHERE gr.bill_id = ANY($1)
-       AND gr.status <> 'Voided'
+       AND gr.status <> 'Voided' AND gr.workflow_status <> 'Cancelled'
      ORDER BY gr.receipt_date DESC, gr.grn_id DESC`,
     [allBillIds],
   );
@@ -247,8 +291,8 @@ async function resolveDocumentMatches(executor, { supplierId, documentType = 'in
   };
 
   return {
-    exact: exactRows.map(enrich),
-    similar: similarRows.map(enrich),
+    exact: [...new Map(exactRows.map(b => [b.bill_id, b])).values()].map(enrich),
+    similar: [...new Map(similarRows.filter(b => !exactBillIds.has(b.bill_id)).map(b => [b.bill_id, b])).values()].map(enrich),
     legacy: filteredLegacy.map(enrich),
   };
 }
@@ -435,6 +479,7 @@ async function recordBillAmountCorrection(client, {
 }
 
 module.exports = {
+  assertBillReferenceAvailable,
   normalizeDocumentKey,
   registerBillIdentity,
   releaseBillIdentities,

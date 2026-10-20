@@ -213,7 +213,7 @@ const AccountsPayablePage = ({ onNavigate, pageState }) => {
                 initialTab={pageState?.activeTab || "bills"}
                 onNavigate={onNavigate}
                 onRecordPayment={handleRecordPaymentFromDrawer}
-                hostPageKey="accounts-payable"
+                hostPageKey="ap"
             />
 
             <AddPayableModal

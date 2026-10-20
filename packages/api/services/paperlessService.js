@@ -54,6 +54,9 @@ async function paperlessFetch(endpointPath, options = {}) {
         }
 
         const contentType = response.headers.get('content-type') || '';
+        if (options.binaryWithContentType) {
+            return { buffer: Buffer.from(await response.arrayBuffer()), contentType };
+        }
         if (contentType.includes('application/json')) {
             return await response.json();
         } else {
@@ -233,32 +236,44 @@ async function listAllPaperlessObjects(resource) {
     return results;
 }
 
-async function findGoodsReceiptDocument(receiptNo, supplierName) {
-    const receiptKey = normalizeReceiptIdentifier(receiptNo);
+async function findGoodsReceiptDocuments(receiptNos, supplierName) {
+    const references = [...new Set(receiptNos.filter(isValidReceiptQuery))];
     const supplierKey = normalizePartyName(supplierName);
-    if (!receiptKey || !supplierKey || !isValidReceiptQuery(supplierName)) return null;
+    if (!references.length || !supplierKey || !isValidReceiptQuery(supplierName)) return [];
     const [correspondents, types] = await Promise.all([
         listAllPaperlessObjects('correspondents'),
         listAllPaperlessObjects('document_types'),
     ]);
     const matchingParties = correspondents.filter(c => normalizePartyName(c.name) === supplierKey);
     const matchingTypes = types.filter(t => normalizePartyName(t.name) === normalizePartyName('Goods Receipt'));
-    if (matchingParties.length !== 1 || matchingTypes.length !== 1) return null;
+    if (matchingParties.length !== 1 || matchingTypes.length !== 1) return [];
     const correspondentId = matchingParties[0].id;
     const documentTypeId = matchingTypes[0].id;
-    const matches = new Map();
+    const wantedKeys = new Set(references.map(normalizeReceiptIdentifier));
+    const matchesByKey = new Map();
     let page = 1;
     let data;
-    // Fetch scoped metadata rather than filtering raw title text: leading zeros and
-    // punctuation can differ before normalization. Check IDs again defensively.
+    // Scope once per bill, then resolve every reference against exact normalized
+    // titles. Ambiguous titles never choose an arbitrary scan.
     do {
         data = await listDocuments({ correspondentId, documentTypeId, pageSize: 100, page: page++ });
         for (const doc of data.results || []) {
-            if (doc.correspondent === correspondentId && doc.document_type === documentTypeId &&
-                normalizeReceiptIdentifier(doc.title) === receiptKey) matches.set(doc.id, doc);
+            const key = normalizeReceiptIdentifier(doc.title);
+            if (doc.correspondent !== correspondentId || doc.document_type !== documentTypeId || !wantedKeys.has(key)) continue;
+            const matches = matchesByKey.get(key) || new Map();
+            matches.set(doc.id, doc);
+            matchesByKey.set(key, matches);
         }
     } while (data.next);
-    return matches.size === 1 ? matches.values().next().value : null;
+    return references.flatMap(referenceNo => {
+        const matches = matchesByKey.get(normalizeReceiptIdentifier(referenceNo));
+        return matches?.size === 1 ? [{ referenceNo, document: matches.values().next().value }] : [];
+    });
+}
+
+async function findGoodsReceiptDocument(receiptNo, supplierName) {
+    const matches = await findGoodsReceiptDocuments([receiptNo], supplierName);
+    return matches[0]?.document || null;
 }
 
 /** Best-effort post-commit synchronization: Paperless must not undo a posted GRN. */
@@ -274,6 +289,7 @@ async function syncReceiptRecordedTag(receiptNo, recorded, supplierId, queryClie
                    AND (
                      public.goods_receipt_match_key(physical_receipt_no) = public.goods_receipt_match_key($2)
                      OR lower(trim(both from supplier_invoice_no)) = lower(trim(both from $2))
+                     OR supplier_bill_match_key(supplier_document_no) = supplier_bill_match_key($2)
                    )
                  LIMIT 1`,
                 [supplierId, receiptNo],
@@ -361,6 +377,28 @@ async function downloadDocumentArtifact(documentId, artifactType = 'thumb') {
     return await paperlessFetch(path);
 }
 
+// Paperless's preview endpoint can return an archived PDF as well as an image.
+// Determine the actual format rather than relabelling arbitrary upstream bytes.
+async function getDocumentPreview(documentId) {
+    const { buffer } = await paperlessFetch(`/documents/${documentId}/preview/`, {
+        binaryWithContentType: true,
+        headers: { Accept: '*/*' },
+    });
+    let contentType;
+    if (buffer.subarray(0, 5).toString() === '%PDF-') contentType = 'application/pdf';
+    else if (buffer.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10]))) contentType = 'image/png';
+    else if (buffer[0] === 255 && buffer[1] === 216 && buffer[2] === 255) contentType = 'image/jpeg';
+    else if (['GIF87a', 'GIF89a'].includes(buffer.subarray(0, 6).toString())) contentType = 'image/gif';
+    else if (buffer.subarray(0, 4).toString() === 'RIFF' && buffer.subarray(8, 12).toString() === 'WEBP') contentType = 'image/webp';
+    if (!contentType) {
+        const err = new Error('Paperless returned an unsupported receipt preview format.');
+        err.status = 502;
+        throw err;
+    }
+    return { buffer, contentType };
+}
+
+
 
 /**
  * Update document tags (add/remove tags by tag IDs)
@@ -387,11 +425,13 @@ module.exports = {
     findDocumentByReceiptNo,
     findDocumentsByReceiptNumbers,
     downloadDocumentArtifact,
+    getDocumentPreview,
     updateDocumentTags,
     paperlessFetch,
     normalizeToHyphen,
     isValidReceiptQuery,
     syncReceiptRecordedTag,
     findGoodsReceiptDocument,
+    findGoodsReceiptDocuments,
     listAllPaperlessObjects,
 };

@@ -1,3 +1,4 @@
+import { supplierReference } from '../../utils/supplierReference';
 import { useState, useEffect, useCallback } from 'react';
 import api from '../../api';
 import toast from 'react-hot-toast';
@@ -276,7 +277,7 @@ const IssueOutboundChequeModal = ({ isOpen, onClose, onIssued }) => {
                                                     checked={form.bill_ids.includes(bill.bill_id)}
                                                     onChange={() => toggleBill(bill.bill_id)}
                                                 />
-                                                <span className="font-mono font-semibold">{bill.bill_number || `#${bill.bill_id}`}</span>
+                                                <span className="font-mono font-semibold">{supplierReference(bill)}</span>
                                                 <span className="text-gray-500 dark:text-slate-400 flex-1">
                                                     Outstanding: ₱{outstanding.toFixed(2)}
                                                     {scheduled > 0 && (

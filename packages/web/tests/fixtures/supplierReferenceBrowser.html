@@ -1,0 +1,25 @@
+<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><div id="root"></div><script type="module">
+import React from 'react';
+import {createRoot} from 'react-dom/client';
+import {AuthProvider} from '../../src/contexts/AuthContext.jsx';
+import {SettingsProvider} from '../../src/contexts/SettingsContext.jsx';
+import GoodsReceiptPage from '../../src/pages/GoodsReceiptPage.jsx';
+import BillReceiptViewer from '../../src/components/accounts-payable/BillReceiptViewer.jsx';
+import RecordSupplierPaymentModal from '../../src/components/accounts-payable/RecordSupplierPaymentModal.jsx';
+import AddPayableModal from '../../src/components/accounts-payable/AddPayableModal.jsx';
+import SupplierDetailDrawer from '../../src/components/suppliers/SupplierDetailDrawer.jsx';
+import '../../src/index.css';
+localStorage.setItem('userSession',JSON.stringify({token:'fixture',user:{employee_id:1,permission_level_id:10},permissions:[]}));
+const root=createRoot(document.getElementById('root'));
+const supplier={supplier_id:1,supplier_name:'Reference Supplier'};
+window.mountReceiptViewer=bill=>root.render(React.createElement(BillReceiptViewer,{bill,onClose:()=>root.render(null)}));
+window.mountReference=(kind='receive', pageState={action:'receive',supplierId:1,contextId:'reference-fixture'})=>{
+const onNavigate=(page,state)=>{window.referenceNavigation={page,state}; if(page==='goods_receipt') window.mountReference('receive',state);};
+const props={isOpen:true,onClose:()=>{},presetSupplier:supplier};
+const node=kind==='receive'?React.createElement(GoodsReceiptPage,{user:{employee_id:1},onNavigate,pageState})
+:kind==='payment'?React.createElement(RecordSupplierPaymentModal,props)
+:kind==='new'?React.createElement(AddPayableModal,props)
+:React.createElement(SupplierDetailDrawer,{isOpen:true,supplier,initialTab:'bills',onNavigate,hostPageKey:'ap',onClose:()=>{}});
+root.render(React.createElement(AuthProvider,{key:kind+JSON.stringify(pageState)},React.createElement(SettingsProvider,null,node)));
+};
+</script></body></html>

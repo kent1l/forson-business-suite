@@ -13,6 +13,7 @@ const supplierBillService = require('../services/supplierBillService');
 const apOperationIdempotency = require('../services/apOperationIdempotencyService');
 const { normalizeReceiptIdentifier } = require('../helpers/paperlessMatching');
 const { syncReceiptRecordedTag } = require('../services/paperlessService');
+const supplierReceiptReference = require('../services/supplierReceiptReferenceService');
 const router = express.Router();
 
 // Preserve the supplier's printed reference; only blank input becomes NULL.
@@ -121,9 +122,9 @@ router.get('/goods-receipts', protect, hasPermission(['goods_receipt:create', 'g
         gr.void_reason,
         gr.is_backfill,
         gr.supplier_id,
-        gr.supplier_invoice_no,
+        gr.supplier_invoice_no, gr.supplier_document_no, gr.supplier_document_type, gr.another_delivery_confirmed,
         gr.bill_id,
-        sb.bill_number,
+        sb.bill_number, sb.supplier_document_no AS bill_supplier_document_no,
         sb.status AS bill_status,
         ${includePhysicalReceipt
           ? 'COALESCE(gr.physical_receipt_no, gr.supplier_invoice_no) AS physical_receipt_no,'
@@ -158,7 +159,7 @@ router.get('/goods-receipts', protect, hasPermission(['goods_receipt:create', 'g
     if (search) {
       query += `
         AND (gr.grn_number ILIKE $${paramIndex}
-           ${includePhysicalReceipt ? `OR COALESCE(gr.physical_receipt_no, gr.supplier_invoice_no) ILIKE $${paramIndex}` : 'OR gr.supplier_invoice_no ILIKE $' + paramIndex}
+           ${includePhysicalReceipt ? `OR COALESCE(gr.supplier_document_no, gr.physical_receipt_no, gr.supplier_invoice_no) ILIKE $${paramIndex}` : 'OR gr.supplier_invoice_no ILIKE $' + paramIndex}
            OR s.supplier_name ILIKE $${paramIndex + 1}
            OR EXISTS (
              SELECT 1 FROM goods_receipt_line grl
@@ -214,6 +215,22 @@ router.get('/goods-receipts', protect, hasPermission(['goods_receipt:create', 'g
 });
 
 // GET /goods-receipts/:id/lines - Fetch line items for a specific GRN
+router.get('/goods-receipts/check-supplier-reference', protect, hasPermission('goods_receipt:create'), async (req, res) => {
+  const supplierId = Number(req.query.supplier_id);
+  const documentNo = receiptInputValue(req.query.document_no);
+  if (!Number.isInteger(supplierId) || supplierId <= 0 || !documentNo) {
+    return res.status(400).json({ message: 'supplier_id and document_no are required.' });
+  }
+  try {
+    const receipts = await supplierReceiptReference.findReceipts(db, {
+      supplierId, documentNo, documentType: req.query.document_type || null, excludeGrnId: req.query.exclude_grn_id || null,
+    });
+    res.json({ is_taken: receipts.length > 0, receipts, ...(receipts[0] || {}) });
+  } catch (err) {
+    res.status(500).json({ message: 'Could not check supplier document reference.' });
+  }
+});
+
 router.get('/goods-receipts/check-physical-receipt', protect, hasPermission('goods_receipt:create'), async (req, res) => {
   const supplierId = Number(req.query.supplier_id);
   const receiptNo = normalizeReceiptIdentifier(req.query.physical_receipt_no);
@@ -340,7 +357,7 @@ router.post('/goods-receipts', protect, hasPermission('goods_receipt:create'), a
   // sync_retail_prices: whether posting should push each line's sale_price to the parts
   // catalogue. Default true, matching the long-standing behaviour of the WAC trigger.
   const { supplier_id, received_by, lines, po_id, bill_id, receipt_date,
-          is_backfill, supplier_invoice_no,
+          is_backfill,
           freight_amount, freight_allocation_method, freight_supplier_id,
           overall_discount_percent, overall_discount_amount, sync_retail_prices } = req.body;
 
@@ -349,10 +366,11 @@ router.post('/goods-receipts', protect, hasPermission('goods_receipt:create'), a
   }
 
   const isBackfill = !!is_backfill;
-  const physicalReceiptNo = receiptInputValue(req.body.physical_receipt_no);
+  const documentReference = supplierReceiptReference.referenceFromInput(req.body);
+  const physicalReceiptNo = documentReference.physical_receipt_no;
   // The entry screen deliberately has one supplier-document field. Keep the legacy
   // invoice column populated for backfills because AP posting still reads it.
-  const invoiceNo = receiptInputValue(supplier_invoice_no) || physicalReceiptNo;
+  const invoiceNo = documentReference.supplier_invoice_no;
   const freightCosts = parseFreightCosts(req.body);
   const totalFreight = freightCosts.length > 0
     ? freightCosts.reduce((s, f) => s + (Number(f.amount) || 0), 0)
@@ -384,7 +402,7 @@ router.post('/goods-receipts', protect, hasPermission('goods_receipt:create'), a
     }
     // The supplier's own document number is what makes re-entering the same invoice
     // detectable. Without it there is nothing to match a duplicate against.
-    if (!invoiceNo) {
+    if (!invoiceNo && !documentReference.supplier_document_no) {
       return res.status(400).json({ message: "Enter the supplier's invoice or delivery receipt number so the same document cannot be recorded twice." });
     }
     if (po_id) {
@@ -428,6 +446,7 @@ router.post('/goods-receipts', protect, hasPermission('goods_receipt:create'), a
           bill_id,
           invoiceNo,
           physicalReceiptNo,
+          documentReference,
           freightAmount,
           overallDiscountPercent,
           overallDiscountAmount,
@@ -435,6 +454,17 @@ router.post('/goods-receipts', protect, hasPermission('goods_receipt:create'), a
       });
     }
 
+    if (documentReference.supplier_document_no) {
+      await supplierReceiptReference.validateReceivingReference(client, {
+        supplierId: supplier_id, documentNo: documentReference.supplier_document_no,
+        documentType: documentReference.supplier_document_type, billId: bill_id,
+        anotherDeliveryConfirmed: documentReference.another_delivery_confirmed,
+      });
+      if (!isBackfill) await supplierBillService.assertBillReferenceAvailable(client, {
+        supplierId: supplier_id, documentType: documentReference.supplier_document_type,
+        documentNo: documentReference.supplier_document_no, billId: bill_id,
+      });
+    }
     if (bill_id) {
       await supplierBillService.validateBillForReceiving(client, { billId: bill_id, supplierId: supplier_id });
     }
@@ -460,15 +490,17 @@ router.post('/goods-receipts', protect, hasPermission('goods_receipt:create'), a
       INSERT INTO goods_receipt (grn_number, supplier_id, received_by, bill_id, po_id, receipt_date,
                                  is_backfill, supplier_invoice_no, physical_receipt_no, workflow_status, freight_amount,
                                  freight_allocation_method, freight_supplier_id, overall_discount_percent,
-                                 overall_discount_amount, sync_retail_prices, created_by, posted_by, posted_at)
+                                 overall_discount_amount, sync_retail_prices, created_by, posted_by, posted_at,
+                                 supplier_document_no, supplier_document_type, another_delivery_confirmed)
       VALUES ($1, $2, $3, $4, $5, COALESCE($6::timestamptz, CURRENT_TIMESTAMP), $7, $8, $9, 'Posted',
-              $10, $11, $12, $13, $14, $15, $3, $3, CURRENT_TIMESTAMP)
+              $10, $11, $12, $13, $14, $15, $3, $3, CURRENT_TIMESTAMP, $16, $17, $18)
       RETURNING grn_id;
     `;
     const receiptResult = await client.query(goodsReceiptQuery, [grn_number, supplier_id, received_by,
       isBackfill ? null : (bill_id || null), isBackfill ? null : (po_id || null), receiptDate, isBackfill, invoiceNo, physicalReceiptNo,
       freightAmount, freightMethod, isBackfill ? null : freightSupplierId,
-      overallDiscountPercent, overallDiscountAmount, syncRetailPrices]);
+      overallDiscountPercent, overallDiscountAmount, syncRetailPrices, documentReference.supplier_document_no,
+      documentReference.supplier_document_type, documentReference.another_delivery_confirmed]);
     const newGrnId = receiptResult.rows[0].grn_id;
 
     const postedLines = [];
@@ -535,6 +567,9 @@ router.post('/goods-receipts', protect, hasPermission('goods_receipt:create'), a
       receiptDate,
       supplierInvoiceNo: invoiceNo,
       physicalReceiptNo: physicalReceiptNo || null,
+      supplierDocumentNo: documentReference.supplier_document_no,
+      supplierDocumentType: documentReference.supplier_document_type,
+      anotherDeliveryConfirmed: documentReference.another_delivery_confirmed,
       freightAmount,
       freightSupplierId: isBackfill ? null : freightSupplierId,
       netGoodsValue: costing.totals.net_goods_value,
@@ -568,6 +603,7 @@ router.post('/goods-receipts', protect, hasPermission('goods_receipt:create'), a
     }
 
     await client.query('COMMIT');
+    if (documentReference.supplier_document_no) await syncReceiptRecordedTag(documentReference.supplier_document_no, true, supplier_id, client);
     if (physicalReceiptNo) await syncReceiptRecordedTag(physicalReceiptNo, true, supplier_id, client);
     if (invoiceNo && invoiceNo !== physicalReceiptNo) await syncReceiptRecordedTag(invoiceNo, true, supplier_id, client);
     res.status(201).json(responseBody);
@@ -586,7 +622,7 @@ router.post('/goods-receipts', protect, hasPermission('goods_receipt:create'), a
       });
     }
     if (err.statusCode) {
-      return res.status(err.statusCode).json({ message: err.message });
+      return res.status(err.statusCode).json({ message: err.message, code: err.code, existingReceipts: err.existingReceipts, conflictingBill: err.conflictingBill });
     }
     console.error('Transaction Error:', err.message);
     res.status(500).json({ message: 'Server error during transaction.', error: err.message });
@@ -781,7 +817,7 @@ router.put('/goods-receipts/:id', protect, hasPermission('goods_receipt:edit'), 
     }
   } catch (err) {
     if (err.statusCode) {
-      return res.status(err.statusCode).json({ message: err.message });
+      return res.status(err.statusCode).json({ message: err.message, code: err.code, existingReceipts: err.existingReceipts, conflictingBill: err.conflictingBill });
     }
     console.error('Goods receipt update error:', err.message);
     res.status(500).json({
@@ -809,7 +845,7 @@ router.delete('/goods-receipts/:id', protect, hasPermission('goods_receipt:void'
     await client.query('BEGIN');
 
     const { rows: grnRows } = await client.query(
-      'SELECT grn_id, grn_number, bill_id, freight_bill_id, supplier_id, po_id, status, physical_receipt_no, supplier_invoice_no FROM goods_receipt WHERE grn_id = $1 FOR UPDATE',
+      'SELECT grn_id, grn_number, bill_id, freight_bill_id, supplier_id, po_id, status, supplier_document_no, physical_receipt_no, supplier_invoice_no FROM goods_receipt WHERE grn_id = $1 FOR UPDATE',
       [id]
     );
     if (grnRows.length === 0) {
@@ -951,7 +987,7 @@ router.delete('/goods-receipts/:id', protect, hasPermission('goods_receipt:void'
     // reverse that liability too. Without this the carrier's payable would survive a
     // receipt that no longer exists.
     const { rows: freightItems } = await client.query(
-      `SELECT grf.bill_id, grf.payment_id, grf.is_paid, sb.bill_number, sb.supplier_id, sb.amount_paid, sb.status
+      `SELECT grf.bill_id, grf.payment_id, grf.is_paid, sb.bill_number, sb.supplier_document_no AS bill_supplier_document_no, sb.supplier_id, sb.amount_paid, sb.status
        FROM goods_receipt_freight grf
        JOIN supplier_bill sb ON grf.bill_id = sb.bill_id
        WHERE grf.grn_id = $1 FOR UPDATE OF sb`,
@@ -1026,6 +1062,7 @@ router.delete('/goods-receipts/:id', protect, hasPermission('goods_receipt:void'
     );
 
     await client.query('COMMIT');
+    if (grn.supplier_document_no) await syncReceiptRecordedTag(grn.supplier_document_no, false, grn.supplier_id, client);
     if (grn.physical_receipt_no) await syncReceiptRecordedTag(grn.physical_receipt_no, false, grn.supplier_id, client);
     if (grn.supplier_invoice_no && grn.supplier_invoice_no !== grn.physical_receipt_no) {
       await syncReceiptRecordedTag(grn.supplier_invoice_no, false, grn.supplier_id, client);
@@ -1097,8 +1134,7 @@ function parseHeaderPayload(body) {
     bill_id: body.bill_id || null,
     receipt_date: body.receipt_date || null,
     is_backfill: !!body.is_backfill,
-    physical_receipt_no: receiptInputValue(body.physical_receipt_no),
-    supplier_invoice_no: receiptInputValue(body.supplier_invoice_no) || receiptInputValue(body.physical_receipt_no),
+    ...supplierReceiptReference.referenceFromInput(body),
     freight_amount: totalFreight > 0 ? totalFreight : (Number(body.freight_amount) > 0 ? Number(body.freight_amount) : 0),
     freight_allocation_method: body.freight_allocation_method || grnCosting.METHOD_A,
     freight_supplier_id: primarySupplierId,
@@ -1217,16 +1253,21 @@ router.post('/goods-receipts/drafts', protect, hasPermission('goods_receipt:crea
       `INSERT INTO goods_receipt (grn_number, supplier_id, received_by, po_id, receipt_date, is_backfill,
                                   supplier_invoice_no, physical_receipt_no, workflow_status, freight_amount, freight_allocation_method,
                                   freight_supplier_id, overall_discount_percent, overall_discount_amount,
-                                  sync_retail_prices, created_by, bill_id)
+                                  sync_retail_prices, created_by, bill_id, supplier_document_no, supplier_document_type, another_delivery_confirmed)
        VALUES ($1, $2, $3, $4, COALESCE($5::timestamptz, CURRENT_TIMESTAMP), $6, $7, $8, 'Draft',
-               $9, $10, $11, $12, $13, $14, $15, $16)
+               $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
        RETURNING grn_id, grn_number`,
       [draftNumber, header.supplier_id, header.received_by || employeeId, header.po_id, header.receipt_date,
        header.is_backfill, header.supplier_invoice_no, header.physical_receipt_no, header.freight_amount, header.freight_allocation_method,
        header.freight_supplier_id, header.overall_discount_percent, header.overall_discount_amount,
-       header.sync_retail_prices, employeeId, header.bill_id || null],
+       header.sync_retail_prices, employeeId, header.bill_id || null, header.supplier_document_no,
+       header.supplier_document_type, header.another_delivery_confirmed],
     );
 
+    await supplierReceiptReference.validateReceivingReference(client, {
+      supplierId: header.supplier_id, documentNo: header.supplier_document_no, documentType: header.supplier_document_type,
+      grnId: draft.grn_id, billId: header.bill_id, anotherDeliveryConfirmed: header.another_delivery_confirmed,
+    });
     await writeDraftLines(client, draft.grn_id, lines, costing);
     await writeDraftFreight(client, draft.grn_id, header.freight_costs);
     await client.query('COMMIT');
@@ -1239,7 +1280,7 @@ router.post('/goods-receipts/drafts', protect, hasPermission('goods_receipt:crea
     if (err.code === '23505' && err.constraint === 'uq_goods_receipt_supplier_invoice') {
       return res.status(409).json({ message: `Invoice ${header.supplier_invoice_no} has already been recorded for this supplier.` });
     }
-    if (err.statusCode) return res.status(err.statusCode).json({ message: err.message });
+    if (err.statusCode) return res.status(err.statusCode).json({ message: err.message, code: err.code, existingReceipts: err.existingReceipts, conflictingBill: err.conflictingBill });
     console.error('Error creating goods receipt draft:', err.message);
     res.status(500).json({ message: 'Server error', error: err.message });
   } finally {
@@ -1267,7 +1308,8 @@ router.get('/goods-receipts/drafts', protect, hasPermission('goods_receipt:creat
       params.push(`%${search}%`);
       where += ` AND (gr.grn_number ILIKE $${params.length} OR s.supplier_name ILIKE $${params.length}
                       OR gr.supplier_invoice_no ILIKE $${params.length}
-                      OR gr.physical_receipt_no ILIKE $${params.length})`;
+                      OR gr.physical_receipt_no ILIKE $${params.length}
+                      OR gr.supplier_document_no ILIKE $${params.length})`;
     }
 
     // The line aggregate is what makes the queue reviewable at a glance: a reviewer
@@ -1276,6 +1318,7 @@ router.get('/goods-receipts/drafts', protect, hasPermission('goods_receipt:creat
       SELECT
         gr.grn_id, gr.grn_number, gr.receipt_date, gr.workflow_status,
         COALESCE(gr.supplier_invoice_no, gr.physical_receipt_no) AS supplier_invoice_no,
+        gr.supplier_document_no, gr.supplier_document_type, gr.another_delivery_confirmed,
         gr.physical_receipt_no,
         gr.freight_amount, gr.overall_discount_percent, gr.overall_discount_amount,
         gr.created_at, gr.submitted_at,
@@ -1319,7 +1362,7 @@ router.get('/goods-receipts/:id', protect, hasPermission(['goods_receipt:create'
     const { rows } = await db.query(
       `SELECT gr.grn_id, gr.grn_number, gr.receipt_date, gr.supplier_id, gr.received_by, gr.po_id,
               gr.bill_id, gr.freight_bill_id, gr.status, gr.workflow_status, gr.is_backfill,
-              gr.supplier_invoice_no,
+              gr.supplier_invoice_no, gr.supplier_document_no, gr.supplier_document_type, gr.another_delivery_confirmed,
               ${includePhysicalReceipt ? 'gr.physical_receipt_no,' : 'NULL::varchar AS physical_receipt_no,'}
               gr.freight_amount, gr.freight_allocation_method,
               gr.freight_supplier_id, gr.overall_discount_percent, gr.overall_discount_amount,
@@ -1327,7 +1370,7 @@ router.get('/goods-receipts/:id', protect, hasPermission(['goods_receipt:create'
               s.supplier_name,
               fs.supplier_name AS freight_supplier_name,
               CONCAT(e.first_name, ' ', e.last_name) AS received_by_name,
-              sb.bill_number,
+              sb.bill_number, sb.supplier_document_no AS bill_supplier_document_no,
               sb.total_amount AS bill_total_amount,
               sb.amount_paid AS bill_amount_paid,
               sb.status AS bill_status,
@@ -1387,7 +1430,7 @@ router.put('/goods-receipts/:id/draft', protect, hasPermission('goods_receipt:cr
 
     await client.query('BEGIN');
     const { rows: [grn] } = await client.query(
-      'SELECT grn_id, workflow_status FROM goods_receipt WHERE grn_id = $1 FOR UPDATE',
+      'SELECT grn_id, workflow_status, supplier_id FROM goods_receipt WHERE grn_id = $1 FOR UPDATE',
       [id],
     );
     if (!grn) {
@@ -1423,6 +1466,7 @@ router.put('/goods-receipts/:id/draft', protect, hasPermission('goods_receipt:cr
            overall_discount_amount = $13,
            sync_retail_prices = $14,
            workflow_status = $16,
+           supplier_document_no = $17, supplier_document_type = $18, another_delivery_confirmed = $19,
            -- The edit leaves it a draft, and a draft has no submission behind it, so the
            -- previous approval trail is cleared unconditionally rather than conditionally.
            submitted_by = NULL,
@@ -1432,9 +1476,14 @@ router.put('/goods-receipts/:id/draft', protect, hasPermission('goods_receipt:cr
       [header.supplier_id, header.received_by, header.po_id, header.bill_id || null, header.receipt_date, header.is_backfill,
        header.supplier_invoice_no, header.physical_receipt_no, header.freight_amount, header.freight_allocation_method,
        header.freight_supplier_id, header.overall_discount_percent, header.overall_discount_amount,
-       header.sync_retail_prices, id, grnWorkflow.DRAFT],
+       header.sync_retail_prices, id, grnWorkflow.DRAFT, header.supplier_document_no,
+       header.supplier_document_type, header.another_delivery_confirmed],
     );
 
+    await supplierReceiptReference.validateReceivingReference(client, {
+      supplierId: header.supplier_id || grn.supplier_id, documentNo: header.supplier_document_no, documentType: header.supplier_document_type,
+      grnId: id, billId: header.bill_id, anotherDeliveryConfirmed: header.another_delivery_confirmed,
+    });
     await writeDraftLines(client, id, lines, costing);
     await writeDraftFreight(client, id, header.freight_costs);
     await client.query('COMMIT');
@@ -1450,7 +1499,7 @@ router.put('/goods-receipts/:id/draft', protect, hasPermission('goods_receipt:cr
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
     if (isPhysicalReceiptConflict(err)) return res.status(409).json({ message: physicalReceiptConflictMessage(header.physical_receipt_no) });
-    if (err.statusCode) return res.status(err.statusCode).json({ message: err.message });
+    if (err.statusCode) return res.status(err.statusCode).json({ message: err.message, code: err.code, existingReceipts: err.existingReceipts, conflictingBill: err.conflictingBill });
     console.error('Error updating goods receipt draft:', err.message);
     res.status(500).json({ message: 'Server error', error: err.message });
   } finally {
@@ -1465,7 +1514,7 @@ async function transitionReceipt(req, res, { to, permissionField, timestampField
   try {
     await client.query('BEGIN');
     const { rows: [grn] } = await client.query(
-      'SELECT grn_id, workflow_status FROM goods_receipt WHERE grn_id = $1 FOR UPDATE',
+      'SELECT grn_id, workflow_status, supplier_id FROM goods_receipt WHERE grn_id = $1 FOR UPDATE',
       [id],
     );
     if (!grn) {
@@ -1488,7 +1537,7 @@ async function transitionReceipt(req, res, { to, permissionField, timestampField
     res.json({ message: `Goods receipt ${to.toLowerCase()}.`, grn_id: Number(id), workflow_status: to });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
-    if (err.statusCode) return res.status(err.statusCode).json({ message: err.message });
+    if (err.statusCode) return res.status(err.statusCode).json({ message: err.message, code: err.code, existingReceipts: err.existingReceipts, conflictingBill: err.conflictingBill });
     console.error(`Error transitioning goods receipt to ${to}:`, err.message);
     res.status(500).json({ message: 'Server error', error: err.message });
   } finally {
@@ -1529,7 +1578,8 @@ router.post('/goods-receipts/:id/post', protect, hasPermission('goods_receipt:po
 
     const { rows: [grn] } = await client.query(
       `SELECT grn_id, grn_number, supplier_id, received_by, po_id, bill_id, receipt_date, is_backfill,
-              supplier_invoice_no, physical_receipt_no, workflow_status, freight_amount, freight_allocation_method,
+              supplier_invoice_no, physical_receipt_no, supplier_document_no, supplier_document_type, another_delivery_confirmed,
+              workflow_status, freight_amount, freight_allocation_method,
               freight_supplier_id, overall_discount_percent, overall_discount_amount
        FROM goods_receipt WHERE grn_id = $1 FOR UPDATE`,
       [id],
@@ -1570,6 +1620,14 @@ router.post('/goods-receipts/:id/post', protect, hasPermission('goods_receipt:po
     if (costing.totals.net_goods_value <= 0) {
       await client.query('ROLLBACK');
       return res.status(400).json({ message: 'This receipt has no value left to post — every line was returned or discounted away.' });
+    }
+
+    if (grn.supplier_document_no) {
+      await supplierReceiptReference.validateReceivingReference(client, {
+        supplierId: grn.supplier_id, documentNo: grn.supplier_document_no,
+        documentType: grn.supplier_document_type, billId: grn.bill_id, grnId: grn.grn_id,
+        anotherDeliveryConfirmed: grn.another_delivery_confirmed,
+      });
     }
 
     // Swap the provisional draft number for a real one at the moment the document
@@ -1615,6 +1673,9 @@ router.post('/goods-receipts/:id/post', protect, hasPermission('goods_receipt:po
       receiptDate: grn.receipt_date,
       supplierInvoiceNo: grn.supplier_invoice_no,
       physicalReceiptNo: grn.physical_receipt_no,
+      supplierDocumentNo: grn.supplier_document_no,
+      supplierDocumentType: grn.supplier_document_type,
+      anotherDeliveryConfirmed: grn.another_delivery_confirmed,
       freightAmount: Number(grn.freight_amount) || 0,
       freightSupplierId: grn.is_backfill ? null : grn.freight_supplier_id,
       netGoodsValue: costing.totals.net_goods_value,
@@ -1643,6 +1704,7 @@ router.post('/goods-receipts/:id/post', protect, hasPermission('goods_receipt:po
     }
 
     await client.query('COMMIT');
+    if (grn.supplier_document_no) await syncReceiptRecordedTag(grn.supplier_document_no, true, grn.supplier_id, client);
     if (grn.physical_receipt_no) await syncReceiptRecordedTag(grn.physical_receipt_no, true, grn.supplier_id, client);
     if (grn.supplier_invoice_no && grn.supplier_invoice_no !== grn.physical_receipt_no) {
       await syncReceiptRecordedTag(grn.supplier_invoice_no, true, grn.supplier_id, client);
@@ -1654,7 +1716,7 @@ router.post('/goods-receipts/:id/post', protect, hasPermission('goods_receipt:po
     if (err.code === '23505' && err.constraint === 'uq_goods_receipt_supplier_invoice') {
       return res.status(409).json({ message: 'That supplier invoice has already been recorded.' });
     }
-    if (err.statusCode) return res.status(err.statusCode).json({ message: err.message });
+    if (err.statusCode) return res.status(err.statusCode).json({ message: err.message, code: err.code, existingReceipts: err.existingReceipts, conflictingBill: err.conflictingBill });
     console.error('Error posting goods receipt:', err.message);
     res.status(500).json({ message: 'Server error posting goods receipt', error: err.message });
   } finally {
@@ -1905,7 +1967,7 @@ router.post('/goods-receipts/:id/lines/:lineId/return', protect, hasPermission('
     });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
-    if (err.statusCode) return res.status(err.statusCode).json({ message: err.message });
+    if (err.statusCode) return res.status(err.statusCode).json({ message: err.message, code: err.code, existingReceipts: err.existingReceipts, conflictingBill: err.conflictingBill });
     console.error('Error recording goods receipt return:', err.message);
     res.status(500).json({ message: 'Server error recording return', error: err.message });
   } finally {

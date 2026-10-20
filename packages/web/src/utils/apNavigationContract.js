@@ -2,7 +2,7 @@
  * Shared Supplier A/P navigation contract and session storage persistence.
  */
 
-const ALLOWED_RETURN_PAGES = new Set(['accounts-payable', 'suppliers', 'goods-receipt', 'treasury']);
+const ALLOWED_RETURN_PAGES = new Set(['ap', 'suppliers', 'goods_receipt', 'cheques_treasury']);
 const SESSION_STORAGE_KEY = 'forson_ap_nav_context';
 
 export function createApNavigationPayload({
@@ -19,7 +19,7 @@ export function createApNavigationPayload({
     supplierId: supplierId ? Number(supplierId) : null,
     billId: billId ? Number(billId) : null,
     grnId: grnId ? Number(grnId) : null,
-    source: source && ALLOWED_RETURN_PAGES.has(source.pageKey) ? source : { pageKey: 'accounts-payable' },
+    source: source && ALLOWED_RETURN_PAGES.has(source.pageKey) ? source : { pageKey: 'ap' },
     contextId: generatedContextId,
   };
 }
@@ -64,7 +64,7 @@ export function clearNavContext() {
   }
 }
 
-export function returnToOrigin(onNavigate, navContext, defaultPage = 'accounts-payable') {
+export function returnToOrigin(onNavigate, navContext, defaultPage = 'ap') {
   clearNavContext();
   const source = navContext?.source;
   const pageKey = (source?.pageKey && ALLOWED_RETURN_PAGES.has(source.pageKey)) ? source.pageKey : defaultPage;

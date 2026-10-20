@@ -555,15 +555,40 @@ router.get('/ap/cheque-register', protect, hasPermission(['ap-pdc:view']), async
 
 router.get('/ap/supplier-bills', protect, hasPermission(['ap-pdc:view', 'ap:view']), async (req, res) => {
     try {
-        const { supplier_id, status } = req.query;
+        const { supplier_id, status, search } = req.query;
         const params = [];
         let where = 'WHERE 1=1';
         if (supplier_id) { params.push(supplier_id); where += ` AND sb.supplier_id = $${params.length}`; }
         if (status && status !== 'all') { params.push(status); where += ` AND sb.status = $${params.length}`; }
         else if (!status) { where += ` AND sb.status NOT IN ('Paid', 'Void')`; }
 
+        if (search?.trim()) {
+            params.push(`%${search.trim()}%`);
+            where += ` AND (sb.supplier_document_no ILIKE $${params.length}
+                OR sb.bill_number ILIKE $${params.length}
+                OR EXISTS (SELECT 1 FROM supplier_bill_document_identity di
+                    WHERE di.bill_id = sb.bill_id AND di.status = 'active' AND di.document_no ILIKE $${params.length}))`;
+        }
         const { rows } = await db.query(
             `SELECT sb.*, s.supplier_name,
+                    COALESCE(NULLIF(BTRIM(sb.supplier_document_no), ''),
+                        (SELECT di.document_no FROM supplier_bill_document_identity di
+                         WHERE di.bill_id = sb.bill_id AND di.supplier_id = sb.supplier_id AND di.status = 'active'
+                         ORDER BY di.is_primary DESC, di.identity_id LIMIT 1),
+                        (SELECT COALESCE(NULLIF(BTRIM(gr.supplier_document_no), ''),
+                                         NULLIF(BTRIM(gr.physical_receipt_no), ''),
+                                         NULLIF(BTRIM(gr.supplier_invoice_no), ''))
+                         FROM goods_receipt gr
+                         WHERE gr.supplier_id = sb.supplier_id
+                           AND (gr.bill_id = sb.bill_id OR gr.grn_id = sb.grn_id)
+                           AND COALESCE(NULLIF(BTRIM(gr.supplier_document_no), ''),
+                                        NULLIF(BTRIM(gr.physical_receipt_no), ''),
+                                        NULLIF(BTRIM(gr.supplier_invoice_no), '')) IS NOT NULL
+                         ORDER BY (gr.status = 'Active' AND gr.workflow_status = 'Posted') DESC,
+                                  (gr.grn_id = sb.grn_id) DESC NULLS LAST, gr.receipt_date, gr.grn_id LIMIT 1),
+                        CASE WHEN sb.bill_number NOT LIKE 'BILL-%' THEN sb.bill_number END
+                    ) AS display_supplier_reference,
+                    ARRAY(SELECT di.document_no FROM supplier_bill_document_identity di WHERE di.bill_id = sb.bill_id AND di.status = 'active') AS document_references,
                     GREATEST(CURRENT_DATE - COALESCE(sb.due_date, sb.bill_date), 0) AS days_overdue,
                     COALESCE(sched.scheduled_amount, 0) AS scheduled_amount,
                     COALESCE(sched.scheduled_cheques, '[]'::json) AS scheduled_cheques,
@@ -650,9 +675,15 @@ router.post('/ap/supplier-bills', protect, hasPermission(['ap:manage']), async (
             }
         }
 
+        const resolvedDocType = supplier_document_type || ((supplier_document_no || bill_number) ? 'other' : null);
+        const resolvedDocNo = String(supplier_document_no || bill_number || '').trim() || null;
+        if (resolvedDocNo) {
+            await require('../services/supplierBillService').assertBillReferenceAvailable(client, {
+                supplierId: supplier_id, documentType: resolvedDocType, documentNo: resolvedDocNo,
+            });
+        }
+
         const resolvedBillNumber = bill_number || await getNextDocumentNumber(client, 'BILL');
-        const resolvedDocType = supplier_document_type || (supplier_document_no ? 'invoice' : null);
-        const resolvedDocNo = supplier_document_no ? String(supplier_document_no).trim() : null;
 
         const { rows: [bill] } = await client.query(
             `INSERT INTO supplier_bill (supplier_id, po_id, grn_id, bill_number, bill_date, due_date, total_amount, notes, created_by,

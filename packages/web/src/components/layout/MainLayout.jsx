@@ -65,7 +65,7 @@ const MainLayout = ({ user, onLogout, onNavigate, currentPage, pageState, posLin
             case 'reporting': return <ReportingPage />;
             case 'analytics': return <AnalyticsPage onNavigate={onNavigate} />;
             case 'power_search': return <PowerSearchPage />;
-            case 'suppliers': return <SuppliersPage user={user} onNavigate={onNavigate} />;
+            case 'suppliers': return <SuppliersPage user={user} onNavigate={onNavigate} pageState={pageState} />;
             case 'supplier_management': return <PartyMergePage party="supplier" onNavigate={onNavigate} />;
             case 'parts': return <PartsPage user={user} onNavigate={onNavigate} />;
             case 'parts_cleanup': return <PartsCleanupPage user={user} onNavigate={onNavigate} />;

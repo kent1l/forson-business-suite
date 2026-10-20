@@ -54,12 +54,13 @@ router.get('/paperless/match-receipt', protect, hasPermission('documents:view'),
     }
 });
 
-// GET /api/paperless/documents/:id/preview - Get binary image artifact preview
+// GET /api/paperless/documents/:id/preview - Preserve the PDF or image preview format
 router.get('/paperless/documents/:id/preview', protect, hasPermission('documents:view'), async (req, res) => {
     const { id } = req.params;
     try {
-        const buffer = await paperlessService.downloadDocumentArtifact(id, 'preview');
-        res.setHeader('Content-Type', 'image/png');
+        const { buffer, contentType } = await paperlessService.getDocumentPreview(id);
+        res.setHeader('Content-Type', contentType);
+        res.setHeader('X-Content-Type-Options', 'nosniff');
         res.send(buffer);
     } catch (err) {
         console.error(`[PaperlessRoutes] Error fetching preview for doc ${id}:`, err.message);
