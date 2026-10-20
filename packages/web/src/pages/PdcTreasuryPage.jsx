@@ -262,7 +262,7 @@ const PdcTreasuryPage = ({ pageState }) => {
     };
 
     const handlePrintOutbound = async (item) => {
-        const template = chequeTemplates.find(t => String(t.id) === String(item.template_id)) || chequeTemplates[0];
+        const template = chequeTemplates.find(t => String(t.id) === String(item.template_id));
         if (!template) {
             toast.error('No print template linked to this cheque\'s bank account. Link one in Bank Accounts, or print manually from Cheque Printing.');
             return;
@@ -285,7 +285,19 @@ const PdcTreasuryPage = ({ pageState }) => {
             window.open(url, '_blank', 'noopener,noreferrer');
         } catch (err) {
             console.error('Error printing cheque:', err);
-            toast.error(err.response?.data?.message || 'Failed to generate cheque PDF');
+            let message = 'Failed to generate cheque PDF';
+            if (err.response?.data instanceof Blob) {
+                try {
+                    const text = await err.response.data.text();
+                    const parsed = JSON.parse(text);
+                    message = parsed.message || message;
+                } catch {
+                    // ignore JSON parse failure
+                }
+            } else if (err.response?.data?.message) {
+                message = err.response.data.message;
+            }
+            toast.error(message);
         } finally {
             setPrintingId(null);
         }

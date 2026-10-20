@@ -3,6 +3,7 @@ const db = require('../db');
 const { protect, hasPermission, userHasPermission } = require('../middleware/authMiddleware');
 const { createChequePdf } = require('../helpers/pdf/chequePdf');
 const apPdcService = require('../services/apPdcService');
+const chequePrintService = require('../services/chequePrintService');
 
 const router = express.Router();
 const ALLOWED_FEED_TYPES = ['native', 'letter_center', 'letter_left', 'letter_right'];
@@ -168,6 +169,29 @@ router.delete('/cheques/templates/:id', protect, hasPermission('cheques:manage_s
     } catch (error) {
         console.error('Failed to delete cheque template', error);
         res.status(500).json({ message: 'Unable to delete cheque template' });
+    }
+});
+
+router.get('/cheques/print-queue', protect, hasPermission('cheques:view'), async (req, res) => {
+    try {
+        const { template_id, unassigned, limit, cursor } = req.query;
+        const result = await chequePrintService.getPrintQueue(db, {
+            template_id,
+            unassigned,
+            limit,
+            cursor
+        });
+        res.json(result);
+    } catch (error) {
+        if (error.status) {
+            return res.status(error.status).json({
+                message: error.message,
+                code: error.code,
+                details: error.details
+            });
+        }
+        console.error('Failed to fetch cheque print queue', error);
+        res.status(500).json({ message: 'Unable to fetch cheque print queue' });
     }
 });
 
@@ -437,99 +461,61 @@ router.post('/cheques/settings-import', protect, hasPermission('cheques:manage_s
 router.post('/cheques/generate-pdf', protect, hasPermission('cheques:create'), async (req, res) => {
     const { template_id, records = [], printer_profile_id = null, test_print = false } = req.body;
 
-    if (!template_id) {
-        return res.status(400).json({ message: 'template_id is required' });
-    }
-    if (!Array.isArray(records) || records.length === 0) {
-        return res.status(400).json({ message: 'At least one cheque record is required' });
-    }
-
-    const linkedIds = Array.from(new Set(
-        records.map((record) => record.cheque_record_id).filter(Boolean).map(Number)
-    ));
-    let linkedRecordsById = new Map();
-    if (linkedIds.length) {
-        const { rows: linkedRows } = await db.query(
-            `SELECT cr.id, cr.status, cr.is_deleted, cr.ap_payment_id, cr.expense_id, cr.bank_account_id,
-                    cr.payee, cr.amount, TO_CHAR(cr.cheque_date, 'YYYY-MM-DD') AS cheque_date,
-                    cr.template_id, ba.default_cheque_template_id
-             FROM cheque_records cr
-             LEFT JOIN bank_account ba ON ba.bank_account_id = cr.bank_account_id
-             WHERE cr.id = ANY($1::int[])`,
-            [linkedIds]
-        );
-        linkedRecordsById = new Map(linkedRows.map((row) => [row.id, row]));
-        const missing = linkedIds.filter((id) => !linkedRecordsById.has(id));
-        if (missing.length) {
-            return res.status(404).json({ message: `Linked cheque record(s) not found: ${missing.join(', ')}` });
-        }
-        const blocked = linkedRows.filter((row) => ['VOID', 'REPLACED', 'DELETED'].includes(row.status) || row.is_deleted === true);
-        if (blocked.length) {
-            return res.status(409).json({
-                code: 'CHEQUE_PRINT_BLOCKED',
-                message: `Cannot print cheque(s) with status ${blocked.map((r) => r.is_deleted && !['VOID', 'REPLACED', 'DELETED'].includes(r.status) ? 'HIDDEN' : r.status).join(', ')} (record id ${blocked.map((r) => r.id).join(', ')})`,
-            });
-        }
-    }
-
     try {
-        const templateRes = await db.query(
-            `SELECT id, bank_name, field_positions, date_format, amount_format, currency_settings, paper_settings, amount_words_settings, text_settings
-             FROM cheque_templates
-             WHERE id = $1 AND is_deleted = FALSE`,
-            [template_id]
-        );
+        const {
+            template,
+            printerProfile,
+            linkedRecordsById,
+            linkedIds
+        } = await chequePrintService.validateAndPreparePdfBatch(db, {
+            templateId: template_id,
+            printerProfileId: printer_profile_id,
+            records
+        });
 
-        if (!templateRes.rows.length) {
-            return res.status(404).json({ message: 'Template not found' });
-        }
-
-        let profile = { feed_type: 'native', offset_x: 0, offset_y: 0 };
-        if (printer_profile_id) {
-            const profileRes = await db.query(
-                `SELECT id, feed_type, offset_x, offset_y
-                 FROM printer_profiles
-                 WHERE id = $1`,
-                [printer_profile_id]
-            );
-            if (profileRes.rows.length) {
-                profile = profileRes.rows[0];
-            }
-        }
-
+        const fmt = template.date_format || 'MM-dd-yyyy';
         const normalizedRows = records.map((record) => {
-            const linked = record.cheque_record_id ? linkedRecordsById.get(Number(record.cheque_record_id)) : null;
-            const effectivePayee = linked ? linked.payee : record.payee;
-            const effectiveAmount = linked ? Number(linked.amount) : Number(record.amount || 0);
-            const amount = Math.round(effectiveAmount * 100) / 100;
-            if (!effectivePayee || !String(effectivePayee).trim()) {
-                throw new Error('Payee is required for every cheque');
+            if (record.cheque_record_id) {
+                const linked = linkedRecordsById.get(Number(record.cheque_record_id));
+                const effectiveAmount = Number(linked.amount);
+                const amount = Math.round(effectiveAmount * 100) / 100;
+                const canonicalDate = chequePrintService.formatChequeDate(linked.cheque_date, fmt);
+                return {
+                    date: canonicalDate,
+                    payee: String(linked.payee).trim(),
+                    amount: amount.toFixed(2),
+                    memo: linked.memo || record.memo || '',
+                    cheque_record_id: linked.id
+                };
             }
-            if (Number.isNaN(amount)) {
-                throw new Error('Amount must be numeric');
-            }
-            const dateValue = String(record.date || '');
-            const fmt = templateRes.rows[0].date_format || 'MM-dd-yyyy';
+
+            // Standalone row
+            const payee = String(record.payee || '').trim();
+            if (!payee) throw new Error('Payee is required for every cheque');
+            const parsedAmount = Number(record.amount);
+            if (Number.isNaN(parsedAmount)) throw new Error('Amount must be numeric');
+            const amount = Math.round(parsedAmount * 100) / 100;
+            const dateValue = String(record.date || '').trim();
             if (!isValidDateByFormat(dateValue, fmt)) {
                 throw new Error(`Date must follow ${fmt}`);
             }
             return {
                 date: dateValue,
-                payee: String(effectivePayee).trim(),
+                payee,
                 amount: amount.toFixed(2),
                 memo: record.memo || '',
-                cheque_record_id: record.cheque_record_id ? Number(record.cheque_record_id) : null
+                cheque_record_id: null
             };
         });
 
         const pdfResult = await createChequePdf({
             rows: normalizedRows,
-            template: templateRes.rows[0],
-            printerProfile: profile,
+            template,
+            printerProfile,
             testPrint: Boolean(test_print)
         });
 
-        const bankSegment = toFileSafeSegment(templateRes.rows[0]?.bank_name, 'bank');
+        const bankSegment = toFileSafeSegment(template?.bank_name, 'bank');
         const dateSegment = new Date().toISOString().slice(0, 10);
         const countSegment = `${normalizedRows.length}-cheque${normalizedRows.length > 1 ? 's' : ''}`;
         const pdfFilename = `${bankSegment}-${countSegment}-${dateSegment}.pdf`;
@@ -538,41 +524,13 @@ router.post('/cheques/generate-pdf', protect, hasPermission('cheques:create'), a
             const client = await db.getClient();
             try {
                 await client.query('BEGIN');
-                const { rows: liveRows } = await client.query(
-                    `SELECT id, status, is_deleted, ap_payment_id, expense_id, bank_account_id
-                     FROM cheque_records
-                     WHERE id = ANY($1::int[])
-                     FOR UPDATE`,
-                    [linkedIds]
-                );
-                const liveBlocked = liveRows.filter((row) => ['VOID', 'REPLACED', 'DELETED'].includes(row.status) || row.is_deleted === true);
-                if (liveBlocked.length) {
-                    await client.query('ROLLBACK');
-                    return res.status(409).json({
-                        code: 'CHEQUE_PRINT_BLOCKED',
-                        message: `Cannot print cheque(s) with status ${liveBlocked.map((r) => r.status).join(', ')} (record id ${liveBlocked.map((r) => r.id).join(', ')})`,
-                    });
-                }
-                const liveById = new Map(liveRows.map((row) => [row.id, row]));
-                const actionName = test_print ? 'TEST_PDF_GENERATED' : 'PDF_GENERATED';
-                for (const row of normalizedRows) {
-                    const linkedRecord = row.cheque_record_id ? liveById.get(row.cheque_record_id) : null;
-                    if (!linkedRecord) continue;
-                    await apPdcService.logOutboundClearanceEvent(client, {
-                        apPaymentId: linkedRecord.ap_payment_id,
-                        expenseId: linkedRecord.expense_id,
-                        chequeRecordId: linkedRecord.id,
-                        bankAccountId: linkedRecord.bank_account_id,
-                        action: actionName,
-                        notes: test_print ? 'Test alignment PDF generated' : 'Cheque PDF generated from Print Cheques queue',
-                        metadata: {
-                            template_id: Number(template_id),
-                            printer_profile_id: printer_profile_id ? Number(printer_profile_id) : null,
-                            test_print: Boolean(test_print),
-                        },
-                        userId: req.user?.employee_id,
-                    });
-                }
+                await chequePrintService.commitPdfGeneration(client, {
+                    linkedIds,
+                    templateId: template_id,
+                    printerProfileId: printer_profile_id,
+                    testPrint: Boolean(test_print),
+                    userId: req.user?.employee_id
+                });
                 await client.query('COMMIT');
             } catch (txErr) {
                 await client.query('ROLLBACK');
@@ -593,8 +551,15 @@ router.post('/cheques/generate-pdf', protect, hasPermission('cheques:create'), a
         }
         return res.send(pdfResult.buffer);
     } catch (error) {
+        if (error.status) {
+            return res.status(error.status).json({
+                message: error.message,
+                code: error.code,
+                details: error.details
+            });
+        }
         console.error('Failed to generate cheque PDF', error);
-        const status = /required|numeric/i.test(error.message) ? 400 : 500;
+        const status = /required|numeric|follow/i.test(error.message) ? 400 : 500;
         return res.status(status).json({ message: error.message || 'Unable to generate cheque PDF' });
     }
 });
@@ -645,27 +610,52 @@ router.post('/cheques/records', protect, hasPermission('cheques:create'), async 
     }
 });
 
+router.post('/cheques/:id/record-external-print', protect, hasPermission('cheques:create'), async (req, res) => {
+    const chequeId = parseInt(req.params.id, 10);
+    if (!chequeId) return res.status(400).json({ message: 'Invalid cheque record ID' });
+
+    const { notes } = req.body || {};
+    const client = await db.getClient();
+    try {
+        await client.query('BEGIN');
+        const result = await chequePrintService.recordExternalPrint(client, {
+            chequeRecordId: chequeId,
+            notes,
+            userId: req.user?.employee_id
+        });
+        await client.query('COMMIT');
+        res.json({
+            success: true,
+            already_recorded: result.already_recorded,
+            message: result.already_recorded
+                ? 'Cheque was already recorded as printed or generated.'
+                : 'Cheque acknowledged as printed externally.',
+            record: result.record
+        });
+    } catch (error) {
+        await client.query('ROLLBACK');
+        if (error.status) {
+            return res.status(error.status).json({
+                message: error.message,
+                code: error.code,
+                details: error.details
+            });
+        }
+        console.error('Failed to record external print', error);
+        res.status(500).json({ message: 'Unable to record external print' });
+    } finally {
+        client.release();
+    }
+});
+
 router.post('/cheques/reprint/:id', protect, hasPermission('cheques:create'), async (req, res) => {
     const { id } = req.params;
     const { template_id } = req.body || {};
 
     try {
-        const { rows } = await db.query(
-            `SELECT cr.id, cr.payee, cr.amount, TO_CHAR(cr.cheque_date, 'YYYY-MM-DD') AS cheque_date,
-                    cr.memo, cr.template_id, cr.status, cr.is_deleted, cr.cheque_number,
-                    cr.ap_payment_id, cr.expense_id, cr.bank_account_id,
-                    COALESCE($2::integer, cr.template_id, ba.default_cheque_template_id) AS selected_template_id
-             FROM cheque_records cr
-             LEFT JOIN bank_account ba ON ba.bank_account_id = cr.bank_account_id
-             WHERE cr.id = $1`,
-            [id, template_id || null]
-        );
+        const resolved = await chequePrintService.resolveEffectiveTemplate(db, Number(id));
+        const record = resolved.chequeRecord;
 
-        if (!rows.length) {
-            return res.status(404).json({ message: 'Cheque record not found' });
-        }
-
-        const record = rows[0];
         if (['VOID', 'REPLACED', 'DELETED'].includes(record.status) || record.is_deleted === true) {
             return res.status(409).json({
                 code: 'CHEQUE_REPRINT_BLOCKED',
@@ -673,8 +663,36 @@ router.post('/cheques/reprint/:id', protect, hasPermission('cheques:create'), as
             });
         }
 
-        res.json({ record });
+        let selectedTemplateId = null;
+        if (template_id) {
+            const { rows: reqTpl } = await db.query(
+                'SELECT id FROM cheque_templates WHERE id = $1 AND is_deleted = FALSE',
+                [Number(template_id)]
+            );
+            if (!reqTpl.length) {
+                return res.status(404).json({ message: 'Requested reprint template not found' });
+            }
+            selectedTemplateId = reqTpl[0].id;
+        } else if (resolved.effectiveTemplate) {
+            selectedTemplateId = resolved.effectiveTemplate.id;
+        } else {
+            return res.status(409).json({
+                code: resolved.setupRequiredReason || 'TEMPLATE_REQUIRED',
+                message: 'No active cheque template found for this cheque or its bank account. Please configure a default template first.',
+                details: resolved.details
+            });
+        }
+
+        res.json({
+            record: {
+                ...record,
+                selected_template_id: selectedTemplateId
+            }
+        });
     } catch (error) {
+        if (error.status) {
+            return res.status(error.status).json({ message: error.message, code: error.code, details: error.details });
+        }
         console.error('Failed to prepare cheque reprint', error);
         res.status(500).json({ message: 'Unable to prepare cheque reprint' });
     }
