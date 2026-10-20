@@ -130,8 +130,7 @@ async function getScheduledAmounts(executor, billIds) {
      FROM ap_payment_allocation apa
      JOIN ap_payment ap ON ap.payment_id = apa.payment_id
      WHERE apa.bill_id = ANY($1)
-       AND ap.payment_method = 'CHEQUE'
-       AND ap.pdc_status IN ('PENDING', 'PRINTED', 'REPLACED')
+       AND ap.pdc_status IN ('ISSUED', 'HELD_FOR_RELEASE', 'DEPOSITED')
      GROUP BY apa.bill_id`,
     [billIds],
   );

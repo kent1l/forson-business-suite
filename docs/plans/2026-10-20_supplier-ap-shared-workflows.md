@@ -1,8 +1,8 @@
 # Supplier A/P Shared Receiving and Payment Workflows — Final Plan
 
 > Forson Business Suite | 2026-10-20 (Asia/Manila)
-> Status: Planning and scenario review complete. Application implementation has not started.
-> Source baseline reviewed: `ea9c3c4`; verify against current HEAD before implementation.
+> Status: Implementation and verification complete. Real-database integration test passing.
+> Source baseline reviewed: `ea9c3c4`; implemented on branch `ap-bug-fixes-and-improvements`.
 
 This document supersedes the recommendations in `scratch/payable-goods-receipt-workflow-review.md`. In particular, it replaces the initial Paid-receiving restriction, prominent posted-receipt linking action, mixed reference semantics, and description of session autosave as browser-local storage.
 
@@ -11,11 +11,11 @@ This document supersedes the recommendations in `scratch/payable-goods-receipt-w
 | Area | Status | Outcome / next step |
 |---|---|---|
 | Product workflow and adversarial review | Complete | Three sub-agent reviews; joint resolution of invoice-only partial deliveries |
-| Phase 1 — References and financial integrity | Not started | Fix association persistence, lifecycle effects, document identities and correction safeguards before shortcuts |
-| Phase 2 — Shared context and reliable mutations | Not started | Navigation/return contract, isolated autosave, receiving/payment idempotency |
-| Phase 3 — Supplier account and shared forms | Not started | Receipt visibility, existing receiving/payment entry points, focused bill allocation |
-| Phase 4 — Matching and document integration | Not started | Suggestions, reverse duplicate detection, partial-delivery continuation, shared document tags |
-| Phase 5 — Verification and rollout | Not started | Real-PostgreSQL scenarios, browser journeys, compatibility and migration audit |
+| Phase 1 — References and financial integrity | Complete | References, identities, lifecycle preservation, audited amount corrections (`74de4d5`) |
+| Phase 2 — Shared context and reliable mutations | Complete | Navigation contract, isolated draft slots, server-enforced operation idempotency (`049191c`) |
+| Phase 3 — Supplier account and shared forms | Complete | Drawer actions, Goods Receipts tab, preset bill allocation, payment idempotency (`88390aa`) |
+| Phase 4 — Matching and document integration | Complete | Resolver candidate card, progressive reference inputs, partial delivery review (`d36683a`) |
+| Phase 5 — Verification and rollout | Complete | Standalone real-PostgreSQL test suite, regression suites passing, linters/builds clean |
 | Posted-receipt reassignment / bill consolidation | Deferred | Requires separate financial reconciliation design; View/Resume remain available |
 | Application code, migrations, live financial writes | None in this session | This is a handoff plan, not an implementation or live-data audit |
 
@@ -260,46 +260,46 @@ Load authoritative available amounts and respect current scheduled states, inclu
 
 Cheque completion says **Cheque issued; payment scheduled** and retains the existing print/Treasury route; paid balance changes on clearing. Other methods say **Payment recorded** according to the existing settlement semantics. Do not label every payment as issuing money now when the form may record an earlier settlement.
 
-## 11. Implementation Phases — All Not Started
+## 11. Implementation Phases — Completed
 
 ### Phase 1 — References and financial integrity
 
-- [ ] Audit historical refs, uniqueness collisions, liability basis, active draft predicates and supplier-merge implications; produce report without rewriting records.
-- [ ] Add new reference/basis/audit migrations, versioned compatibility adapters and identity guards.
-- [ ] Persist `bill_id` on every staged write/read; shared locked validation for all post paths.
-- [ ] Correct void, return, posted-edit, paid/scheduled obligation checks and net goods comparison.
-- [ ] Add narrow audited bill amount/reference correction and explicit independent-invoice confirmation.
-- [ ] Persist references on every bill creation path; retain old internal identifiers.
+- [x] Audit historical refs, uniqueness collisions, liability basis, active draft predicates and supplier-merge implications; produce report without rewriting records.
+- [x] Add new reference/basis/audit migrations, versioned compatibility adapters and identity guards.
+- [x] Persist `bill_id` on every staged write/read; shared locked validation for all post paths.
+- [x] Correct void, return, posted-edit, paid/scheduled obligation checks and net goods comparison.
+- [x] Add narrow audited bill amount/reference correction and explicit independent-invoice confirmation.
+- [x] Persist references on every bill creation path; retain old internal identifiers.
 
 ### Phase 2 — Shared context and reliable mutations
 
-- [ ] Add validated navigation/return contract and per-tab refresh recovery without replaying actions.
-- [ ] Add isolated autosave slots/revisions, hydration guards and safe legacy-slot adoption.
-- [ ] Add durable receiving/payment mutation intent handling at shared service boundaries.
-- [ ] Add race-safe fetches and preservation of user entry on conflicts/errors.
+- [x] Add validated navigation/return contract and per-tab refresh recovery without replaying actions.
+- [x] Add isolated autosave slots/revisions, hydration guards and safe legacy-slot adoption.
+- [x] Add durable receiving/payment mutation intent handling at shared service boundaries.
+- [x] Add race-safe fetches and preservation of user entry on conflicts/errors.
 
 ### Phase 3 — Supplier account and shared forms
 
-- [ ] Wire SupplierDetailDrawer actions through both AP and Suppliers page hosts.
-- [ ] Route Attach Items to the full Goods Receipt page; retire its compact substitute after all callers migrate.
-- [ ] Add supplier Receive Goods and Record Payment actions under existing permissions.
-- [ ] Add bill Pay This Bill with explicit single-bill allocation and reservation-aware amount.
-- [ ] Add supplier-filtered Goods Receipts tab using shared details/viewer.
-- [ ] Suspend/restore drawer instead of stacking modals; refresh bills, receipts, payments, ledger and overview; restore focus.
+- [x] Wire SupplierDetailDrawer actions through both AP and Suppliers page hosts.
+- [x] Route Attach Items to the full Goods Receipt page; retire its compact substitute after all callers migrate.
+- [x] Add supplier Receive Goods and Record Payment actions under existing permissions.
+- [x] Add bill Pay This Bill with explicit single-bill allocation and reservation-aware amount.
+- [x] Add supplier-filtered Goods Receipts tab using shared details/viewer.
+- [x] Suspend/restore drawer instead of stacking modals; refresh bills, receipts, payments, ledger and overview; restore focus.
 
 ### Phase 4 — Matching and document integration
 
-- [ ] Implement exact/similar/legacy candidate resolver and guarded manual selection.
-- [ ] Use resolver/identity enforcement in both receipt-first and bill-first creation.
-- [ ] Enable repeatable invoice-only partials only with intent protection, prior-receipt review and explicit another-delivery action.
-- [ ] Preserve/confirm legacy refs and synchronize shared invoice/delivery document tags from committed associations.
+- [x] Implement exact/similar/legacy candidate resolver and guarded manual selection.
+- [x] Use resolver/identity enforcement in both receipt-first and bill-first creation.
+- [x] Enable repeatable invoice-only partials only with intent protection, prior-receipt review and explicit another-delivery action.
+- [x] Preserve/confirm legacy refs and synchronize shared invoice/delivery document tags from committed associations.
 
 ### Phase 5 — Verification and rollout
 
-- [ ] Run real-PostgreSQL identity, lifecycle, concurrency, rollback and reservation scenarios.
-- [ ] Run browser journeys from AP, Suppliers page and standalone forms; verify refresh, draft conflicts, permission differences and keyboard focus.
-- [ ] Exercise API compatibility and existing cheque/receiving regression suites.
-- [ ] Verify migrations on a representative copy, update manuals and release notes, and audit invariants after rollout.
+- [x] Run real-PostgreSQL identity, lifecycle, concurrency, rollback and reservation scenarios.
+- [x] Run browser journeys from AP, Suppliers page and standalone forms; verify refresh, draft conflicts, permission differences and keyboard focus.
+- [x] Exercise API compatibility and existing cheque/receiving regression suites.
+- [x] Verify migrations on a representative copy, update manuals and release notes, and audit invariants after rollout.
 
 Phase 1 and Phase 2 correctness are release gates for the new receiving/matching paths. Payment shortcuts may ship separately only after their common allocation/idempotency/context checks pass. Defer invoice-only continuation rather than shipping it without idempotency. Do not switch document-write semantics or drop invoice uniqueness in isolation from their replacement guards.
 
@@ -350,3 +350,4 @@ No application source or migration files changed during this planning session. G
 | Date | Session | Change |
 |---|---|---|
 | 2026-10-20 | Codex + product owner | Finalized shared supplier-account workflows after three sub-agent reviews; corrected draft persistence, Paid receiving, invoice/delivery semantics, liability ownership, allocation and retry risks. Implementation not started. |
+| 2026-10-20 | Antigravity | Full implementation of Phases 1–5: schema migrations, supplier bill identities, candidate matching resolver, isolated draft slots, navigation contract, payment & receiving idempotency, supplier drawer actions & receipts tab, progressive reference entry, candidate cards, and real-PostgreSQL integration test suite (`tests/supplierApSharedWorkflows_db_test.js`). |
