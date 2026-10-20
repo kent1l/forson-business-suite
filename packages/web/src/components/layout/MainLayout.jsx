@@ -65,7 +65,7 @@ const MainLayout = ({ user, onLogout, onNavigate, currentPage, pageState, posLin
             case 'reporting': return <ReportingPage />;
             case 'analytics': return <AnalyticsPage onNavigate={onNavigate} />;
             case 'power_search': return <PowerSearchPage />;
-            case 'suppliers': return <SuppliersPage user={user} onNavigate={onNavigate} />;
+            case 'suppliers': return <SuppliersPage user={user} onNavigate={onNavigate} pageState={pageState} />;
             case 'supplier_management': return <PartyMergePage party="supplier" onNavigate={onNavigate} />;
             case 'parts': return <PartsPage user={user} onNavigate={onNavigate} />;
             case 'parts_cleanup': return <PartsCleanupPage user={user} onNavigate={onNavigate} />;
@@ -83,7 +83,7 @@ const MainLayout = ({ user, onLogout, onNavigate, currentPage, pageState, posLin
             case 'purchase_orders': return <PurchaseOrderPage />;
             case 'ar': return <AccountsReceivablePage pageState={currentPage === 'ar' ? pageState : null} onNavigate={onNavigate} />;
             case 'ap': return <AccountsPayablePage onNavigate={onNavigate} pageState={currentPage === 'ap' ? pageState : null} />;
-            case 'cheques_treasury': return <ChequesTreasuryPage pageState={currentPage === 'cheques_treasury' ? pageState : null} />;
+            case 'cheques_treasury': return <ChequesTreasuryPage onNavigate={onNavigate} pageState={currentPage === 'cheques_treasury' ? pageState : null} />;
             case 'soa_gen': return <SoaGenPage />;
             case 'withholding_tax': return <WithholdingTaxPage />;
             case 'ar_concessions': return <ARConcessionsPage />;

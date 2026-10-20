@@ -52,7 +52,11 @@ const EXPENSE_SELECT_FIELDS = `
             'last_name', vemp.last_name
         )
         ELSE NULL
-    END AS voided_by
+    END AS voided_by,
+    cr.cheque_record_id,
+    cr.cheque_number,
+    cr.cheque_status,
+    cr.bank_account_id AS cheque_bank_account_id
 `;
 
 const EXPENSE_JOIN_TABLES = `
@@ -61,6 +65,17 @@ const EXPENSE_JOIN_TABLES = `
     LEFT JOIN payment_methods pm ON e.payment_method_id = pm.method_id
     JOIN employee emp ON e.created_by = emp.employee_id
     LEFT JOIN employee vemp ON e.voided_by = vemp.employee_id
+    LEFT JOIN LATERAL (
+        SELECT
+            id AS cheque_record_id,
+            cheque_number,
+            status AS cheque_status,
+            bank_account_id
+        FROM cheque_records
+        WHERE expense_id = e.expense_id
+        ORDER BY CASE WHEN status NOT IN ('VOID', 'REPLACED', 'DELETED') THEN 0 ELSE 1 END, id DESC
+        LIMIT 1
+    ) cr ON TRUE
 `;
 
 // POST /api/expenses/parse - AI natural language parsing

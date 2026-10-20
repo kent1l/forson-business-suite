@@ -6,6 +6,7 @@ import Modal from '../ui/Modal';
 import Combobox from '../ui/Combobox';
 import InfoTip from '../ui/InfoTip';
 import MathExpressionInput from '../ui/MathExpressionInput';
+import { supplierReference } from '../../utils/supplierReference';
 import { formatCurrency } from '../../utils/currency';
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -27,7 +28,11 @@ const BLANK_FORM = {
 const inputClass = "w-full px-3 py-2 border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500";
 const labelClass = "block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1";
 
-const outstandingOf = (bill) => Number(bill.total_amount) - Number(bill.amount_paid);
+const outstandingOf = (bill) => Math.max(0, Number(bill.total_amount) - Number(bill.amount_paid));
+const scheduledOf = (bill) => Number(bill.scheduled_amount) || 0;
+const availableOf = (bill) => bill.available_to_schedule !== undefined
+    ? Math.max(0, Number(bill.available_to_schedule))
+    : Math.max(0, outstandingOf(bill) - scheduledOf(bill));
 
 /**
  * Settles supplier bills, whatever the payment was made with.
@@ -49,13 +54,17 @@ const outstandingOf = (bill) => Number(bill.total_amount) - Number(bill.amount_p
  * written reason, via ChangeTransactionDateModal. A cheque has no settlement
  * date to record; it has a cheque date, which may be in the future (a PDC).
  */
-const RecordSupplierPaymentModal = ({ isOpen, onClose, onRecorded, presetSupplier = null }) => {
+const RecordSupplierPaymentModal = ({ isOpen, onClose, onRecorded, presetSupplier = null, presetBillId = null, onNavigate = null }) => {
     const [suppliers, setSuppliers] = useState([]);
     const [methods, setMethods] = useState([]);
     const [bankAccounts, setBankAccounts] = useState([]);
     const [bills, setBills] = useState([]);
+    const [billSearch, setBillSearch] = useState('');
+    const [billsLoading, setBillsLoading] = useState(false);
+    const [billsError, setBillsError] = useState(null);
     const [allocations, setAllocations] = useState({});
-    const [autoAllocate, setAutoAllocate] = useState(true);
+    const [autoAllocate, setAutoAllocate] = useState(false);
+    const [chooseOtherBills, setChooseOtherBills] = useState(false);
     const [form, setForm] = useState(BLANK_FORM);
     const [saving, setSaving] = useState(false);
 
@@ -63,8 +72,11 @@ const RecordSupplierPaymentModal = ({ isOpen, onClose, onRecorded, presetSupplie
         if (!isOpen) return;
         setForm({ ...BLANK_FORM, supplier_id: presetSupplier?.supplier_id || '' });
         setAllocations({});
-        setAutoAllocate(true);
+        setAutoAllocate(false);
+        setChooseOtherBills(!presetBillId);
         setBills([]);
+        setBillSearch('');
+        setBillsError(null);
 
         api.get('/ap/payment-methods')
             .then(res => setMethods(res.data?.data || []))
@@ -77,16 +89,45 @@ const RecordSupplierPaymentModal = ({ isOpen, onClose, onRecorded, presetSupplie
                 .then(res => setSuppliers(res.data?.data || res.data || []))
                 .catch(() => toast.error('Failed to load suppliers'));
         }
-    }, [isOpen, presetSupplier]);
+    }, [isOpen, presetSupplier, presetBillId]);
 
     const supplierId = form.supplier_id;
     useEffect(() => {
-        if (!isOpen || !supplierId) { setBills([]); return; }
-        api.get('/ap/supplier-bills', { params: { supplier_id: supplierId } })
-            .then(res => setBills((res.data?.data || []).filter(b => b.status !== 'Void' && outstandingOf(b) > 0)))
-            .catch(() => toast.error('Failed to load open bills'));
-        setAllocations({});
-    }, [isOpen, supplierId]);
+        if (!isOpen || !supplierId) {
+            setBills([]);
+            setBillsLoading(false);
+            return;
+        }
+        let cancelled = false;
+        setBillsLoading(true);
+        setBillsError(null);
+        api.get('/ap/supplier-bills', { params: { supplier_id: supplierId, status: 'all' } })
+            .then(res => {
+                if (cancelled) return;
+                const allBills = (res.data?.data || []).filter(b => b.status !== 'Void' && (presetBillId ? true : outstandingOf(b) > 0));
+                setBills(allBills);
+                if (presetBillId) {
+                    const target = allBills.find(b => Number(b.bill_id) === Number(presetBillId));
+                    if (target) {
+                        const avail = availableOf(target);
+                        const initAmount = avail > 0 ? avail : (outstandingOf(target) > 0 ? outstandingOf(target) : 0);
+                        if (initAmount > 0) {
+                            setForm(prev => ({ ...prev, amount: initAmount.toFixed(2) }));
+                            setAllocations({ [target.bill_id]: initAmount.toFixed(2) });
+                        }
+                    }
+                }
+            })
+            .catch(err => {
+                if (cancelled) return;
+                setBillsError(err.response?.data?.message || 'Failed to load bills');
+                toast.error('Failed to load open bills');
+            })
+            .finally(() => {
+                if (!cancelled) setBillsLoading(false);
+            });
+        return () => { cancelled = true; };
+    }, [isOpen, supplierId, presetBillId]);
 
     const selectedMethod = useMemo(
         () => methods.find(m => String(m.method_id) === String(form.method_id)),
@@ -132,6 +173,14 @@ const RecordSupplierPaymentModal = ({ isOpen, onClose, onRecorded, presetSupplie
         () => bills.reduce((sum, b) => sum + outstandingOf(b), 0),
         [bills]
     );
+    const totalScheduled = useMemo(
+        () => bills.reduce((sum, b) => sum + scheduledOf(b), 0),
+        [bills]
+    );
+    const totalAvailable = useMemo(
+        () => bills.reduce((sum, b) => sum + availableOf(b), 0),
+        [bills]
+    );
     const allocatedTotal = useMemo(
         () => Object.values(allocations).reduce((sum, v) => sum + (parseFloat(v) || 0), 0),
         [allocations]
@@ -146,7 +195,9 @@ const RecordSupplierPaymentModal = ({ isOpen, onClose, onRecorded, presetSupplie
         const next = {};
         for (const bill of bills) {
             if (remaining <= 0.005) break;
-            const applied = Math.min(outstandingOf(bill), remaining);
+            const avail = availableOf(bill);
+            if (avail <= 0.005) continue;
+            const applied = Math.min(avail, remaining);
             next[bill.bill_id] = applied.toFixed(2);
             remaining -= applied;
         }
@@ -158,6 +209,9 @@ const RecordSupplierPaymentModal = ({ isOpen, onClose, onRecorded, presetSupplie
         .filter(a => a.amount > 0);
 
     const submitCheque = async (amount) => {
+        const idempotencyKey = (typeof crypto !== 'undefined' && crypto.randomUUID)
+            ? crypto.randomUUID()
+            : `chk_${Date.now()}_${Math.random().toString(36).slice(2)}`;
         const res = await api.post('/ap/outbound-clearance/issue', {
             bank_account_id: form.bank_account_id,
             cheque_number: form.cheque_number.trim(),
@@ -171,18 +225,23 @@ const RecordSupplierPaymentModal = ({ isOpen, onClose, onRecorded, presetSupplie
             method_id: form.method_id,
             auto_allocate: autoAllocate,
             allocations: autoAllocate ? undefined : explicitAllocations(),
+        }, {
+            headers: { 'Idempotency-Key': idempotencyKey },
         });
         const { templateId } = res.data || {};
+        toast.success('Cheque issued; payment scheduled', { icon: '✓' });
         if (templateId) {
-            toast.success('Cheque issued and added to the Print Cheques queue.', { icon: '🖨️' });
+            toast.success('Added to the Print Cheques queue.', { icon: '🖨️' });
         } else {
-            toast.success('Cheque issued.', { icon: '✓' });
             toast('No print template is linked to this bank account yet — link one in Bank Accounts before printing.', { icon: 'ℹ️' });
         }
         toast('The bill balance updates when the cheque clears, from Outbound Cheques & Treasury.', { icon: 'ℹ️' });
     };
 
     const submitDirect = async (amount) => {
+        const idempotencyKey = (typeof crypto !== 'undefined' && crypto.randomUUID)
+            ? crypto.randomUUID()
+            : `pay_${Date.now()}_${Math.random().toString(36).slice(2)}`;
         const payload = {
             supplier_id: form.supplier_id,
             method_id: form.method_id,
@@ -193,12 +252,15 @@ const RecordSupplierPaymentModal = ({ isOpen, onClose, onRecorded, presetSupplie
             reference_number: form.reference_number.trim() || undefined,
             bank_account_id: showBankAccount ? (form.bank_account_id || undefined) : undefined,
             notes: form.notes.trim() || undefined,
+            idempotency_key: idempotencyKey,
         };
         if (!autoAllocate) payload.allocations = explicitAllocations();
 
-        const res = await api.post('/ap/payments', payload);
+        const res = await api.post('/ap/payments', payload, {
+            headers: { 'Idempotency-Key': idempotencyKey },
+        });
         const applied = res.data?.data?.allocations?.length || 0;
-        toast.success(`Payment recorded against ${applied} bill${applied === 1 ? '' : 's'}`);
+        toast.success(`Payment recorded${applied > 0 ? ` against ${applied} bill${applied === 1 ? '' : 's'}` : ''}`);
     };
 
     const handleSubmit = async (e) => {
@@ -232,7 +294,14 @@ const RecordSupplierPaymentModal = ({ isOpen, onClose, onRecorded, presetSupplie
             onRecorded && onRecorded();
             onClose();
         } catch (err) {
-            toast.error(err.response?.data?.message || 'Failed to record payment');
+            const msg = err.response?.data?.message || err.message || 'Failed to record payment';
+            toast.error(msg);
+            // Retain user input and reload fresh bills on balance or state conflict
+            if (err.response?.status === 409 || err.response?.status === 400) {
+                api.get('/ap/supplier-bills', { params: { supplier_id: supplierId, status: 'all' } })
+                    .then(res => setBills((res.data?.data || []).filter(b => b.status !== 'Void' && (presetBillId ? true : outstandingOf(b) > 0))))
+                    .catch(() => {});
+            }
         } finally {
             setSaving(false);
         }
@@ -298,6 +367,11 @@ const RecordSupplierPaymentModal = ({ isOpen, onClose, onRecorded, presetSupplie
                         {supplierId && (
                             <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">
                                 Outstanding: {formatCurrency(totalOutstanding)}
+                                {totalScheduled > 0 && ` · Scheduled: ${formatCurrency(totalScheduled)}`}
+                                {' · '}
+                                <span className="font-semibold text-gray-800 dark:text-slate-200">
+                                    Available: {formatCurrency(totalAvailable)}
+                                </span>
                             </p>
                         )}
                     </div>
@@ -397,49 +471,109 @@ const RecordSupplierPaymentModal = ({ isOpen, onClose, onRecorded, presetSupplie
                     </div>
                 )}
 
+                {presetBillId && (() => {
+                    const target = bills.find(b => Number(b.bill_id) === Number(presetBillId));
+                    if (!target) return null;
+                    if (target.status === 'Paid') {
+                        return (
+                            <div className="p-3 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-lg text-sm text-emerald-800 dark:text-emerald-200">
+                                This bill has already been fully paid.
+                            </div>
+                        );
+                    }
+                    if (scheduledOf(target) >= outstandingOf(target) && scheduledOf(target) > 0) {
+                        return (
+                            <div className="p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg text-sm text-amber-800 dark:text-amber-200 flex items-center justify-between">
+                                <span>
+                                    <strong>Payment already scheduled:</strong> This bill is already covered by scheduled payments.
+                                </span>
+                                {onNavigate && (
+                                    <button
+                                        type="button"
+                                        onClick={() => { onClose(); onNavigate('cheques_treasury'); }}
+                                        className="text-xs font-semibold underline ml-2"
+                                    >
+                                        View in Treasury
+                                    </button>
+                                )}
+                            </div>
+                        );
+                    }
+                    return null;
+                })()}
+
                 {bills.length > 0 && (
                     <div className="border border-gray-200 dark:border-slate-700 rounded-lg p-3 space-y-3">
                         <div className="flex items-center justify-between">
                             <span className="text-sm font-medium text-gray-700 dark:text-slate-300">Apply To Bills</span>
-                            <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-slate-400">
-                                <input type="checkbox" checked={autoAllocate}
-                                    onChange={(e) => { setAutoAllocate(e.target.checked); if (!e.target.checked) applyOldestFirst(); }} />
-                                Apply oldest first automatically
-                            </label>
+                            <div className="flex items-center gap-3">
+                                {presetBillId && !chooseOtherBills && (
+                                    <button
+                                        type="button"
+                                        onClick={() => { setChooseOtherBills(true); setAutoAllocate(false); }}
+                                        className="text-xs font-semibold text-primary-600 dark:text-primary-400 hover:underline"
+                                    >
+                                        Choose other bills
+                                    </button>
+                                )}
+                                <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-slate-400">
+                                    <input type="checkbox" checked={autoAllocate}
+                                        onChange={(e) => { setAutoAllocate(e.target.checked); if (!e.target.checked) applyOldestFirst(); }} />
+                                    Apply oldest first automatically
+                                </label>
+                            </div>
                         </div>
 
                         {autoAllocate ? (
                             <p className="text-xs text-gray-500 dark:text-slate-400">
                                 {isCheque ? 'The cheque will be applied to the' : 'The payment will be applied to the'} {bills.length} open
-                                bill{bills.length === 1 ? '' : 's'} in due-date order
+                                bill{bills.length === 1 ? '' : 's'} in due-date order against their available unscheduled balances
                                 {isCheque ? ', taking effect when it clears.' : '.'}
                             </p>
                         ) : (
                             <>
+                                <label className={labelClass} htmlFor="payment-bill-search">Find supplier document</label>
+                                <input id="payment-bill-search" type="search" value={billSearch} onChange={e => setBillSearch(e.target.value)}
+                                    placeholder="Search supplier document number" className={inputClass} />
+                                <p className="text-xs text-gray-500">Search filters this list. Payment uses the amounts you select, including any selected bills outside the search results.</p>
                                 <div className="max-h-56 overflow-y-auto divide-y divide-gray-100 dark:divide-slate-700">
-                                    {bills.map(bill => (
-                                        <div key={bill.bill_id} className="flex items-center gap-3 py-2">
-                                            <div className="flex-1 min-w-0">
-                                                <p className="text-sm text-gray-900 dark:text-slate-100 truncate">{bill.bill_number || `Bill #${bill.bill_id}`}</p>
-                                                <p className="text-xs text-gray-500 dark:text-slate-400">
-                                                    Outstanding {formatCurrency(outstandingOf(bill))}
-                                                    {bill.due_date ? ` · due ${new Date(bill.due_date).toLocaleDateString()}` : ''}
-                                                    {(bill.related_grns || []).length > 0
-                                                        ? ` · ${bill.related_grns.map(g => g.grn_number).join(', ')}`
-                                                        : ''}
-                                                </p>
+                                    {((presetBillId && !chooseOtherBills) ? bills.filter(b => Number(b.bill_id) === Number(presetBillId)) : bills).filter(b => !billSearch.trim() || [supplierReference(b), b.bill_number, ...(b.document_references || [])].some(ref => String(ref || '').toLowerCase().includes(billSearch.trim().toLowerCase()))).map(bill => {
+                                        const out = outstandingOf(bill);
+                                        const sched = scheduledOf(bill);
+                                        const avail = availableOf(bill);
+                                        return (
+                                            <div key={bill.bill_id} className="flex items-center gap-3 py-2">
+                                                <div className="flex-1 min-w-0">
+                                                    <p className="text-sm text-gray-900 dark:text-slate-100 truncate">{supplierReference(bill)}</p>
+                                                    <p className="text-xs text-gray-500 dark:text-slate-400">Internal bill: {bill.bill_number}</p>
+                                                    <p className="text-xs text-gray-500 dark:text-slate-400">
+                                                        Outstanding {formatCurrency(out)}
+                                                        {sched > 0 && (
+                                                            <span className="text-warning-700 dark:text-warning-400">
+                                                                {` · Scheduled ${formatCurrency(sched)}`}
+                                                            </span>
+                                                        )}
+                                                        <span className="font-semibold text-gray-800 dark:text-slate-200">
+                                                            {` · Available ${formatCurrency(avail)}`}
+                                                        </span>
+                                                        {bill.due_date ? ` · due ${new Date(bill.due_date).toLocaleDateString()}` : ''}
+                                                        {(bill.related_grns || []).length > 0
+                                                            ? ` · ${bill.related_grns.map(g => g.grn_number).join(', ')}`
+                                                            : ''}
+                                                    </p>
+                                                </div>
+                                                <MathExpressionInput
+                                                    precision={2}
+                                                    min={0}
+                                                    max={avail}
+                                                    value={allocations[bill.bill_id] || ''}
+                                                    onChange={(val) => setAllocations(prev => ({ ...prev, [bill.bill_id]: val }))}
+                                                    placeholder="0.00"
+                                                    className="w-32 px-2 py-1 text-sm text-right border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 rounded-md"
+                                                />
                                             </div>
-                                            <MathExpressionInput
-                                                precision={2}
-                                                min={0}
-                                                max={outstandingOf(bill)}
-                                                value={allocations[bill.bill_id] || ''}
-                                                onChange={(val) => setAllocations(prev => ({ ...prev, [bill.bill_id]: val }))}
-                                                placeholder="0.00"
-                                                className="w-32 px-2 py-1 text-sm text-right border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 rounded-md"
-                                            />
-                                        </div>
-                                    ))}
+                                        );
+                                    })}
                                 </div>
                                 <div className="flex justify-between text-sm pt-1 border-t border-gray-200 dark:border-slate-700">
                                     <span className="text-gray-600 dark:text-slate-400">Allocated</span>
@@ -454,9 +588,15 @@ const RecordSupplierPaymentModal = ({ isOpen, onClose, onRecorded, presetSupplie
                     </div>
                 )}
 
-                {supplierId && bills.length === 0 && (
+                {billsError && (
+                    <p className="text-sm text-danger-600 dark:text-danger-400">
+                        {billsError}
+                    </p>
+                )}
+
+                {supplierId && !billsLoading && bills.length === 0 && !billsError && (
                     <p className="text-sm text-gray-500 dark:text-slate-400">
-                        This supplier has no open bills. Record a payable first — a payment cannot be larger than what is owed.
+                        This supplier has no open bills. Record a payable first — this form pays existing bills and cannot create unallocated advances.
                     </p>
                 )}
 

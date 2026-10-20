@@ -1,3 +1,4 @@
+import { supplierReference } from '../../utils/supplierReference';
 import { useCallback, useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import api from '../../api';
@@ -80,7 +81,7 @@ const BillGoodsReceiptsModal = ({ isOpen, onClose, bill }) => {
 
     if (!bill) return null;
 
-    const billLabel = bill.bill_number || `Bill #${bill.bill_id}`;
+    const billLabel = supplierReference(bill);
 
     return (
         <Modal
@@ -135,7 +136,7 @@ const BillGoodsReceiptsModal = ({ isOpen, onClose, bill }) => {
                                     <span>From {grn.supplier_name}</span>
                                     {grn.received_by_name && <span>By {grn.received_by_name}</span>}
                                     {grn.po_number && <span>PO {grn.po_number}</span>}
-                                    {grn.supplier_invoice_no && <span>Supplier invoice {grn.supplier_invoice_no}</span>}
+                                    {(grn.supplier_document_no || grn.supplier_invoice_no) && <span>Supplier document {grn.supplier_document_no || grn.supplier_invoice_no}</span>}
                                     {num(grn.freight_amount) > 0 && (
                                         <span>
                                             {isFreight && grn.billed_freight_charge ? (

@@ -1,3 +1,4 @@
+import { supplierReference } from '../../utils/supplierReference';
 import { useState, useEffect, useCallback } from 'react';
 import api from '../../api';
 import toast from 'react-hot-toast';
@@ -257,16 +258,40 @@ const IssueOutboundChequeModal = ({ isOpen, onClose, onIssued }) => {
                                         If you don't check any bills, the cheque is still issued but won't reduce a specific bill's balance. Always apply it to the bill(s) it's actually paying.
                                     </InfoTip>
                                 </label>
-                                <div className="max-h-32 overflow-y-auto border border-gray-200 dark:border-slate-700 rounded-lg divide-y divide-gray-100 dark:divide-slate-700">
-                                    {supplierBills.map(bill => (
-                                        <label key={bill.bill_id} className="flex items-center gap-2 px-3 py-2 text-xs cursor-pointer hover:bg-gray-50 dark:hover:bg-slate-700 text-gray-700 dark:text-slate-300">
-                                            <input type="checkbox" checked={form.bill_ids.includes(bill.bill_id)} onChange={() => toggleBill(bill.bill_id)} />
-                                            <span className="font-mono">{bill.bill_number || `#${bill.bill_id}`}</span>
-                                            <span className="text-gray-400 dark:text-slate-500 flex-1">
-                                                Owed: ₱{(parseFloat(bill.total_amount) - parseFloat(bill.amount_paid)).toFixed(2)}
-                                            </span>
-                                        </label>
-                                    ))}
+                                <div className="max-h-40 overflow-y-auto border border-gray-200 dark:border-slate-700 rounded-lg divide-y divide-gray-100 dark:divide-slate-700">
+                                    {supplierBills.map(bill => {
+                                        const outstanding = Math.max(0, (parseFloat(bill.total_amount) || 0) - (parseFloat(bill.amount_paid) || 0));
+                                        const scheduled = parseFloat(bill.scheduled_amount) || 0;
+                                        const available = bill.available_to_schedule !== undefined
+                                            ? parseFloat(bill.available_to_schedule)
+                                            : Math.max(0, outstanding - scheduled);
+                                        const fullyScheduled = available <= 0.005;
+                                        return (
+                                            <label
+                                                key={bill.bill_id}
+                                                className={`flex items-center gap-2 px-3 py-2 text-xs hover:bg-gray-50 dark:hover:bg-slate-700 text-gray-700 dark:text-slate-300 ${fullyScheduled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                                            >
+                                                <input
+                                                    type="checkbox"
+                                                    disabled={fullyScheduled && !form.bill_ids.includes(bill.bill_id)}
+                                                    checked={form.bill_ids.includes(bill.bill_id)}
+                                                    onChange={() => toggleBill(bill.bill_id)}
+                                                />
+                                                <span className="font-mono font-semibold">{supplierReference(bill)}</span>
+                                                <span className="text-gray-500 dark:text-slate-400 flex-1">
+                                                    Outstanding: ₱{outstanding.toFixed(2)}
+                                                    {scheduled > 0 && (
+                                                        <span className="ml-1.5 text-warning-700 dark:text-warning-400">
+                                                            · Scheduled: ₱{scheduled.toFixed(2)}
+                                                        </span>
+                                                    )}
+                                                    <span className="ml-1.5 font-semibold text-gray-800 dark:text-slate-200">
+                                                        · Available: ₱{available.toFixed(2)}
+                                                    </span>
+                                                </span>
+                                            </label>
+                                        );
+                                    })}
                                 </div>
                             </div>
                         )}

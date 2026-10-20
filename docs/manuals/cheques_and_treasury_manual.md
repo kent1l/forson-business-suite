@@ -156,33 +156,55 @@ your signature and register. Date, memo, and which rows you group into one print
 flexible; adjust to fit your workflow.
 
 1. Go to **Cheques & Treasury → Print Cheques**.
-2. Under **Print Controls**, choose a **Bank preset** and, optionally, a **Printer profile**.
-3. In the **Print Queue**, fill in **Date**, **Payee**, **Amount**, and **Memo** for each cheque.
-   A new blank row appears automatically as you fill the last one. Cheques already issued from
-   the Treasury Desk (tagged with a bank icon) appear here automatically and can't have their
-   Date/Payee/Amount/Memo edited directly — remove one from the queue with the trash icon if you
-   don't want to print it yet (it stays pending server-side), or edit it via Accounts Payable.
-4. Optionally toggle **Save generated cheques to history** (on by default) and **Test print
-   mode** (watermarks the PDF and skips saving to history — use this to check alignment on plain
-   paper before committing to real cheque stock).
-5. Click **Generate PDF**.
-6. Review the **Confirm cheque batch** dialog — it lists every cheque, the count, and the total —
+2. **Select Bank Preset Queue:** Each bank preset maintains its own isolated batch queue. Click the
+   corresponding bank tab (e.g. *Security Bank*, *BDO*) to view pending cheques for that physical
+   paper stock. Pending count badges indicate how many cheques await printing for each bank.
+   Unfinished manual drafts entered under one preset are saved in memory and preserved when switching
+   between presets.
+3. **Review & Select Queued Cheques:** Cheques issued from the Treasury Desk or Accounts Payable
+   appear automatically under their bank's preset queue (tagged with an `AP` badge). For data integrity,
+   queued financial cheques have their Date, Payee, and Amount locked — the server always uses the
+   canonical database records when generating PDFs.
+   - **Bulk Selection & Checkboxes:** Use the checkboxes on each row or the master checkbox in the
+     header/toolbar to selectively include or exclude cheques from the PDF print run. The toolbar displays
+     `X of Y selected` and the selected sum. Clicking **Generate PDF** generates a document for only
+     the selected cheques.
+   - **Bulk Remove:** Select any number of cheques and click **Remove selected (X)** to dismiss them
+     all at once from the current print batch. Dismissed cheques remain safe and pending in the database.
+   - **Restore Removed Cheques:** A banner shows the count of dismissed cheques with a **Restore removed
+     cheques** button that immediately brings them back to the batch.
+4. **Setup-Required Cheques:** If cheques were issued from bank accounts lacking an active default
+   print template, an amber **Setup Required** alert appears at the top.
+   - Click **Go to Bank Accounts →** to assign a default template to the bank account.
+   - Or, if physical cheques were written out by hand or prepared externally, click **Record printed
+     elsewhere** on the cheque row to acknowledge it with a note and remove it from the print queue
+     without altering its financial status.
+5. **Add Standalone Cheques:** Fill in **Date**, **Payee**, **Amount**, and **Memo** in any blank row.
+   A new blank row appears automatically when you type into the last row.
+6. **Print Controls:** Optionally pick a **Printer profile** for physical calibration offsets. Toggle
+   **Save standalone cheques to history** (on by default; financial cheques are always tracked in
+   history regardless of this setting) and **Test print mode** (watermarks the PDF and skips pinning
+   the template or logging actual print events — useful for plain-paper alignment tests).
+7. Click **Generate PDF** (or **Test Print**).
+8. Review the **Confirm cheque batch** dialog — it lists every cheque, the count, and the total —
    then click **Confirm & Generate**.
-7. The PDF opens in a new browser tab. Print it at **100% scale** — any other scale will
-   misalign the text on the physical cheque.
+9. **PDF Output & Recovery:** The PDF opens in a new browser tab. Print it at **100% scale** — any
+   other scale will misalign the text on the physical cheque. If your browser blocks pop-ups, a
+   green **Cheque PDF Generated** recovery banner displays persistent **Open PDF** and **Download PDF**
+   buttons so you never lose the generated file.
 
-**Example:** Queue two cheques — `2026-08-20`, payee `ABC Auto Parts Supply`, ₱15,750.00, memo
-`Invoice INV-2026-000341`; and `2026-08-20`, payee `Juan Dela Cruz`, ₱4,200.00, memo `Reimbursement`
-— using bank preset `BDO Business Cheque`. The queue total shows **₱19,950.00**. Click **Generate
-PDF → Confirm & Generate**, then print the resulting 2-page PDF at 100% scale.
+**Example:** Switch to preset `BDO Business Cheque` (badge shows 2 pending). Review the 2 queued
+cheques: `ABC Auto Parts Supply` (₱15,750.00) and `Juan Dela Cruz` (₱4,200.00). Add a standalone
+reimbursement cheque for `Maria Santos` (₱1,250.00). Total shows **₱21,200.00**. Click **Generate
+PDF → Confirm & Generate**, and print the 3-page document at 100% scale.
 
-> ⚠️ Important — a cheque with status `VOID` or `REPLACED` can never be printed or reprinted from
-> here. If you need a replacement cheque, issue one from the Treasury Desk's **Replace** action
-> instead of trying to re-create it by hand.
+> ⚠️ Important — a cheque with status `VOID`, `REPLACED`, `CLEARED`, `DEPOSITED`, `BOUNCED`, or
+> `STALE` can never be queued or printed. If you need a replacement cheque, issue one from the
+> Treasury Desk's **Replace** action instead of trying to re-create it by hand.
 
 > 📝 Note — click **View History** to search past cheque records by payee, memo, amount, or bank,
-> filter by bank, and **Edit**, **Reprint**, or **Delete** any entry. Reprint is blocked for
-> `VOID`/`REPLACED` cheques.
+> filter by bank, and **Edit**, **Reprint**, or **Delete** standalone entries. Reprint uses the
+> instrument's effective template and prevents mixing templates.
 
 ## How To — Issue an Outbound Cheque from the Treasury Desk
 

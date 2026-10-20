@@ -4,7 +4,9 @@ const { protect, hasPermission, userHasPermission } = require('../middleware/aut
 const { masterStatus, retiredConflict } = require('../helpers/masterDataStatus');
 const { parsePaginationQuery, paginatedResponse } = require('../helpers/pagination');
 const apPaymentService = require('../services/apPaymentService');
+const apPdcService = require('../services/apPdcService');
 const grnCosting = require('../services/grnCostingService');
+const supplierBillService = require('../services/supplierBillService');
 const router = express.Router();
 
 // GET /ap/aging-summary - Open supplier_bill balances bucketed by age (mirrors /ar/aging-summary)
@@ -208,7 +210,7 @@ router.get('/ap/suppliers/:supplierId/ledger', protect, hasPermission('ap:view')
             SELECT
                 l.ledger_id, l.entry_type, l.amount, l.balance_after,
                 l.payment_channel, l.reference_no, l.notes, l.entry_date,
-                l.bill_id, sb.bill_number,
+                l.bill_id, sb.bill_number, sb.supplier_document_no,
                 l.payment_id, ap.reference_number AS payment_reference_number,
                 e.first_name || ' ' || COALESCE(e.last_name, '') AS created_by_name
             FROM ap_ledger l
@@ -232,25 +234,54 @@ router.get('/ap/suppliers/:supplierId/ledger', protect, hasPermission('ap:view')
 router.get('/ap/suppliers/:supplierId/payments', protect, hasPermission('ap:view'), async (req, res) => {
     const supplierId = parseInt(req.params.supplierId, 10);
     if (!supplierId) return res.status(400).json({ message: 'Invalid supplier ID' });
+    const includeHistory = req.query.include_history === 'true' || req.query.include_history === '1';
+    const includeDeleted = req.query.include_deleted === 'true' || req.query.include_deleted === '1';
     try {
+        const whereClauses = ['p.supplier_id = $1'];
+        if (!includeDeleted) {
+            whereClauses.push(`p.pdc_status <> 'DELETED'`);
+            whereClauses.push(`COALESCE(cr.status, '') <> 'DELETED'`);
+        }
+        if (!includeHistory) {
+            whereClauses.push(`p.pdc_status NOT IN ('REPLACED', 'VOID')`);
+            whereClauses.push(`COALESCE(cr.status, '') NOT IN ('REPLACED', 'VOID')`);
+        }
         const { rows } = await db.query(`
             SELECT
                 p.payment_id, p.payment_date, p.amount, p.reference_number, p.notes,
                 p.pdc_status, p.cheque_date, p.bank_account_id, ba.account_name,
                 pm.name AS method_name,
+                p.void_reason, p.deleted_reason,
+                cr.id AS cheque_record_id,
+                cr.cheque_number,
+                cr.status AS cheque_status,
+                cr.replaces_cheque_id,
+                cr.replaced_by_cheque_id,
+                prev_cr.cheque_number AS replaces_cheque_number,
+                next_cr.cheque_number AS replaced_by_cheque_number,
                 COALESCE(
                     json_agg(
-                        json_build_object('bill_id', a.bill_id, 'bill_number', sb.bill_number, 'amount_allocated', a.amount_allocated)
+                        json_build_object('bill_id', a.bill_id, 'bill_number', sb.bill_number, 'supplier_document_no', sb.supplier_document_no, 'amount_allocated', a.amount_allocated)
                     ) FILTER (WHERE a.allocation_id IS NOT NULL), '[]'
                 ) AS allocations
             FROM ap_payment p
             LEFT JOIN bank_account ba ON ba.bank_account_id = p.bank_account_id
             LEFT JOIN payment_methods pm ON pm.method_id = p.method_id
+            LEFT JOIN LATERAL (
+                SELECT id, cheque_number, status, replaces_cheque_id, replaced_by_cheque_id
+                FROM cheque_records
+                WHERE ap_payment_id = p.payment_id
+                ORDER BY CASE WHEN status <> 'DELETED' THEN 0 ELSE 1 END, id DESC
+                LIMIT 1
+            ) cr ON TRUE
+            LEFT JOIN cheque_records prev_cr ON prev_cr.id = cr.replaces_cheque_id
+            LEFT JOIN cheque_records next_cr ON next_cr.id = cr.replaced_by_cheque_id
             LEFT JOIN ap_payment_allocation a ON a.payment_id = p.payment_id
             LEFT JOIN supplier_bill sb ON sb.bill_id = a.bill_id
-            WHERE p.supplier_id = $1
-            GROUP BY p.payment_id, ba.account_name, pm.name
-            ORDER BY p.payment_date DESC
+            WHERE ${whereClauses.join(' AND ')}
+            GROUP BY p.payment_id, ba.account_name, pm.name, cr.id, cr.cheque_number, cr.status,
+                     cr.replaces_cheque_id, cr.replaced_by_cheque_id, prev_cr.cheque_number, next_cr.cheque_number
+            ORDER BY p.payment_date DESC, p.payment_id DESC
         `, [supplierId]);
         res.json({ success: true, data: rows });
     } catch (err) {
@@ -290,6 +321,106 @@ router.patch('/ap/suppliers/:supplierId/payment-hold', protect, hasPermission('a
                 { message: 'The selected supplier is inactive. Refresh the selection.' });
         }
         res.status(500).json({ message: 'Failed to update payment hold' });
+    }
+});
+
+// GET /ap/supplier-bills/matches - Resolve matching bills by typed supplier reference
+// Declared before :billId routes to avoid path collision.
+router.get('/ap/supplier-bills/matches', protect, hasPermission(['ap:view', 'ap-pdc:view']), async (req, res) => {
+    const { supplier_id, document_type, document_no } = req.query;
+    try {
+        const matches = await supplierBillService.resolveDocumentMatches(db, {
+            supplierId: supplier_id,
+            documentType: document_type || null,
+            documentNo: document_no,
+        });
+        res.json({ success: true, data: matches });
+    } catch (err) {
+        console.error('AP Bill Matches Error:', err.message);
+        res.status(500).json({ message: 'Failed to resolve document matches' });
+    }
+});
+
+// Resolve scans only through this payable's supplier-scoped document evidence.
+router.get('/ap/supplier-bills/:billId/receipts', protect, hasPermission(['ap:view', 'ap-pdc:view']), hasPermission('documents:view'), async (req, res) => {
+    const billId = Number(req.params.billId);
+    if (!Number.isInteger(billId) || billId <= 0) return res.status(400).json({ message: 'Invalid bill ID' });
+    try {
+        const result = await require('../services/supplierBillReceiptService').getBillReceipts(billId);
+        res.json({ success: true, data: result });
+    } catch (err) {
+        console.error('Supplier bill receipt lookup failed:', err.message);
+        res.status(err.statusCode || 502).json({ message: err.statusCode ? err.message : 'Could not load supplier receipts from Paperless. Please try again.' });
+    }
+});
+
+// GET a selected payable without depending on a list search.
+router.get('/ap/supplier-bills/:billId', protect, hasPermission(['ap:view', 'ap-pdc:view']), async (req, res) => {
+    const billId = Number(req.params.billId);
+    if (!Number.isInteger(billId) || billId <= 0) return res.status(400).json({ message: 'Invalid bill ID' });
+    try {
+        const { rows: [bill] } = await db.query('SELECT * FROM supplier_bill WHERE bill_id = $1', [billId]);
+        if (!bill) return res.status(404).json({ message: 'Payable not found' });
+        res.json({ success: true, data: bill });
+    } catch {
+        res.status(500).json({ message: 'Could not load payable' });
+    }
+});
+
+// PATCH /ap/supplier-bills/:billId/amount - Audited amount and reference correction
+router.patch('/ap/supplier-bills/:billId/amount', protect, hasPermission('ap:manage'), async (req, res) => {
+    const billId = parseInt(req.params.billId, 10);
+    if (!billId) return res.status(400).json({ message: 'Invalid bill ID' });
+    const { new_amount, reason, confirm_independent, document_type, document_no } = req.body;
+    if (!reason || !reason.trim()) {
+        return res.status(400).json({ message: 'reason is required for amount or reference correction' });
+    }
+
+    const client = await db.getClient();
+    try {
+        await client.query('BEGIN');
+        const updated = await supplierBillService.recordBillAmountCorrection(client, {
+            billId,
+            newAmount: new_amount,
+            reason: reason.trim(),
+            actorId: req.user?.employee_id,
+            confirmIndependent: !!confirm_independent,
+            documentType: document_type || null,
+            documentNo: document_no || null,
+        });
+        await client.query('COMMIT');
+        res.json({ success: true, message: 'Bill correction recorded', data: updated });
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error('AP Bill Amount Correction Error:', err.message);
+        if (err.statusCode) {
+            return res.status(err.statusCode).json({ message: err.message, code: err.code });
+        }
+        res.status(500).json({ message: 'Failed to record bill correction' });
+    } finally {
+        client.release();
+    }
+});
+
+// GET /ap/supplier-bills/:billId/correction-history - Audit trail for bill corrections
+router.get('/ap/supplier-bills/:billId/correction-history', protect, hasPermission(['ap:view', 'ap-pdc:view']), async (req, res) => {
+    const billId = parseInt(req.params.billId, 10);
+    if (!billId) return res.status(400).json({ message: 'Invalid bill ID' });
+    try {
+        const { rows } = await db.query(`
+            SELECT cl.correction_id, cl.correction_type, cl.old_total_amount, cl.new_total_amount,
+                   cl.old_document_type, cl.new_document_type, cl.old_document_no, cl.new_document_no,
+                   cl.old_basis, cl.new_basis, cl.reason, cl.created_at,
+                   e.first_name, e.last_name
+            FROM supplier_bill_correction_log cl
+            LEFT JOIN employee e ON e.employee_id = cl.actor_id
+            WHERE cl.bill_id = $1
+            ORDER BY cl.created_at DESC
+        `, [billId]);
+        res.json({ success: true, data: rows });
+    } catch (err) {
+        console.error('AP Bill Correction History Error:', err.message);
+        res.status(500).json({ message: 'Failed to fetch correction history' });
     }
 });
 
@@ -356,20 +487,21 @@ router.get('/ap/supplier-bills/:billId/due-date-history', protect, hasPermission
     }
 });
 
-// GET /ap/supplier-bills/:billId/items - Items attached to a manually-created bill via
-// one or more linked goods receipts (goods_receipt.bill_id), plus a variance check
+// GET /ap/supplier-bills/:billId/items - Items attached to a bill via
+// active Posted goods receipts (goods_receipt.bill_id), plus a net goods variance check
 // against the bill's recorded total_amount.
 router.get('/ap/supplier-bills/:billId/items', protect, hasPermission('ap:view'), async (req, res) => {
     const billId = parseInt(req.params.billId, 10);
     if (!billId) return res.status(400).json({ message: 'Invalid bill ID' });
     try {
-        const { rows: [bill] } = await db.query('SELECT bill_id, total_amount FROM supplier_bill WHERE bill_id = $1', [billId]);
+        const { rows: [bill] } = await db.query('SELECT bill_id, total_amount, liability_basis FROM supplier_bill WHERE bill_id = $1', [billId]);
         if (!bill) return res.status(404).json({ message: 'Bill not found' });
 
         const { rows } = await db.query(`
             SELECT
                 grl.grn_line_id, grl.grn_id, gr.grn_number, gr.receipt_date,
-                grl.part_id, grl.quantity, grl.cost_price,
+                grl.part_id, grl.quantity, grl.return_quantity, grl.cost_price,
+                grl.line_discount_percent, grl.line_discount_amount,
                 p.internal_sku, p.detail,
                 CASE
                     WHEN pn.part_number IS NOT NULL THEN
@@ -396,17 +528,18 @@ router.get('/ap/supplier-bills/:billId/items', protect, hasPermission('ap:view')
             LEFT JOIN part_number pn ON pn.part_id = p.part_id AND pn.deleted_at IS NULL AND pn.display_order = (
                 SELECT MIN(pn2.display_order) FROM part_number pn2 WHERE pn2.part_id = p.part_id AND pn2.deleted_at IS NULL
             )
-            WHERE gr.bill_id = $1
+            WHERE gr.bill_id = $1 AND gr.status = 'Active' AND gr.workflow_status = 'Posted'
             ORDER BY gr.receipt_date ASC, grl.grn_line_id ASC
         `, [billId]);
 
-        const itemsTotal = rows.reduce((sum, r) => sum + (parseFloat(r.quantity) * parseFloat(r.cost_price)), 0);
+        const { netGoodsTotal } = await supplierBillService.getNetPostedGoodsValue(db, billId);
         res.json({
             success: true,
             data: rows,
-            itemsTotal,
+            itemsTotal: netGoodsTotal,
             billTotal: parseFloat(bill.total_amount),
-            variance: parseFloat(bill.total_amount) - itemsTotal,
+            variance: parseFloat(bill.total_amount) - netGoodsTotal,
+            liabilityBasis: bill.liability_basis,
         });
     } catch (err) {
         console.error('AP Bill Items Error:', err.message);
@@ -441,7 +574,7 @@ router.get('/ap/supplier-bills/:billId/goods-receipts', protect, hasPermission('
         const { rows: receipts } = await db.query(`
             SELECT
                 gr.grn_id, gr.grn_number, gr.receipt_date, gr.status, gr.workflow_status,
-                gr.is_backfill, gr.supplier_invoice_no, gr.po_id, gr.freight_amount,
+                gr.is_backfill, gr.supplier_document_no, gr.supplier_document_type, gr.physical_receipt_no, gr.supplier_invoice_no, gr.po_id, gr.freight_amount,
                 gr.freight_allocation_method, gr.overall_discount_percent, gr.overall_discount_amount,
                 gr.voided_at, gr.void_reason,
                 s.supplier_name,
@@ -603,18 +736,86 @@ router.get('/ap/payment-methods', protect, hasPermission('ap:view'), async (req,
 // GET /ap/payments - Cross-supplier payment register
 router.get('/ap/payments', protect, hasPermission('ap:view'), async (req, res) => {
     try {
-        const { supplier_id, payment_id, channel, limit } = req.query;
+        const { supplier_id, payment_id, channel, limit, include_history, include_deleted } = req.query;
         if (payment_id && (!/^[1-9]\d*$/.test(payment_id) || Number(payment_id) > 2147483647)) return res.status(400).json({ message: 'Invalid supplier payment ID' });
         const payments = await apPaymentService.listPayments(db, {
             supplierId: supplier_id ? parseInt(supplier_id, 10) : null,
             paymentId: payment_id ? parseInt(payment_id, 10) : null,
             channel,
             limit,
+            includeHistory: include_history === 'true' || include_history === '1',
+            includeDeleted: include_deleted === 'true' || include_deleted === '1',
         });
         res.json({ success: true, count: payments.length, data: payments });
     } catch (err) {
         console.error('AP Payments List Error:', err.message);
         res.status(500).json({ message: 'Failed to fetch supplier payments' });
+    }
+});
+
+// GET /ap/payments/:paymentId/eligibility - Evaluate replacement/void/delete eligibility for a payment
+router.get('/ap/payments/:paymentId/eligibility', protect, hasPermission('ap:view'), async (req, res) => {
+    const paymentId = parseInt(req.params.paymentId, 10);
+    if (!paymentId) return res.status(400).json({ message: 'Invalid supplier payment ID' });
+    try {
+        const result = await apPdcService.evaluateChequeActionEligibility(db, { apPaymentId: paymentId });
+        res.json({ success: true, data: result });
+    } catch (err) {
+        if (err.status) return res.status(err.status).json({ message: err.message, code: err.code });
+        console.error('AP Payment Eligibility Error:', err.message);
+        res.status(500).json({ message: 'Failed to evaluate payment eligibility' });
+    }
+});
+
+// POST /ap/payments/:paymentId/delete - Delete an erroneous uncleared/unsettled payment
+router.post('/ap/payments/:paymentId/delete', protect, async (req, res) => {
+    if (!userHasPermission(req, 'ap-pdc:delete') && !userHasPermission(req, 'ap:manage') && !userHasPermission(req, 'ap-pdc:manage')) {
+        return res.status(403).json({ message: 'Permission denied: ap-pdc:delete or ap:manage is required.' });
+    }
+    const paymentId = parseInt(req.params.paymentId, 10);
+    if (!paymentId) return res.status(400).json({ message: 'Invalid supplier payment ID' });
+    const { reason, notes, confirm_delete, confirm_printed_not_released, request_id } = req.body || {};
+
+    const client = await db.getClient();
+    try {
+        await client.query('BEGIN');
+        const idemp = await apPdcService.beginLifecycleRequest(client, {
+            requestId: request_id || req.headers['x-idempotency-key'],
+            actorId: req.user?.employee_id,
+            action: 'DELETE_PAYMENT',
+            targetType: 'AP_PAYMENT',
+            targetId: paymentId,
+            payload: { reason, notes, confirm_delete, confirm_printed_not_released },
+        });
+        if (idemp?.replay) {
+            await client.query('COMMIT');
+            return res.status(idemp.replay.status).json(idemp.replay.body);
+        }
+        const data = await apPdcService.deleteErroneousPayment(client, {
+            apPaymentId: paymentId,
+            reason,
+            notes,
+            confirmDelete: Boolean(confirm_delete),
+            confirmPrintedNotReleased: Boolean(confirm_printed_not_released),
+            userId: req.user?.employee_id,
+        });
+        const responseBody = {
+            success: true,
+            message: 'Erroneous payment deleted and bill allocations released.',
+            data,
+        };
+        await apPdcService.finishLifecycleRequest(client, idemp, 200, responseBody);
+        await client.query('COMMIT');
+        res.json(responseBody);
+    } catch (err) {
+        await client.query('ROLLBACK');
+        if (err.status) {
+            return res.status(err.status).json({ message: err.message, code: err.code, details: err.details });
+        }
+        console.error('AP Payment Delete Error:', err.message);
+        res.status(500).json({ message: 'Failed to delete supplier payment' });
+    } finally {
+        client.release();
     }
 });
 
@@ -634,6 +835,17 @@ router.post('/ap/payments', protect, hasPermission('ap:manage'), async (req, res
         await client.query('BEGIN');
         await cashDrawer.reserveSourceSession(client, req.body.cash_session_id);
         const sourceRequest = await cashDrawer.beginSourceRequest(client, req);
+        const apIdempotency = require('../services/apOperationIdempotencyService');
+        const requestId = req.get('Idempotency-Key') || req.body?.idempotency_key;
+        let apOpId = null;
+        if (!sourceRequest && requestId) {
+            apOpId = await apIdempotency.beginOperation(client, {
+                requestId,
+                actorId: req.user.employee_id,
+                operation: 'AP_RECORD_PAYMENT',
+                payload: { supplier_id, method_id, amount, allocations, reference_number },
+            });
+        }
         if (req.body.funding_source === 'ADVANCE') {
             if (Number(req.user.permission_level_id) !== 10 && !req.user.permissions?.includes('cash_drawer:settle_advance')) cashDrawer.fail(403, 'ADVANCE_PERMISSION_REQUIRED', 'Advance settlement permission is required.');
             await cashDrawer.reserveAdvance(client, req.body.advance_id);
@@ -655,10 +867,18 @@ router.post('/ap/payments', protect, hasPermission('ap:manage'), async (req, res
             kind: 'ap', sourceId: result.paymentId, actorId: req.user.employee_id });
         const responseBody = { success: true, message: 'Supplier payment recorded', data: result };
         await cashDrawer.finishSourceRequest(client, sourceRequest, 201, responseBody);
+        if (apOpId) {
+            await apIdempotency.finishOperation(client, {
+                requestId: apOpId,
+                statusCode: 201,
+                responseBody,
+            });
+        }
         await client.query('COMMIT');
         res.status(201).json(responseBody);
     } catch (err) {
         await client.query('ROLLBACK');
+        if (err.isReplay) return res.status(err.statusCode).json(err.response);
         if (err.replay) return res.status(err.replay.status).json(err.replay.body);
         console.error('AP Record Payment Error:', err.message);
         if (err.status) {

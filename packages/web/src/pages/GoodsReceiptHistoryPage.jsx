@@ -396,7 +396,7 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
                                             </span>
                                         </td>
                                         <td className={`p-3 text-sm font-medium ${grn.status === 'Voided' ? '' : 'text-gray-900 dark:text-slate-100'}`}>{grn.supplier_name}</td>
-                                        <td className="p-3 text-sm font-mono text-gray-600 dark:text-slate-300">{grn.physical_receipt_no || '—'}</td>
+                                        <td className="p-3 text-sm font-mono text-gray-600 dark:text-slate-300">{grn.supplier_document_no || grn.physical_receipt_no || grn.supplier_invoice_no || '—'}</td>
                                         <td className="p-3 text-sm text-gray-600 dark:text-slate-300">{grn.employee_name}</td>
                                         <td className="p-3 text-sm">
                                             <span className={`px-2 py-1 text-xs font-semibold rounded-full ${
@@ -501,7 +501,7 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
                                 </div>
                                 <div>
                                     <span className="text-gray-500 dark:text-slate-400">Supplier Document No.:</span>{' '}
-                                    {editingPhysicalReceipt ? (
+                                    {selectedGrn.supplier_document_no ? <span className="font-semibold font-mono">{selectedGrn.supplier_document_no}</span> : editingPhysicalReceipt ? (
                                         <span className="inline-flex items-center gap-2">
                                             <input
                                                 value={physicalReceiptNo}

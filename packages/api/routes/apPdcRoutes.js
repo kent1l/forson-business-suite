@@ -6,6 +6,14 @@ const apLedgerService = require('../services/apLedgerService');
 const { getNextDocumentNumber } = require('../helpers/documentNumberGenerator');
 const router = express.Router();
 
+function parseBool(val) {
+    return val === true || val === 'true' || val === '1';
+}
+
+function getIdempotencyKey(req) {
+    return req.get('Idempotency-Key') || req.body?.idempotency_key || null;
+}
+
 // GET /ap/pdc/summary-stats - KPI summary metrics for outbound Treasury Desk header cards
 router.get('/ap/pdc/summary-stats', protect, hasPermission(['ap-pdc:view']), async (req, res) => {
     try {
@@ -20,12 +28,44 @@ router.get('/ap/pdc/summary-stats', protect, hasPermission(['ap-pdc:view']), asy
 // GET /ap/outbound-clearance - List outbound cheques across all purposes (supplier/loan/rent/other)
 router.get('/ap/outbound-clearance', protect, hasPermission(['ap-pdc:view']), async (req, res) => {
     try {
-        const { pdc_status, maturity_status } = req.query;
-        const list = await apPdcService.getOutboundClearanceList(db, pdc_status, maturity_status);
+        const {
+            pdc_status,
+            maturity_status,
+            include_history,
+            include_deleted,
+            include_hidden_legacy,
+            search,
+            bank_account_id,
+        } = req.query;
+        const list = await apPdcService.getOutboundClearanceList(db, pdc_status, maturity_status, {
+            includeHistory: parseBool(include_history),
+            includeDeleted: parseBool(include_deleted),
+            includeHiddenLegacy: parseBool(include_hidden_legacy),
+            search,
+            bankAccountId: bank_account_id,
+        });
         res.json({ success: true, count: list.length, data: list });
     } catch (err) {
         console.error('AP Outbound Clearance List Error:', err.message);
-        res.status(500).json({ message: 'Failed to fetch outbound clearance list' });
+        const status = err.status || 500;
+        res.status(status).json({ message: err.message || 'Failed to fetch outbound clearance list', code: err.code });
+    }
+});
+
+// GET /ap/outbound-clearance/:chequeRecordId/eligibility - Contextual action eligibility & chain details
+router.get('/ap/outbound-clearance/:chequeRecordId/eligibility', protect, hasPermission(['ap-pdc:view', 'ap:view', 'cheques:view']), async (req, res) => {
+    const chequeRecordId = parseInt(req.params.chequeRecordId, 10);
+    if (!chequeRecordId) return res.status(400).json({ message: 'Invalid cheque record ID' });
+    try {
+        const { staleDays } = await apPdcService.getPdcSettings(db);
+        const eligibility = await apPdcService.evaluateChequeActionEligibility(db, {
+            chequeRecordId,
+            staleDays,
+        });
+        res.json({ success: true, data: eligibility });
+    } catch (err) {
+        console.error('AP Cheque Eligibility Error:', err.message);
+        res.status(err.status || 500).json({ message: err.message || 'Failed to evaluate cheque action eligibility', code: err.code });
     }
 });
 
@@ -50,9 +90,6 @@ router.post('/ap/outbound-clearance/issue', protect, hasPermission(['ap-pdc:mana
     try {
         await client.query('BEGIN');
 
-        // Auto-resolve the print template from the bank account's default so the
-        // issued cheque can be immediately handed to the cheque printer without
-        // asking the user to re-select a layout every time.
         let resolvedTemplateId = template_id || null;
         if (!resolvedTemplateId) {
             const { rows: [ba] } = await client.query(
@@ -83,18 +120,20 @@ router.post('/ap/outbound-clearance/issue', protect, hasPermission(['ap-pdc:mana
             overridePaymentHold: Boolean(override_payment_hold),
         });
         await client.query('COMMIT');
-        res.status(201).json({ success: true, message: 'Outbound cheque issued', ...result, templateId: resolvedTemplateId });
+        res.status(201).json({ success: true, message: 'Outbound cheque issued', ...result, templateId: result.templateId ?? resolvedTemplateId });
     } catch (err) {
         await client.query('ROLLBACK');
         console.error('AP Issue Outbound Cheque Error:', err.message);
         if (err.code === 'PAYMENT_HOLD_BLOCKED') {
             return res.status(409).json({ message: err.message, code: err.code });
         }
-        if (err.code === '23505') {
-            return res.status(409).json({ message: 'This cheque number has already been recorded for this bank account' });
+        if (err.code === 'CHEQUE_NUMBER_RESERVED' || err.code === '23505') {
+            return res.status(409).json({
+                message: err.code === 'CHEQUE_NUMBER_RESERVED' ? err.message : 'This cheque number has already been recorded for this bank account',
+                code: 'CHEQUE_NUMBER_RESERVED',
+                conflictingCheque: err.conflictingCheque || null,
+            });
         }
-        // Allocation problems (over-applying a bill, a total that doesn't match the
-        // cheque) are the caller's to fix, so say so with a 400 rather than a 500.
         if (err.status) {
             return res.status(err.status).json({ message: err.message, code: err.code });
         }
@@ -104,23 +143,12 @@ router.post('/ap/outbound-clearance/issue', protect, hasPermission(['ap-pdc:mana
     }
 });
 
-// GET /ap/cheque-register/next-number - Suggest the next cheque number for a bank account,
-// based on whichever cheque was actually issued last for that bank (auto or manually entered) —
-// not the highest number on file, so a manual entry becomes the new baseline for the next suggestion.
+// GET /ap/cheque-register/next-number - Suggest the next available cheque number for a bank account
 router.get('/ap/cheque-register/next-number', protect, hasPermission(['ap-pdc:view']), async (req, res) => {
     try {
         const { bank_account_id } = req.query;
         if (!bank_account_id) return res.status(400).json({ message: 'bank_account_id is required' });
-        const { rows } = await db.query(
-            `SELECT cheque_number FROM cheque_records
-             WHERE bank_account_id = $1 AND cheque_number IS NOT NULL
-             ORDER BY id DESC LIMIT 1`,
-            [bank_account_id]
-        );
-        const last = rows[0]?.cheque_number;
-        if (!last || !/^[0-9]+$/.test(last)) return res.json({ success: true, data: { next_cheque_number: null } });
-        const width = last.length;
-        const next = String(BigInt(last) + 1n).padStart(width, '0');
+        const next = await apPdcService.suggestNextChequeNumber(db, Number(bank_account_id));
         res.json({ success: true, data: { next_cheque_number: next } });
     } catch (err) {
         console.error('Next Cheque Number Error:', err.message);
@@ -133,16 +161,33 @@ router.post('/ap/outbound-clearance/:chequeRecordId/verify', protect, hasPermiss
     const chequeRecordId = parseInt(req.params.chequeRecordId, 10);
     if (!chequeRecordId) return res.status(400).json({ message: 'Invalid cheque record ID' });
 
+    const { expected_status } = req.body || {};
+    const requestId = getIdempotencyKey(req);
     const client = await db.getClient();
     try {
         await client.query('BEGIN');
-        const result = await apPdcService.verifyOutboundPayment(client, { chequeRecordId, userId: req.user?.employee_id });
+        const reqKey = await apPdcService.beginLifecycleRequest(client, {
+            requestId,
+            actorId: req.user?.employee_id,
+            action: 'VERIFY_CHEQUE',
+            targetType: 'cheque_records',
+            targetId: chequeRecordId,
+            payload: { expected_status: expected_status || null },
+        });
+        const result = await apPdcService.verifyOutboundPayment(client, {
+            chequeRecordId,
+            userId: req.user?.employee_id,
+            expectedStatus: expected_status || null,
+        });
+        const responseBody = { success: true, message: 'Outbound cheque verified and cleared', ...result };
+        await apPdcService.finishLifecycleRequest(client, reqKey, 200, responseBody);
         await client.query('COMMIT');
-        res.json({ success: true, message: 'Outbound cheque verified and cleared', ...result });
+        res.json(responseBody);
     } catch (err) {
         await client.query('ROLLBACK');
+        if (err.replay) return res.status(err.replay.status).json(err.replay.body);
         console.error('AP Verify Outbound Cheque Error:', err.message);
-        res.status(500).json({ message: err.message || 'Failed to verify outbound cheque' });
+        res.status(err.status || 500).json({ message: err.message || 'Failed to verify outbound cheque', code: err.code, currentStatus: err.currentStatus });
     } finally {
         client.release();
     }
@@ -153,19 +198,35 @@ router.post('/ap/outbound-clearance/:chequeRecordId/fail', protect, hasPermissio
     const chequeRecordId = parseInt(req.params.chequeRecordId, 10);
     if (!chequeRecordId) return res.status(400).json({ message: 'Invalid cheque record ID' });
 
-    const { bounce_fee, reason } = req.body;
+    const { bounce_fee, reason, expected_status } = req.body || {};
+    const requestId = getIdempotencyKey(req);
     const client = await db.getClient();
     try {
         await client.query('BEGIN');
-        const result = await apPdcService.processBouncedOutboundCheque(client, {
-            chequeRecordId, bounceFee: bounce_fee, reason, userId: req.user?.employee_id,
+        const reqKey = await apPdcService.beginLifecycleRequest(client, {
+            requestId,
+            actorId: req.user?.employee_id,
+            action: 'FAIL_CHEQUE',
+            targetType: 'cheque_records',
+            targetId: chequeRecordId,
+            payload: { bounce_fee: bounce_fee ?? 0, reason: reason || null, expected_status: expected_status || null },
         });
+        const result = await apPdcService.processBouncedOutboundCheque(client, {
+            chequeRecordId,
+            bounceFee: bounce_fee,
+            reason,
+            userId: req.user?.employee_id,
+            expectedStatus: expected_status || null,
+        });
+        const responseBody = { success: true, message: 'Outbound cheque bounced and reversal processed', ...result };
+        await apPdcService.finishLifecycleRequest(client, reqKey, 200, responseBody);
         await client.query('COMMIT');
-        res.json({ success: true, message: 'Outbound cheque bounced and reversal processed', ...result });
+        res.json(responseBody);
     } catch (err) {
         await client.query('ROLLBACK');
+        if (err.replay) return res.status(err.replay.status).json(err.replay.body);
         console.error('AP Fail Outbound Cheque Error:', err.message);
-        res.status(500).json({ message: err.message || 'Failed to process bounced outbound cheque' });
+        res.status(err.status || 500).json({ message: err.message || 'Failed to process bounced outbound cheque', code: err.code, currentStatus: err.currentStatus });
     } finally {
         client.release();
     }
@@ -176,19 +237,34 @@ router.post('/ap/outbound-clearance/:chequeRecordId/redeposit', protect, hasPerm
     const chequeRecordId = parseInt(req.params.chequeRecordId, 10);
     if (!chequeRecordId) return res.status(400).json({ message: 'Invalid cheque record ID' });
 
-    const { lift_payment_hold, notes } = req.body;
+    const { lift_payment_hold, notes } = req.body || {};
+    const requestId = getIdempotencyKey(req);
     const client = await db.getClient();
     try {
         await client.query('BEGIN');
-        const result = await apPdcService.redepositOutboundCheque(client, {
-            chequeRecordId, liftPaymentHold: Boolean(lift_payment_hold), notes, userId: req.user?.employee_id,
+        const reqKey = await apPdcService.beginLifecycleRequest(client, {
+            requestId,
+            actorId: req.user?.employee_id,
+            action: 'REDEPOSIT_CHEQUE',
+            targetType: 'cheque_records',
+            targetId: chequeRecordId,
+            payload: { lift_payment_hold: Boolean(lift_payment_hold), notes: notes || null },
         });
+        const result = await apPdcService.redepositOutboundCheque(client, {
+            chequeRecordId,
+            liftPaymentHold: Boolean(lift_payment_hold),
+            notes,
+            userId: req.user?.employee_id,
+        });
+        const responseBody = { success: true, message: 'Outbound cheque re-presented for clearance', data: result };
+        await apPdcService.finishLifecycleRequest(client, reqKey, 200, responseBody);
         await client.query('COMMIT');
-        res.json({ success: true, message: 'Outbound cheque re-presented for clearance', data: result });
+        res.json(responseBody);
     } catch (err) {
         await client.query('ROLLBACK');
+        if (err.replay) return res.status(err.replay.status).json(err.replay.body);
         console.error('AP Redeposit Outbound Cheque Error:', err.message);
-        res.status(400).json({ message: err.message || 'Failed to re-deposit outbound cheque' });
+        res.status(err.status || 400).json({ message: err.message || 'Failed to re-deposit outbound cheque', code: err.code });
     } finally {
         client.release();
     }
@@ -199,54 +275,218 @@ router.post('/ap/outbound-clearance/:chequeRecordId/void', protect, hasPermissio
     const chequeRecordId = parseInt(req.params.chequeRecordId, 10);
     if (!chequeRecordId) return res.status(400).json({ message: 'Invalid cheque record ID' });
 
-    const { reason } = req.body;
-    if (!reason || !reason.trim()) return res.status(400).json({ message: 'A void reason is required' });
+    const { reason, expected_status } = req.body || {};
+    if (!reason || !String(reason).trim()) return res.status(400).json({ message: 'A void reason is required' });
 
+    const requestId = getIdempotencyKey(req);
     const client = await db.getClient();
     try {
         await client.query('BEGIN');
-        const result = await apPdcService.voidCheque(client, { chequeRecordId, reason: reason.trim(), userId: req.user?.employee_id });
+        const reqKey = await apPdcService.beginLifecycleRequest(client, {
+            requestId,
+            actorId: req.user?.employee_id,
+            action: 'VOID_CHEQUE',
+            targetType: 'cheque_records',
+            targetId: chequeRecordId,
+            payload: { reason: String(reason).trim(), expected_status: expected_status || null },
+        });
+        const result = await apPdcService.voidCheque(client, {
+            chequeRecordId,
+            reason: String(reason).trim(),
+            userId: req.user?.employee_id,
+            expectedStatus: expected_status || null,
+        });
+        const responseBody = { success: true, message: 'Cheque voided', data: result };
+        await apPdcService.finishLifecycleRequest(client, reqKey, 200, responseBody);
         await client.query('COMMIT');
-        res.json({ success: true, message: 'Cheque voided', data: result });
+        res.json(responseBody);
     } catch (err) {
         await client.query('ROLLBACK');
+        if (err.replay) return res.status(err.replay.status).json(err.replay.body);
         console.error('AP Void Outbound Cheque Error:', err.message);
-        res.status(400).json({ message: err.message || 'Failed to void cheque' });
+        res.status(err.status || 400).json({ message: err.message || 'Failed to void cheque', code: err.code, currentStatus: err.currentStatus });
     } finally {
         client.release();
     }
 });
 
-// POST /ap/outbound-clearance/:chequeRecordId/replace - Replace a stale or repeatedly-bounced cheque
+// POST /ap/outbound-clearance/:chequeRecordId/replace - Replace an eligible outbound cheque
 router.post('/ap/outbound-clearance/:chequeRecordId/replace', protect, hasPermission(['ap-pdc:manage']), async (req, res) => {
     const chequeRecordId = parseInt(req.params.chequeRecordId, 10);
     if (!chequeRecordId) return res.status(400).json({ message: 'Invalid cheque record ID' });
 
-    const { new_cheque_number, new_cheque_date, new_bank_account_id, reason } = req.body;
-    if (!new_cheque_number || !new_cheque_date) {
-        return res.status(400).json({ message: 'new_cheque_number and new_cheque_date are required' });
+    const {
+        new_cheque_number,
+        new_cheque_date,
+        new_bank_account_id,
+        reason_category,
+        reason_notes,
+        reason,
+        confirm_recovered_or_stopped,
+        expected_status,
+        // Guard against clients trying to mutate economic inputs via Replace
+        amount,
+        payee,
+        supplier_id,
+        allocations,
+        bill_ids,
+        purpose_type,
+        expense_category_id,
+    } = req.body || {};
+
+    if (
+        amount !== undefined ||
+        payee !== undefined ||
+        supplier_id !== undefined ||
+        allocations !== undefined ||
+        bill_ids !== undefined ||
+        purpose_type !== undefined ||
+        expense_category_id !== undefined
+    ) {
+        return res.status(400).json({
+            message: 'Economic payment details (payee, amount, supplier, bills, purpose, category) cannot be modified during cheque replacement.',
+            code: 'ECONOMIC_MUTATION_FORBIDDEN',
+        });
     }
 
+    if (!new_cheque_number) {
+        return res.status(400).json({ message: 'new_cheque_number is required', code: 'CHEQUE_NUMBER_REQUIRED' });
+    }
+
+    const requestId = getIdempotencyKey(req);
     const client = await db.getClient();
     try {
         await client.query('BEGIN');
+        const reqKey = await apPdcService.beginLifecycleRequest(client, {
+            requestId,
+            actorId: req.user?.employee_id,
+            action: 'REPLACE_CHEQUE',
+            targetType: 'cheque_records',
+            targetId: chequeRecordId,
+            payload: {
+                new_cheque_number: String(new_cheque_number).trim(),
+                new_cheque_date: new_cheque_date || null,
+                new_bank_account_id: new_bank_account_id ? Number(new_bank_account_id) : null,
+                reason_category: reason_category || null,
+                reason_notes: reason_notes || null,
+                reason: reason || null,
+                confirm_recovered_or_stopped: Boolean(confirm_recovered_or_stopped),
+            },
+        });
         const result = await apPdcService.replaceCheque(client, {
             chequeRecordId,
             newChequeNumber: new_cheque_number,
-            newChequeDate: new_cheque_date,
-            newBankAccountId: new_bank_account_id,
+            newChequeDate: new_cheque_date || null,
+            newBankAccountId: new_bank_account_id || null,
+            reasonCategory: reason_category,
+            reasonNotes: reason_notes,
             reason,
+            confirmRecoveredOrStopped: Boolean(confirm_recovered_or_stopped),
+            expectedStatus: expected_status || null,
+            userId: req.user?.employee_id,
+        });
+        const responseBody = {
+            success: true,
+            message: `Cheque ${result.newChequeNumber} replaces ${result.oldChequeNumber || `#${result.oldChequeRecordId}`}.`,
+            data: result,
+        };
+        await apPdcService.finishLifecycleRequest(client, reqKey, 200, responseBody);
+        await client.query('COMMIT');
+        res.json(responseBody);
+    } catch (err) {
+        await client.query('ROLLBACK');
+        if (err.replay) return res.status(err.replay.status).json(err.replay.body);
+        console.error('AP Replace Outbound Cheque Error:', err.message);
+        if (err.code === 'CHEQUE_NUMBER_RESERVED' || err.code === '23505') {
+            return res.status(409).json({
+                message: err.code === 'CHEQUE_NUMBER_RESERVED' ? err.message : 'This cheque number has already been recorded for this bank account',
+                code: 'CHEQUE_NUMBER_RESERVED',
+                conflictingCheque: err.conflictingCheque || null,
+            });
+        }
+        res.status(err.status || 400).json({
+            message: err.message || 'Failed to replace cheque',
+            code: err.code,
+            currentStatus: err.currentStatus,
+            replacementCheque: err.replacementCheque || null,
+        });
+    } finally {
+        client.release();
+    }
+});
+
+// POST /ap/outbound-clearance/:chequeRecordId/delete - Delete an erroneous unsettled payment and release its cheque number
+router.post('/ap/outbound-clearance/:chequeRecordId/delete', protect, hasPermission(['ap-pdc:delete', 'ap-pdc:manage']), async (req, res) => {
+    const chequeRecordId = parseInt(req.params.chequeRecordId, 10);
+    if (!chequeRecordId) return res.status(400).json({ message: 'Invalid cheque record ID' });
+
+    const { reason, expected_status } = req.body || {};
+    if (!reason || !String(reason).trim()) {
+        return res.status(400).json({ message: 'A deletion reason is required', code: 'DELETE_REASON_REQUIRED' });
+    }
+
+    const requestId = getIdempotencyKey(req);
+    const client = await db.getClient();
+    try {
+        await client.query('BEGIN');
+        const reqKey = await apPdcService.beginLifecycleRequest(client, {
+            requestId,
+            actorId: req.user?.employee_id,
+            action: 'DELETE_CHEQUE_PAYMENT',
+            targetType: 'cheque_records',
+            targetId: chequeRecordId,
+            payload: { reason: String(reason).trim(), expected_status: expected_status || null },
+        });
+        const result = await apPdcService.deleteErroneousPayment(client, {
+            chequeRecordId,
+            reason: String(reason).trim(),
+            expectedStatus: expected_status || null,
+            userId: req.user?.employee_id,
+        });
+        const responseBody = {
+            success: true,
+            message: result.releasedChequeNumber
+                ? `Payment deleted and cheque #${result.releasedChequeNumber} is available again.`
+                : 'Print entry removed.',
+            data: result,
+        };
+        await apPdcService.finishLifecycleRequest(client, reqKey, 200, responseBody);
+        await client.query('COMMIT');
+        res.json(responseBody);
+    } catch (err) {
+        await client.query('ROLLBACK');
+        if (err.replay) return res.status(err.replay.status).json(err.replay.body);
+        console.error('AP Delete Outbound Cheque Payment Error:', err.message);
+        res.status(err.status || 400).json({
+            message: err.message || 'Failed to delete payment',
+            code: err.code,
+            currentStatus: err.currentStatus,
+        });
+    } finally {
+        client.release();
+    }
+});
+
+// POST /ap/outbound-clearance/:chequeRecordId/restore - Restore visibility of a legacy hidden cheque record
+router.post('/ap/outbound-clearance/:chequeRecordId/restore', protect, hasPermission(['ap-pdc:manage']), async (req, res) => {
+    const chequeRecordId = parseInt(req.params.chequeRecordId, 10);
+    if (!chequeRecordId) return res.status(400).json({ message: 'Invalid cheque record ID' });
+
+    const { reason } = req.body || {};
+    const client = await db.getClient();
+    try {
+        await client.query('BEGIN');
+        const result = await apPdcService.restoreHiddenChequeVisibility(client, {
+            chequeRecordId,
+            reason: reason ? String(reason).trim() : null,
             userId: req.user?.employee_id,
         });
         await client.query('COMMIT');
-        res.json({ success: true, message: 'Cheque replaced', data: result });
+        res.json({ success: true, message: 'Cheque visibility restored', data: result });
     } catch (err) {
         await client.query('ROLLBACK');
-        console.error('AP Replace Outbound Cheque Error:', err.message);
-        if (err.code === '23505') {
-            return res.status(409).json({ message: 'This cheque number has already been recorded for this bank account' });
-        }
-        res.status(400).json({ message: err.message || 'Failed to replace cheque' });
+        console.error('AP Restore Hidden Cheque Error:', err.message);
+        res.status(err.status || 400).json({ message: err.message || 'Failed to restore cheque visibility', code: err.code });
     } finally {
         client.release();
     }
@@ -269,21 +509,39 @@ router.get('/ap/outbound-clearance/:chequeRecordId/history', protect, hasPermiss
 // GET /ap/cheque-register - Full cheque number sequence for a bank account, for gap-continuity review
 router.get('/ap/cheque-register', protect, hasPermission(['ap-pdc:view']), async (req, res) => {
     try {
-        const { bank_account_id } = req.query;
+        const { bank_account_id, include_deleted, search, status } = req.query;
         const params = [];
         let where = 'WHERE cr.cheque_number IS NOT NULL';
         if (bank_account_id) {
             params.push(bank_account_id);
             where += ` AND cr.bank_account_id = $${params.length}`;
         }
+        if (!parseBool(include_deleted) && status !== 'DELETED') {
+            where += ` AND cr.status <> 'DELETED'`;
+        }
+        if (status && status !== 'ALL') {
+            params.push(status);
+            where += ` AND cr.status = $${params.length}`;
+        }
+        if (search && String(search).trim()) {
+            params.push(`%${String(search).trim().toLowerCase()}%`);
+            where += ` AND (LOWER(cr.cheque_number) LIKE $${params.length} OR LOWER(cr.payee) LIKE $${params.length})`;
+        }
         const { rows } = await db.query(
-            `SELECT cr.id, cr.bank_account_id, ba.account_name, cr.cheque_number, cr.status,
-                    cr.purpose_type, cr.payee, cr.amount, cr.cheque_date, cr.is_void, cr.void_reason,
-                    cr.replaces_cheque_id, cr.replaced_by_cheque_id, cr.created_at
+            `SELECT cr.id, cr.bank_account_id, ba.account_name, ba.bank_name, cr.cheque_number, cr.status,
+                    cr.purpose_type, cr.payee, cr.amount, TO_CHAR(cr.cheque_date, 'YYYY-MM-DD') AS cheque_date,
+                    cr.is_void, cr.void_reason, cr.is_deleted, cr.deleted_reason, cr.deleted_at,
+                    cr.ap_payment_id, cr.expense_id,
+                    cr.replaces_cheque_id, cr.replaced_by_cheque_id,
+                    prev_cr.cheque_number AS replaces_cheque_number,
+                    next_cr.cheque_number AS replaced_by_cheque_number,
+                    cr.created_at
              FROM cheque_records cr
              LEFT JOIN bank_account ba ON ba.bank_account_id = cr.bank_account_id
+             LEFT JOIN cheque_records prev_cr ON prev_cr.id = cr.replaces_cheque_id
+             LEFT JOIN cheque_records next_cr ON next_cr.id = cr.replaced_by_cheque_id
              ${where}
-             ORDER BY cr.bank_account_id, cr.cheque_number`,
+             ORDER BY cr.bank_account_id, cr.cheque_number, cr.id DESC`,
             params
         );
         res.json({ success: true, data: rows });
@@ -293,26 +551,69 @@ router.get('/ap/cheque-register', protect, hasPermission(['ap-pdc:view']), async
     }
 });
 
-// ── Supplier bills (minimal — header-only, just enough to attach outbound cheques to a real liability) ──
+// ── Supplier bills (with scheduled_amount and available_to_schedule for bill pickers) ──
 
 router.get('/ap/supplier-bills', protect, hasPermission(['ap-pdc:view', 'ap:view']), async (req, res) => {
     try {
-        const { supplier_id, status } = req.query;
+        const { supplier_id, status, search } = req.query;
         const params = [];
         let where = 'WHERE 1=1';
         if (supplier_id) { params.push(supplier_id); where += ` AND sb.supplier_id = $${params.length}`; }
         if (status && status !== 'all') { params.push(status); where += ` AND sb.status = $${params.length}`; }
-        else if (!status) { where += ` AND sb.status != 'Paid'`; }
-        // related_grns: the goods receipt(s) this payable came from, so the bill can
-        // be traced back to the delivery it is charging for. Three links are possible
-        // and a bill may have more than one receipt behind it — see
-        // GET /ap/supplier-bills/:billId/goods-receipts for the shape and the reasoning.
+        else if (!status) { where += ` AND sb.status NOT IN ('Paid', 'Void')`; }
+
+        if (search?.trim()) {
+            params.push(`%${search.trim()}%`);
+            where += ` AND (sb.supplier_document_no ILIKE $${params.length}
+                OR sb.bill_number ILIKE $${params.length}
+                OR EXISTS (SELECT 1 FROM supplier_bill_document_identity di
+                    WHERE di.bill_id = sb.bill_id AND di.status = 'active' AND di.document_no ILIKE $${params.length}))`;
+        }
         const { rows } = await db.query(
             `SELECT sb.*, s.supplier_name,
+                    COALESCE(NULLIF(BTRIM(sb.supplier_document_no), ''),
+                        (SELECT di.document_no FROM supplier_bill_document_identity di
+                         WHERE di.bill_id = sb.bill_id AND di.supplier_id = sb.supplier_id AND di.status = 'active'
+                         ORDER BY di.is_primary DESC, di.identity_id LIMIT 1),
+                        (SELECT COALESCE(NULLIF(BTRIM(gr.supplier_document_no), ''),
+                                         NULLIF(BTRIM(gr.physical_receipt_no), ''),
+                                         NULLIF(BTRIM(gr.supplier_invoice_no), ''))
+                         FROM goods_receipt gr
+                         WHERE gr.supplier_id = sb.supplier_id
+                           AND (gr.bill_id = sb.bill_id OR gr.grn_id = sb.grn_id)
+                           AND COALESCE(NULLIF(BTRIM(gr.supplier_document_no), ''),
+                                        NULLIF(BTRIM(gr.physical_receipt_no), ''),
+                                        NULLIF(BTRIM(gr.supplier_invoice_no), '')) IS NOT NULL
+                         ORDER BY (gr.status = 'Active' AND gr.workflow_status = 'Posted') DESC,
+                                  (gr.grn_id = sb.grn_id) DESC NULLS LAST, gr.receipt_date, gr.grn_id LIMIT 1),
+                        CASE WHEN sb.bill_number NOT LIKE 'BILL-%' THEN sb.bill_number END
+                    ) AS display_supplier_reference,
+                    ARRAY(SELECT di.document_no FROM supplier_bill_document_identity di WHERE di.bill_id = sb.bill_id AND di.status = 'active') AS document_references,
                     GREATEST(CURRENT_DATE - COALESCE(sb.due_date, sb.bill_date), 0) AS days_overdue,
+                    COALESCE(sched.scheduled_amount, 0) AS scheduled_amount,
+                    COALESCE(sched.scheduled_cheques, '[]'::json) AS scheduled_cheques,
+                    GREATEST(sb.total_amount - sb.amount_paid, 0) AS outstanding_amount,
+                    GREATEST(sb.total_amount - sb.amount_paid - COALESCE(sched.scheduled_amount, 0), 0) AS available_to_schedule,
                     grn.related_grns
              FROM supplier_bill sb
              JOIN supplier s ON s.supplier_id = sb.supplier_id
+             LEFT JOIN LATERAL (
+                SELECT COALESCE(SUM(apa.amount_allocated), 0) AS scheduled_amount,
+                       COALESCE(json_agg(json_build_object(
+                           'payment_id', ap.payment_id,
+                           'cheque_record_id', cr.id,
+                           'cheque_number', cr.cheque_number,
+                           'cheque_date', TO_CHAR(cr.cheque_date, 'YYYY-MM-DD'),
+                           'status', COALESCE(cr.status, ap.pdc_status),
+                           'amount', apa.amount_allocated
+                       ) ORDER BY ap.payment_id), '[]'::json) AS scheduled_cheques
+                FROM ap_payment_allocation apa
+                JOIN ap_payment ap ON ap.payment_id = apa.payment_id
+                LEFT JOIN cheque_records cr ON cr.id = ap.cheque_record_id
+                WHERE apa.bill_id = sb.bill_id
+                  AND ap.pdc_status IN ('ISSUED', 'HELD_FOR_RELEASE', 'DEPOSITED', 'BOUNCED', 'STALE')
+                  AND (cr.id IS NULL OR cr.status NOT IN ('VOID', 'REPLACED', 'DELETED'))
+             ) sched ON true
              LEFT JOIN LATERAL (
                 SELECT COALESCE(json_agg(json_build_object(
                             'grn_id', gr.grn_id,
@@ -337,12 +638,20 @@ router.get('/ap/supplier-bills', protect, hasPermission(['ap-pdc:view', 'ap:view
     }
 });
 
-// POST /ap/supplier-bills - Create a payable directly against a supplier (no PO/GRN
-// required). Auto-generates a bill_number when none is supplied, and posts the
-// BILL_POSTED ap_ledger entry in the same transaction so the new liability shows up
-// in AP balances/aging immediately, exactly like the automatic GRN-triggered path does.
+// POST /ap/supplier-bills - Create a payable directly against a supplier
 router.post('/ap/supplier-bills', protect, hasPermission(['ap:manage']), async (req, res) => {
-    const { supplier_id, po_id, grn_id, bill_number, bill_date, due_date, total_amount, notes } = req.body;
+    const {
+        supplier_id,
+        po_id,
+        grn_id,
+        bill_number,
+        bill_date,
+        due_date,
+        total_amount,
+        notes,
+        supplier_document_type,
+        supplier_document_no,
+    } = req.body;
     const parsedAmount = parseFloat(total_amount);
     if (!supplier_id || !parsedAmount || parsedAmount <= 0) {
         return res.status(400).json({ message: 'supplier_id and a positive total_amount are required' });
@@ -366,13 +675,34 @@ router.post('/ap/supplier-bills', protect, hasPermission(['ap:manage']), async (
             }
         }
 
+        const resolvedDocType = supplier_document_type || ((supplier_document_no || bill_number) ? 'other' : null);
+        const resolvedDocNo = String(supplier_document_no || bill_number || '').trim() || null;
+        if (resolvedDocNo) {
+            await require('../services/supplierBillService').assertBillReferenceAvailable(client, {
+                supplierId: supplier_id, documentType: resolvedDocType, documentNo: resolvedDocNo,
+            });
+        }
+
         const resolvedBillNumber = bill_number || await getNextDocumentNumber(client, 'BILL');
 
         const { rows: [bill] } = await client.query(
-            `INSERT INTO supplier_bill (supplier_id, po_id, grn_id, bill_number, bill_date, due_date, total_amount, notes, created_by)
-             VALUES ($1, $2, $3, $4, COALESCE($5, CURRENT_DATE), $6, $7, $8, $9) RETURNING *`,
-            [supplier_id, po_id || null, grn_id || null, resolvedBillNumber, bill_date || null, resolvedDueDate, parsedAmount, notes || null, req.user?.employee_id]
+            `INSERT INTO supplier_bill (supplier_id, po_id, grn_id, bill_number, bill_date, due_date, total_amount, notes, created_by,
+                                       liability_basis, supplier_document_type, supplier_document_no)
+             VALUES ($1, $2, $3, $4, COALESCE($5, CURRENT_DATE), $6, $7, $8, $9, 'independent', $10, $11) RETURNING *`,
+            [supplier_id, po_id || null, grn_id || null, resolvedBillNumber, bill_date || null, resolvedDueDate, parsedAmount, notes || null, req.user?.employee_id,
+             resolvedDocType, resolvedDocNo]
         );
+
+        if (resolvedDocType && resolvedDocNo) {
+            const supplierBillService = require('../services/supplierBillService');
+            await supplierBillService.registerBillIdentity(client, {
+                billId: bill.bill_id,
+                supplierId: supplier_id,
+                documentType: resolvedDocType,
+                documentNo: resolvedDocNo,
+                isPrimary: true,
+            });
+        }
 
         await apLedgerService.appendEntry(client, {
             supplierId: supplier_id,
@@ -389,6 +719,13 @@ router.post('/ap/supplier-bills', protect, hasPermission(['ap:manage']), async (
     } catch (err) {
         await client.query('ROLLBACK');
         console.error('Create Supplier Bill Error:', err.message);
+        if (err.code === 'BILL_IDENTITY_CONFLICT') {
+            return res.status(409).json({
+                code: 'BILL_IDENTITY_CONFLICT',
+                message: err.message,
+                conflictingBill: err.conflictingBill,
+            });
+        }
         if (err.code === '23505') {
             return res.status(409).json({ message: 'A bill with this number already exists.' });
         }
@@ -398,7 +735,7 @@ router.post('/ap/supplier-bills', protect, hasPermission(['ap:manage']), async (
     }
 });
 
-// ── Bank accounts (minimal CRUD, required to select an account when issuing cheques) ──
+// ── Bank accounts ──
 
 router.get('/bank-accounts', protect, hasPermission(['ap-pdc:view']), async (req, res) => {
     try {

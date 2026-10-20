@@ -12,6 +12,7 @@ const POLICY = Object.freeze({
             ['goods_receipt_freight', 'supplier_id', 'move'],
             ['purchase_order', 'supplier_id', 'move'],
             ['supplier_bill', 'supplier_id', 'move'],
+            ['supplier_bill_document_identity', 'supplier_id', 'move'],
             ['ap_ledger', 'supplier_id', 'move'],
             ['ap_payment', 'supplier_id', 'move'],
             ['cheque_clearance_log', 'supplier_id', 'move'],

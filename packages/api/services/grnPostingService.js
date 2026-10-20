@@ -16,6 +16,8 @@
 const { getNextDocumentNumber } = require('../helpers/documentNumberGenerator');
 const apLedgerService = require('./apLedgerService');
 const apPaymentService = require('./apPaymentService');
+const supplierBillService = require('./supplierBillService');
+const supplierReceiptReference = require('./supplierReceiptReferenceService');
 const stockReconciliation = require('./stockReconciliationService');
 const { recomputeWacForParts } = require('./transactionDateService');
 
@@ -29,6 +31,8 @@ const { recomputeWacForParts } = require('./transactionDateService');
  */
 async function createBillWithLedger(client, {
   supplierId, poId = null, grnId = null, totalAmount, receiptDate, createdBy, notes, backlink = null,
+  liabilityBasis = 'receipt_derived', supplierDocumentType = null, supplierDocumentNo = null,
+  physicalReceiptNo = null,
 }) {
   const { rows: [supplier] } = await client.query(
     'SELECT payment_terms_days FROM supplier WHERE supplier_id = $1', [supplierId],
@@ -37,13 +41,15 @@ async function createBillWithLedger(client, {
   const billNumber = await getNextDocumentNumber(client, 'BILL');
 
   const { rows: [bill] } = await client.query(
-    `INSERT INTO supplier_bill (supplier_id, po_id, grn_id, bill_number, bill_date, due_date, total_amount, created_by, notes)
+    `INSERT INTO supplier_bill (supplier_id, po_id, grn_id, bill_number, bill_date, due_date, total_amount, created_by, notes,
+                               liability_basis, supplier_document_type, supplier_document_no)
      VALUES ($1, $2, $3, $4, COALESCE($8::date, CURRENT_DATE),
              CASE WHEN $5::int IS NOT NULL THEN COALESCE($8::date, CURRENT_DATE) + ($5::int || ' days')::interval ELSE NULL END,
-             $6, $7, $9)
+             $6, $7, $9, $10, $11, $12)
      ON CONFLICT (grn_id) WHERE grn_id IS NOT NULL DO NOTHING
      RETURNING bill_id`,
-    [supplierId, poId, grnId, billNumber, termsDays, totalAmount, createdBy, receiptDate, notes || null],
+    [supplierId, poId, grnId, billNumber, termsDays, totalAmount, createdBy, receiptDate, notes || null,
+     liabilityBasis, supplierDocumentType, supplierDocumentNo],
   );
 
   if (!bill) return null;
@@ -57,6 +63,26 @@ async function createBillWithLedger(client, {
       `UPDATE goods_receipt SET ${backlink.column} = $1 WHERE grn_id = $2`,
       [bill.bill_id, backlink.grnId],
     );
+  }
+
+  // Register verified identities for this bill
+  if (supplierDocumentType && supplierDocumentNo) {
+    await supplierBillService.registerBillIdentity(client, {
+      billId: bill.bill_id,
+      supplierId,
+      documentType: supplierDocumentType,
+      documentNo: supplierDocumentNo,
+      isPrimary: true,
+    });
+  }
+  if (physicalReceiptNo && physicalReceiptNo !== supplierDocumentNo) {
+    await supplierBillService.registerBillIdentity(client, {
+      billId: bill.bill_id,
+      supplierId,
+      documentType: 'delivery_receipt',
+      documentNo: physicalReceiptNo,
+      isPrimary: false,
+    });
   }
 
   await apLedgerService.appendEntry(client, {
@@ -106,10 +132,24 @@ async function postReceipt(client, {
   isBackfill = false,
   receiptDate = null,
   supplierInvoiceNo = null,
+  physicalReceiptNo = null,
+  supplierDocumentNo = null,
+  supplierDocumentType = null,
+  anotherDeliveryConfirmed = false,
   freightAmount = 0,
   freightSupplierId = null,
   netGoodsValue,
 }) {
+  // Validate document evidence before any stock/ledger side effects. The transaction
+  // lock is shared with manual payable creation and identity registration.
+  if (supplierDocumentNo) {
+    await supplierReceiptReference.validateReceivingReference(client, {
+      supplierId, documentNo: supplierDocumentNo, documentType: supplierDocumentType, billId, grnId, anotherDeliveryConfirmed,
+    });
+    if (!isBackfill) await supplierBillService.assertBillReferenceAvailable(client, {
+      supplierId, documentType: supplierDocumentType || 'other', documentNo: supplierDocumentNo, billId,
+    });
+  }
   // ── Stock ─────────────────────────────────────────────────────────────────
   // Quantity is what was actually accepted; anything rejected at the dock never
   // entered the building and must not enter the ledger either.
@@ -151,7 +191,41 @@ async function postReceipt(client, {
   // A backfill never posts a payable: the goods it records were paid for long ago, so
   // auto-creating a bill would overstate what is owed.
   let goodsBillId = billId || null;
-  if (netGoodsValue > 0 && !billId && !isBackfill) {
+  if (billId && !isBackfill) {
+    const verifiedBill = await supplierBillService.validateBillForReceiving(client, { billId, supplierId });
+    await client.query('UPDATE goods_receipt SET bill_id = $1 WHERE grn_id = $2', [billId, grnId]);
+    if (supplierDocumentNo) {
+      await supplierBillService.registerBillIdentity(client, {
+        billId, supplierId, documentType: supplierDocumentType || 'other',
+        documentNo: supplierDocumentNo, isPrimary: !verifiedBill.supplier_document_no,
+      });
+      if (!verifiedBill.supplier_document_no) {
+        await client.query('UPDATE supplier_bill SET supplier_document_no = $1, supplier_document_type = $2 WHERE bill_id = $3',
+          [supplierDocumentNo, supplierDocumentType || 'other', billId]);
+      }
+    }
+    if (supplierInvoiceNo) {
+      await supplierBillService.registerBillIdentity(client, {
+        billId,
+        supplierId,
+        documentType: 'invoice',
+        documentNo: supplierInvoiceNo,
+        isPrimary: !verifiedBill.supplier_document_no,
+      });
+    }
+    if (physicalReceiptNo) {
+      await supplierBillService.registerBillIdentity(client, {
+        billId,
+        supplierId,
+        documentType: 'delivery_receipt',
+        documentNo: physicalReceiptNo,
+        isPrimary: false,
+      });
+    }
+  } else if (netGoodsValue > 0 && !billId && !isBackfill) {
+    const primaryDocType = supplierDocumentNo ? (supplierDocumentType || 'other') : (supplierInvoiceNo ? 'invoice' : (physicalReceiptNo ? 'delivery_receipt' : null));
+    const primaryDocNo = supplierDocumentNo || supplierInvoiceNo || physicalReceiptNo || null;
+
     const bill = await createBillWithLedger(client, {
       supplierId,
       poId,
@@ -161,8 +235,19 @@ async function postReceipt(client, {
       createdBy: employeeId,
       notes: `Auto-posted from goods receipt ${grnNumber}`,
       backlink: { column: 'bill_id', grnId },
+      liabilityBasis: 'receipt_derived',
+      supplierDocumentType: primaryDocType,
+      supplierDocumentNo: primaryDocNo,
+      physicalReceiptNo,
     });
-    if (bill) goodsBillId = bill.bill_id;
+    if (bill) {
+      goodsBillId = bill.bill_id;
+      if (supplierInvoiceNo && supplierInvoiceNo !== primaryDocNo) {
+        await supplierBillService.registerBillIdentity(client, {
+          billId: bill.bill_id, supplierId, documentType: 'invoice', documentNo: supplierInvoiceNo, isPrimary: false,
+        });
+      }
+    }
   }
 
   // Freight is owed to the carrier, not to the parts supplier, so each freight charge
@@ -198,6 +283,9 @@ async function postReceipt(client, {
             receiptDate,
             createdBy: employeeId,
             notes: noteText,
+            liabilityBasis: 'freight',
+            supplierDocumentType: fRow.receipt_number ? 'delivery_receipt' : null,
+            supplierDocumentNo: fRow.receipt_number || null,
           });
 
           if (bill) {

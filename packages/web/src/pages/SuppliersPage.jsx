@@ -6,6 +6,7 @@ import Icon from '../components/ui/Icon';
 import { ICONS } from '../constants';
 import SupplierForm from '../components/forms/SupplierForm';
 import SupplierDetailDrawer from '../components/suppliers/SupplierDetailDrawer';
+import RecordSupplierPaymentModal from '../components/accounts-payable/RecordSupplierPaymentModal';
 import StatusBadge from '../components/ui/StatusBadge';
 import SegmentedTabs from '../components/ui/SegmentedTabs';
 import PaginationControls from '../components/ui/PaginationControls';
@@ -14,7 +15,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { formatCurrency } from '../utils/currency';
 import { postWithJevConfirmation } from '../helpers/jevConfirmation';
 
-const SuppliersPage = ({ onNavigate }) => {
+const SuppliersPage = ({ onNavigate, pageState }) => {
     const { hasPermission } = useAuth();
     const canViewAp = hasPermission('ap:view');
     const [suppliers, setSuppliers] = useState([]);
@@ -23,6 +24,10 @@ const SuppliersPage = ({ onNavigate }) => {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [currentSupplier, setCurrentSupplier] = useState(null);
     const [selectedSupplier, setSelectedSupplier] = useState(null);
+    const [suspendedSupplier, setSuspendedSupplier] = useState(null);
+    const [presetPaymentSupplier, setPresetPaymentSupplier] = useState(null);
+    const [presetPaymentBillId, setPresetPaymentBillId] = useState(null);
+    const [isRecordPaymentOpen, setIsRecordPaymentOpen] = useState(false);
     const [statusFilter, setStatusFilter] = useState('active');
     const [sortConfig, setSortConfig] = useState({ key: 'supplier_name', direction: 'ASC' });
     const [page, setPage] = useState(1);
@@ -72,6 +77,17 @@ const SuppliersPage = ({ onNavigate }) => {
             setLoading(false);
         }
     };
+
+    useEffect(() => {
+        if (pageState?.selectedSupplierId) {
+            api.get(`/suppliers/${pageState.selectedSupplierId}`)
+                .then(res => {
+                    const s = res.data?.data || res.data;
+                    if (s) setSelectedSupplier(s);
+                })
+                .catch(() => {});
+        }
+    }, [pageState?.selectedSupplierId, pageState?.refetchTimestamp]);
 
     useEffect(() => {
         fetchSuppliers();
@@ -141,6 +157,37 @@ const SuppliersPage = ({ onNavigate }) => {
     const handleSupplierUpdated = (updated) => {
         setSelectedSupplier((prev) => prev ? { ...prev, ...updated } : prev);
         fetchSuppliers();
+    };
+
+    const handleRecordPaymentFromDrawer = ({ supplier, billId }) => {
+        setSuspendedSupplier(supplier);
+        setSelectedSupplier(null);
+        setPresetPaymentSupplier(supplier);
+        setPresetPaymentBillId(billId || null);
+        setIsRecordPaymentOpen(true);
+    };
+
+    const handleCloseRecordPayment = () => {
+        setIsRecordPaymentOpen(false);
+        setPresetPaymentSupplier(null);
+        setPresetPaymentBillId(null);
+        if (suspendedSupplier) {
+            setSelectedSupplier(suspendedSupplier);
+            setSuspendedSupplier(null);
+        }
+    };
+
+    const handlePaymentRecorded = () => {
+        fetchSuppliers();
+        if (suspendedSupplier) {
+            api.get(`/suppliers/${suspendedSupplier.supplier_id}`)
+                .then(res => {
+                    const fresh = res.data?.data || res.data;
+                    setSelectedSupplier(fresh || suspendedSupplier);
+                })
+                .catch(() => setSelectedSupplier(suspendedSupplier))
+                .finally(() => setSuspendedSupplier(null));
+        }
     };
 
     return (
@@ -237,9 +284,20 @@ const SuppliersPage = ({ onNavigate }) => {
                     isOpen={!!selectedSupplier}
                     onClose={() => setSelectedSupplier(null)}
                     onSupplierUpdated={handleSupplierUpdated}
-                    initialTab="profile"
+                    initialTab={pageState?.activeTab || "profile"}
+                    onNavigate={onNavigate}
+                    onRecordPayment={handleRecordPaymentFromDrawer}
+                    hostPageKey="suppliers"
                 />
             )}
+            <RecordSupplierPaymentModal
+                isOpen={isRecordPaymentOpen}
+                onClose={handleCloseRecordPayment}
+                onRecorded={handlePaymentRecorded}
+                presetSupplier={presetPaymentSupplier}
+                presetBillId={presetPaymentBillId}
+                onNavigate={onNavigate}
+            />
         </div>
     );
 };
