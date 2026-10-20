@@ -17,11 +17,14 @@ import MathExpressionInput from '../components/ui/MathExpressionInput';
 import DiscountInput from '../components/ui/DiscountInput';
 import FreightAllocationWizard from '../components/goods-receipt/FreightAllocationWizard';
 import ReturnLineModal from '../components/goods-receipt/ReturnLineModal';
+import ImportExtractedJsonDialog from '../components/goods-receipt/ImportExtractedJsonDialog';
+import ImportReviewDrawer from '../components/goods-receipt/ImportReviewDrawer';
 import PartForm from '../components/forms/PartForm';
 import { formatCurrency } from '../utils/currency';
 import { computeCosting, markupFromPrice, roundUpTo, DEFAULT_MARKUP_PERCENT, MIN_MARKUP_PERCENT, PRICE_ROUNDING_INCREMENT, METHOD_A } from '../utils/grnCosting';
 import { useAuth } from '../contexts/AuthContext';
 import usePartDuplicateResolution from '../hooks/usePartDuplicateResolution';
+import useGrnImportReview from '../hooks/useGrnImportReview';
 import { supplierReference, flattenReferenceMatches } from '../utils/supplierReference';
 import { getNavContext, returnToOrigin, clearNavContext } from '../utils/apNavigationContract';
 
@@ -118,6 +121,9 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
     const [savingDraftRow, setSavingDraftRow] = useState(false);
     const [catalogTarget, setCatalogTarget] = useState(null);
 
+    const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+    const [isImportReviewDrawerOpen, setIsImportReviewDrawerOpen] = useState(false);
+
     const canSubmit = hasPermission('goods_receipt:submit');
     const canPost = hasPermission('goods_receipt:post');
     const canEditSuppliers = hasPermission('suppliers:edit');
@@ -147,11 +153,36 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
         recomputeSalePrice: false,
     }), [lines, freightAmount, freightMethod, overallDiscount]);
 
+    const costingByRowKey = useMemo(() => {
+        const map = new Map();
+        lines.forEach((l, i) => {
+            const key = l.line_uuid || l.client_row_key;
+            if (key) map.set(key, costing.lines[i]);
+        });
+        return map;
+    }, [lines, costing]);
+
     const costingByPart = useMemo(() => {
         const map = new Map();
         lines.forEach((l, i) => map.set(l.part_id, costing.lines[i]));
         return map;
     }, [lines, costing]);
+
+    // For duplicate parts: identify the row supplying the catalog retail price.
+    // Section 8: last eligible row in saved receipt order (greatest grn_line_id/index with sale_price != null and quantity > return_quantity).
+    const catalogPriceSuppliers = useMemo(() => {
+        const map = new Map();
+        lines.forEach((l) => {
+            if (!l.part_id) return;
+            const netQty = (Number(l.quantity) || 0) - (Number(l.return_quantity) || 0);
+            const key = l.line_uuid || l.client_row_key;
+            const computedSale = costingByRowKey.get(key)?.sale_price ?? l.sale_price;
+            if (computedSale != null && netQty > 0) {
+                map.set(l.part_id, key);
+            }
+        });
+        return new Set(map.values());
+    }, [lines, costingByRowKey]);
 
     const totals = useMemo(() => ({
         ...costing.totals,
@@ -254,6 +285,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                 grn_number: header.grn_number,
                 workflow_status: header.workflow_status,
                 supplier_invoice_no: header.supplier_invoice_no || header.physical_receipt_no || '',
+                import_provenance: header.import_provenance || null,
             });
             setSelectedSupplier(String(header.supplier_id));
             setFreightAmount(Number(header.freight_amount) || 0);
@@ -282,6 +314,8 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
             if (header.receipt_date) setReceiptDate(String(header.receipt_date).slice(0, 10));
             setLines((linesRes.data || []).map(l => ({
                 ...l,
+                line_uuid: l.line_uuid || null,
+                client_row_key: l.line_uuid || crypto.randomUUID(),
                 part_number: l.part_number || null,
                 part_numbers: l.part_numbers || null,
                 quantity: Number(l.quantity),
@@ -312,7 +346,12 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
         if (!draftLoaded) return;
         if (draft) {
             if (draft.selectedSupplier) setSelectedSupplier(draft.selectedSupplier);
-            if (draft.lines) setLines(draft.lines);
+            if (draft.lines) {
+                setLines(draft.lines.map(l => ({
+                    ...l,
+                    client_row_key: l.client_row_key || l.line_uuid || crypto.randomUUID(),
+                })));
+            }
             if (draft.selectedPO) setSelectedPO(draft.selectedPO);
             if (draft.freightAmount) setFreightAmount(draft.freightAmount);
             if (draft.freightSupplierId) setFreightSupplierId(draft.freightSupplierId);
@@ -482,6 +521,8 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                     : (l.last_sale_price != null && Number(l.last_sale_price) > 0 ? Number(l.last_sale_price) : null);
                 return {
                     ...l,
+                    client_row_key: crypto.randomUUID(),
+                    line_uuid: null,
                     cost_price: poCost,
                     sale_price: poSale,
                     display_name: l.display_name || l.custom_item_name,
@@ -613,10 +654,13 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
     };
 
     const addPartToLines = (part) => {
-        const existingLine = lines.find(line => line.part_id === part.part_id);
-        if (existingLine) {
+        const matchingLines = lines.filter(line => line.part_id === part.part_id);
+        if (matchingLines.length === 1) {
+            const targetKey = matchingLines[0].line_uuid || matchingLines[0].client_row_key;
             setLines(lines.map(line =>
-                line.part_id === part.part_id ? { ...line, quantity: line.quantity + 1 } : line
+                (line.line_uuid || line.client_row_key) === targetKey
+                    ? { ...line, quantity: line.quantity + 1 }
+                    : line
             ));
         } else {
             const defaultCost = (part.last_receipt_unit_cost != null && Number(part.last_receipt_unit_cost) > 0)
@@ -635,6 +679,8 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
 
             setLines([...lines, {
                 ...part,
+                client_row_key: crypto.randomUUID(),
+                line_uuid: null,
                 part_id: part.part_id,
                 quantity: 1,
                 cost_price: defaultCost,
@@ -651,17 +697,17 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
         setSearchTerm('');
     };
 
-    const handleLineChange = (partId, field, value) => {
+    const handleLineChange = (rowKey, field, value) => {
         const numericValue = Number.isFinite(value) ? value : 0;
         setLines(lines.map(line =>
-            line.part_id === partId ? { ...line, [field]: numericValue } : line
+            (line.line_uuid || line.client_row_key) === rowKey ? { ...line, [field]: numericValue } : line
         ));
     };
 
     // Non-numeric line fields (discount objects, rejection reasons) that handleLineChange's
     // Number coercion would destroy.
-    const setLineFields = (partId, fields) => {
-        setLines(prev => prev.map(line => (line.part_id === partId ? { ...line, ...fields } : line)));
+    const setLineFields = (rowKey, fields) => {
+        setLines(prev => prev.map(line => ((line.line_uuid || line.client_row_key) === rowKey ? { ...line, ...fields } : line)));
     };
 
     // Price and markup are two views of the same decision, so editing either updates the
@@ -669,31 +715,31 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
     // recomputes the markup it implies. Whichever the user touched last is the one kept,
     // and both columns always show the pair that actually holds — never a requested
     // markup sitting beside a price that no longer realises it.
-    const applyMarkup = (partId, markup, price) => {
-        setLineFields(partId, { effective_markup_percent: markup, sale_price: price });
+    const applyMarkup = (rowKey, markup, price) => {
+        setLineFields(rowKey, { effective_markup_percent: markup, sale_price: price });
     };
 
-    const handleMarkupChange = (partId, markup) => {
-        const landed = costingByPart.get(partId)?.landed_unit_cost || 0;
+    const handleMarkupChange = (rowKey, markup) => {
+        const landed = costingByRowKey.get(rowKey)?.landed_unit_cost || 0;
         const nextMarkup = Number.isFinite(markup) ? markup : 0;
         if (landed <= 0) {
-            applyMarkup(partId, nextMarkup, null);
+            applyMarkup(rowKey, nextMarkup, null);
             return;
         }
         const exact = Math.round(landed * (1 + nextMarkup / 100) * 100) / 100;
         const rounded = roundUpTo(exact);
         if (rounded === exact) {
-            applyMarkup(partId, nextMarkup, exact);
+            applyMarkup(rowKey, nextMarkup, exact);
             return;
         }
         // A markup someone typed deliberately is a different thing from one the system
         // assumed, so this is the one place the rounding is put to them rather than
         // applied silently. Rounding up stays the default; keeping the exact percentage
         // is there for the lines where the margin is the number that was negotiated.
-        const line = lines.find(l => l.part_id === partId);
+        const line = lines.find(l => (l.line_uuid || l.client_row_key) === rowKey);
         setMarkupRounding({
-            partId,
-            name: line?.display_name || line?.part_number || line?.part_numbers || line?.internal_sku || `Line ${partId}`,
+            rowKey,
+            name: line?.display_name || line?.part_number || line?.part_numbers || line?.internal_sku || `Line ${line?.part_id || ''}`,
             markup: nextMarkup,
             landed,
             exact,
@@ -703,27 +749,27 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
 
     const resolveMarkupRounding = (useRounded) => {
         if (!markupRounding) return;
-        const { partId, markup, landed, exact, rounded } = markupRounding;
+        const { rowKey, markup, landed, exact, rounded } = markupRounding;
         if (useRounded) {
-            applyMarkup(partId, markupFromPrice(rounded, landed) ?? markup, rounded);
+            applyMarkup(rowKey, markupFromPrice(rounded, landed) ?? markup, rounded);
         } else {
-            applyMarkup(partId, markup, exact);
+            applyMarkup(rowKey, markup, exact);
         }
         setMarkupRounding(null);
     };
 
-    const handleSalePriceChange = (partId, price) => {
-        const landed = costingByPart.get(partId)?.landed_unit_cost || 0;
+    const handleSalePriceChange = (rowKey, price) => {
+        const landed = costingByRowKey.get(rowKey)?.landed_unit_cost || 0;
         const nextPrice = Number.isFinite(price) ? price : 0;
         const derived = markupFromPrice(nextPrice, landed);
-        setLineFields(partId, {
+        setLineFields(rowKey, {
             sale_price: nextPrice,
             ...(derived != null ? { effective_markup_percent: derived } : {}),
         });
     };
 
-    const removeLine = (partId) => {
-        setLines(lines.filter(line => line.part_id !== partId));
+    const removeLine = (rowKey) => {
+        setLines(lines.filter(line => (line.line_uuid || line.client_row_key) !== rowKey));
     };
 
     const removeUncatalogedLine = (poLineId) => {
@@ -786,22 +832,29 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
     // Everything the API needs, in the shape both the one-shot post and the draft
     // endpoints accept.
     const buildPayload = () => ({
+        line_identity_version: 1,
         supplier_id: selectedSupplier,
         received_by: user.employee_id,
         bill_id: attachedBillId || null,
-        lines: lines.map(line => ({
-            part_id: line.part_id,
-            quantity: line.quantity,
-            cost_price: line.cost_price,
-            sale_price: costingByPart.get(line.part_id)?.sale_price ?? line.sale_price ?? null,
-            line_discount_percent: line.line_discount_percent ?? null,
-            line_discount_amount: line.line_discount_amount ?? null,
-            override_freight_amount: line.override_freight_amount ?? null,
-            effective_markup_percent: line.effective_markup_percent ?? DEFAULT_MARKUP_PERCENT,
-            return_quantity: line.return_quantity || 0,
-            rejection_reason: line.rejection_reason || null,
-            is_free_goods: line.is_free_goods === true,
-        })),
+        lines: lines.map((line, idx) => {
+            const rowKey = line.line_uuid || line.client_row_key;
+            const rowCosting = costingByRowKey.get(rowKey) || costing.lines[idx];
+            return {
+                line_uuid: line.line_uuid || undefined,
+                client_row_key: line.client_row_key || undefined,
+                part_id: line.part_id,
+                quantity: line.quantity,
+                cost_price: line.cost_price,
+                sale_price: rowCosting?.sale_price ?? line.sale_price ?? null,
+                line_discount_percent: line.line_discount_percent ?? null,
+                line_discount_amount: line.line_discount_amount ?? null,
+                override_freight_amount: line.override_freight_amount ?? null,
+                effective_markup_percent: line.effective_markup_percent ?? DEFAULT_MARKUP_PERCENT,
+                return_quantity: line.return_quantity || 0,
+                rejection_reason: line.rejection_reason || null,
+                is_free_goods: line.is_free_goods === true,
+            };
+        }),
         po_id: selectedPO ? selectedPO.po_id : null,
         receipt_date: receiptDate || null,
         is_backfill: isBackfill,
@@ -917,6 +970,15 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                 // must stop offering to post it as though it were still approved.
                 setStagedGrn(prev => ({ ...prev, workflow_status: 'Draft' }));
             }
+            if (res.data.identity_mappings?.length) {
+                const map = new Map(res.data.identity_mappings.map(m => [m.client_row_key, m.line_uuid]));
+                setLines(prev => prev.map(l => {
+                    if (l.client_row_key && map.has(l.client_row_key)) {
+                        return { ...l, line_uuid: map.get(l.client_row_key) };
+                    }
+                    return l;
+                }));
+            }
             // The scratch buffer's job is done once the receipt is a real document.
             clearDraft();
             return res.data.grn_id;
@@ -946,10 +1008,12 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
         const line = returnTargetLine;
         if (!line) return;
 
+        const rowKey = line.line_uuid || line.client_row_key;
+
         // Before a receipt exists on the server there is nothing to call — the rejection
         // is simply part of the document being typed.
         if (!stagedGrn) {
-            setLineFields(line.part_id, {
+            setLineFields(rowKey, {
                 return_quantity: (Number(line.return_quantity) || 0) + Number(return_quantity),
                 rejection_reason: rejection_reason === 'Other' ? `Other: ${notes}` : rejection_reason,
             });
@@ -966,7 +1030,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                 error: (err) => err?.response?.data?.message || 'Could not record the return.',
             },
         );
-        setLineFields(line.part_id, {
+        setLineFields(rowKey, {
             return_quantity: (Number(line.return_quantity) || 0) + Number(return_quantity),
             rejection_reason: rejection_reason === 'Other' ? `Other: ${notes}` : rejection_reason,
         });
@@ -1017,6 +1081,45 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
         });
     };
 
+    const importReview = useGrnImportReview({
+        onCommitted: async (commitResult) => {
+            toast.success(`Import committed as GRN ${commitResult.grn_number}!`);
+            setIsImportReviewDrawerOpen(false);
+            if (commitResult.grn_id) {
+                await loadStagedReceipt(commitResult.grn_id);
+            }
+        },
+        onError: (err) => {
+            toast.error(err?.response?.data?.message || err?.message || 'Import error');
+        },
+    });
+
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        const importIdParam = params.get('import_id') || pageState?.import_id;
+        if (importIdParam && hasPermission('goods_receipt:create')) {
+            importReview.fetchReview(importIdParam)
+                .then(() => setIsImportReviewDrawerOpen(true))
+                .catch(() => {});
+        }
+    }, [pageState]);
+
+    const handleOpenImportReview = async ({ payload, requestKey, importId }) => {
+        if (importId) {
+            await importReview.fetchReview(importId);
+        } else {
+            await importReview.createImport({
+                requestKey,
+                payload,
+                context: {
+                    supplier_id: selectedSupplier ? Number(selectedSupplier) : undefined,
+                    bill_id: attachedBillId ? Number(attachedBillId) : undefined,
+                },
+            });
+        }
+        setIsImportReviewDrawerOpen(true);
+    };
+
     if (loading) return <p className="text-gray-600 dark:text-slate-400">Loading data...</p>;
 
     const inputClass = "w-full h-9 px-2 border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 rounded-md text-sm text-center focus:outline-none focus:ring-2 focus:ring-primary-500";
@@ -1043,8 +1146,44 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                             </span>
                         </div>
                     )}
+                    {stagedGrn?.import_provenance && (
+                        <div className="mt-2 ml-2 inline-flex items-center gap-2 px-3 py-1 rounded-md bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 text-sm">
+                            <span className="text-indigo-600 dark:text-indigo-400 font-medium">Source:</span>
+                            <span className="font-mono text-xs text-indigo-900 dark:text-indigo-200">
+                                Imported JSON ({stagedGrn.import_provenance.import_id?.slice(0, 8)})
+                            </span>
+                            <button
+                                type="button"
+                                onClick={async () => {
+                                    await importReview.fetchReview(stagedGrn.import_provenance.import_id);
+                                    setIsImportReviewDrawerOpen(true);
+                                }}
+                                className="text-xs text-indigo-700 dark:text-indigo-300 underline font-semibold hover:text-indigo-900 ml-1"
+                            >
+                                View source review
+                            </button>
+                        </div>
+                    )}
                 </div>
                 <div className="flex items-center gap-2">
+                    {importReview.capabilities?.enabled && hasPermission('goods_receipt:create') && (
+                        <button
+                            type="button"
+                            onClick={() => {
+                                if (stagedGrn) {
+                                    if (window.confirm('You are currently viewing a saved receipt. Starting a new import will begin a new receipt. Continue?')) {
+                                        resetForm();
+                                        setIsImportModalOpen(true);
+                                    }
+                                } else {
+                                    setIsImportModalOpen(true);
+                                }
+                            }}
+                            className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition text-sm font-medium flex items-center gap-1.5 shadow-xs"
+                        >
+                            <Icon path={ICONS.download || ICONS.document} className="h-4 w-4" /> Import extracted JSON
+                        </button>
+                    )}
                     <button
                         onClick={() => onNavigate('goods_receipt_drafts')}
                         className="px-4 py-2 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-200 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition text-sm font-medium flex items-center gap-1.5"
@@ -1555,7 +1694,8 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                         </thead>
                         <tbody>
                             {lines.map((line, index) => {
-                              const computed = costing.lines[index] || costingByPart.get(line.part_id);
+                              const rowKey = line.line_uuid || line.client_row_key || `row_${index}`;
+                              const computed = costing.lines[index] || costingByRowKey.get(rowKey) || costingByPart.get(line.part_id);
                               const belowMinMarkup = (computed?.landed_unit_cost || 0) > 0
                                   && (computed?.effective_markup_percent ?? DEFAULT_MARKUP_PERCENT) < MIN_MARKUP_PERCENT;
                               const returned = Number(line.return_quantity) || 0;
@@ -1569,8 +1709,10 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                               // A cost of zero that nobody has claimed as a giveaway. The line
                               // still delivers stock; it just will not move the average cost.
                               const isUncosted = computed?.is_uncosted === true;
+                              const duplicateCount = lines.filter(l => l.part_id && l.part_id === line.part_id).length;
+                              const isCatalogPriceSupplier = catalogPriceSuppliers.has(rowKey);
                               return (
-                                <tr key={line.po_line_id || line.part_id} className="border-b border-gray-100 dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-700/40 transition-colors">
+                                <tr key={rowKey} className="border-b border-gray-100 dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-700/40 transition-colors">
                                     <td className="p-2 align-middle">
                                         <div className="flex items-center justify-between gap-2">
                                             <div className="min-w-0 flex-1">
@@ -1585,6 +1727,11 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                                                 {line.stock_on_hand !== undefined && line.stock_on_hand !== null && (
                                                     <div className={`text-xs font-medium ${Number(line.stock_on_hand) > 0 ? 'text-gray-500 dark:text-slate-400' : 'text-danger-600 dark:text-danger-400'}`}>
                                                         {Number(line.stock_on_hand) || 0} in stock
+                                                    </div>
+                                                )}
+                                                {duplicateCount > 1 && (
+                                                    <div className={`text-[11px] font-semibold mt-0.5 ${isCatalogPriceSupplier ? 'text-indigo-600 dark:text-indigo-400' : 'text-gray-400 dark:text-slate-500'}`}>
+                                                        {isCatalogPriceSupplier ? '✓ Updates catalog price' : 'Duplicate part (won’t update catalog)'}
                                                     </div>
                                                 )}
                                                 {returned > 0 && (
@@ -1617,7 +1764,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                                     <td className="p-2 align-middle">
                                         <MathExpressionInput
                                             value={line.quantity}
-                                            onChange={value => handleLineChange(line.part_id, 'quantity', value)}
+                                            onChange={value => handleLineChange(rowKey, 'quantity', value)}
                                             className={inputClass}
                                             disabled={!line.part_id}
                                         />
@@ -1625,7 +1772,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                                     <td className="p-2 align-middle">
                                         <MathExpressionInput
                                             value={line.cost_price}
-                                            onChange={value => handleLineChange(line.part_id, 'cost_price', value)}
+                                            onChange={value => handleLineChange(rowKey, 'cost_price', value)}
                                             className={inputClass}
                                             disabled={isFree || !line.part_id}
                                         />
@@ -1634,7 +1781,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                                                 <input
                                                     type="checkbox"
                                                     checked={isFree}
-                                                    onChange={e => setLineFields(line.part_id, {
+                                                    onChange={e => setLineFields(rowKey, {
                                                         is_free_goods: e.target.checked,
                                                         // Marking a line free is a claim that it cost nothing, so the
                                                         // cost has to actually go to zero — the database rejects a
@@ -1658,7 +1805,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                                             compact
                                             percent={line.line_discount_percent ?? null}
                                             amount={line.line_discount_amount ?? null}
-                                            onChange={({ percent, amount }) => setLineFields(line.part_id, {
+                                            onChange={({ percent, amount }) => setLineFields(rowKey, {
                                                 line_discount_percent: percent,
                                                 line_discount_amount: amount,
                                             })}
@@ -1680,7 +1827,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                                     <td className="p-2 align-middle">
                                         <MathExpressionInput
                                             value={computed?.effective_markup_percent ?? line.effective_markup_percent ?? DEFAULT_MARKUP_PERCENT}
-                                            onChange={value => handleMarkupChange(line.part_id, value)}
+                                            onChange={value => handleMarkupChange(rowKey, value)}
                                             className={`${inputClass} ${belowMinMarkup ? 'border-danger-400 dark:border-danger-600' : ''}`}
                                             aria-label={`Markup for ${line.display_name || line.part_id}`}
                                         />
@@ -1688,7 +1835,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                                     <td className="p-2 align-middle">
                                         <MathExpressionInput
                                             value={computed?.sale_price ?? line.sale_price ?? ''}
-                                            onChange={value => handleSalePriceChange(line.part_id, value)}
+                                            onChange={value => handleSalePriceChange(rowKey, value)}
                                             className={`${inputClass} ${belowMinMarkup ? 'border-danger-400 dark:border-danger-600' : ''}`}
                                         />
                                         {belowMinMarkup && (
@@ -1710,7 +1857,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                                                 <Icon path={ICONS.undo || ICONS.close} className="h-5 w-5"/>
                                             </button> : null}
                                             <button
-                                                onClick={() => line.part_id ? removeLine(line.part_id) : removeUncatalogedLine(line.po_line_id)}
+                                                onClick={() => line.part_id ? removeLine(rowKey) : removeUncatalogedLine(line.po_line_id)}
                                                 className="inline-flex items-center justify-center h-8 w-8 text-danger-500 dark:text-danger-400 hover:text-danger-700 dark:hover:text-danger-300 rounded hover:bg-danger-50 dark:hover:bg-danger-900/30"
                                                 title="Remove"
                                             >
@@ -2017,6 +2164,34 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                 _lines={lines}
             />
             <DuplicateDialog />
+
+            <ImportExtractedJsonDialog
+                isOpen={isImportModalOpen}
+                onClose={() => setIsImportModalOpen(false)}
+                onOpenReview={handleOpenImportReview}
+                hasDirtyManualForm={!stagedGrn && (lines.length > 0 || !!selectedSupplier || !!physicalReceiptNo)}
+                onSaveManualDraftFirst={handleSaveAsDraft}
+            />
+
+            <ImportReviewDrawer
+                isOpen={isImportReviewDrawerOpen}
+                onClose={() => setIsImportReviewDrawerOpen(false)}
+                reviewState={importReview.review?.review_state}
+                sourcePayload={importReview.review?.source_payload}
+                version={importReview.review?.version}
+                blockers={importReview.review?.blockers || []}
+                suppliers={suppliers}
+                saving={importReview.saving}
+                committing={importReview.committing}
+                hasUnsavedChanges={importReview.hasUnsavedChanges}
+                candidatesByRow={importReview.candidatesByRow}
+                candidatesLoadingRow={importReview.candidatesLoadingRow}
+                onQueueAction={importReview.queueAction}
+                onSaveReview={importReview.saveReview}
+                onFetchCandidates={importReview.fetchCandidates}
+                onAbandonReview={importReview.abandonReview}
+                onCommitReview={importReview.commitReview}
+            />
         </div>
     );
 };

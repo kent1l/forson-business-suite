@@ -60,8 +60,9 @@ const FreightAllocationWizard = ({
   const [overrides, setOverrides] = useState(() => {
     const seed = {};
     lines.forEach((l) => {
+      const rowKey = l.line_uuid || l.client_row_key || l.part_id;
       if (l.override_freight_amount != null && l.override_freight_amount !== '') {
-        seed[l.part_id] = Number(l.override_freight_amount);
+        seed[rowKey] = Number(l.override_freight_amount);
       }
     });
     return seed;
@@ -191,10 +192,13 @@ const FreightAllocationWizard = ({
     });
   };
 
-  const workingLines = useMemo(() => lines.map((l) => ({
-    ...l,
-    override_freight_amount: overrides[l.part_id] ?? null,
-  })), [lines, overrides]);
+  const workingLines = useMemo(() => lines.map((l) => {
+    const rowKey = l.line_uuid || l.client_row_key || l.part_id;
+    return {
+      ...l,
+      override_freight_amount: overrides[rowKey] !== undefined ? overrides[rowKey] : (overrides[l.part_id] ?? null),
+    };
+  }), [lines, overrides]);
 
   const costing = useMemo(() => computeCosting({
     lines: workingLines,
@@ -221,11 +225,11 @@ const FreightAllocationWizard = ({
     return !overAllocated;
   }, [step, totalFreightAmount, freightCosts, overAllocated]);
 
-  const setOverride = (partId, value) => {
+  const setOverride = (rowKey, value) => {
     setOverrides((prev) => {
       const next = { ...prev };
-      if (value == null || value === '' || Number(value) <= 0) delete next[partId];
-      else next[partId] = Number(value);
+      if (value == null || value === '' || Number(value) <= 0) delete next[rowKey];
+      else next[rowKey] = Number(value);
       return next;
     });
   };
@@ -501,23 +505,27 @@ const FreightAllocationWizard = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 dark:divide-slate-800">
-                {workingLines.map((line, i) => (
-                  <tr key={line.part_id} className={overrides[line.part_id] != null ? 'bg-amber-50/60 dark:bg-amber-900/10' : ''}>
-                    <td className="px-3 py-2 text-gray-900 dark:text-slate-100">{line.display_name || line.part_number || line.part_numbers || line.internal_sku || `Part ${line.part_id}`}</td>
-                    <td className="px-3 py-2 text-right tabular-nums text-gray-600 dark:text-slate-400">{line.quantity}</td>
-                    <td className="px-3 py-2 text-right tabular-nums text-gray-600 dark:text-slate-400">
-                      {formatCurrency(costing.lines[i]?.net_line_value ?? 0)}
-                    </td>
-                    <td className="px-3 py-2">
-                      <MathExpressionInput
-                        value={overrides[line.part_id] ?? ''}
-                        onChange={(v) => setOverride(line.part_id, v)}
-                        className={inputClass}
-                        aria-label={`Flat freight for ${line.display_name || line.part_number || line.part_numbers || line.internal_sku || line.part_id}`}
-                      />
-                    </td>
-                  </tr>
-                ))}
+                {workingLines.map((line, i) => {
+                  const rowKey = line.line_uuid || line.client_row_key || line.part_id;
+                  const overrideVal = overrides[rowKey] !== undefined ? overrides[rowKey] : overrides[line.part_id];
+                  return (
+                    <tr key={rowKey} className={overrideVal != null ? 'bg-amber-50/60 dark:bg-amber-900/10' : ''}>
+                      <td className="px-3 py-2 text-gray-900 dark:text-slate-100">{line.display_name || line.part_number || line.part_numbers || line.internal_sku || `Part ${line.part_id}`}</td>
+                      <td className="px-3 py-2 text-right tabular-nums text-gray-600 dark:text-slate-400">{line.quantity}</td>
+                      <td className="px-3 py-2 text-right tabular-nums text-gray-600 dark:text-slate-400">
+                        {formatCurrency(costing.lines[i]?.net_line_value ?? 0)}
+                      </td>
+                      <td className="px-3 py-2">
+                        <MathExpressionInput
+                          value={overrideVal ?? ''}
+                          onChange={(v) => setOverride(rowKey, v)}
+                          className={inputClass}
+                          aria-label={`Flat freight for ${line.display_name || line.part_number || line.part_numbers || line.internal_sku || line.part_id}`}
+                        />
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -550,11 +558,13 @@ const FreightAllocationWizard = ({
               <tbody className="divide-y divide-gray-100 dark:divide-slate-800">
                 {workingLines.map((line, i) => {
                   const c = costing.lines[i];
+                  const rowKey = line.line_uuid || line.client_row_key || line.part_id;
+                  const overrideVal = overrides[rowKey] !== undefined ? overrides[rowKey] : overrides[line.part_id];
                   return (
-                    <tr key={line.part_id}>
+                    <tr key={rowKey}>
                       <td className="px-3 py-2 text-gray-900 dark:text-slate-100">
                         {line.display_name || line.part_number || line.part_numbers || line.internal_sku || `Part ${line.part_id}`}
-                        {overrides[line.part_id] != null && (
+                        {overrideVal != null && (
                           <span className="ml-2 text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">flat</span>
                         )}
                       </td>
