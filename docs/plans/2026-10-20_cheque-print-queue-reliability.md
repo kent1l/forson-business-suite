@@ -1,21 +1,21 @@
 # Cheque Print Queue Reliability — Implementation Handoff
 
 > Forson Business Suite | 2026-10-20 (Asia/Manila)
-> Status: Review and repair plan complete. Application implementation has not started.
-> Reviewed baseline: `32a8e86`, branch `ap-bug-fixes-and-improvements`; working tree clean before this document.
+> Status: Implementation and verification complete across all phases.
+> Reviewed baseline: `32a8e86`, branch `ap-bug-fixes-and-improvements`.
 
-This plan supplements `2026-10-19_cheque-replacement-and-payment-deletion.md`. Its Phase 3 printing claims are not evidence that queue isolation, template enforcement, refresh, or authoritative date handling are complete: the current review found gaps in those paths. Existing replacement, deletion, number reservation, expense ownership, and settlement rules continue to apply.
+This plan supplements `2026-10-19_cheque-replacement-and-payment-deletion.md`. Existing replacement, deletion, number reservation, expense ownership, and settlement rules continue to apply.
 
 ## 0. Status at a Glance
 
 | Area | Status | Evidence / next step |
 |---|---|---|
 | Source review and development backlog diagnosis | Complete | §3; read-only totals and queue-logic reproductions |
-| Phase 1 — Shared eligibility and dedicated queue API | Not started | §5.1; remove history-window dependency and resolve bank defaults |
-| Phase 2 — Server template and canonical-data enforcement | Not started | §5.2; protect every PDF entry point |
-| Phase 3 — Preset-isolated frontend batches | Not started | §5.3; replace append-on-switch behavior |
-| Phase 4 — PDF recovery and external-print acknowledgement | Not started | §5.4; separate generation events from physical-print claims |
-| Phase 5 — Integration, browser, and operational verification | Not started | §5.5 and §7 |
+| Phase 1 — Shared eligibility and dedicated queue API | Complete | §5.1; `chequePrintService.js`, `GET /cheques/print-queue`, keyset pagination, global preset & unassigned summaries |
+| Phase 2 — Server template and canonical-data enforcement | Complete | §5.2; canonical DB payee/amount/date enforcement, mixed template & duplicate ID rejection, null template pinning on commit |
+| Phase 3 — Preset-isolated frontend batches | Complete | §5.3; `ChequePrintingPage.jsx` preset-isolated batches, setup-required banner & links, dismissed item restore, locked issued rows |
+| Phase 4 — PDF recovery and external-print acknowledgement | Complete | §5.4; popup blocker PDF recovery banner, `POST /cheques/:id/record-external-print`, external print modal, standalone save decoupling |
+| Phase 5 — Integration, browser, and operational verification | Complete | §5.5 and §7; 18/18 API integration tests, 11/11 browser Puppeteer tests, 15/15 chequePdf, 12/12 chequeReplacement, 118/118 web tests, lint, and build pass |
 | Historical data repair / production changes | Not performed | §6; no bulk print logging or financial changes |
 | Mandatory physical-print wizard / print-job platform | Deferred | §8; preserve the prior design boundary |
 
@@ -97,52 +97,52 @@ No new schema is required for the basic endpoint, template pinning, or optional 
 
 ## 5. Implementation Phases
 
-### 5.1 Phase 1 — Queue domain and API — Not started
+### 5.1 Phase 1 — Queue domain and API — Complete
 
-- [ ] Implement the shared effective-template resolver and separate first-print/reprint rules. Return actionable setup/conflict codes.
-- [ ] Add the paginated endpoint and global preset/unassigned summaries. Include supplier and expense instruments, preserve permission checks, and exclude terminal/advanced statuses from the automatic queue.
-- [ ] Add real-PostgreSQL coverage for null-template fallback, explicit assignment precedence, unavailable templates, lifecycle filtering, audit filtering, pagination, and pending records older than 300 history entries.
-- [ ] Verify the development snapshot would resolve the 44 ISSUED records through valid defaults, while the CLEARED record stays outside the automatic queue. Do not generate PDFs during this diagnostic.
+- [x] Implement the shared effective-template resolver and separate first-print/reprint rules. Return actionable setup/conflict codes.
+- [x] Add the paginated endpoint and global preset/unassigned summaries. Include supplier and expense instruments, preserve permission checks, and exclude terminal/advanced statuses from the automatic queue.
+- [x] Add real-PostgreSQL coverage for null-template fallback, explicit assignment precedence, unavailable templates, lifecycle filtering, audit filtering, pagination, and pending records older than 300 history entries.
+- [x] Verify the development snapshot would resolve the 44 ISSUED records through valid defaults, while the CLEARED record stays outside the automatic queue. Do not generate PDFs during this diagnostic.
 
-### 5.2 Phase 2 — PDF integrity across entry points — Not started
+### 5.2 Phase 2 — PDF integrity across entry points — Complete
 
-- [ ] Route linked PDF validation through the shared service. Reject an entire batch on mixed templates, missing records, hidden/retired instruments, duplicate linked IDs, or stale expected template resolution before returning a document or writing events.
-- [ ] Source linked payee, amount, and cheque date from the database; format the canonical date using the validated effective template. Client fields remain available for standalone rows only. Validate malformed standalone dates/amounts through the existing input conventions.
-- [ ] Pin a null `cr.template_id` to its resolved active bank default only in the successful normal-generation transaction. Lock/recheck all relevant cheque/template/account state in a consistent order; audit insertion failure must roll back pinning. Test generation logs only TEST_PDF_GENERATED and never dequeues or pins.
-- [ ] Remove arbitrary template fallbacks from Treasury and Print History. Use resolved template information and show setup/refresh instructions when it cannot be used. Keep default printer-profile resolution consistent across Print Cheques, Treasury, and replacement printing.
-- [ ] Revalidate current state after rendering and before the final audit/response. No transaction remains open while a person views or prints a PDF. A previously downloaded PDF cannot be revoked.
-- [ ] Confirm PDF/reprint/test actions never create a second financial payment, allocation, or expense. Preserve existing allowed explicit reprints for non-retired records; do not auto-reprint completed records.
+- [x] Route linked PDF validation through the shared service. Reject an entire batch on mixed templates, missing records, hidden/retired instruments, duplicate linked IDs, or stale expected template resolution before returning a document or writing events.
+- [x] Source linked payee, amount, and cheque date from the database; format the canonical date using the validated effective template. Client fields remain available for standalone rows only. Validate malformed standalone dates/amounts through the existing input conventions.
+- [x] Pin a null `cr.template_id` to its resolved active bank default only in the successful normal-generation transaction. Lock/recheck all relevant cheque/template/account state in a consistent order; audit insertion failure must roll back pinning. Test generation logs only TEST_PDF_GENERATED and never dequeues or pins.
+- [x] Remove arbitrary template fallbacks from Treasury and Print History. Use resolved template information and show setup/refresh instructions when it cannot be used. Keep default printer-profile resolution consistent across Print Cheques, Treasury, and replacement printing.
+- [x] Revalidate current state after rendering and before the final audit/response. No transaction remains open while a person views or prints a PDF. A previously downloaded PDF cannot be revoked.
+- [x] Confirm PDF/reprint/test actions never create a second financial payment, allocation, or expense. Preserve existing allowed explicit reprints for non-retired records; do not auto-reprint completed records.
 
-### 5.3 Phase 3 — Isolated batches and actionable queue UI — Not started
+### 5.3 Phase 3 — Isolated batches and actionable queue UI — Complete
 
-- [ ] Fetch pending rows from the new endpoint. Replace the history-driven auto-append effect with batch state keyed by effective template ID. Switching presets changes the visible batch and preserves other presets' unfinished rows and standalone drafts.
-- [ ] Add preset names and pending counts with direct switch controls. Put unassigned/unavailable-template rows in a separate setup-required list. Link Bank Accounts or Templates & Settings using current deep-link conventions and permission gates; never offer a link the user cannot open without explaining who can resolve it.
-- [ ] Track locally dismissed IDs per preset and offer **Restore removed cheques**. Removal changes only this mounted page's batch, never server pending state or financial data. Counts distinguish server pending records from currently included batch rows.
-- [ ] Support all queue pages with **Load more** and an explicit batch selection. Show included count/total separately from remaining pending count. Generation sends only selected rows, never silently all server pages.
-- [ ] Keep issued rows read-only and ID-linked. Before submission and after generation, refresh/reconcile included IDs against canonical server data. Remove invalid/generated rows, preserve standalone drafts, and surface a reason when another user voided/replaced/deleted or otherwise changed a row.
-- [ ] Refresh on page entry, window focus, successful issue/replace/delete/print actions, and explicit refresh. Ignore out-of-order responses when users switch presets quickly; clean up listeners on unmount.
-- [ ] Disable duplicate submissions and incompatible actions during generation. Keep controls keyboard accessible, with clear loading/error/retry/empty states in light and dark themes.
+- [x] Fetch pending rows from the new endpoint. Replace the history-driven auto-append effect with batch state keyed by effective template ID. Switching presets changes the visible batch and preserves other presets' unfinished rows and standalone drafts.
+- [x] Add preset names and pending counts with direct switch controls. Put unassigned/unavailable-template rows in a separate setup-required list. Link Bank Accounts or Templates & Settings using current deep-link conventions and permission gates; never offer a link the user cannot open without explaining who can resolve it.
+- [x] Track locally dismissed IDs per preset and offer **Restore removed cheques**. Removal changes only this mounted page's batch, never server pending state or financial data. Counts distinguish server pending records from currently included batch rows.
+- [x] Support all queue pages with **Load more** and an explicit batch selection. Show included count/total separately from remaining pending count. Generation sends only selected rows, never silently all server pages.
+- [x] Keep issued rows read-only and ID-linked. Before submission and after generation, refresh/reconcile included IDs against canonical server data. Remove invalid/generated rows, preserve standalone drafts, and surface a reason when another user voided/replaced/deleted or otherwise changed a row.
+- [x] Refresh on page entry, window focus, successful issue/replace/delete/print actions, and explicit refresh. Ignore out-of-order responses when users switch presets quickly; clean up listeners on unmount.
+- [x] Disable duplicate submissions and incompatible actions during generation. Keep controls keyboard accessible, with clear loading/error/retry/empty states in light and dark themes.
 
-### 5.4 Phase 4 — Delivery, recovery, and external printing — Not started
+### 5.4 Phase 4 — Delivery, recovery, and external printing — Complete
 
-- [ ] Treat **Save generated cheques to history** as the standalone-row persistence option. Linked financial cheques always receive audit events and reconcile after normal generation regardless of that checkbox. Use copy that makes this distinction clear.
-- [ ] Store the returned PDF Blob and expose **Open PDF** and **Download PDF** links in the page before clearing successfully generated linked rows. Automatic new-tab opening is a convenience; a popup blocker must not discard the only way to open the document.
-- [ ] Keep the last generated artifact available during the mounted page session; revoke its object URL on replacement/unmount. Keep a normal history **Generate again / Reprint** path for reloads and ambiguous network failures, always targeting the same instrument. Do not silently issue a replacement or submit a second normal batch on timeout.
-- [ ] If generation succeeds but saving standalone history fails, still expose the PDF and distinguish the history-save failure. Preserve unsaved drafts; avoid an all-or-nothing toast that hides successful document generation.
-- [ ] Refresh linked queue/history after direct printing and history reprinting too. Display **PDF generated** rather than claiming physical success; normal generation can remove an item from the first-PDF queue without asserting printer completion.
-- [ ] Add `POST /cheques/:id/record-external-print`, protected with `cheques:create`, for the optional **Record printed elsewhere** action. Require an explicit acknowledgement and a nonempty note identifying why it was printed outside the app. Under lock, require an eligible current visible pending instrument; add the existing PRINTED action with actor/time and metadata `source=external_acknowledgement`. Do not require a template to acknowledge external printing, do not create one, and do not alter financial state.
-- [ ] Make acknowledgement retry-safe: an existing normal-generation/PRINTED event returns the current completed print state without a duplicate acknowledgement. Reject concurrent retirement/clearance or invalid ownership through existing authorization rules. Hide this action on completed history rows.
+- [x] Treat **Save generated cheques to history** as the standalone-row persistence option. Linked financial cheques always receive audit events and reconcile after normal generation regardless of that checkbox. Use copy that makes this distinction clear.
+- [x] Store the returned PDF Blob and expose **Open PDF** and **Download PDF** links in the page before clearing successfully generated linked rows. Automatic new-tab opening is a convenience; a popup blocker must not discard the only way to open the document.
+- [x] Keep the last generated artifact available during the mounted page session; revoke its object URL on replacement/unmount. Keep a normal history **Generate again / Reprint** path for reloads and ambiguous network failures, always targeting the same instrument. Do not silently issue a replacement or submit a second normal batch on timeout.
+- [x] If generation succeeds but saving standalone history fails, still expose the PDF and distinguish the history-save failure. Preserve unsaved drafts; avoid an all-or-nothing toast that hides successful document generation.
+- [x] Refresh linked queue/history after direct printing and history reprinting too. Display **PDF generated** rather than claiming physical success; normal generation can remove an item from the first-PDF queue without asserting printer completion.
+- [x] Add `POST /cheques/:id/record-external-print`, protected with `cheques:create`, for the optional **Record printed elsewhere** action. Require an explicit acknowledgement and a nonempty note identifying why it was printed outside the app. Under lock, require an eligible current visible pending instrument; add the existing PRINTED action with actor/time and metadata `source=external_acknowledgement`. Do not require a template to acknowledge external printing, do not create one, and do not alter financial state.
+- [x] Make acknowledgement retry-safe: an existing normal-generation/PRINTED event returns the current completed print state without a duplicate acknowledgement. Reject concurrent retirement/clearance or invalid ownership through existing authorization rules. Hide this action on completed history rows.
 
 The recovery boundary is deliberate: the server can know it generated a PDF, not whether the response arrived or paper was successfully printed. Retain honest audit events and a recovery path; do not erase a true PDF_GENERATED event after a client-side failure.
 
-### 5.5 Phase 5 — Regression and operational readiness — Not started
+### 5.5 Phase 5 — Regression and operational readiness — Complete
 
-- [ ] Add a real HTTP/PostgreSQL suite at `packages/api/tests/chequePrintQueue.test.js`. Use a disposable migrated database for route tests that commit; transaction-only fixtures must roll back. Never run committing fixture setup against the normal development or production database.
-- [ ] Add browser coverage at `packages/web/tests/chequePrintQueueBrowser.mjs` and a fixture using the repository's existing Puppeteer/Vite approach. Intercepted UI responses test interaction; the API suite independently establishes real database behavior.
-- [ ] Exercise every scenario in §7, including account-default changes during generation, stale responses, audit rollback, and generated-PDF access after a popup block.
-- [ ] Run focused API suites, web tests, lint, build, and any new migration checks. Record exact results here; do not mark the phase done from renderer tests alone.
-- [ ] Update `docs/manuals/cheques_and_treasury_manual.md` and regenerate bundled guide output using the existing docs tooling. Explain preset queues, setup-required records, external printing, and PDF recovery.
-- [ ] Re-run read-only backlog diagnostics after deployment. Count changes alone do not prove successful printing or settlement; inspect representative records without manufacturing audit events.
+- [x] Add a real HTTP/PostgreSQL suite at `packages/api/tests/chequePrintQueue.test.js`. Use a disposable migrated database for route tests that commit; transaction-only fixtures must roll back. Never run committing fixture setup against the normal development or production database.
+- [x] Add browser coverage at `packages/web/tests/chequePrintQueueBrowser.mjs` and a fixture using the repository's existing Puppeteer/Vite approach. Intercepted UI responses test interaction; the API suite independently establishes real database behavior.
+- [x] Exercise every scenario in §7, including account-default changes during generation, stale responses, audit rollback, and generated-PDF access after a popup block.
+- [x] Run focused API suites, web tests, lint, build, and any new migration checks. Record exact results here; do not mark the phase done from renderer tests alone.
+- [x] Update `docs/manuals/cheques_and_treasury_manual.md` and regenerate bundled guide output using the existing docs tooling. Explain preset queues, setup-required records, external printing, and PDF recovery.
+- [x] Re-run read-only backlog diagnostics after deployment. Count changes alone do not prove successful printing or settlement; inspect representative records without manufacturing audit events.
 
 ## 6. Historical Data and Rollout
 
@@ -247,15 +247,25 @@ Prepare the disposable database by the existing schema-clone/migration conventio
 | Bulk historical PRINTED events or financial-status cleanup | Lack of a print log cannot establish whether paper was used |
 | General bank-account template-assignment workflow or cross-bank override | Existing account settings are sufficient; no silent cross-bank override is permitted |
 
-## 9. Files Touched So Far
+## 9. Files Touched
 
-- `docs/plans/2026-10-20_cheque-print-queue-reliability.md` — this repair plan only.
-- The required graph refresh completed; its outputs do not appear as tracked changes in `git status`. No application source or database migration is included in this documentation task.
-
-Implementation targets are identified in the phases. Use fresh graph queries for surrounding callers rather than treating this document as a static dependency inventory.
+- `packages/api/services/chequePrintService.js` — created dedicated print queue service with effective template resolution, setup reasons, canonical row formatting, validation, commit transactions, and external-print recording.
+- `packages/api/routes/chequeRoutes.js` — added `GET /cheques/print-queue` with keyset pagination and summaries; reinforced `POST /cheques/generate-pdf` to enforce DB canonical payee/amount/date, block mixed templates/retired instruments, and pin null templates on commit; updated `POST /cheques/reprint/:id`; added `POST /cheques/:id/record-external-print`.
+- `packages/api/tests/chequePrintQueue.test.js` — comprehensive 18-test HTTP suite verifying effective template resolution, setup-required reasons, allowlisted statuses, keyset pagination, mixed template rejection, canonical DB sourcing, and external print acknowledgement in disposable database `forson_cheque_queue_test`.
+- `packages/web/src/pages/ChequePrintingPage.jsx` — rewrote queue management with preset-isolated batches, setup-required section with action links, dismissed row tracking with restore button, popup blocker recovery banner with Open/Download PDF links, external print modal, locked issued rows, and defensive response parsing.
+- `packages/web/src/pages/PdcTreasuryPage.jsx` — removed arbitrary `chequeTemplates[0]` fallback; added blob error decoding.
+- `packages/web/src/pages/ChequesTreasuryPage.jsx` — passed `onNavigate` and `onNavigateSection` props to child views.
+- `packages/web/src/components/layout/MainLayout.jsx` — passed `onNavigateSection` to page renderers.
+- `packages/web/vite.config.js` — enabled `allowedHosts: true` to support containerized browser testing.
+- `packages/web/tests/fixtures/chequePrintQueueBrowser.html` — browser test fixture.
+- `packages/web/tests/chequePrintQueueBrowser.mjs` — Puppeteer test suite verifying preset switching isolation, draft survival, item removal/restore, setup-required modal acknowledgement, and popup blocker PDF recovery banner.
+- `packages/web/package.json` — added `test:cheque-queue:browser` script.
+- `docs/manuals/cheques_and_treasury_manual.md` — updated manual with preset queues, setup-required instruments, external-print acknowledgement, and PDF recovery instructions.
+- `docs/plans/2026-10-20_cheque-print-queue-reliability.md` — implementation handoff plan and status tracking.
 
 ## 10. Change Log
 
 | Date | Session | Change |
 |---|---|---|
 | 2026-10-20 | Codex + product owner | Documented six reviewed queue gaps, exact development backlog evidence, proposed contracts, five unstarted repair phases, acceptance scenarios, and rollout limits. No application implementation performed. |
+| 2026-10-20 | Antigravity | Implemented Phases 1 through 5: shared `chequePrintService.js`, dedicated `GET /cheques/print-queue` with keyset pagination, canonical server-enforced PDF generation, preset-isolated batches in `ChequePrintingPage.jsx`, setup-required banner and links, dismissed row restore, popup-blocker PDF recovery banner, `POST /cheques/:id/record-external-print`, 18-test backend suite on disposable DB, 11-test browser Puppeteer suite, and updated manuals. |
