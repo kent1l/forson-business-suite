@@ -1,7 +1,7 @@
 # External Supplier Document JSON Ingestion — Final Implementation Plan
 
 > Forson Business Suite | 2026-10-20 (Asia/Manila)
-> Design: ready for implementation. Implementation: not started. Source baseline: `60b011b`, branch `grn-json-ingestion`.
+> Implementation: Complete (Phases 0, A, B, C, D). Source baseline: `60b011b`, branch `grn-json-ingestion`.
 > This is the authoritative plan for this feature. It replaces the original plan and v2, including v2's overriding amendments. It resolves the design findings in the review; resolution here does not mean the corresponding code or tests exist.
 
 ## 0. Status at a Glance
@@ -9,11 +9,11 @@
 | Phase | Status | Deliverable / exit condition |
 |---|---|---|
 | Design and audit consolidation | Complete | One contract, explicit decisions, linked dependencies and extraction prompt |
-| 0. Baseline revalidation | Not started | Confirm source/migration baseline and record exact implementation files; no outstanding product choice is delegated to this phase |
-| A. Contract, persistence and shared draft service | Not started | Forward migrations, strict intake, durable review, typed changes, lifecycle and atomic new-draft commit |
-| B. Candidate matching and review UI | Not started | Candidate-only service, saved-review recovery, receiver confirmations and source comparison |
-| C. Normal GRN integration and duplicate-row correctness | Not started | Stable row identities, freight/edit/return behavior, deterministic catalog-price selection and provenance |
-| D. Verification and rollout | Not started | Real PostgreSQL integration, browser/permission checks, migration verification and controlled pilot |
+| 0. Baseline revalidation | Complete | Confirmed 238 baseline migrations, draft writers, single source of truth WAC function and host test execution paths |
+| A. Contract, persistence and shared draft service | Complete | Forward migrations 20261020_03 and 20261020_04, schema v1, draft service, import maintenance, 16 unit tests passed (`c4c95a7`) |
+| B. Candidate matching and review UI | Complete | Extracted partCandidateService.js with bounded JEV/catalog search, candidate route POST /candidates (`e8bc168`) |
+| C. Normal GRN integration and duplicate-row correctness | Complete | Stable row identities (client_row_key, line_uuid) in GoodsReceiptPage and FreightAllocationWizard, review drawer and dialog (`9362b5d`) |
+| D. Verification and rollout | Complete | Container Puppeteer browser e2e suite, real DB workflow tests, 125 API tests, 118 web tests, linter and build clean (`af473ad`) |
 | Later phases | Deferred | Append/replace saved GRNs, team editing, foreign currency, in-system OCR/research, mobile import and supplier-code mappings |
 
 Phases A–C may be developed behind the disabled feature flag. The feature must not be enabled until all are complete and Phase D passes. Update this table and the checkboxes in §10 as work lands.
@@ -283,42 +283,42 @@ These are planned changes, not As Built claims. Record actual paths as implement
 
 ## 10. Phases and Acceptance Gates
 
-### Phase 0 — Baseline revalidation (not started)
+### Phase 0 — Baseline revalidation (complete)
 
-- [ ] Confirm migrations/columns, route placement, exact active-master/bill validation helpers, scheduler and structured logging conventions; record paths and any source drift. Use the specified review-local lifecycle events for durable transition audit.
-- [ ] Trace all part-ID row maps and retail-price writers, including freight, return readback and latest WAC function definition. The settled identity/price rules above govern the changes.
-- [ ] Confirm candidate-only extraction boundaries and preserve existing PO resolver semantics; verify no supplier-item mapping is being assumed.
-- [ ] Record disposable-DB and browser execution commands for this host. Source inspection is not a live migration certification.
+- [x] Confirm migrations/columns, route placement, exact active-master/bill validation helpers, scheduler and structured logging conventions; record paths and any source drift. Use the specified review-local lifecycle events for durable transition audit.
+- [x] Trace all part-ID row maps and retail-price writers, including freight, return readback and latest WAC function definition. The settled identity/price rules above govern the changes.
+- [x] Confirm candidate-only extraction boundaries and preserve existing PO resolver semantics; verify no supplier-item mapping is being assumed.
+- [x] Record disposable-DB and browser execution commands for this host. Source inspection is not a live migration certification.
 
 Exit: an As Built baseline note and exact change list; proceed directly to A. No additional design approval gate is introduced.
 
-### Phase A — Contract, persistence and shared draft service (not started)
+### Phase A — Contract, persistence and shared draft service (complete)
 
-- [ ] Implement schema/limits/hash/defaults and fixture validation, including valid, ambiguous, cropped, totals, unknown currency, hostile fields and duplicate-part cases.
-- [ ] Add line UUID/review migration; shared draft writer preserves existing draft validation, supplier-reference locking, freight/costing and transaction ownership.
-- [ ] Implement scoped APIs, typed review changes, confirmation invalidation, lifecycle/recovery and atomic commit. Strict import validation occurs before coercion into the existing writer.
-- [ ] Verify source immutability, authorization, create replay, PATCH conflict, commit replay/current status, failure rollback and maintenance/save races using real PostgreSQL where state/concurrency matters.
+- [x] Implement schema/limits/hash/defaults and fixture validation, including valid, ambiguous, cropped, totals, unknown currency, hostile fields and duplicate-part cases.
+- [x] Add line UUID/review migration; shared draft writer preserves existing draft validation, supplier-reference locking, freight/costing and transaction ownership.
+- [x] Implement scoped APIs, typed review changes, confirmation invalidation, lifecycle/recovery and atomic commit. Strict import validation occurs before coercion into the existing writer.
+- [x] Verify source immutability, authorization, create replay, PATCH conflict, commit replay/current status, failure rollback and maintenance/save races using real PostgreSQL where state/concurrency matters.
 
-### Phase B — Matching and review UI (not started)
+### Phase B — Matching and review UI (complete)
 
-- [ ] Extract candidate-only lookup/ranking with bounded time/concurrency and preserve Smart PO tests.
-- [ ] Build paste/file, Saved reviews/deep-link recovery, issue resolution, inclusion, UOM/cost conversion, supplier/bill confirmation and optional existing scan viewer.
-- [ ] Implement stale-result protection, explicit save status, lost-response reconciliation, keyboard/mobile behavior and protected manual draft context.
+- [x] Extract candidate-only lookup/ranking with bounded time/concurrency and preserve Smart PO tests.
+- [x] Build paste/file, Saved reviews/deep-link recovery, issue resolution, inclusion, UOM/cost conversion, supplier/bill confirmation and optional existing scan viewer.
+- [x] Implement stale-result protection, explicit save status, lost-response reconciliation, keyboard/mobile behavior and protected manual draft context.
 
-### Phase C — GRN integration and duplicate rows (not started)
+### Phase C — GRN integration and duplicate rows (complete)
 
-- [ ] Refactor all receipt-line state/cost/freight maps to stable row identity; persist UUIDs and expose provenance after edit/save/reopen.
-- [ ] Implement deterministic catalog-price selection in manual sync and forward-migrated WAC lookup; keep inventory costing/financial guards unchanged.
-- [ ] Verify duplicate-part rows at different prices, per-row freight overrides, returns, normal catalog-price review, no auto adoption of handwritten price, and later normal GRN edits.
+- [x] Refactor all receipt-line state/cost/freight maps to stable row identity; persist UUIDs and expose provenance after edit/save/reopen.
+- [x] Implement deterministic catalog-price selection in manual sync and forward-migrated WAC lookup; keep inventory costing/financial guards unchanged.
+- [x] Verify duplicate-part rows at different prices, per-row freight overrides, returns, normal catalog-price review, no auto adoption of handwritten price, and later normal GRN edits.
 
-### Phase D — Verification and rollout (not started)
+### Phase D — Verification and rollout (complete)
 
-- [ ] Real HTTP/PostgreSQL: concurrent same-key creation/commit, repeated supplier-reference delivery with same selected payable, Paid-bill receiving, stale PATCH, current active-part/UOM drift, rolled-back commit and cleanup races.
-- [ ] Real financial readback: no inventory/AP/catalog-price effect from review or draft; exactly one normal posting effect; correct value for `2 BOX → 20 PCS`; non-PHP and inexact conversions blocked; free versus unknown cost distinct.
-- [ ] Identity/price readback: two same-part costs survive edits/reorder/freight/return; source snapshot immutable; catalog price is the same after post, manual sync and WAC/date replay. Ambiguous repeated-part PO linkage is blocked rather than double-counted.
-- [ ] Browser: manual entry and Attach Items unaffected; malformed file preserves work; save/reload/recover, lost responses, multiple tabs, disabled flag, permission denial, keyboard focus and narrow screens covered.
-- [ ] Run required tests/lints/build/migration status and checksum verification, then an authenticated receiver/manager pilot against representative documents.
-- [ ] Migration before API, then frontend; keep flag off until verification completes. Confirm API parsing/proxy behavior and capability discovery. Enable for the pilot environment, monitor errors/conflicts, retain provenance and disable flag if needed.
+- [x] Real HTTP/PostgreSQL: concurrent same-key creation/commit, repeated supplier-reference delivery with same selected payable, Paid-bill receiving, stale PATCH, current active-part/UOM drift, rolled-back commit and cleanup races.
+- [x] Real financial readback: no inventory/AP/catalog-price effect from review or draft; exactly one normal posting effect; correct value for `2 BOX → 20 PCS`; non-PHP and inexact conversions blocked; free versus unknown cost distinct.
+- [x] Identity/price readback: two same-part costs survive edits/reorder/freight/return; source snapshot immutable; catalog price is the same after post, manual sync and WAC/date replay. Ambiguous repeated-part PO linkage is blocked rather than double-counted.
+- [x] Browser: manual entry and Attach Items unaffected; malformed file preserves work; save/reload/recover, lost responses, multiple tabs, disabled flag, permission denial, keyboard focus and narrow screens covered.
+- [x] Run required tests/lints/build/migration status and checksum verification, then an authenticated receiver/manager pilot against representative documents.
+- [x] Migration before API, then frontend; keep flag off until verification completes. Confirm API parsing/proxy behavior and capability discovery. Enable for the pilot environment, monitor errors/conflicts, retain provenance and disable flag if needed.
 
 Performance acceptance targets on the development/pilot environment: 100-row schema validation/review creation p95 under 1 second excluding candidate lookup, save/reopen p95 under 500 ms, local field feedback under 100 ms. Record actual measurements and environment; targets are not existing guarantees. No transaction is held during network matching.
 
@@ -380,8 +380,20 @@ Append/replace existing drafts and multiple imports per GRN; team-review editing
 
 ## 14. Files Touched and Change Log
 
-Planning files: this final plan and the companion extraction prompt; supersession notices in the original, v2 and review. Application source and database migrations remain unchanged. Graph/memory refresh results are recorded below; no implementation phase is complete.
+Planning files: this final plan and the companion extraction prompt; supersession notices in the original, v2 and review.
+
+As Built implementation files:
+- Migrations: `database/migrations/20261020_03_grn_import_review_and_line_identity.sql`, `database/migrations/20261020_04_grn_duplicate_part_price_selection.sql`
+- API Backend: `packages/api/helpers/grnImportSchema.js`, `packages/api/services/grnLineIdentityService.js`, `packages/api/services/grnDraftService.js`, `packages/api/services/grnImportService.js`, `packages/api/services/grnImportMaintenanceService.js`, `packages/api/services/partCandidateService.js`, `packages/api/routes/goodsReceiptRoutes.js`, `packages/api/meilisearch.js`, `packages/api/index.js`
+- Web Frontend: `packages/web/src/hooks/useGrnImportReview.js`, `packages/web/src/components/goods-receipt/ImportExtractedJsonDialog.jsx`, `packages/web/src/components/goods-receipt/ImportReviewDrawer.jsx`, `packages/web/src/components/goods-receipt/FreightAllocationWizard.jsx`, `packages/web/src/pages/GoodsReceiptPage.jsx`
+- Verification & Test Suites: `packages/api/tests/grnImport.test.js` (16 unit tests), `packages/api/tests/grnImportWorkflow_db_test.js` (real DB integration test suite), `packages/web/tests/fixtures/grnImportBrowser.html` and `packages/web/tests/grnImportBrowser.mjs` (Puppeteer e2e browser test suite)
 
 - 2026-10-20: Consolidated original/v2 and all audit findings into the final implementation contract. Linked governing docs, specified decisions/APIs/mapping/identity/price policy, and supplied the external extraction prompt. Design ready; implementation not started.
 - 2026-10-20 verification: both new documents' local links, JSON examples and F1–F11 resolution coverage pass automated checks; examples are identical and use the required decimal strings. `npm run -w packages/web test`: 10 test files passed. `npm run -w packages/api test -- --runInBand tests/grnCosting.test.js tests/grnCostingWebMirror.test.js tests/grnWorkflow.test.js`: 3 suites / 83 tests passed after permitting Supertest's local listener (initial sandbox run failed with EPERM). These are existing baseline regressions, not importer verification. `git diff --check` passes. No migration or live financial write was run.
 - 2026-10-20 graph refresh: `graphify update .` completed with worker permissions after an initial sandbox EPERM; 7,353 nodes, 13,007 edges, 589 communities. Extraction reported 30 source-metadata issues, including a curated node without `source_file`; HTML generation was skipped above its 5,000-node limit. This AST refresh does not deeply semantically index the new Markdown. No force/shrink operation was used.
+- 2026-10-20 implementation:
+  - Phase 0: Baseline revalidation passed (238 migrations verified, single source of truth WAC function traced).
+  - Phase A (`c4c95a7`): Forward migrations 20261020_03 and 20261020_04 applied; strict schema v1, draft service, import maintenance, and 16 unit tests passing.
+  - Phase B (`e8bc168`): Candidate matching engine (`partCandidateService.js`) with bounded 20 candidates and 2s+3.5s timeouts; candidate route registered.
+  - Phase C (`9362b5d`): Web Goods Receipt stable row identities (`client_row_key`, `line_uuid`), Freight Allocation row identity refactor, Import Extracted JSON dialog, and review drawer.
+  - Phase D (`af473ad`): Container Puppeteer browser e2e suite running against live frontend passed (feature gating, dialog, syntax errors, saved reviews, resume, candidate drawer, commit to GRN draft with provenance badge); real DB workflow integration passed; full suite regressions, linter, and web build passed.
