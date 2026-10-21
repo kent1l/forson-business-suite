@@ -124,6 +124,8 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
 
     const [isImportModalOpen, setIsImportModalOpen] = useState(false);
     const [isImportReviewDrawerOpen, setIsImportReviewDrawerOpen] = useState(false);
+    const [importPartTarget, setImportPartTarget] = useState(null);
+    const [savingImportPart, setSavingImportPart] = useState(false);
 
     const canSubmit = hasPermission('goods_receipt:submit');
     const canPost = hasPermission('goods_receipt:post');
@@ -1094,6 +1096,64 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
             toast.error(err?.response?.data?.message || err?.message || 'Import error');
         },
     });
+
+    const handleCreateImportPart = (rowId) => {
+        if (!canCatalogParts || importReview.review?.status !== 'IN_REVIEW') return;
+        const row = importReview.review.review_state.rows.find(item => item.row_id === rowId);
+        if (!row?.included) return;
+        const source = importReview.review.source_payload?.lines?.find(item => item.line_no === row.line_no) || {};
+        const brandName = upperCatalogText(source.brand);
+        const groupName = upperCatalogText(source.item_group_hint);
+        setImportPartTarget({
+            import_id: importReview.review.import_id,
+            row_id: rowId,
+            line_no: row.line_no,
+            initialValues: {
+                detail: upperCatalogText(source.description || source.raw_text),
+                part_numbers: upperCatalogText(source.part_number),
+                brand_id: brands.find(item => upperCatalogText(item.brand_name) === brandName)?.brand_id || '',
+                brand_name: brandName,
+                group_id: groups.find(item => upperCatalogText(item.group_name) === groupName)?.group_id || '',
+                group_name: groupName,
+                measurement_unit: upperCatalogText(source.unit || 'PCS'),
+                last_cost: row.confirmed_row?.cost_price ?? source.unit_cost ?? 0,
+                last_sale_price: row.confirmed_row?.sale_price ?? 0,
+            },
+        });
+    };
+
+    const handleSaveImportPart = async (partData) => {
+        if (!canCatalogParts || !importPartTarget || savingImportPart) return;
+        setSavingImportPart(true);
+        try {
+            const result = await executePartSave({
+                endpoint: '/parts',
+                payload: { ...partData, created_by: user.employee_id },
+                brands,
+                groups,
+            });
+            if (result.outcome === 'cancelled' || result.outcome === 'error') return;
+
+            importReview.queueAction({
+                type: 'set_row',
+                row_id: importPartTarget.row_id,
+                values: {
+                    part_id: result.part.part_id,
+                    stock_uom: result.part.measurement_unit,
+                },
+            });
+            setImportPartTarget(null);
+            toast.success(result.outcome === 'existing'
+                ? 'Existing catalog part linked to this import line.'
+                : 'Part created and linked to this import line.');
+        } finally {
+            setSavingImportPart(false);
+        }
+    };
+
+    const closeImportPartForm = () => {
+        if (!savingImportPart) setImportPartTarget(null);
+    };
 
     useEffect(() => {
         const params = new URLSearchParams(window.location.search);
@@ -2174,8 +2234,9 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                 onSaveManualDraftFirst={handleSaveAsDraft}
             />
 
+            {/* Keep review state mounted while the part form and its nested dialogs use the shared modal layer. */}
             <ImportReviewDrawer
-                isOpen={isImportReviewDrawerOpen}
+                isOpen={isImportReviewDrawerOpen && !importPartTarget}
                 onClose={() => setIsImportReviewDrawerOpen(false)}
                 reviewState={importReview.review?.review_state}
                 sourcePayload={importReview.review?.source_payload}
@@ -2190,9 +2251,32 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                 onQueueAction={importReview.queueAction}
                 onSaveReview={importReview.saveReview}
                 onFetchCandidates={importReview.fetchCandidates}
+                onCreatePart={canCatalogParts && importReview.review?.status === 'IN_REVIEW' ? handleCreateImportPart : null}
                 onAbandonReview={importReview.abandonReview}
                 onCommitReview={importReview.commitReview}
             />
+            <Modal
+                isOpen={!!importPartTarget}
+                onClose={closeImportPartForm}
+                title={`Create part for imported line ${importPartTarget?.line_no}`}
+                maxWidth="max-w-2xl"
+            >
+                {importPartTarget && (
+                    <fieldset disabled={savingImportPart} className="min-w-0">
+                        <PartForm
+                            key={`${importPartTarget.import_id}-${importPartTarget.row_id}`}
+                            initialValues={importPartTarget.initialValues}
+                            uppercaseText
+                            brands={brands}
+                            groups={groups}
+                            onSave={handleSaveImportPart}
+                            onCancel={closeImportPartForm}
+                            onBrandGroupAdded={refreshLookupsOnly}
+                        />
+                        {savingImportPart && <p role="status" className="mt-2 text-sm text-gray-500 dark:text-slate-400">Saving part…</p>}
+                    </fieldset>
+                )}
+            </Modal>
         </div>
     );
 };

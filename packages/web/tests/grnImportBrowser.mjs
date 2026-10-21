@@ -24,6 +24,8 @@ try {
 
   // Mock API states
   let featureEnabled = true;
+  const createdParts = [];
+  let requireDuplicateResolution = false;
   let inReviewImports = [
     {
       import_id: 'e1000000-0000-0000-0000-000000000001',
@@ -42,7 +44,7 @@ try {
     version: 2,
     created_by_employee_id: 1,
     source_payload: {
-      header: {
+      document: {
         supplier_name: 'Toyota Genuine Parts',
         supplier_document_no: 'INV-9901',
         document_date: '2026-10-20',
@@ -57,6 +59,17 @@ try {
           quantity: '5.00',
           unit_cost: '250.00',
           line_total: '1250.00',
+        },
+        {
+          line_no: 2,
+          raw_text: 'TOYOTA NEW-123 AIR FILTER',
+          brand: 'TOYOTA',
+          part_number: 'NEW-123',
+          description: 'Air filter',
+          item_group_hint: 'FILTERS',
+          unit: 'PCS',
+          quantity: '3.0000',
+          unit_cost: '150.00',
         },
       ],
     },
@@ -84,6 +97,19 @@ try {
             unit_cost: '250.00',
             sale_price: '400.00',
             row_confirmed: true,
+          },
+        },
+        {
+          row_id: 'r_2',
+          line_no: 2,
+          included: true,
+          confirmed_row: {
+            part_id: null,
+            delivered_quantity: '3.0000',
+            return_quantity: '1.0000',
+            cost_price: '150.00',
+            sale_price: '225.00',
+            row_confirmed: false,
           },
         },
       ],
@@ -119,6 +145,22 @@ try {
     }
     if (path === '/api/brands') return respond([{ brand_id: 1, brand_name: 'TOYOTA' }]);
     if (path === '/api/groups') return respond([{ group_id: 1, group_name: 'FILTERS' }]);
+    if (path === '/api/parts' && req.method() === 'POST') {
+      const payload = JSON.parse(req.postData());
+      createdParts.push(payload);
+      if (requireDuplicateResolution) {
+        if (!payload.jev_confirmation) {
+          return respond({
+            duplicate_resolution_required: true,
+            decision_token: 'duplicate-test-token',
+            duplicate: { part_id: 30, detail: 'Existing oil filter', confidence: 0.98, measurement_unit: 'EA' },
+          }, 409);
+        }
+        assert.equal(payload.jev_confirmation.action, 'use_existing');
+        return respond({ part_id: 30, measurement_unit: 'EA', existing: true });
+      }
+      return respond({ part_id: 20, ...payload }, 201);
+    }
     if (path === '/api/purchase-orders/open') return respond([]);
     if (path.startsWith('/api/drafts/')) return respond(req.method() === 'GET' ? { data: null } : { ok: true });
 
@@ -143,11 +185,20 @@ try {
     }
 
     if (path === '/api/goods-receipts/imports/e1000000-0000-0000-0000-000000000001' && req.method() === 'PATCH') {
+      for (const action of JSON.parse(req.postData()).actions) {
+        if (action.type === 'set_row') {
+          const row = mockReviewDetail.review_state.rows.find(row => row.row_id === action.row_id);
+          Object.assign(row.confirmed_row, action.values, { row_confirmed: false });
+        }
+      }
       mockReviewDetail.version += 1;
       return respond(mockReviewDetail);
     }
 
     if (path === '/api/goods-receipts/imports/e1000000-0000-0000-0000-000000000001/candidates') {
+      if (JSON.parse(req.postData()).row_id === 'r_2') {
+        return respond({ row_id: 'r_2', version: mockReviewDetail.version, candidates: [] });
+      }
       return respond({
         row_id: 'r_1',
         version: mockReviewDetail.version,
@@ -298,6 +349,11 @@ try {
   await page.waitForFunction(() => document.body.innerText.includes('Review Extracted Document'));
   await page.waitForFunction(() => document.body.innerText.includes('Part ID: 10'));
   console.log('✓ Review drawer mounted with row data');
+  await page.setViewport({ width: 1440, height: 1000 });
+  assert.equal(await page.$eval('.max-w-7xl', el => el.getBoundingClientRect().width), 1280);
+  await page.setViewport({ width: 390, height: 844 });
+  assert.equal(await page.$eval('.max-w-7xl', el => el.getBoundingClientRect().width), 390);
+  await page.setViewport({ width: 1440, height: 1000 });
 
   // TEST 6: Candidate Matching Drawer
   console.log('Test 6: Part candidate drawer lookup...');
@@ -314,10 +370,66 @@ try {
   // Select candidate
   await page.evaluate(() => {
     const item = Array.from(document.querySelectorAll('div')).find(d =>
-      d.textContent.includes('Oil Filter Element') && d.textContent.includes('TOYOTA')
+      d.textContent === 'Oil Filter Element'
     );
     item?.click();
   });
+  await page.waitForFunction(() => !document.body.innerText.includes('Select Catalog Item'));
+
+  console.log('Test 6b: Create a catalog part for an unmatched import line...');
+  const clickButton = async (label) => {
+    const handle = await page.evaluateHandle(label => Array.from(document.querySelectorAll('button')).find(button => button.textContent.trim() === label), label);
+    const button = handle.asElement();
+    assert.ok(button, `Missing button: ${label}`);
+    await button.click();
+    await handle.dispose();
+  };
+  await clickButton('Create Part');
+  await page.waitForSelector('input[name="detail"]');
+  assert.equal(await page.$eval('input[name="detail"]', el => el.value), 'AIR FILTER');
+  assert.equal(await page.$eval('textarea[name="part_numbers_string"]', el => el.value), 'NEW-123');
+  await clickButton('Cancel');
+  await page.waitForFunction(() => document.body.innerText.includes('Review Extracted Document'));
+  assert.equal(createdParts.length, 0, 'Cancelling must not create a part');
+
+  await clickButton('Select Catalog Part…');
+  await page.waitForFunction(() => document.body.innerText.includes('No matching catalog items found.'));
+  assert.equal(await page.$$eval('section[aria-label="Original text for line 2"]', els => els.length), 2);
+  await page.evaluate(() => Array.from(document.querySelectorAll('button')).filter(button => button.textContent.trim() === 'Create Part').at(-1).click());
+  await page.waitForSelector('input[name="detail"]');
+  await clickButton('Save');
+  await page.waitForFunction(() => document.body.innerText.includes('Part ID: 20 (PCS)'));
+  assert.equal(createdParts.length, 1);
+  assert.equal(Number(createdParts[0].brand_id), 1);
+  assert.equal(Number(createdParts[0].group_id), 1);
+  assert.equal(createdParts[0].measurement_unit, 'PCS');
+  assert.equal(createdParts[0].last_cost, '150.00');
+  assert.equal(createdParts[0].last_sale_price, '225.00');
+  await clickButton('Save Review');
+  await page.waitForFunction(() => !document.body.innerText.includes('Unsaved changes'));
+  const createdRow = mockReviewDetail.review_state.rows.find(row => row.row_id === 'r_2');
+  assert.equal(createdRow.confirmed_row.part_id, 20);
+  assert.equal(createdRow.confirmed_row.stock_uom, 'PCS');
+  assert.equal(createdRow.confirmed_row.delivered_quantity, '3.0000');
+  assert.equal(createdRow.confirmed_row.return_quantity, '1.0000');
+  assert.equal(createdRow.confirmed_row.cost_price, '150.00');
+  assert.equal(createdRow.confirmed_row.row_confirmed, false);
+  console.log('✓ Create and cancel work from unmatched rows and empty search; receiving values are preserved');
+
+  console.log('Test 6c: Reuse an existing part through duplicate resolution...');
+  requireDuplicateResolution = true;
+  await clickButton('Part ID: 10 (PCS)');
+  await page.waitForFunction(() => document.body.innerText.includes('Select Catalog Item'));
+  await clickButton('Create Part');
+  await page.waitForSelector('input[name="detail"]');
+  await clickButton('Save');
+  await page.waitForFunction(() => document.body.innerText.includes('Duplicate Part Check'));
+  await clickButton('Use existing part');
+  await page.waitForFunction(() => document.body.innerText.includes('Part ID: 30 (EA)'));
+  await clickButton('Save Review');
+  await page.waitForFunction(() => !document.body.innerText.includes('Unsaved changes'));
+  assert.equal(mockReviewDetail.review_state.rows[0].confirmed_row.part_id, 30);
+  console.log('✓ Duplicate resolution stays accessible and links the existing part with its stock unit');
 
   // TEST 7: Commit to GRN Draft & Provenance badge
   console.log('Test 7: Commit review to GRN draft...');
@@ -331,6 +443,24 @@ try {
   await page.waitForFunction(() => document.body.innerText.includes('GRN-202610-0099'));
   await page.waitForFunction(() => document.body.innerText.includes('Imported JSON'));
   console.log('✓ Staged GRN loaded with Imported JSON provenance badge');
+
+  console.log('Test 8: Part creation requires permission...');
+  mockReviewDetail.status = 'IN_REVIEW';
+  mockReviewDetail.review_state.rows[1].confirmed_row.part_id = null;
+  await page.evaluate(() => {
+    const session = JSON.parse(localStorage.getItem('userSession'));
+    session.user.permission_level_id = 2;
+    session.permissions = session.permissions.filter(permission => permission !== 'parts:create');
+    localStorage.setItem('userSession', JSON.stringify(session));
+    window.mountGoodsReceipt({ import_id: 'e1000000-0000-0000-0000-000000000001' });
+  });
+  await page.waitForFunction(() => document.body.innerText.includes('Review Extracted Document'));
+  assert.equal(await page.$$eval('button', buttons => buttons.some(button => button.textContent.trim() === 'Create Part')), false);
+  await clickButton('Select Catalog Part…');
+  await page.waitForFunction(() => document.body.innerText.includes('No matching catalog items found.'));
+  assert.equal(await page.$$eval('button', buttons => buttons.some(button => button.textContent.trim() === 'Create Part')), false);
+  assert.deepEqual(errors, [], 'No browser runtime errors');
+  console.log('✓ Users without parts:create see no create option on rows or in catalog search');
 
   console.log('All Browser End-to-End Tests Passed!');
 } finally {

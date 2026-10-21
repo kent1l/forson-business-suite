@@ -44,6 +44,7 @@ export default function ImportReviewDrawer({
   onQueueAction,
   onSaveReview,
   onFetchCandidates,
+  onCreatePart,
   onAbandonReview,
   onCommitReview,
 }) {
@@ -138,6 +139,11 @@ export default function ImportReviewDrawer({
     setCandidateDrawerRowId(null);
   };
 
+  const handleCreatePart = (rowId) => {
+    setCandidateDrawerRowId(null);
+    onCreatePart(rowId);
+  };
+
   const handleResolveIssue = (issueId) => {
     const reason = window.prompt('Enter explanation for resolving this issue (minimum 5 characters):');
     if (!reason || reason.trim().length < 5) {
@@ -172,7 +178,7 @@ export default function ImportReviewDrawer({
 
   return (
     <div className="fixed inset-0 z-50 overflow-hidden bg-black/50 backdrop-blur-xs flex justify-end">
-      <div className="w-full max-w-4xl bg-white dark:bg-slate-900 h-full flex flex-col shadow-2xl border-l border-gray-200 dark:border-slate-800">
+      <div className="w-full max-w-7xl bg-white dark:bg-slate-900 h-full flex flex-col shadow-2xl border-l border-gray-200 dark:border-slate-800">
         {/* Top bar */}
         <div className="p-4 border-b border-gray-200 dark:border-slate-800 flex items-center justify-between gap-4 bg-gray-50 dark:bg-slate-800/60">
           <div>
@@ -529,7 +535,7 @@ export default function ImportReviewDrawer({
                       {/* Part selector */}
                       <div className="md:col-span-2">
                         <label className="block text-gray-600 dark:text-slate-400 mb-1">Catalog Part</label>
-                        <div className="flex gap-2">
+                        <div className="flex flex-wrap gap-2">
                           <button
                             type="button"
                             onClick={() => openCandidates(row.row_id)}
@@ -537,6 +543,16 @@ export default function ImportReviewDrawer({
                           >
                             {cr.part_id ? `Part ID: ${cr.part_id} (${cr.stock_uom})` : 'Select Catalog Part…'}
                           </button>
+                          {!cr.part_id && onCreatePart && (
+                            <button
+                              type="button"
+                              onClick={() => handleCreatePart(row.row_id)}
+                              disabled={saving || committing}
+                              className="px-3 py-1.5 rounded bg-primary-600 text-white font-semibold hover:bg-primary-700 disabled:opacity-50"
+                            >
+                              Create Part
+                            </button>
+                          )}
                         </div>
                       </div>
 
@@ -670,7 +686,7 @@ export default function ImportReviewDrawer({
 
       {/* Candidate Picker Slide-out */}
       {candidateDrawerRowId && (
-        <div className="fixed inset-y-0 right-0 w-full max-w-md bg-white dark:bg-slate-900 border-l border-gray-200 dark:border-slate-800 shadow-2xl z-60 flex flex-col p-4">
+        <div className="fixed inset-y-0 right-0 w-full max-w-xl bg-white dark:bg-slate-900 border-l border-gray-200 dark:border-slate-800 shadow-2xl z-60 flex flex-col p-4">
           <div className="flex items-center justify-between pb-3 border-b border-gray-200 dark:border-slate-800">
             <h4 className="text-sm font-bold text-gray-900 dark:text-slate-100">
               Select Catalog Item
@@ -735,6 +751,20 @@ export default function ImportReviewDrawer({
               ))
             )}
           </div>
+
+          {candidateRow?.included && onCreatePart && (
+            <div className="pt-3 border-t border-gray-200 dark:border-slate-800">
+              <p className="mb-2 text-xs text-gray-500 dark:text-slate-400">Item not in the catalog yet?</p>
+              <button
+                type="button"
+                onClick={() => handleCreatePart(candidateRow.row_id)}
+                disabled={saving || committing}
+                className="w-full px-3 py-2 rounded-lg bg-primary-600 text-white text-xs font-semibold hover:bg-primary-700 disabled:opacity-50"
+              >
+                Create Part
+              </button>
+            </div>
+          )}
         </div>
       )}
 
