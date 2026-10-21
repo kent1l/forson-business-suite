@@ -90,6 +90,7 @@ async function resolveLineIdentities(client, grnId, lines, { isImportCommit = fa
   return {
     resolvedLines,
     identityMappings,
+    isImportedGrn: isImportCommit || isImportedGrn,
   };
 }
 

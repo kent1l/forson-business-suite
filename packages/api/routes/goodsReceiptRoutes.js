@@ -396,7 +396,6 @@ router.post('/goods-receipts/imports/:importId/candidates', protect, hasPermissi
       partNumber: fact('part_number'),
       description: fact('description'),
       supplierItemText: fact('supplier_item_text'),
-      rawText: sourceLine.raw_text,
       query,
       signal: controller.signal,
     });
@@ -409,6 +408,7 @@ router.post('/goods-receipts/imports/:importId/candidates', protect, hasPermissi
       ai_status: result.ai_status,
       verification: result.verification,
       search_status: result.search_status,
+      automatic_match: result.automatic_match,
       candidates: result.candidates,
     });
   } catch (err) {

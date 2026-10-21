@@ -489,8 +489,8 @@ function validateAndNormalizeExternalPayload(payload) {
     const supplier_item_text = validateText(line.supplier_item_text, { maxCodePoints: 2000, path: `${path}.supplier_item_text` });
     const description = validateText(line.description, { maxCodePoints: 2000, path: `${path}.description` });
 
-    if ((!raw_text || !raw_text.trim()) && (!description || !description.trim())) {
-      const err = new Error(`Field '${path}' requires non-blank raw_text or description.`);
+    if ((!supplier_item_text || !supplier_item_text.trim()) && (!raw_text || !raw_text.trim()) && (!description || !description.trim())) {
+      const err = new Error(`Field '${path}' requires non-blank supplier_item_text, description or raw_text.`);
       err.path = path;
       throw err;
     }

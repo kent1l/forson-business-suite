@@ -193,6 +193,10 @@ app.use('/api', require('../routes/goodsReceiptRoutes'));
     actions: [{ type: 'set_header', values: { receipt_date: '2026-10-20' } }],
   }, 409);
 
+  await call('patch', `/goods-receipts/imports/${importId}`, {
+    version: 1, actions: [{ type: 'confirm_row', row_id: row1Id }],
+  }, 400);
+
   // Update header and row
   const patch1 = await call('patch', `/goods-receipts/imports/${importId}`, {
     version: 1,
@@ -233,8 +237,11 @@ app.use('/api', require('../routes/goodsReceiptRoutes'));
     actions: [
       { type: 'confirm_row', row_id: row1Id },
       { type: 'confirm_header' },
+      { type: 'set_row', row_id: row1Id, values: { cost_price: '126.00', sale_price: '180.00' } },
     ],
   }, 200);
+  assert.equal(patch2.review_state.rows[0].confirmed_row.row_confirmed, true, 'Price edits must preserve catalog confirmation');
+  assert.equal(patch2.review_state.rows[0].confirmed_row.ai_filled_fields.includes('cost_price'), false);
   assert.equal(patch2.version, 3);
   assert.equal(patch2.blockers.length, 0, `Expected 0 blockers, got: ${JSON.stringify(patch2.blockers)}`);
 
@@ -262,6 +269,7 @@ app.use('/api', require('../routes/goodsReceiptRoutes'));
 
   const grnLines = await call('get', `/goods-receipts/${committedGrnId}/lines`);
   assert.equal(grnLines.length, 1);
+  assert.equal(Number(grnLines[0].sale_price), 180, 'Reviewed sale prices must not be replaced by a computed markup');
   assert.equal(grnLines[0].line_uuid, row1Id, 'GRN line_uuid must match imported row_id');
 
   // Updating the imported GRN without line_identity_version returns 409
@@ -279,6 +287,57 @@ app.use('/api', require('../routes/goodsReceiptRoutes'));
     lines: [{ line_uuid: row1Id, part_id: partA.part_id, quantity: 2, cost_price: 125, sale_price: 160 }],
   }, 200);
   assert.equal(updateRes.workflow_status, 'Draft');
+
+  // Import review allows missing prices and total discrepancies, while retaining match confirmation.
+  const unpricedPayload = structuredClone(dummyPayload);
+  unpricedPayload.document.document_number = `DR-NOPRICE-${runId}`;
+  unpricedPayload.lines[0].unit_cost = null;
+  unpricedPayload.extraction_issues = [
+    { code: 'UNREADABLE_VALUE', field: 'unit_cost', line_no: 1, message: 'Price unreadable' },
+    { code: 'TOTAL_MISMATCH', field: 'printed_total', line_no: null, message: 'Total differs' },
+    { code: 'AMBIGUOUS_VALUE', field: null, line_no: null, message: "Handwritten numbers '180' and '1000' appear near lines 5 and 6; their intended line association and meaning (e.g. operational temperature spec vs. retail price) are ambiguous, so handwritten_sale_price is set to null." },
+    { code: 'UNREADABLE_VALUE', field: null, line_no: 1, message: 'Annotation is unclear; leave unknown.' },
+  ];
+  const unpriced = await call('post', '/goods-receipts/imports', {
+    request_key: crypto.randomUUID(), payload: unpricedPayload, context: { supplier_id: supplier.supplier_id },
+  }, 201);
+  const unpricedRowId = unpriced.review_state.rows[0].row_id;
+  const unpricedPatch = await call('patch', `/goods-receipts/imports/${unpriced.import_id}`, {
+    version: 1, actions: [
+      { type: 'set_header', values: { receipt_date: '2026-10-20' } },
+      { type: 'set_row', row_id: unpricedRowId, origin: 'automatic_match', values: { part_id: partA.part_id, stock_uom: 'PCS', cost_kind: 'unknown' } },
+      { type: 'confirm_row', row_id: unpricedRowId }, { type: 'confirm_header' },
+    ],
+  });
+  assert.equal(unpricedPatch.blockers.length, 0, 'Unpriced rows and financial warnings must allow a draft without explanations');
+  assert(unpricedPatch.review_state.rows[0].confirmed_row.ai_filled_fields.includes('part_id'));
+  const changedMatch = await call('patch', `/goods-receipts/imports/${unpriced.import_id}`, {
+    version: 2, actions: [{ type: 'set_row', row_id: unpricedRowId, values: { part_id: partB.part_id } }],
+  });
+  assert.equal(changedMatch.review_state.rows[0].confirmed_row.row_confirmed, false);
+  assert.equal(changedMatch.review_state.rows[0].confirmed_row.ai_filled_fields.includes('part_id'), false);
+  assert(changedMatch.blockers.some(b => b.code === 'ROW_CONFIRMATION_REQUIRED'));
+  await call('post', `/goods-receipts/imports/${unpriced.import_id}/commit`, { version: 3 }, 422);
+  await call('patch', `/goods-receipts/imports/${unpriced.import_id}`, {
+    version: 3, actions: [{ type: 'confirm_row', row_id: unpricedRowId }],
+  });
+  const unpricedDraft = await call('post', `/goods-receipts/imports/${unpriced.import_id}/commit`, { version: 4 }, 201);
+  const unpricedLines = await call('get', `/goods-receipts/${unpricedDraft.grn_id}/lines`);
+  assert.equal(Number(unpricedLines[0].cost_price), 0);
+  assert.equal(unpricedLines[0].is_free_goods, false, 'Unknown cost must not classify the item as free goods');
+  assert.equal(unpricedLines[0].sale_price, null, 'Unknown imported sale price must remain null in the draft');
+  await call('put', `/goods-receipts/${unpricedDraft.grn_id}/draft`, {
+    line_identity_version: 1, supplier_id: supplier.supplier_id,
+    supplier_document_no: unpricedPayload.document.document_number,
+    lines: [{ line_uuid: unpricedRowId, part_id: partB.part_id, quantity: 2, cost_price: 125, sale_price: null }],
+  });
+  const savedUnknownLines = await call('get', `/goods-receipts/${unpricedDraft.grn_id}/lines`);
+  assert.equal(savedUnknownLines[0].sale_price, null, 'Saving a priced import draft must preserve unknown sale price');
+  const importedUnknown = await call('get', `/goods-receipts/imports/${unpriced.import_id}`);
+  assert.equal(importedUnknown.source_payload.lines[0].handwritten_sale_price, null);
+  assert.equal(importedUnknown.commit_snapshot.lines[0].confirmed_row.sale_price, null);
+  assert(importedUnknown.source_payload.extraction_issues.some(issue => issue.code === 'AMBIGUOUS_VALUE'));
+
 
   // 8. Test Deterministic Catalog Retail Price with Duplicate Parts
   // Create a posted GRN with duplicate part rows at different sale prices

@@ -179,13 +179,13 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
             if (!l.part_id) return;
             const netQty = (Number(l.quantity) || 0) - (Number(l.return_quantity) || 0);
             const key = l.line_uuid || l.client_row_key;
-            const computedSale = costingByRowKey.get(key)?.sale_price ?? l.sale_price;
+            const computedSale = stagedGrn?.import_provenance && l.sale_price == null ? null : costingByRowKey.get(key)?.sale_price ?? l.sale_price;
             if (computedSale != null && netQty > 0) {
                 map.set(l.part_id, key);
             }
         });
         return new Set(map.values());
-    }, [lines, costingByRowKey]);
+    }, [lines, costingByRowKey, stagedGrn]);
 
     const totals = useMemo(() => ({
         ...costing.totals,
@@ -762,6 +762,10 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
     };
 
     const handleSalePriceChange = (rowKey, price) => {
+        if (stagedGrn?.import_provenance && price == null) {
+            setLineFields(rowKey, { sale_price: null });
+            return;
+        }
         const landed = costingByRowKey.get(rowKey)?.landed_unit_cost || 0;
         const nextPrice = Number.isFinite(price) ? price : 0;
         const derived = markupFromPrice(nextPrice, landed);
@@ -848,7 +852,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                 part_id: line.part_id,
                 quantity: line.quantity,
                 cost_price: line.cost_price,
-                sale_price: rowCosting?.sale_price ?? line.sale_price ?? null,
+                sale_price: stagedGrn?.import_provenance && line.sale_price == null ? null : rowCosting?.sale_price ?? line.sale_price ?? null,
                 line_discount_percent: line.line_discount_percent ?? null,
                 line_discount_amount: line.line_discount_amount ?? null,
                 override_freight_amount: line.override_freight_amount ?? null,
@@ -1085,6 +1089,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
     };
 
     const importReview = useGrnImportReview({
+        autoMatchEnabled: isImportReviewDrawerOpen && !importPartTarget && hasPermission('goods_receipt:create'),
         onCommitted: async (commitResult) => {
             toast.success(`Import committed as GRN ${commitResult.grn_number}!`);
             setIsImportReviewDrawerOpen(false);
@@ -1109,7 +1114,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
             row_id: rowId,
             line_no: row.line_no,
             initialValues: {
-                detail: upperCatalogText(source.supplier_item_text || source.description || source.raw_text),
+                detail: upperCatalogText(source.supplier_item_text || source.description),
                 part_numbers: upperCatalogText(source.part_number),
                 brand_id: brands.find(item => upperCatalogText(item.brand_name) === brandName)?.brand_id || '',
                 brand_name: brandName,
@@ -1895,7 +1900,9 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                                     </td>
                                     <td className="p-2 align-middle">
                                         <MathExpressionInput
-                                            value={computed?.sale_price ?? line.sale_price ?? ''}
+                                            value={stagedGrn?.import_provenance && line.sale_price == null ? '' : computed?.sale_price ?? line.sale_price ?? ''}
+                                            aria-label={`Sale price for ${line.display_name || line.part_id}`}
+                                            allowEmpty={!!stagedGrn?.import_provenance}
                                             onChange={value => handleSalePriceChange(rowKey, value)}
                                             className={`${inputClass} ${belowMinMarkup ? 'border-danger-400 dark:border-danger-600' : ''}`}
                                         />
@@ -2249,6 +2256,8 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                 candidatesByRow={importReview.candidatesByRow}
                 candidatesLoadingRow={importReview.candidatesLoadingRow}
                 candidateResultsByRow={importReview.candidateResultsByRow}
+                autoMatchProgress={importReview.autoMatchProgress}
+                onRetryAutomaticMatching={importReview.retryAutomaticMatching}
                 onQueueAction={importReview.queueAction}
                 onSaveReview={importReview.saveReview}
                 onFetchCandidates={importReview.fetchCandidates}

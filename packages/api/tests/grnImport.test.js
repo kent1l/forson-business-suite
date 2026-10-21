@@ -76,6 +76,14 @@ describe('GRN External JSON Ingestion - Schema and Rules', () => {
     expect(computePayloadHash(normalized, {})).toBe(computePayloadHash(legacy, {}));
   });
 
+  test('accepts cleaned item text without original raw text or description', () => {
+    const payload = structuredClone(conformingExample);
+    delete payload.lines[0].raw_text;
+    delete payload.lines[0].description;
+    payload.lines[0].supplier_item_text = 'OIL FILTER 04152-YZZA6';
+    expect(validateAndNormalizeExternalPayload(payload).lines[0].supplier_item_text).toBe('OIL FILTER 04152-YZZA6');
+  });
+
   test.each([42, {}, 'x'.repeat(2001), 'OIL\u202eFILTER'])('rejects invalid supplier_item_text: %p', value => {
     const payload = structuredClone(conformingExample);
     payload.lines[0].supplier_item_text = value;
@@ -344,8 +352,59 @@ describe('GRN External JSON Ingestion - Schema and Rules', () => {
     expect(hDigest1).not.toBe(hDigest2);
     expect(rDigest1).not.toBe(rDigest2);
 
-    // Changing deliveredQuantity changes row digest
+    // Ordinary receipt edits preserve the confirmed catalog match.
     const rDigest3 = computeRowDigest({ ...rowParams, deliveredQuantity: '3.0000' });
-    expect(rDigest1).not.toBe(rDigest3);
+    expect(rDigest1).toBe(rDigest3);
+    expect(rDigest1).toBe(computeRowDigest({ ...rowParams, costPrice: null, costKind: 'unknown', salePrice: '500.00', returnQuantity: '1.0000' }));
+    expect(rDigest1).not.toBe(computeRowDigest({ ...rowParams, partId: 102 }));
+    expect(rDigest1).not.toBe(computeRowDigest({ ...rowParams, stockUom: 'BOX' }));
   });
+  test('missing prices and financial extraction issues are advisory; catalog identity remains strict', () => {
+    const normalized = validateAndNormalizeExternalPayload(conformingExample);
+    const state = initializeReviewState(normalized, {});
+    const cr = state.rows[0].confirmed_row;
+    cr.cost_price = null;
+    cr.cost_kind = 'unknown';
+    state.issues = [
+      { issue_id: 'cost', code: 'UNREADABLE_VALUE', field: 'unit_cost', line_no: 1, resolved: false },
+      { issue_id: 'sale', code: 'AMBIGUOUS_VALUE', field: 'handwritten_sale_price', line_no: 1, resolved: false },
+      { issue_id: 'total', code: 'TOTAL_MISMATCH', field: 'printed_total', line_no: null, resolved: false },
+      { issue_id: 'identity', code: 'CONFLICTING_VALUES', field: 'part_number', line_no: 1, resolved: false },
+    ];
+    const blockers = calculateBlockers(state, normalized);
+    expect(blockers.filter(b => ['cost', 'sale', 'total'].includes(b.issue_id))).toEqual([]);
+    expect(blockers.some(b => b.issue_id === 'identity')).toBe(false); // Match selection/confirmation validate identity directly.
+    expect(blockers.some(b => b.code === 'PART_REQUIRED')).toBe(true);
+    expect(blockers.some(b => b.code === 'ROW_CONFIRMATION_REQUIRED')).toBe(true);
+    expect(blockers.some(b => b.code.startsWith('COST_'))).toBe(false);
+    cr.cost_price = '-1';
+    expect(calculateBlockers(state, normalized).some(b => b.code === 'INVALID_PRICE')).toBe(true);
+  });
+
+  test.each(['AMBIGUOUS_VALUE', 'UNREADABLE_VALUE', 'CONFLICTING_VALUES', 'UNCLASSIFIED_NOTE'])(
+    '%s notes without a field do not block or manufacture a price', code => {
+      const payload = structuredClone(conformingExample);
+      payload.lines[0].handwritten_sale_price = null;
+      payload.extraction_issues = [
+        { code, line_no: null, field: null, message: "Handwritten numbers '180' and '1000' appear near lines 5 and 6; their intended line association and meaning (e.g. operational temperature spec vs. retail price) are ambiguous, so handwritten_sale_price is set to null." },
+        { code, line_no: 1, field: null, message: 'Unknown annotation; leave it null.' },
+      ];
+      const normalized = validateAndNormalizeExternalPayload(payload);
+      const before = structuredClone(normalized);
+      const state = initializeReviewState(normalized, { supplier_id: 5 });
+      const cr = state.rows[0].confirmed_row;
+      cr.part_id = 101;
+      cr.stock_uom = 'PCS';
+      cr.row_confirmed = true;
+      cr.row_confirmation_digest = computeRowDigest({ supplierId: 5, currency: 'PHP', partId: 101, stockUom: 'PCS', unitsPerSourceUnit: '1.0000' });
+      state.header.receipt_date = '2026-10-20';
+      state.header.header_confirmed = true;
+      state.header.header_confirmation_digest = computeHeaderDigest(state.header);
+      expect(calculateBlockers(state, normalized)).toEqual([]);
+      expect(normalized).toEqual(before);
+      expect(normalized.lines[0].handwritten_sale_price).toBeNull();
+      expect(cr.sale_price).toBeNull();
+      expect(state.issues.every(issue => !issue.resolved)).toBe(true);
+    });
+
 });

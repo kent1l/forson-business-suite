@@ -51,18 +51,20 @@ async function writeDraftFreight(client, grnId, freightCosts = []) {
 }
 
 async function writeDraftLines(client, grnId, lines, costing, options = {}) {
-  const { resolvedLines, identityMappings } = await resolveLineIdentities(client, grnId, lines, options);
+  const { resolvedLines, identityMappings, isImportedGrn } = await resolveLineIdentities(client, grnId, lines, options);
 
   await client.query('DELETE FROM goods_receipt_line WHERE grn_id = $1', [grnId]);
   for (const [index, line] of resolvedLines.entries()) {
     const computed = costing.lines[index];
+    const salePrice = isImportedGrn && (line.sale_price == null || line.sale_price === '')
+      ? null : computed.sale_price;
     await client.query(
       `INSERT INTO goods_receipt_line (line_uuid, grn_id, part_id, quantity, cost_price, sale_price,
                                        line_discount_percent, line_discount_amount, override_freight_amount,
                                        allocated_freight_amount, landed_unit_cost, effective_markup_percent,
                                        return_quantity, rejection_reason, is_free_goods)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
-      [line.line_uuid, grnId, line.part_id, line.quantity, line.cost_price, computed.sale_price,
+      [line.line_uuid, grnId, line.part_id, line.quantity, line.cost_price, salePrice,
        line.line_discount_percent ?? null, line.line_discount_amount ?? null, line.override_freight_amount ?? null,
        computed.allocated_freight_amount, computed.landed_unit_cost, computed.effective_markup_percent,
        computed.return_quantity, line.rejection_reason || null, computed.is_free_goods],

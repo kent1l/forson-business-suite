@@ -1,35 +1,28 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import Icon from '../ui/Icon';
-import Combobox from '../ui/Combobox';
 import { ICONS } from '../../constants';
 import { formatCurrency } from '../../utils/currency';
 import { REJECTION_REASONS } from '../../utils/grnCosting';
+import { aiFilledRowFields, aiFilledHeaderFields } from '../../utils/grnImportReview';
 
-function OriginalLineText({ row, sourceLine }) {
-  const rawText = sourceLine?.raw_text ?? row.raw_text;
-  const description = sourceLine?.description ?? row.description;
-  const hasRawText = typeof rawText === 'string' && rawText.trim().length > 0;
+const importFieldClass = ai => `w-full min-w-0 px-3 py-2 border rounded-lg text-gray-900 dark:text-slate-100 ${ai
+  ? 'border-blue-300 bg-blue-50 dark:border-blue-800 dark:bg-blue-950/40'
+  : 'border-gray-300 bg-white dark:border-slate-700 dark:bg-slate-800'}`;
+
+function SupplierItemText({ row, sourceLine }) {
+  const itemText = sourceLine?.supplier_item_text?.trim() || sourceLine?.description?.trim() || row.description?.trim();
 
   return (
     <section
-      aria-label={`Original text for line ${row.line_no}`}
-      className="my-3 min-w-0 rounded-lg border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 p-3 text-xs"
+      aria-label={`Supplier item text for line ${row.line_no}`}
+      className="mb-4 min-w-0 text-xs"
     >
       <div className="mb-1 font-semibold text-gray-600 dark:text-slate-400">
-        Line {row.line_no} · {hasRawText ? 'Raw Text' : 'Original Description'}
+        Cleaned Supplier Text
       </div>
-      {!hasRawText && (
-        <p className="mb-1 text-gray-500 dark:text-slate-400">No raw text was provided in the JSON.</p>
-      )}
-      <div className="max-h-40 overflow-y-auto whitespace-pre-wrap break-words font-mono text-gray-900 dark:text-slate-100">
-        {hasRawText ? rawText : description || 'No original description was provided.'}
+      <div className="max-h-40 overflow-y-auto whitespace-pre-wrap break-words text-gray-900 dark:text-slate-100">
+        {itemText || 'No cleaned item text is available. You can search the catalog manually.'}
       </div>
-      {sourceLine?.supplier_item_text && (
-        <div className="mt-2 border-t border-gray-200 dark:border-slate-700 pt-2">
-          <div className="font-semibold text-gray-600 dark:text-slate-400">Cleaned Supplier Text</div>
-          <div className="mt-1 whitespace-pre-wrap break-words text-gray-900 dark:text-slate-100">{sourceLine.supplier_item_text}</div>
-        </div>
-      )}
     </section>
   );
 }
@@ -48,6 +41,8 @@ export default function ImportReviewDrawer({
   candidatesByRow = {},
   candidatesLoadingRow = null,
   candidateResultsByRow = {},
+  autoMatchProgress = {},
+  onRetryAutomaticMatching,
   onQueueAction,
   onSaveReview,
   onFetchCandidates,
@@ -56,13 +51,13 @@ export default function ImportReviewDrawer({
   onCommitReview,
 }) {
   const [needsAttentionFilter, setNeedsAttentionFilter] = useState(false);
-  const [expandedEvidence, setExpandedEvidence] = useState({});
   const [candidateDrawerRowId, setCandidateDrawerRowId] = useState(null);
   const [candidateSearchQuery, setCandidateSearchQuery] = useState('');
   const [abandonModalOpen, setAbandonModalOpen] = useState(false);
   const [abandonReason, setAbandonReason] = useState('');
 
   const header = reviewState?.header || {};
+  const headerAiFields = aiFilledHeaderFields(header, sourcePayload?.document);
   const rows = reviewState?.rows || [];
   const issues = reviewState?.issues || [];
   const candidateRow = rows.find(row => row.row_id === candidateDrawerRowId);
@@ -73,7 +68,7 @@ export default function ImportReviewDrawer({
     if (!isOpen || !candidateDrawerRowId) return;
     const timer = setTimeout(() => onFetchCandidates(candidateDrawerRowId, candidateSearchQuery || null), 300);
     return () => clearTimeout(timer);
-  }, [isOpen, candidateDrawerRowId, candidateSearchQuery, onFetchCandidates]);
+  }, [isOpen, candidateDrawerRowId, candidateSearchQuery, onFetchCandidates, version]);
 
   // Group blockers by row_id and header
   const blockersByRow = useMemo(() => {
@@ -88,7 +83,7 @@ export default function ImportReviewDrawer({
   }, [blockers]);
 
   const headerBlockers = useMemo(() => {
-    return blockers.filter(b => b.scope === 'header' || b.scope === 'document');
+    return blockers.filter(b => (b.scope === 'header' || b.scope === 'document') && b.code !== 'HEADER_CONFIRMATION_REQUIRED');
   }, [blockers]);
 
   const filteredRows = useMemo(() => {
@@ -96,10 +91,9 @@ export default function ImportReviewDrawer({
     return rows.filter(r => {
       const hasBlockers = !!blockersByRow[r.row_id]?.length;
       const unconfirmed = r.included && !r.confirmed_row?.row_confirmed;
-      const hasUnresolvedIssues = issues.some(iss => iss.line_no === r.line_no && !iss.resolved);
-      return hasBlockers || unconfirmed || hasUnresolvedIssues;
+      return hasBlockers || unconfirmed;
     });
-  }, [rows, needsAttentionFilter, blockersByRow, issues]);
+  }, [rows, needsAttentionFilter, blockersByRow]);
 
   // Handle header field updates
   const updateHeader = (values) => {
@@ -157,36 +151,6 @@ export default function ImportReviewDrawer({
     onCreatePart(rowId);
   };
 
-  const handleResolveIssue = (issueId) => {
-    const reason = window.prompt('Enter explanation for resolving this issue (minimum 5 characters):');
-    if (!reason || reason.trim().length < 5) {
-      alert('Explanation of at least 5 characters is required.');
-      return;
-    }
-    onQueueAction({
-      type: 'resolve_issue',
-      issue_id: issueId,
-      reason,
-    });
-  };
-
-  const handleExplainTotalMismatch = (issueId) => {
-    const explanation = window.prompt('Enter reviewed explanation for this total discrepancy:');
-    if (!explanation || explanation.trim().length < 5) {
-      alert('Explanation of at least 5 characters is required.');
-      return;
-    }
-    onQueueAction({
-      type: 'explain_total_warning',
-      issue_id: issueId,
-      explanation,
-    });
-  };
-
-  const toggleEvidence = (rowId) => {
-    setExpandedEvidence(prev => ({ ...prev, [rowId]: !prev[rowId] }));
-  };
-
   if (!isOpen) return null;
 
   return (
@@ -199,9 +163,6 @@ export default function ImportReviewDrawer({
               <h2 className="text-lg font-bold text-gray-900 dark:text-slate-100">
                 Review Extracted Document
               </h2>
-              <span className="px-2 py-0.5 text-xs font-mono font-medium rounded bg-primary-100 dark:bg-primary-950 text-primary-800 dark:text-primary-200">
-                v{version}
-              </span>
               {hasUnsavedChanges && (
                 <span className="px-2 py-0.5 text-xs font-semibold rounded bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">
                   Unsaved changes
@@ -209,7 +170,7 @@ export default function ImportReviewDrawer({
               )}
             </div>
             <div className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">
-              {rows.length} extracted lines ({rows.filter(r => r.included).length} included, {rows.filter(r => !r.included).length} excluded)
+              {rows.filter(r => r.included).length} items included · Highlighted fields were filled by AI.
             </div>
           </div>
 
@@ -242,21 +203,14 @@ export default function ImportReviewDrawer({
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-semibold text-gray-900 dark:text-slate-100 flex items-center gap-2">
                 Document Header
-                {header.header_confirmed ? (
-                  <span className="px-2 py-0.5 text-[11px] font-semibold rounded bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
-                    Confirmed
-                  </span>
-                ) : (
-                  <span className="px-2 py-0.5 text-[11px] font-semibold rounded bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300">
-                    Needs Confirmation
-                  </span>
-                )}
+                {header.header_confirmed && <span className="text-xs font-normal text-emerald-700 dark:text-emerald-400">Confirmed</span>}
               </h3>
               {!header.header_confirmed && (
                 <button
                   type="button"
+                  disabled={saving || committing}
                   onClick={() => onQueueAction({ type: 'confirm_header' })}
-                  className="px-3 py-1 text-xs font-semibold text-white bg-primary-600 hover:bg-primary-700 rounded-lg"
+                  className="px-3 py-1 text-xs font-semibold text-white bg-primary-600 hover:bg-primary-700 rounded-lg disabled:opacity-50"
                 >
                   Confirm Header
                 </button>
@@ -296,7 +250,8 @@ export default function ImportReviewDrawer({
                   type="text"
                   value={header.supplier_document_no || ''}
                   onChange={(e) => updateHeader({ supplier_document_no: e.target.value })}
-                  className="w-full px-2.5 py-1.5 font-mono border border-gray-300 dark:border-slate-700 rounded bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100"
+                  data-ai-filled={headerAiFields.includes('supplier_document_no') || undefined}
+                  className={importFieldClass(headerAiFields.includes('supplier_document_no'))}
                 />
               </div>
 
@@ -305,7 +260,8 @@ export default function ImportReviewDrawer({
                 <select
                   value={header.supplier_document_type || 'other'}
                   onChange={(e) => updateHeader({ supplier_document_type: e.target.value })}
-                  className="w-full px-2.5 py-1.5 border border-gray-300 dark:border-slate-700 rounded bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100"
+                  data-ai-filled={headerAiFields.includes('supplier_document_type') || undefined}
+                  className={importFieldClass(headerAiFields.includes('supplier_document_type'))}
                 >
                   <option value="delivery_receipt">Delivery Receipt</option>
                   <option value="invoice">Invoice</option>
@@ -325,7 +281,7 @@ export default function ImportReviewDrawer({
 
               <div>
                 <label className="block text-gray-600 dark:text-slate-400 mb-1">Confirmed Currency</label>
-                <div className="flex items-center gap-2 pt-1">
+                <div className={`flex items-center gap-2 p-2 rounded-lg ${headerAiFields.includes('confirmed_currency') ? 'bg-blue-50 dark:bg-blue-950/40' : ''}`}>
                   <label className="flex items-center gap-1.5 cursor-pointer">
                     <input
                       type="checkbox"
@@ -338,7 +294,7 @@ export default function ImportReviewDrawer({
                 </div>
               </div>
 
-              {header.another_delivery_confirmed !== undefined && (
+              {header.bill_id && (
                 <div className="flex items-center gap-2 pt-5">
                   <label className="flex items-center gap-1.5 cursor-pointer">
                     <input
@@ -371,10 +327,11 @@ export default function ImportReviewDrawer({
 
           {/* Document Issues section */}
           {issues.length > 0 && (
-            <div className="p-4 rounded-xl border border-gray-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs space-y-3">
-              <h3 className="text-sm font-semibold text-gray-900 dark:text-slate-100 flex items-center gap-2">
-                Extraction & Reconciliation Issues ({issues.length})
-              </h3>
+            <details open={issues.some(issue => blockers.some(blocker => blocker.issue_id === issue.issue_id))} className="p-4 rounded-xl border border-gray-200 dark:border-slate-800 space-y-3">
+              <summary className="text-sm font-semibold text-gray-900 dark:text-slate-100 cursor-pointer">
+                Extraction notes ({issues.length})
+              </summary>
+              <p className="text-xs text-gray-500 dark:text-slate-400">Unknown values stay blank. Informational notes do not require an explanation or correction.</p>
               <div className="space-y-2 text-xs">
                 {issues.map((iss) => (
                   <div
@@ -382,7 +339,9 @@ export default function ImportReviewDrawer({
                     className={`p-2.5 rounded-lg border flex items-center justify-between gap-3 ${
                       iss.resolved
                         ? 'border-gray-200 dark:border-slate-800 bg-gray-50/50 dark:bg-slate-800/30 text-gray-500'
-                        : 'border-amber-300 dark:border-amber-800 bg-amber-50/60 dark:bg-amber-950/20 text-amber-900 dark:text-amber-200'
+                        : blockers.some(blocker => blocker.issue_id === iss.issue_id)
+                          ? 'border-amber-300 dark:border-amber-800 bg-amber-50/60 dark:bg-amber-950/20 text-amber-900 dark:text-amber-200'
+                          : 'border-gray-200 dark:border-slate-800 text-gray-600 dark:text-slate-300'
                     }`}
                   >
                     <div>
@@ -397,33 +356,13 @@ export default function ImportReviewDrawer({
                       </div>
                       <div className="text-[11px] mt-0.5">{iss.message}</div>
                     </div>
-                    {!iss.resolved && (
-                      <div>
-                        {iss.code === 'TOTAL_MISMATCH' ? (
-                          <button
-                            type="button"
-                            onClick={() => handleExplainTotalMismatch(iss.issue_id)}
-                            className="px-2.5 py-1 font-semibold rounded bg-amber-100 dark:bg-amber-900/60 hover:bg-amber-200 text-amber-800 dark:text-amber-100"
-                          >
-                            Explain Mismatch
-                          </button>
-                        ) : iss.code !== 'SKIPPED_ROW' && iss.code !== 'CROPPED_OR_MISSING_PAGE' ? (
-                          <button
-                            type="button"
-                            onClick={() => handleResolveIssue(iss.issue_id)}
-                            className="px-2.5 py-1 font-semibold rounded bg-amber-100 dark:bg-amber-900/60 hover:bg-amber-200 text-amber-800 dark:text-amber-100"
-                          >
-                            Resolve Issue
-                          </button>
-                        ) : (
-                          <span className="text-red-600 font-medium">Unresolvable Blocker</span>
-                        )}
-                      </div>
-                    )}
+                    {!iss.resolved && <span className="text-gray-500 shrink-0">
+                      {blockers.some(blocker => blocker.issue_id === iss.issue_id) ? 'Re-extract missing content' : 'Informational'}
+                    </span>}
                   </div>
                 ))}
               </div>
-            </div>
+            </details>
           )}
 
           {/* Filter toggle bar */}
@@ -442,226 +381,119 @@ export default function ImportReviewDrawer({
             </label>
           </div>
 
-          {/* Rows list */}
           <div className="space-y-4">
-            {filteredRows.map((row) => {
-              const rowBlockers = blockersByRow[row.row_id] || [];
+            {filteredRows.map(row => {
               const cr = row.confirmed_row || {};
-              const isConfirmed = cr.row_confirmed;
-              const sourceLine = sourcePayload?.lines?.find(l => l.line_no === row.line_no) || {};
-
+              const isConfirmed = cr.row_confirmed && !(blockersByRow[row.row_id] || []).some(blocker => blocker.code === 'ROW_CONFIRMATION_REQUIRED');
+              const sourceLine = sourcePayload?.lines?.find(line => line.line_no === row.line_no) || {};
+              const aiFields = aiFilledRowFields(row, sourceLine);
+              const fieldClass = field => importFieldClass(aiFields.includes(field));
+              const rowBlockers = (blockersByRow[row.row_id] || [])
+                .filter(blocker => !['ROW_CONFIRMATION_REQUIRED', 'PART_REQUIRED'].includes(blocker.code));
               return (
-                <div
-                  key={row.row_id}
-                  className={`p-4 rounded-xl border transition ${
-                    !row.included
-                      ? 'border-gray-200 dark:border-slate-800 bg-gray-100/50 dark:bg-slate-800/20 opacity-70'
-                      : isConfirmed
-                      ? 'border-emerald-200 dark:border-emerald-800/60 bg-emerald-50/20 dark:bg-emerald-950/10'
-                      : 'border-gray-200 dark:border-slate-800 bg-white dark:bg-slate-900'
-                  }`}
-                >
-                  {/* Row header */}
-                  <div className="flex items-start justify-between gap-3 mb-3">
-                    <div className="flex items-center gap-3">
-                      <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold">
-                        <input
-                          type="checkbox"
-                          checked={row.included}
-                          onChange={() => toggleInclusion(row.row_id, row.included)}
-                          className="rounded border-gray-300"
-                        />
-                        <span>Line {row.line_no}</span>
-                      </label>
-
-                      {isConfirmed && (
-                        <span className="px-2 py-0.5 text-[11px] font-semibold rounded bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 flex items-center gap-1">
-                          <Icon path={ICONS.check} className="w-3 h-3" /> Confirmed
-                        </span>
-                      )}
-
-                      {!row.included && (
-                        <span className="px-2 py-0.5 text-[11px] font-medium rounded bg-gray-200 dark:bg-slate-700 text-gray-700 dark:text-slate-300">
-                          Excluded: {row.exclusion_reason}
-                        </span>
-                      )}
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => toggleEvidence(row.row_id)}
-                        className="text-xs text-primary-600 dark:text-primary-400 hover:underline flex items-center gap-1"
-                      >
-                        {expandedEvidence[row.row_id] ? 'Hide Evidence' : 'Show Evidence'}
-                      </button>
-
-                      {row.included && !isConfirmed && (
-                        <button
-                          type="button"
+                <div key={row.row_id} data-import-row={row.row_id}
+                  className={`rounded-xl border p-4 ${row.included ? 'border-gray-200 dark:border-slate-800' : 'border-gray-200 bg-gray-50 opacity-70 dark:border-slate-800 dark:bg-slate-800/30'}`}>
+                  <div className="flex items-center justify-between gap-3 mb-3">
+                    <label className="flex items-center gap-2 text-xs font-semibold cursor-pointer">
+                      <input type="checkbox" checked={row.included} onChange={() => toggleInclusion(row.row_id, row.included)} className="rounded border-gray-300" />
+                      Line {row.line_no}
+                    </label>
+                    {row.included && (isConfirmed
+                      ? <span className="text-xs text-emerald-700 dark:text-emerald-400 flex items-center gap-1"><Icon path={ICONS.check} className="w-3.5 h-3.5" /> Confirmed</span>
+                      : <button type="button" disabled={saving || committing || !cr.part_id || !cr.stock_uom}
+                          title={!cr.part_id ? 'Select a catalog part first' : 'Confirm this catalog match and save your changes'}
                           onClick={() => onQueueAction({ type: 'confirm_row', row_id: row.row_id })}
-                          className="px-2.5 py-1 text-xs font-semibold text-white bg-primary-600 hover:bg-primary-700 rounded-md"
-                        >
+                          className="px-3 py-1.5 text-xs font-semibold text-white bg-primary-600 hover:bg-primary-700 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed">
                           Confirm Row
-                        </button>
-                      )}
-                    </div>
+                        </button>)}
                   </div>
-
-                  {/* Row blockers alert */}
-                  {rowBlockers.length > 0 && row.included && (
-                    <div className="mb-3 p-2.5 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 rounded-lg text-xs text-red-700 dark:text-red-300 space-y-0.5">
-                      {rowBlockers.map((b, i) => (
-                        <div key={i}>• {b.message}</div>
-                      ))}
-                    </div>
-                  )}
-
-                  <OriginalLineText row={row} sourceLine={sourceLine} />
-
-                  {/* Expanded evidence drawer */}
-                  {expandedEvidence[row.row_id] && (
-                    <div className="mb-3 p-3 bg-gray-50 dark:bg-slate-800 rounded-lg text-xs space-y-2 border border-gray-200 dark:border-slate-700 font-mono">
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-[11px]">
-                        <div>Description: {sourceLine.description || '—'}</div>
-                        <div>Brand: {sourceLine.brand || '—'}</div>
-                        <div>Part Number: {sourceLine.part_number || '—'}</div>
-                        <div>Printed Total: {sourceLine.printed_line_total || '—'}</div>
-                      </div>
-                      {sourceLine.enrichment?.status && (
-                        <div className="pt-1 text-[11px]">
-                          <span className="font-sans font-semibold text-gray-600 dark:text-slate-400">Enrichment:</span>{' '}
-                          <span className="px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-950 text-blue-800 dark:text-blue-200">
-                            {sourceLine.enrichment.status === 'verified_suggestion' ? 'External Source Claim' : sourceLine.enrichment.status}
-                          </span>
-                          {sourceLine.enrichment.suggested_description && (
-                            <div className="mt-1">Suggested: {sourceLine.enrichment.suggested_description}</div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Row confirmed fields */}
-                  {row.included && (
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs">
-                      {/* Part selector */}
-                      <div className="md:col-span-2">
-                        <label className="block text-gray-600 dark:text-slate-400 mb-1">Catalog Part</label>
-                        <div className="flex flex-wrap gap-2">
-                          <button
-                            type="button"
-                            onClick={() => openCandidates(row.row_id)}
-                            title={cr.part_display_name || undefined}
-                            className="flex-1 px-3 py-1.5 text-left border border-gray-300 dark:border-slate-700 rounded bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 hover:border-primary-500 truncate"
-                          >
+                  <SupplierItemText row={row} sourceLine={sourceLine} />
+                  {!row.included && <p className="text-xs text-gray-500">Excluded: {row.exclusion_reason}</p>}
+                  {row.included && <>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3 text-xs">
+                      <div className="sm:col-span-2 lg:col-span-3 min-w-0">
+                        <label className="block text-gray-600 dark:text-slate-400 mb-1" htmlFor={`catalog-${row.row_id}`}>Catalog Part</label>
+                        <div className="flex gap-2">
+                          <button id={`catalog-${row.row_id}`} type="button" onClick={() => openCandidates(row.row_id)} title={cr.part_display_name || undefined}
+                            data-ai-filled={aiFields.includes('part_id') || undefined}
+                            className={`${fieldClass('part_id')} flex-1 min-w-0 text-left truncate hover:border-primary-500`}>
                             {cr.part_id ? cr.part_display_name || 'Catalog part unavailable' : 'Select Catalog Part…'}
                           </button>
-                          {!cr.part_id && onCreatePart && (
-                            <button
-                              type="button"
-                              onClick={() => handleCreatePart(row.row_id)}
-                              disabled={saving || committing}
-                              className="px-3 py-1.5 rounded bg-primary-600 text-white font-semibold hover:bg-primary-700 disabled:opacity-50"
-                            >
-                              Create Part
-                            </button>
-                          )}
+                          {!cr.part_id && onCreatePart && <button type="button" onClick={() => handleCreatePart(row.row_id)} disabled={saving || committing}
+                            className="px-3 py-1.5 rounded-lg border border-primary-300 text-primary-700 dark:text-primary-300 font-semibold hover:bg-primary-50 disabled:opacity-50">Create Part</button>}
                         </div>
                       </div>
-
-                      {/* Delivered Qty */}
                       <div>
-                        <label className="block text-gray-600 dark:text-slate-400 mb-1">Delivered Qty</label>
-                        <input
-                          type="text"
-                          value={cr.delivered_quantity || ''}
-                          onChange={(e) => updateRow(row.row_id, { delivered_quantity: e.target.value })}
-                          className="w-full px-2.5 py-1.5 font-mono border border-gray-300 dark:border-slate-700 rounded bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100"
-                        />
+                        <label className="block text-gray-600 dark:text-slate-400 mb-1" htmlFor={`qty-${row.row_id}`}>Delivered Qty</label>
+                        <input id={`qty-${row.row_id}`} type="text" inputMode="decimal" value={cr.delivered_quantity || ''}
+                          data-ai-filled={aiFields.includes('delivered_quantity') || undefined}
+                          onChange={e => updateRow(row.row_id, { delivered_quantity: e.target.value })} className={fieldClass('delivered_quantity')} />
                       </div>
-
-                      {/* Cost Classification & Price */}
                       <div>
-                        <label className="block text-gray-600 dark:text-slate-400 mb-1">Unit Cost</label>
-                        <div className="flex gap-1.5">
-                          <input
-                            type="text"
-                            disabled={cr.cost_kind === 'free'}
-                            value={cr.cost_price || ''}
-                            onChange={(e) => updateRow(row.row_id, { cost_price: e.target.value, cost_kind: 'priced' })}
-                            className="flex-1 px-2.5 py-1.5 font-mono border border-gray-300 dark:border-slate-700 rounded bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 disabled:opacity-50"
-                          />
-                          <select
-                            value={cr.cost_kind || 'priced'}
-                            onChange={(e) => {
-                              const kind = e.target.value;
-                              updateRow(row.row_id, {
-                                cost_kind: kind,
-                                cost_price: kind === 'free' ? '0.00' : cr.cost_price,
-                              });
-                            }}
-                            className="px-1.5 py-1.5 text-[11px] border border-gray-300 dark:border-slate-700 rounded bg-white dark:bg-slate-800"
-                          >
-                            <option value="priced">Priced</option>
-                            <option value="free">Free</option>
-                            <option value="unknown">Unknown</option>
-                          </select>
-                        </div>
+                        <label className="block text-gray-600 dark:text-slate-400 mb-1" htmlFor={`cost-${row.row_id}`}>Unit Cost</label>
+                        <input id={`cost-${row.row_id}`} type="text" inputMode="decimal" placeholder="Optional" value={cr.cost_price ?? ''}
+                          data-ai-filled={aiFields.includes('cost_price') || undefined}
+                          onChange={e => updateRow(row.row_id, { cost_price: e.target.value, cost_kind: e.target.value === '' ? 'unknown' : Number(e.target.value) === 0 ? 'free' : 'priced' })}
+                          className={fieldClass('cost_price')} />
                       </div>
-
-                      {/* Return Qty and Rejection Reason */}
                       <div>
-                        <label className="block text-gray-600 dark:text-slate-400 mb-1">Return / Rejected</label>
-                        <input
-                          type="text"
-                          value={cr.return_quantity || '0.0000'}
-                          onChange={(e) => updateRow(row.row_id, { return_quantity: e.target.value })}
-                          className="w-full px-2.5 py-1.5 font-mono border border-gray-300 dark:border-slate-700 rounded bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100"
-                        />
-                      </div>
-
-                      {Number(cr.return_quantity || 0) > 0 && (
-                        <div>
-                          <label className="block text-gray-600 dark:text-slate-400 mb-1">Rejection Reason</label>
-                          <select
-                            value={cr.rejection_reason || ''}
-                            onChange={(e) => updateRow(row.row_id, { rejection_reason: e.target.value })}
-                            className="w-full px-2.5 py-1.5 border border-gray-300 dark:border-slate-700 rounded bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100"
-                          >
-                            <option value="">Select Reason</option>
-                            {REJECTION_REASONS.map(r => (
-                              <option key={r} value={r}>{r}</option>
-                            ))}
-                          </select>
-                        </div>
-                      )}
-
-                      {/* Handwritten Price Suggestion and Sale Price */}
-                      <div>
-                        <label className="block text-gray-600 dark:text-slate-400 mb-1">Sale Price</label>
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="text"
-                            placeholder="Optional"
-                            value={cr.sale_price || ''}
-                            onChange={(e) => updateRow(row.row_id, { sale_price: e.target.value })}
-                            className="flex-1 px-2.5 py-1.5 font-mono border border-gray-300 dark:border-slate-700 rounded bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100"
-                          />
-                          {sourceLine.handwritten_sale_price && (
-                            <span className="text-[11px] text-gray-500 font-mono" title="Handwritten on document">
-                              Doc: {sourceLine.handwritten_sale_price}
-                            </span>
-                          )}
-                        </div>
+                        <label className="block text-gray-600 dark:text-slate-400 mb-1" htmlFor={`sale-${row.row_id}`}>Sale Price</label>
+                        <input id={`sale-${row.row_id}`} type="text" inputMode="decimal" placeholder="Optional" value={cr.sale_price ?? ''}
+                          data-ai-filled={aiFields.includes('sale_price') || undefined}
+                          onChange={e => updateRow(row.row_id, { sale_price: e.target.value })} className={fieldClass('sale_price')} />
                       </div>
                     </div>
-                  )}
+                    {rowBlockers.length > 0 && <div className="mt-3 text-xs text-red-700 dark:text-red-300 space-y-1" role="alert">
+                      {rowBlockers.map((blocker, index) => <p key={index}>{blocker.message}</p>)}
+                    </div>}
+                    <details className="mt-3 text-xs text-gray-600 dark:text-slate-400">
+                      <summary className="cursor-pointer w-fit hover:text-primary-600">More details{Number(cr.return_quantity) > 0 ? ` · ${cr.return_quantity} returned` : ''}</summary>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mt-3">
+                        <div>
+                          <label className="block mb-1" htmlFor={`return-${row.row_id}`}>Return / Rejected</label>
+                          <input id={`return-${row.row_id}`} type="text" inputMode="decimal" value={cr.return_quantity || '0.0000'}
+                            onChange={e => updateRow(row.row_id, { return_quantity: e.target.value })} className={fieldClass('return_quantity')} />
+                        </div>
+                        {Number(cr.return_quantity || 0) > 0 && <div>
+                          <label className="block mb-1" htmlFor={`rejection-${row.row_id}`}>Rejection Reason</label>
+                          <select id={`rejection-${row.row_id}`} value={cr.rejection_reason || ''} onChange={e => updateRow(row.row_id, { rejection_reason: e.target.value })} className={fieldClass('rejection_reason')}>
+                            <option value="">Select Reason</option>
+                            {REJECTION_REASONS.map(reason => <option key={reason} value={reason}>{reason}</option>)}
+                          </select>
+                        </div>}
+                        <div>
+                          <label className="block mb-1" htmlFor={`uom-${row.row_id}`}>Stock Unit</label>
+                          <input id={`uom-${row.row_id}`} readOnly value={cr.stock_uom || ''} data-ai-filled={aiFields.includes('stock_uom') || undefined} className={fieldClass('stock_uom')} />
+                        </div>
+                        <div>
+                          <label className="block mb-1" htmlFor={`factor-${row.row_id}`}>Units per Supplier Unit</label>
+                          <input id={`factor-${row.row_id}`} readOnly value={cr.units_per_source_unit || '1.0000'} className={fieldClass('units_per_source_unit')} />
+                        </div>
+                      </div>
+                      <p className="mt-3">Brand: {sourceLine.brand || '—'} · Part number: {sourceLine.part_number || '—'} · Group: {sourceLine.item_group_hint || '—'}</p>
+                      {sourceLine.handwritten_sale_price && <p className="mt-1">Handwritten sale price: {sourceLine.handwritten_sale_price}</p>}
+                      <p className="mt-1">Prices can be completed in the GRN draft. A blank unit cost starts at 0.</p>
+                    </details>
+                  </>}
                 </div>
               );
             })}
           </div>
         </div>
+
+        {autoMatchProgress.total > 0 && (
+          <div role="status" className="border-t border-gray-200 dark:border-slate-800 px-4 py-2 text-xs text-gray-600 dark:text-slate-300 flex flex-wrap items-center justify-between gap-2">
+            <span>
+              {autoMatchProgress.status === 'running'
+                ? `Matching catalog parts… ${autoMatchProgress.processed} / ${autoMatchProgress.total} checked · ${autoMatchProgress.matched} matched`
+                : `${autoMatchProgress.matched} automatically matched · ${rows.filter(row => row.included && !row.confirmed_row?.part_id).length} need review`}
+              {autoMatchProgress.status === 'error' && ' · Some matches could not be completed or saved.'}
+            </span>
+            {autoMatchProgress.status !== 'running' && onRetryAutomaticMatching && rows.some(row => row.included && !row.confirmed_row?.part_id) && (
+              <button type="button" onClick={onRetryAutomaticMatching} disabled={saving || committing} className="font-semibold text-primary-600 dark:text-primary-400 disabled:opacity-50">Retry automatic matching</button>
+            )}
+          </div>
+        )}
 
         {/* Footer actions */}
         <div className="p-4 border-t border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-800/80 flex items-center justify-between gap-4">
@@ -685,7 +517,7 @@ export default function ImportReviewDrawer({
 
           <button
             type="button"
-            disabled={committing || blockers.length > 0}
+            disabled={committing || saving || autoMatchProgress.status === 'running' || blockers.length > 0}
             onClick={() => onCommitReview()}
             className="px-5 py-2 text-sm font-semibold rounded-lg text-white bg-primary-600 hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-xs"
           >
@@ -714,7 +546,7 @@ export default function ImportReviewDrawer({
             </button>
           </div>
 
-          {candidateRow && <OriginalLineText row={candidateRow} sourceLine={candidateSourceLine} />}
+          {candidateRow && <SupplierItemText row={candidateRow} sourceLine={candidateSourceLine} />}
 
           <div className="py-3">
             <input
@@ -740,6 +572,8 @@ export default function ImportReviewDrawer({
                 ? 'Jev found no reliable match among these results. You can search again or review the alternatives.'
                 : candidateResult.verification?.status === 'uncertain'
                 ? 'Jev is uncertain whether these items match the supplier text. Review the details carefully.'
+                : candidateResult.verification?.status === 'missing_item_text'
+                ? 'Cleaned item text is missing. Include supplier_item_text in the import to enable automatic matching, or search manually.'
                 : candidateResult.verification?.status === 'no_candidates'
                 ? 'No candidates found for Jev to compare. Try another search or create a part.'
                 : 'Jev verification is unavailable. Catalog results are available for manual review.'}

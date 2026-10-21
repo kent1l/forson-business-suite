@@ -27,7 +27,6 @@ Return ONLY one valid JSON object in the exact structure below. Do NOT add markd
   "lines": [
     {
       "line_no": 1,
-      "raw_text": null,
       "supplier_item_text": null,
       "description": null,
       "brand": null,
@@ -60,14 +59,14 @@ TRANSCRIPTION RULES
 - CRITICAL - DECIMAL STRINGS ONLY: Quantities, unit costs, line totals, and document totals MUST be plain unsigned decimal strings or null (e.g. "4", "4.0000", "3750.00", "13500.00", "23868.00"). NEVER output raw JSON numbers for quantities or money. Numbers are strictly allowed ONLY as integers for schema_version and line_no. Do not use commas, currency symbols (₱, $), negative signs, or exponent notation. Quantity permits up to 4 decimal places; money permits up to 2 decimal places. A printed zero amount is "0.00", not null.
 - DOCUMENT TYPE ENUM: document_type must be null or one of: "delivery_receipt", "invoice", "packing_list", "other". Map Delivery Receipts (DR), Acknowledgement Receipts (AR), and Delivery Orders to "delivery_receipt". Map Sales Invoices (SI), Commercial Invoices, and Official Receipts (OR) to "invoice". Map Packing Lists to "packing_list". Use "other" for any other or ambiguous title.
 - ESCAPING QUOTES: All double quotes inside string values (e.g. inch marks like 8\" or quoted brands like \"COMPACT\") MUST be escaped with a backslash (\"). Unescaped double quotes will corrupt the JSON syntax.
-- raw_text must capture the literal printed wording of the line as faithfully as possible. description may be cleaned for readability, but must never include web-discovered details or inferred specs.
-- supplier_item_text is the compact identifying text for THIS item, derived only from its visible receipt wording. Retain printed brand, manufacturer part number, product/model, dimensions, grade, size, pack size, vehicle/application codes and orientation where they identify the product. Remove the row number, ordered/delivered/returned quantities, purchase units used only for counting, costs, totals, discounts, tax, selling-price handwriting, check marks and other receiving annotations. Do NOT remove identifying numbers such as 10W-40, 1L bottle size, 3/4 inch, RH/LH or model/part codes. Example: raw_text "2 PCS TOYOTA 04152-YZZA6 OIL FILTER @125.00 TOTAL 250.00 ✓" becomes supplier_item_text "TOYOTA 04152-YZZA6 OIL FILTER". Keep raw_text unchanged. Use null if a faithful item identity cannot be isolated; report ambiguity rather than inventing an identity. FBS uses this text together with raw_text for catalog matching and Jev verification. Limit this field to 2,000 characters.
+- supplier_item_text is the cleaned receipt wording used for automatic catalog matching and Jev verification. description is an optional cleaned product description for compatibility. Neither field may include web-discovered details or inferred specs. Do not output the full uncleaned line as raw_text; that legacy field is neither displayed nor used for matching.
+- supplier_item_text is the compact identifying text for THIS item, derived only from its visible receipt wording. Retain printed brand, manufacturer part number, product/model, dimensions, grade, size, pack size, vehicle/application codes and orientation where they identify the product. Remove the row number, ordered/delivered/returned quantities, purchase units used only for counting, costs, totals, discounts, tax, selling-price handwriting, check marks and other receiving annotations. Do NOT remove identifying numbers such as 10W-40, 1L bottle size, 3/4 inch, RH/LH or model/part codes. Example: receipt wording "2 PCS TOYOTA 04152-YZZA6 OIL FILTER @125.00 TOTAL 250.00 ✓" becomes supplier_item_text "TOYOTA 04152-YZZA6 OIL FILTER". Use null if a faithful item identity cannot be isolated; report ambiguity rather than inventing an identity. FBS uses this cleaned text and extracted identity fields for catalog matching and Jev verification. Limit this field to 2,000 characters.
 - Populate brand, part_number, supplier_item_code, and item_group_hint outside enrichment ONLY when explicitly printed or visibly identifiable on the physical page.
 - Keep document_number, part_number, and supplier_item_code as strings. Preserve letters, leading zeros, hyphens, and other meaningful punctuation.
 - document_date is the date printed on the supplier document in YYYY-MM-DD format (only when unambiguous). Do not use the date goods physically arrived. Currency is a 3-letter uppercase code (e.g. "PHP") only when unambiguous; otherwise null.
 - Put printed supplier cost in unit_cost. Put clearly handwritten intended retail/selling prices in handwritten_sale_price (as a decimal string). Never confuse the two.
 - Describe warehouse annotations (ticks, checks, circles, stamps) literally in receiving_mark (e.g., "Check mark (✓) over quantity"). A check mark does not prove physical acceptance.
-- If handwriting conflicts with printed text, preserve both in raw_text, leave the disputed structured value null if unclear, and report a CONFLICTING_VALUES issue.
+- If handwriting conflicts with printed text, leave disputed structured values null if unclear and report the conflicting wording in a CONFLICTING_VALUES issue. Do not mix receiving annotations or transaction amounts into supplier_item_text.
 - Never output FBS internal identifiers: no part_id, supplier_id, po_id, grn_id, accepted_quantity, or approval/status keys.
 
 INTERNET RESEARCH RULES
@@ -116,4 +115,4 @@ Before returning the JSON, verify:
 
 FBS validates the output against the final contract; this prompt is not a substitute for server validation. A new payload version requires updating both the plan/schema and prompt together.
 
-The optional `supplier_item_text` field extends schema v1. Older v1 JSON remains accepted and uses description/raw_text for matching. Omitting the field preserves legacy normalized payload hashes.
+The optional `supplier_item_text` field extends schema v1. Older v1 JSON remains accepted and can use its cleaned description for matching. Raw-only rows require manual catalog search; original raw text is not a matching fallback. A nonblank supplier_item_text is sufficient when description and raw_text are omitted. Omitting the field preserves legacy normalized payload hashes.

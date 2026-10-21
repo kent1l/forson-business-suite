@@ -13,6 +13,7 @@
     import { AuthProvider } from '../../src/contexts/AuthContext.jsx';
     import { SettingsProvider } from '../../src/contexts/SettingsContext.jsx';
     import GoodsReceiptPage from '../../src/pages/GoodsReceiptPage.jsx';
+    import useGrnImportReview from '../../src/hooks/useGrnImportReview.js';
     import '../../src/index.css';
 
     localStorage.setItem('userSession', JSON.stringify({
@@ -33,6 +34,16 @@
     const root = createRoot(document.getElementById('root'));
 
     let renderCount = 0;
+    function ImportReviewHookHarness({ importId }) {
+      const review = useGrnImportReview({ autoMatchEnabled: true });
+      React.useEffect(() => { review.fetchReview(importId); }, [importId]);
+      window.importReviewHook = review;
+      return React.createElement('div', null, JSON.stringify(review.autoMatchProgress));
+    }
+    window.mountImportReviewHook = (importId) => {
+      renderCount += 1;
+      root.render(React.createElement(ImportReviewHookHarness, { key: renderCount, importId }));
+    };
     window.mountGoodsReceipt = (pageState = {}) => {
       renderCount += 1;
       const onNavigate = (page, state) => {

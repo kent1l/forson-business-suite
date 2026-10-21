@@ -8,7 +8,6 @@ const {
   MAX_PAYLOAD_BYTES,
   MAX_LINES,
   MAX_ISSUES,
-  KNOWN_ISSUE_CODES,
 } = require('../helpers/grnImportSchema');
 
 const MAX_REVIEW_JSON_BYTES = 4194304; // 4 MiB
@@ -31,17 +30,13 @@ function getImportCapabilities() {
   };
 }
 
+// Confirmation covers catalog identity, independently of editable receipt prices and quantities.
 function computeRowDigest({
   supplierId,
   currency,
   partId,
   stockUom,
   unitsPerSourceUnit,
-  deliveredQuantity,
-  returnQuantity,
-  costPrice,
-  costKind,
-  salePrice,
 }) {
   const content = JSON.stringify({
     supplierId: supplierId || null,
@@ -49,11 +44,6 @@ function computeRowDigest({
     partId: partId || null,
     stockUom: stockUom || null,
     unitsPerSourceUnit: unitsPerSourceUnit || '1.0000',
-    deliveredQuantity: deliveredQuantity || null,
-    returnQuantity: returnQuantity || '0.0000',
-    costPrice: costPrice || null,
-    costKind: costKind || null,
-    salePrice: salePrice || null,
   });
   return crypto.createHash('sha256').update(content).digest('hex');
 }
@@ -137,6 +127,7 @@ function calculateBlockers(reviewState, sourcePayload) {
     if (issue.code === 'SKIPPED_ROW' || issue.code === 'CROPPED_OR_MISSING_PAGE') {
       blockers.push({
         scope: 'document',
+        issue_id: issue.issue_id,
         field: null,
         code: issue.code,
         message: `Extraction has ${issue.code} issue. Document cannot be imported in MVP. Please re-extract or abandon.`,
@@ -314,48 +305,11 @@ function calculateBlockers(reviewState, sourcePayload) {
       }
     }
 
-    // Cost classification
-    if (!cr.cost_kind || !['priced', 'free', 'unknown'].includes(cr.cost_kind)) {
-      blockers.push({
-        scope: 'row',
-        row_id: row.row_id,
-        line_no: row.line_no,
-        field: 'cost_kind',
-        code: 'COST_KIND_REQUIRED',
-        message: `Line ${row.line_no}: Cost must be classified as priced, free, or unknown.`,
-      });
-    } else if (cr.cost_kind === 'priced') {
-      if (cr.cost_price === null || cr.cost_price === undefined || Number(cr.cost_price) <= 0) {
-        blockers.push({
-          scope: 'row',
-          row_id: row.row_id,
-          line_no: row.line_no,
-          field: 'cost_price',
-          code: 'COST_PRICE_REQUIRED',
-          message: `Line ${row.line_no}: Priced line item requires a positive unit cost.`,
-        });
-      }
-    } else if (cr.cost_kind === 'free') {
-      if (cr.cost_price !== '0.00' && Number(cr.cost_price) !== 0) {
-        blockers.push({
-          scope: 'row',
-          row_id: row.row_id,
-          line_no: row.line_no,
-          field: 'cost_price',
-          code: 'FREE_COST_PRICE_MUST_BE_ZERO',
-          message: `Line ${row.line_no}: Free goods must have cost price of 0.00.`,
-        });
-      }
-    } else if (cr.cost_kind === 'unknown') {
-      if (!cr.cost_reason || cr.cost_reason.trim().length < 5) {
-        blockers.push({
-          scope: 'row',
-          row_id: row.row_id,
-          line_no: row.line_no,
-          field: 'cost_reason',
-          code: 'COST_REASON_REQUIRED',
-          message: `Line ${row.line_no}: Unknown cost requires an explanation of at least 5 characters.`,
-        });
+    // Prices can be completed in the GRN draft. Only reject invalid provided values.
+    for (const field of ['cost_price', 'sale_price']) {
+      if (cr[field] != null && cr[field] !== '' && (!Number.isFinite(Number(cr[field])) || Number(cr[field]) < 0)) {
+        blockers.push({ scope: 'row', row_id: row.row_id, line_no: row.line_no,
+          field, code: 'INVALID_PRICE', message: `Line ${row.line_no}: Enter a non-negative price or leave it blank.` });
       }
     }
 
@@ -366,11 +320,6 @@ function calculateBlockers(reviewState, sourcePayload) {
       partId: cr.part_id,
       stockUom: cr.stock_uom,
       unitsPerSourceUnit: cr.units_per_source_unit,
-      deliveredQuantity: cr.delivered_quantity,
-      returnQuantity: cr.return_quantity,
-      costPrice: cr.cost_price,
-      costKind: cr.cost_kind,
-      salePrice: cr.sale_price,
     });
     if (!cr.row_confirmed || cr.row_confirmation_digest !== expectedRowDigest) {
       blockers.push({
@@ -379,54 +328,14 @@ function calculateBlockers(reviewState, sourcePayload) {
         line_no: row.line_no,
         field: 'row_confirmed',
         code: 'ROW_CONFIRMATION_REQUIRED',
-        message: `Line ${row.line_no}: Line item must be explicitly confirmed.`,
+        message: `Line ${row.line_no}: Catalog match must be confirmed.`,
       });
     }
   }
 
-  // 5. Issues resolution
-  const includedLineNos = new Set(includedRows.map(r => r.line_no));
-  for (const issue of issues) {
-    if (issue.resolved) continue;
-
-    const isHeaderScope = issue.line_no === null;
-    const isIncludedRow = issue.line_no !== null && includedLineNos.has(issue.line_no);
-
-    if (isHeaderScope || isIncludedRow) {
-      if (['UNREADABLE_VALUE', 'AMBIGUOUS_VALUE', 'CONFLICTING_VALUES'].includes(issue.code)) {
-        blockers.push({
-          scope: isHeaderScope ? 'header' : 'row',
-          line_no: issue.line_no,
-          issue_id: issue.issue_id,
-          field: issue.field,
-          code: issue.code,
-          message: `Unresolved issue '${issue.code}': ${issue.message}. Explanation or correction required.`,
-        });
-      } else if (issue.code === 'TOTAL_MISMATCH') {
-        const hasExplanation = reviewState.total_warning_explanations?.[issue.issue_id];
-        if (!hasExplanation || hasExplanation.trim().length < 5) {
-          blockers.push({
-            scope: isHeaderScope ? 'header' : 'row',
-            line_no: issue.line_no,
-            issue_id: issue.issue_id,
-            field: issue.field,
-            code: 'TOTAL_MISMATCH_EXPLANATION_REQUIRED',
-            message: `Total mismatch (${issue.message}) requires a reviewed explanation of at least 5 characters.`,
-          });
-        }
-      } else if (!KNOWN_ISSUE_CODES.has(issue.code)) {
-        // Unknown issue code requires resolution
-        blockers.push({
-          scope: isHeaderScope ? 'header' : 'row',
-          line_no: issue.line_no,
-          issue_id: issue.issue_id,
-          field: issue.field,
-          code: 'UNKNOWN_ISSUE_REQUIRES_RESOLUTION',
-          message: `Issue '${issue.code}': ${issue.message}. Explanation required.`,
-        });
-      }
-    }
-  }
+  // Extraction uncertainty is evidence, not a separate approval requirement.
+  // Missing or invalid required values are checked above; uncertain optional facts
+  // stay null without an invented correction or a mandatory explanation.
 
   return blockers;
 }
@@ -434,6 +343,8 @@ function calculateBlockers(reviewState, sourcePayload) {
 function initializeReviewState(normalizedPayload, initialContext) {
   const doc = normalizedPayload.document || {};
   const header = {
+    ai_filled_fields: [doc.document_number && 'supplier_document_no', doc.document_type && 'supplier_document_type',
+      doc.currency === 'PHP' && 'confirmed_currency'].filter(Boolean),
     supplier_id: initialContext.supplier_id || null,
     supplier_document_no: doc.document_number || null,
     supplier_document_type: ['delivery_receipt', 'invoice', 'other'].includes(doc.document_type) ? doc.document_type : 'other',
@@ -459,6 +370,7 @@ function initializeReviewState(normalizedPayload, initialContext) {
       exclusion_reason: null,
       corrections: {},
       confirmed_row: {
+        ai_filled_fields: [line.quantity && 'delivered_quantity', line.unit_cost && 'cost_price'].filter(Boolean),
         part_id: null,
         stock_uom: null,
         units_per_source_unit: '1.0000',
@@ -835,6 +747,13 @@ async function patchImport(client, employeeId, importId, { version, actions }) {
           throw err;
         }
 
+        const extractedHeader = review.source_payload?.document || {};
+        const headerOrigins = header.ai_filled_fields || ['supplier_document_no', 'supplier_document_type', 'confirmed_currency']
+          .filter(field => header[field] && header[field] === extractedHeader[{
+            supplier_document_no: 'document_number', supplier_document_type: 'document_type', confirmed_currency: 'currency',
+          }[field]]);
+        header.ai_filled_fields = headerOrigins.filter(field => !Object.hasOwn(values, field));
+
         const supplierChanged = values.supplier_id !== undefined && values.supplier_id !== header.supplier_id;
         const currencyChanged = values.confirmed_currency !== undefined && values.confirmed_currency !== header.confirmed_currency;
 
@@ -873,6 +792,14 @@ async function patchImport(client, employeeId, importId, { version, actions }) {
         }
 
         const cr = row.confirmed_row;
+        const sourceLine = review.source_payload?.lines?.find(line => line.line_no === row.line_no) || {};
+        const origins = new Set(cr.ai_filled_fields || ['delivered_quantity', 'cost_price'].filter(field =>
+          cr[field] != null && cr[field] === sourceLine[field === 'cost_price' ? 'unit_cost' : 'quantity']));
+        for (const field of Object.keys(values)) {
+          if (action.origin === 'automatic_match' && ['part_id', 'stock_uom'].includes(field)) origins.add(field);
+          else origins.delete(field);
+        }
+        cr.ai_filled_fields = [...origins];
         let requiresReconfirm = false;
 
         if (values.part_id !== undefined && values.part_id !== cr.part_id) {
@@ -889,29 +816,24 @@ async function patchImport(client, employeeId, importId, { version, actions }) {
         }
         if (values.delivered_quantity !== undefined && values.delivered_quantity !== cr.delivered_quantity) {
           cr.delivered_quantity = values.delivered_quantity;
-          requiresReconfirm = true;
         }
         if (values.return_quantity !== undefined && values.return_quantity !== cr.return_quantity) {
           cr.return_quantity = values.return_quantity;
-          requiresReconfirm = true;
         }
         if (values.rejection_reason !== undefined) {
           cr.rejection_reason = values.rejection_reason;
         }
         if (values.cost_price !== undefined && values.cost_price !== cr.cost_price) {
-          cr.cost_price = values.cost_price;
-          requiresReconfirm = true;
+          cr.cost_price = values.cost_price === '' ? null : values.cost_price;
         }
         if (values.cost_kind !== undefined && values.cost_kind !== cr.cost_kind) {
           cr.cost_kind = values.cost_kind;
-          requiresReconfirm = true;
         }
         if (values.cost_reason !== undefined) {
           cr.cost_reason = values.cost_reason;
         }
         if (values.sale_price !== undefined && values.sale_price !== cr.sale_price) {
-          cr.sale_price = values.sale_price;
-          requiresReconfirm = true;
+          cr.sale_price = values.sale_price === '' ? null : values.sale_price;
         }
 
         // Check if there are corrections to source facts
@@ -922,6 +844,7 @@ async function patchImport(client, employeeId, importId, { version, actions }) {
               err.statusCode = 400;
               throw err;
             }
+            if (['supplier_item_text', 'description', 'brand', 'part_number', 'supplier_item_code', 'item_group_hint'].includes(k)) requiresReconfirm = true;
             row.corrections[k] = {
               old_value: row[k],
               new_value: newVal,
@@ -971,17 +894,17 @@ async function patchImport(client, employeeId, importId, { version, actions }) {
           throw err;
         }
         const cr = row.confirmed_row;
+        if (!cr.part_id || !cr.stock_uom) {
+          const err = new Error('Select a catalog part before confirming the row.');
+          err.statusCode = 400;
+          throw err;
+        }
         cr.row_confirmation_digest = computeRowDigest({
           supplierId: header.supplier_id,
           currency: header.confirmed_currency,
           partId: cr.part_id,
           stockUom: cr.stock_uom,
           unitsPerSourceUnit: cr.units_per_source_unit,
-          deliveredQuantity: cr.delivered_quantity,
-          returnQuantity: cr.return_quantity,
-          costPrice: cr.cost_price,
-          costKind: cr.cost_kind,
-          salePrice: cr.sale_price,
         });
         cr.row_confirmed = true;
         break;
@@ -1272,7 +1195,7 @@ async function commitImport(client, employeeId, importId, { version }) {
       part_id: cr.part_id,
       quantity: Number(cr.delivered_quantity),
       cost_price: Number(cr.cost_price || 0),
-      sale_price: cr.sale_price != null ? Number(cr.sale_price) : null,
+      sale_price: cr.sale_price != null && cr.sale_price !== '' ? Number(cr.sale_price) : null,
       return_quantity: Number(cr.return_quantity || 0),
       rejection_reason: cr.rejection_reason || null,
       is_free_goods: cr.cost_kind === 'free',
@@ -1290,6 +1213,7 @@ async function commitImport(client, employeeId, importId, { version }) {
     freightCosts: [],
     overallDiscountPercent: null,
     overallDiscountAmount: null,
+    recomputeSalePrice: false,
   });
 
   // Verify total payable does not overflow

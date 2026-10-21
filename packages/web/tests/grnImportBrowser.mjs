@@ -25,8 +25,9 @@ try {
   // Mock API states
   let featureEnabled = true;
   const createdParts = [];
-  const catalogNames = { 10: 'Catalog oil filter element', 20: 'Catalog air filter', 30: 'Existing oil filter' };
+  const catalogNames = { 10: 'Catalog oil filter element', 20: 'Catalog air filter', 30: 'Existing oil filter', 501: 'Automatically found filter' };
   let requireDuplicateResolution = false;
+  let savedImportedDraft = null;
   let inReviewImports = [
     {
       import_id: 'e1000000-0000-0000-0000-000000000001',
@@ -35,7 +36,7 @@ try {
       updated_at: new Date().toISOString(),
       created_at: new Date().toISOString(),
       supplier_document_no: 'INV-9901',
-      line_count: 2,
+      line_count: 3,
     },
   ];
 
@@ -74,6 +75,7 @@ try {
           quantity: '3.0000',
           unit_cost: '150.00',
         },
+        { line_no: 3, supplier_item_text: 'TOYOTA AUTO-501 FILTER', description: 'Automatic filter', quantity: '4.0000', unit_cost: '111.00' },
       ],
     },
     review_state: {
@@ -82,7 +84,7 @@ try {
         supplier_document_no: 'INV-9901',
         supplier_document_type: 'invoice',
         receipt_date: '2026-10-20',
-        currency: 'PHP',
+        confirmed_currency: 'PHP',
         header_confirmed: true,
       },
       rows: [
@@ -97,8 +99,9 @@ try {
           confirmed_row: {
             part_id: 10,
             part_display_name: catalogNames[10],
-            quantity: '5.00',
-            unit_cost: '250.00',
+            delivered_quantity: '5.00',
+            cost_price: '250.00',
+            stock_uom: 'PCS',
             sale_price: '400.00',
             row_confirmed: true,
           },
@@ -116,8 +119,11 @@ try {
             row_confirmed: false,
           },
         },
+        { row_id: 'r_3', line_no: 3, included: true, confirmed_row: {
+          part_id: null, delivered_quantity: '4.0000', return_quantity: '0.0000', cost_price: '111.00', sale_price: null, row_confirmed: false,
+        } },
       ],
-      issues: [],
+      issues: [{ issue_id: 'annotation-note', code: 'AMBIGUOUS_VALUE', line_no: null, field: null, message: "Handwritten numbers '180' and '1000' appear near lines 5 and 6; their intended line association and meaning (e.g. operational temperature spec vs. retail price) are ambiguous, so handwritten_sale_price is set to null.", resolved: false }],
     },
     blockers: [],
   };
@@ -192,9 +198,19 @@ try {
       for (const action of JSON.parse(req.postData()).actions) {
         if (action.type === 'set_row') {
           const row = mockReviewDetail.review_state.rows.find(row => row.row_id === action.row_id);
-          Object.assign(row.confirmed_row, action.values, { row_confirmed: false });
+          const cr = row.confirmed_row;
+          const changedMatch = ['part_id', 'stock_uom', 'units_per_source_unit'].some(field => field in action.values && action.values[field] !== cr[field]);
+          const source = mockReviewDetail.source_payload.lines.find(line => line.line_no === row.line_no);
+          const origins = new Set(cr.ai_filled_fields || ['delivered_quantity', 'cost_price'].filter(field => cr[field] === source[field === 'cost_price' ? 'unit_cost' : 'quantity']));
+          for (const field of Object.keys(action.values)) {
+            if (action.origin === 'automatic_match' && ['part_id', 'stock_uom'].includes(field)) origins.add(field);
+            else origins.delete(field);
+          }
+          Object.assign(cr, action.values, { ai_filled_fields: [...origins], row_confirmed: changedMatch ? false : cr.row_confirmed });
           row.confirmed_row.part_display_name = catalogNames[row.confirmed_row.part_id];
         }
+        if (action.type === 'confirm_row') mockReviewDetail.review_state.rows.find(row => row.row_id === action.row_id).confirmed_row.row_confirmed = true;
+        if (action.type === 'confirm_header') mockReviewDetail.review_state.header.header_confirmed = true;
       }
       mockReviewDetail.version += 1;
       const { import_id, status, version, review_state, blockers } = mockReviewDetail;
@@ -203,6 +219,11 @@ try {
 
     if (path === '/api/goods-receipts/imports/e1000000-0000-0000-0000-000000000001/candidates') {
       const { row_id, query } = JSON.parse(req.postData());
+      if (row_id === 'r_3') {
+        const part = { part_id: 501, display_name: catalogNames[501], stock_uom: 'PCS', method: 'jev', confidence: 0.98 };
+        return respond({ row_id, version: mockReviewDetail.version, candidates: [part], automatic_match: part,
+          search_status: 'available', ai_status: 'available', verification: { status: 'match', part_id: 501, confidence: 0.98 } });
+      }
       if (row_id === 'r_2') {
         return respond({ row_id: 'r_2', version: mockReviewDetail.version, candidates: [], search_status: 'available', verification: { status: 'no_candidates' } });
       }
@@ -267,6 +288,11 @@ try {
       });
     }
 
+    if (path === '/api/goods-receipts/99/draft' && req.method() === 'PUT') {
+      savedImportedDraft = JSON.parse(req.postData());
+      return respond({ grn_id: 99, workflow_status: 'Draft' });
+    }
+
     if (path === '/api/goods-receipts/99/lines') {
       return respond([
         {
@@ -277,7 +303,7 @@ try {
           display_name: 'Oil Filter Element',
           quantity: 5,
           cost_price: 250,
-          sale_price: 400,
+          sale_price: null,
         },
       ]);
     }
@@ -367,12 +393,43 @@ try {
   await page.waitForFunction(() => document.body.innerText.includes('Review Extracted Document'));
   await page.waitForFunction(() => Array.from(document.querySelectorAll('button')).some(button => button.textContent.trim() === 'Catalog oil filter element'));
   assert.equal(await page.evaluate(() => document.body.innerText.includes('Part ID:')), false);
-  console.log('✓ Review drawer mounted with row data');
+  assert.equal(await page.$eval('details', el => el.open), false, 'Informational uncertainty notes should stay collapsed');
+  assert.equal(await page.$$eval('button', buttons => buttons.some(button => button.textContent.trim() === 'Resolve Issue')), false);
+  assert.equal(await page.$eval('#sale-r_3', el => el.value), '', 'Unknown sale price stays blank');
+  console.log('✓ Review drawer mounted with row data and nonblocking uncertainty note');
+  await page.waitForFunction(() => Array.from(document.querySelectorAll('button')).some(button => button.textContent.trim() === 'Automatically found filter'));
+  await page.waitForFunction(() => document.body.innerText.includes('1 automatically matched'));
+  assert.equal(mockReviewDetail.review_state.rows.find(row => row.row_id === 'r_3').confirmed_row.part_id, 501);
+  assert.equal(await page.evaluate(() => document.body.innerText.includes('Select Catalog Item')), false);
+  assert.equal(mockReviewDetail.review_state.rows.find(row => row.row_id === 'r_3').confirmed_row.cost_price, '111.00');
+  console.log('✓ Review opening automatically finds, displays and saves a strong catalog match without opening the picker');
   await page.setViewport({ width: 1440, height: 1000 });
   assert.equal(await page.$eval('.max-w-7xl', el => el.getBoundingClientRect().width), 1280);
   await page.setViewport({ width: 390, height: 844 });
   assert.equal(await page.$eval('.max-w-7xl', el => el.getBoundingClientRect().width), 390);
   await page.setViewport({ width: 1440, height: 1000 });
+  assert.equal(await page.$eval('[data-import-row="r_2"] button[title="Select a catalog part first"]', el => el.disabled), true);
+  assert.equal(await page.$eval('#catalog-r_3', el => el.dataset.aiFilled), 'true');
+  assert.equal(await page.$eval('#cost-r_3', el => el.dataset.aiFilled), 'true');
+  assert.equal(await page.evaluate(() => document.body.innerText.includes('Auto-matched ·')), false);
+  await page.$eval('[data-import-row="r_3"]', row => Array.from(row.querySelectorAll('button')).find(button => button.textContent.trim() === 'Confirm Row').click());
+  await page.waitForFunction(() => document.querySelector('[data-import-row="r_3"]').innerText.includes('Confirmed') && !document.body.innerText.includes('Saving…'));
+  assert.equal(mockReviewDetail.review_state.rows[2].confirmed_row.row_confirmed, true, 'Confirm Row saves without a separate Save Review click');
+  await page.focus('#cost-r_3');
+  await page.keyboard.down('Control'); await page.keyboard.press('A'); await page.keyboard.up('Control');
+  await page.keyboard.type('112.00');
+  assert.equal(await page.$eval('#cost-r_3', el => el.hasAttribute('data-ai-filled')), false, 'Manual edits remove AI highlight');
+  assert.equal(await page.$eval('[data-import-row="r_3"]', el => el.innerText.includes('Confirmed')), true, 'Price edits must retain match confirmation');
+  await page.evaluate(() => Array.from(document.querySelectorAll('button')).find(button => button.textContent.trim() === 'Save Review').click());
+  await page.waitForFunction(() => !document.body.innerText.includes('Unsaved changes') && !document.body.innerText.includes('Saving…'));
+  assert.equal(mockReviewDetail.review_state.rows[2].confirmed_row.row_confirmed, true);
+  assert.equal(await page.$eval('#cost-r_3', el => el.hasAttribute('data-ai-filled')), false);
+  await page.screenshot({ path: '/tmp/grn-import-review-desktop.png' });
+  await page.setViewport({ width: 390, height: 844 });
+  assert.equal(await page.evaluate(() => document.querySelector('.max-w-7xl').scrollWidth <= 390), true, 'Review must fit a phone viewport');
+  await page.screenshot({ path: '/tmp/grn-import-review-mobile.png' });
+  await page.setViewport({ width: 1440, height: 1000 });
+  console.log('✓ Confirmation saves immediately; unmatched items require selection; price edits preserve confirmation and remove AI highlight');
 
   // TEST 6: Candidate Matching Drawer
   console.log('Test 6: Part candidate drawer lookup...');
@@ -386,7 +443,8 @@ try {
   await page.waitForFunction(() => Array.from(document.querySelectorAll('.z-60 div')).some(div => div.textContent === 'Catalog oil filter element'));
   console.log('✓ Candidate matching drawer returned ranked candidate');
   await page.waitForFunction(() => document.body.innerText.includes('Jev recommends · 96%'));
-  assert(await page.$eval('.z-60', el => el.innerText.includes('Cleaned Supplier Text') && el.innerText.includes('5 PCS TOYOTA')));
+  assert(await page.$eval('.z-60', el => el.innerText.includes('Cleaned Supplier Text') && el.innerText.includes('TOYOTA 04152-YZZA6 OIL FILTER')));
+  assert.equal(await page.evaluate(() => document.body.innerText.includes('5 PCS TOYOTA') || document.body.innerText.includes('Raw Text')), false, 'Original raw text must not be displayed');
   const searchFor = async text => {
     const input = await page.$('.z-60 input[type="text"]');
     await input.click({ clickCount: 3 });
@@ -408,7 +466,7 @@ try {
   await page.waitForFunction(() => document.body.innerText.includes('Jev recommends · 96%'));
   await new Promise(resolve => setTimeout(resolve, 1100));
   assert.equal(await page.$eval('.z-60', el => el.innerText.includes('Stale result')), false);
-  console.log('✓ Cleaned/raw evidence, Jev recommendation/no-match/uncertainty, search failures and late-response protection');
+  console.log('✓ Cleaned item evidence only, Jev recommendation/no-match/uncertainty, search failures and late-response protection');
 
   // Select candidate
   await page.evaluate(() => {
@@ -437,7 +495,7 @@ try {
 
   await clickButton('Select Catalog Part…');
   await page.waitForFunction(() => document.body.innerText.includes('No matching catalog items found.'));
-  assert.equal(await page.$$eval('section[aria-label="Original text for line 2"]', els => els.length), 2);
+  assert.equal(await page.$$eval('section[aria-label="Supplier item text for line 2"]', els => els.length), 2);
   await page.evaluate(() => Array.from(document.querySelectorAll('button')).filter(button => button.textContent.trim() === 'Create Part').at(-1).click());
   await page.waitForSelector('input[name="detail"]');
   await clickButton('Save');
@@ -451,7 +509,7 @@ try {
   await clickButton('Save Review');
   await page.waitForFunction(() => !document.body.innerText.includes('Unsaved changes'));
   const createdRow = mockReviewDetail.review_state.rows.find(row => row.row_id === 'r_2');
-  assert(await page.$eval('section[aria-label="Original text for line 1"]', el => el.innerText.includes('Cleaned Supplier Text') && el.innerText.includes('5 PCS TOYOTA')), 'Saving must preserve raw and cleaned source evidence');
+  assert(await page.$eval('section[aria-label="Supplier item text for line 1"]', el => el.innerText.includes('Cleaned Supplier Text') && el.innerText.includes('TOYOTA 04152-YZZA6 OIL FILTER') && !el.innerText.includes('5 PCS')), 'Saving must preserve cleaned item evidence without showing original raw text');
   assert.equal(createdRow.confirmed_row.part_id, 20);
   assert.equal(createdRow.confirmed_row.stock_uom, 'PCS');
   assert.equal(createdRow.confirmed_row.delivered_quantity, '3.0000');
@@ -487,7 +545,21 @@ try {
 
   await page.waitForFunction(() => document.body.innerText.includes('GRN-202610-0099'));
   await page.waitForFunction(() => document.body.innerText.includes('Imported JSON'));
-  console.log('✓ Staged GRN loaded with Imported JSON provenance badge');
+  await page.waitForSelector('input[aria-label="Sale price for Oil Filter Element"]');
+  assert.equal(await page.$eval('input[aria-label="Sale price for Oil Filter Element"]', el => el.value), '', 'Imported null sale price must not display a calculated default');
+  await page.type('input[aria-label="Sale price for Oil Filter Element"]', '450');
+  await page.$eval('input[aria-label="Sale price for Oil Filter Element"]', el => el.blur());
+  assert.equal(await page.$eval('input[aria-label="Sale price for Oil Filter Element"]', el => el.value), '450');
+  await page.focus('input[aria-label="Sale price for Oil Filter Element"]');
+  await page.keyboard.down('Control'); await page.keyboard.press('A'); await page.keyboard.up('Control');
+  await page.keyboard.press('Backspace');
+  await page.$eval('input[aria-label="Sale price for Oil Filter Element"]', el => el.blur());
+  assert.equal(await page.$eval('input[aria-label="Sale price for Oil Filter Element"]', el => el.value), '', 'Clearing an imported price preserves null rather than changing to 0');
+  const draftSaved = page.waitForResponse(response => response.url().endsWith('/99/draft') && response.request().method() === 'PUT');
+  await clickButton('Update draft');
+  await draftSaved;
+  assert.equal(savedImportedDraft.lines[0].sale_price, null, 'Saving from the draft UI must send null for an unknown sale price');
+  console.log('✓ Staged GRN loaded with Imported JSON provenance badge and unknown sale price still blank');
 
   console.log('Test 8: Part creation requires permission...');
   mockReviewDetail.status = 'IN_REVIEW';
