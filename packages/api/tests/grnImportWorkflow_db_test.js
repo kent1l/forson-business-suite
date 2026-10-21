@@ -209,6 +209,12 @@ app.use('/api', require('../routes/goodsReceiptRoutes'));
     ],
   }, 200);
   assert.equal(patch1.version, 2);
+  const { rows: [catalogPart] } = await db.query('SELECT display_name FROM parts_view WHERE part_id = $1', [partA.part_id]);
+  assert.equal(patch1.review_state.rows[0].confirmed_row.part_display_name, catalogPart.display_name);
+  const resumed = await call('get', `/goods-receipts/imports/${importId}`);
+  assert.equal(resumed.review_state.rows[0].confirmed_row.part_display_name, catalogPart.display_name);
+  const { rows: [storedReview] } = await db.query('SELECT review_state FROM grn_import_review WHERE import_id = $1', [importId]);
+  assert.equal(storedReview.review_state.rows[0].confirmed_row.part_display_name, undefined, 'Catalog labels must not become stored import facts');
 
   // Confirm row and header
   const patch2 = await call('patch', `/goods-receipts/imports/${importId}`, {

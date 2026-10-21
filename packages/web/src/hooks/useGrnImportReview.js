@@ -78,7 +78,7 @@ export default function useGrnImportReview({ onCommitted, onError } = {}) {
   }, [fetchReview, onError]);
 
   // Queue a typed action locally
-  const queueAction = useCallback((action) => {
+  const queueAction = useCallback((action, selectedPart = null) => {
     setPendingActions(prev => [...prev, action]);
     setHasUnsavedChanges(true);
 
@@ -98,6 +98,9 @@ export default function useGrnImportReview({ onCommitted, onError } = {}) {
             confirmed_row: {
               ...rows[idx].confirmed_row,
               ...action.values,
+              ...(action.values.part_id !== undefined ? {
+                part_display_name: selectedPart?.display_name || selectedPart?.detail || selectedPart?.internal_sku || null,
+              } : {}),
               row_confirmed: false,
             },
           };

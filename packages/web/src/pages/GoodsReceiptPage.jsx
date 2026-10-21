@@ -1141,7 +1141,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                     part_id: result.part.part_id,
                     stock_uom: result.part.measurement_unit,
                 },
-            });
+            }, result.part);
             setImportPartTarget(null);
             toast.success(result.outcome === 'existing'
                 ? 'Existing catalog part linked to this import line.'

@@ -677,6 +677,29 @@ async function getImports(client, employeeId, { status = 'IN_REVIEW', limit = 20
   };
 }
 
+// Resolve labels from the catalog without storing them as confirmed import facts.
+async function withCatalogPartNames(client, reviewState) {
+  const partIds = [...new Set((reviewState?.rows || []).map(row => row.confirmed_row?.part_id).filter(Boolean))];
+  if (partIds.length === 0) return reviewState;
+
+  const { rows: parts } = await client.query(
+    `SELECT part_id, COALESCE(NULLIF(display_name, ''), NULLIF(detail, ''), internal_sku) AS display_name
+     FROM parts_view WHERE part_id = ANY($1::int[])`,
+    [partIds]
+  );
+  const names = new Map(parts.map(part => [part.part_id, part.display_name]));
+  return {
+    ...reviewState,
+    rows: reviewState.rows.map(row => ({
+      ...row,
+      confirmed_row: {
+        ...row.confirmed_row,
+        part_display_name: names.get(row.confirmed_row?.part_id) || null,
+      },
+    })),
+  };
+}
+
 async function getImportById(client, employeeId, importId, userPermissions = []) {
   const { rows } = await client.query(
     `SELECT ir.*,
@@ -723,7 +746,7 @@ async function getImportById(client, employeeId, importId, userPermissions = [])
     status: review.status,
     version: review.version,
     source_payload: review.source_payload,
-    review_state: review.review_state,
+    review_state: await withCatalogPartNames(client, review.review_state),
     commit_snapshot: review.commit_snapshot,
     lifecycle_events: review.lifecycle_events,
     grn_id: review.grn_id,
@@ -1053,7 +1076,7 @@ async function patchImport(client, employeeId, importId, { version, actions }) {
     import_id: importId,
     status: review.status,
     version: nextVersion,
-    review_state: reviewState,
+    review_state: await withCatalogPartNames(client, reviewState),
     issues: reviewState.issues,
     blockers,
   };

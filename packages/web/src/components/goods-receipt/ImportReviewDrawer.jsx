@@ -96,13 +96,13 @@ export default function ImportReviewDrawer({
   };
 
   // Handle row updates
-  const updateRow = (rowId, values, reason = null) => {
+  const updateRow = (rowId, values, reason = null, selectedPart = null) => {
     onQueueAction({
       type: 'set_row',
       row_id: rowId,
       values,
       reason,
-    });
+    }, selectedPart);
   };
 
   // Toggle inclusion
@@ -135,7 +135,7 @@ export default function ImportReviewDrawer({
     updateRow(rowId, {
       part_id: candidate.part_id,
       stock_uom: candidate.stock_uom,
-    });
+    }, null, candidate);
     setCandidateDrawerRowId(null);
   };
 
@@ -539,9 +539,10 @@ export default function ImportReviewDrawer({
                           <button
                             type="button"
                             onClick={() => openCandidates(row.row_id)}
+                            title={cr.part_display_name || undefined}
                             className="flex-1 px-3 py-1.5 text-left border border-gray-300 dark:border-slate-700 rounded bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 hover:border-primary-500 truncate"
                           >
-                            {cr.part_id ? `Part ID: ${cr.part_id} (${cr.stock_uom})` : 'Select Catalog Part…'}
+                            {cr.part_id ? cr.part_display_name || 'Catalog part unavailable' : 'Select Catalog Part…'}
                           </button>
                           {!cr.part_id && onCreatePart && (
                             <button

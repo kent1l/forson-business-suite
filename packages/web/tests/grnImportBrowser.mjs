@@ -25,6 +25,7 @@ try {
   // Mock API states
   let featureEnabled = true;
   const createdParts = [];
+  const catalogNames = { 10: 'Catalog oil filter element', 20: 'Catalog air filter', 30: 'Existing oil filter' };
   let requireDuplicateResolution = false;
   let inReviewImports = [
     {
@@ -93,6 +94,7 @@ try {
           raw_text: 'TOYOTA 04152-YZZA6 OIL FILTER',
           confirmed_row: {
             part_id: 10,
+            part_display_name: catalogNames[10],
             quantity: '5.00',
             unit_cost: '250.00',
             sale_price: '400.00',
@@ -157,9 +159,9 @@ try {
           }, 409);
         }
         assert.equal(payload.jev_confirmation.action, 'use_existing');
-        return respond({ part_id: 30, measurement_unit: 'EA', existing: true });
+        return respond({ part_id: 30, display_name: catalogNames[30], measurement_unit: 'EA', existing: true });
       }
-      return respond({ part_id: 20, ...payload }, 201);
+      return respond({ part_id: 20, ...payload, display_name: catalogNames[20] }, 201);
     }
     if (path === '/api/purchase-orders/open') return respond([]);
     if (path.startsWith('/api/drafts/')) return respond(req.method() === 'GET' ? { data: null } : { ok: true });
@@ -189,6 +191,7 @@ try {
         if (action.type === 'set_row') {
           const row = mockReviewDetail.review_state.rows.find(row => row.row_id === action.row_id);
           Object.assign(row.confirmed_row, action.values, { row_confirmed: false });
+          row.confirmed_row.part_display_name = catalogNames[row.confirmed_row.part_id];
         }
       }
       mockReviewDetail.version += 1;
@@ -211,7 +214,7 @@ try {
             part_number: '04152-YZZA6',
             brand_name: 'TOYOTA',
             group_name: 'FILTERS',
-            display_name: 'Oil Filter Element',
+            display_name: catalogNames[10],
             match_reason: 'exact_identifier',
             evidence_class: 'exact',
             score: 1.0,
@@ -347,7 +350,8 @@ try {
   console.log('PAGE TEXT AFTER RESUME:', pageText);
 
   await page.waitForFunction(() => document.body.innerText.includes('Review Extracted Document'));
-  await page.waitForFunction(() => document.body.innerText.includes('Part ID: 10'));
+  await page.waitForFunction(() => Array.from(document.querySelectorAll('button')).some(button => button.textContent.trim() === 'Catalog oil filter element'));
+  assert.equal(await page.evaluate(() => document.body.innerText.includes('Part ID:')), false);
   console.log('✓ Review drawer mounted with row data');
   await page.setViewport({ width: 1440, height: 1000 });
   assert.equal(await page.$eval('.max-w-7xl', el => el.getBoundingClientRect().width), 1280);
@@ -359,18 +363,18 @@ try {
   console.log('Test 6: Part candidate drawer lookup...');
   await page.evaluate(() => {
     const btn = Array.from(document.querySelectorAll('button')).find(b =>
-      b.textContent.includes('Part ID:') || b.textContent.includes('Select Catalog Part')
+      b.textContent.trim() === 'Catalog oil filter element'
     );
     btn?.click();
   });
   await page.waitForFunction(() => document.body.innerText.includes('Select Catalog Item'));
-  await page.waitForFunction(() => document.body.innerText.includes('Oil Filter Element'));
+  await page.waitForFunction(() => Array.from(document.querySelectorAll('.z-60 div')).some(div => div.textContent === 'Catalog oil filter element'));
   console.log('✓ Candidate matching drawer returned ranked candidate');
 
   // Select candidate
   await page.evaluate(() => {
-    const item = Array.from(document.querySelectorAll('div')).find(d =>
-      d.textContent === 'Oil Filter Element'
+    const item = Array.from(document.querySelectorAll('.z-60 div')).find(d =>
+      d.textContent === 'Catalog oil filter element'
     );
     item?.click();
   });
@@ -398,7 +402,7 @@ try {
   await page.evaluate(() => Array.from(document.querySelectorAll('button')).filter(button => button.textContent.trim() === 'Create Part').at(-1).click());
   await page.waitForSelector('input[name="detail"]');
   await clickButton('Save');
-  await page.waitForFunction(() => document.body.innerText.includes('Part ID: 20 (PCS)'));
+  await page.waitForFunction(() => Array.from(document.querySelectorAll('button')).some(button => button.textContent.trim() === 'Catalog air filter'));
   assert.equal(createdParts.length, 1);
   assert.equal(Number(createdParts[0].brand_id), 1);
   assert.equal(Number(createdParts[0].group_id), 1);
@@ -418,17 +422,18 @@ try {
 
   console.log('Test 6c: Reuse an existing part through duplicate resolution...');
   requireDuplicateResolution = true;
-  await clickButton('Part ID: 10 (PCS)');
+  await clickButton('Catalog oil filter element');
   await page.waitForFunction(() => document.body.innerText.includes('Select Catalog Item'));
   await clickButton('Create Part');
   await page.waitForSelector('input[name="detail"]');
   await clickButton('Save');
   await page.waitForFunction(() => document.body.innerText.includes('Duplicate Part Check'));
   await clickButton('Use existing part');
-  await page.waitForFunction(() => document.body.innerText.includes('Part ID: 30 (EA)'));
+  await page.waitForFunction(() => Array.from(document.querySelectorAll('button')).some(button => button.textContent.trim() === 'Existing oil filter'));
   await clickButton('Save Review');
   await page.waitForFunction(() => !document.body.innerText.includes('Unsaved changes'));
   assert.equal(mockReviewDetail.review_state.rows[0].confirmed_row.part_id, 30);
+  assert.equal(await page.evaluate(() => document.body.innerText.includes('Part ID:')), false);
   console.log('✓ Duplicate resolution stays accessible and links the existing part with its stock unit');
 
   // TEST 7: Commit to GRN Draft & Provenance badge
