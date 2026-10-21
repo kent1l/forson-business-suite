@@ -28,6 +28,7 @@ import useGrnImportReview from '../hooks/useGrnImportReview';
 import { supplierReference, flattenReferenceMatches } from '../utils/supplierReference';
 import { getNavContext, returnToOrigin, clearNavContext } from '../utils/apNavigationContract';
 import { createUuid } from '../utils/createUuid';
+import { receiptDateForInput, receiptDateForPayload } from '../utils/grnReceiptDate';
 
 const upperCatalogText = (value) => String(value || '').replace(/\s+/g, ' ').trim().toUpperCase();
 
@@ -140,9 +141,10 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
     const slot = navCtx?.contextId || null;
     const draftData = useMemo(() => (stagedGrn ? {} : {
         selectedSupplier, lines, selectedPO, attachedBillId, documentType, relatedInvoiceNo, anotherDeliveryConfirmed, legacyReference,
+        receiptDate, isBackfill,
         freightAmount, freightSupplierId, freightCosts, freightMethod, overallDiscount, syncRetailPrices, physicalReceiptNo,
-    }), [stagedGrn, selectedSupplier, lines, selectedPO, attachedBillId, documentType, relatedInvoiceNo, anotherDeliveryConfirmed, legacyReference, freightAmount, freightSupplierId, freightCosts, freightMethod, overallDiscount, syncRetailPrices, physicalReceiptNo]);
-    const isEmpty = useMemo(() => (d) => (!d?.selectedSupplier && (!d?.lines || d.lines.length === 0) && !d?.selectedPO && !d?.attachedBillId), []);
+    }), [stagedGrn, selectedSupplier, lines, selectedPO, attachedBillId, documentType, relatedInvoiceNo, anotherDeliveryConfirmed, legacyReference, receiptDate, isBackfill, freightAmount, freightSupplierId, freightCosts, freightMethod, overallDiscount, syncRetailPrices, physicalReceiptNo]);
+    const isEmpty = useMemo(() => (d) => (!d?.selectedSupplier && (!d?.lines || d.lines.length === 0) && !d?.selectedPO && !d?.attachedBillId && !d?.receiptDate && !d?.isBackfill), []);
     const { status: draftStatus, lastSavedAt, draft, loaded: draftLoaded, clearDraft } = useDraft('goods-receipt', { slot, data: draftData, isEmpty, debounceMs: 750 });
 
     // The same module the API uses, generated from it, so what is shown here is exactly
@@ -314,7 +316,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
             if (header.supplier_invoice_no && header.supplier_invoice_no !== header.supplier_document_no && header.supplier_invoice_no !== header.physical_receipt_no) {
                 setRelatedInvoiceNo(header.supplier_invoice_no);
             }
-            if (header.receipt_date) setReceiptDate(String(header.receipt_date).slice(0, 10));
+            setReceiptDate(receiptDateForInput(header.receipt_date));
             setLines((linesRes.data || []).map(l => ({
                 ...l,
                 line_uuid: l.line_uuid || null,
@@ -346,8 +348,10 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
 
     // When draft loads, hydrate local state once
     useEffect(() => {
-        if (!draftLoaded) return;
+        if (!draftLoaded || pageState?.grnId || navCtx?.grnId || stagedGrn) return;
         if (draft) {
+            if (draft.receiptDate !== undefined) setReceiptDate(draft.receiptDate);
+            if (draft.isBackfill !== undefined) setIsBackfill(draft.isBackfill);
             if (draft.selectedSupplier) setSelectedSupplier(draft.selectedSupplier);
             if (draft.lines) {
                 setLines(draft.lines.map(l => ({
@@ -370,7 +374,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
             if (draft.attachedBillId) setAttachedBillId(draft.attachedBillId);
             toast('Loaded your saved draft.', { icon: '📄' });
         }
-    }, [draftLoaded, draft]);
+    }, [draftLoaded, draft, pageState?.grnId, navCtx?.grnId, stagedGrn]);
 
     useEffect(() => {
         if (navCtx?.supplierId && !selectedSupplier) {
@@ -863,7 +867,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
             };
         }),
         po_id: selectedPO ? selectedPO.po_id : null,
-        receipt_date: receiptDate || null,
+        receipt_date: receiptDateForPayload(receiptDate),
         is_backfill: isBackfill,
         supplier_document_type: documentType,
         supplier_document_no: physicalReceiptNo ? physicalReceiptNo.trim() : null,
