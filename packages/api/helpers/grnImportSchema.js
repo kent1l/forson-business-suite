@@ -39,6 +39,7 @@ const DOCUMENT_ALLOWED_KEYS = new Set([
 const LINE_ALLOWED_KEYS = new Set([
   'line_no',
   'raw_text',
+  'supplier_item_text',
   'description',
   'brand',
   'part_number',
@@ -86,6 +87,7 @@ const DOCUMENT_SCALAR_FIELDS = new Set([
 
 const LINE_SCALAR_FIELDS = new Set([
   'raw_text',
+  'supplier_item_text',
   'description',
   'brand',
   'part_number',
@@ -484,6 +486,7 @@ function validateAndNormalizeExternalPayload(payload) {
     prevLineNo = line.line_no;
 
     const raw_text = validateText(line.raw_text, { maxCodePoints: 4000, path: `${path}.raw_text` });
+    const supplier_item_text = validateText(line.supplier_item_text, { maxCodePoints: 2000, path: `${path}.supplier_item_text` });
     const description = validateText(line.description, { maxCodePoints: 2000, path: `${path}.description` });
 
     if ((!raw_text || !raw_text.trim()) && (!description || !description.trim())) {
@@ -507,6 +510,8 @@ function validateAndNormalizeExternalPayload(payload) {
     normalizedLines.push({
       line_no: line.line_no,
       raw_text: raw_text ?? null,
+      // Keep legacy normalized payloads/hashes unchanged when this optional field is absent.
+      ...(line.supplier_item_text !== undefined ? { supplier_item_text } : {}),
       description: description ?? null,
       brand: brand ?? null,
       part_number: part_number ?? null,

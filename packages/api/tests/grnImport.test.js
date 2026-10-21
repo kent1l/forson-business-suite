@@ -63,6 +63,25 @@ describe('GRN External JSON Ingestion - Schema and Rules', () => {
     expect(normalized.extraction_issues).toHaveLength(0);
   });
 
+  test('accepts optional cleaned supplier identity without altering legacy payload shape or hash', () => {
+    const legacy = validateAndNormalizeExternalPayload(conformingExample);
+    expect(legacy.lines[0]).not.toHaveProperty('supplier_item_text');
+    const payload = structuredClone(conformingExample);
+    payload.lines[0].supplier_item_text = 'OIL FILTER 04152-YZZA6';
+    const normalized = validateAndNormalizeExternalPayload(payload);
+    expect(normalized.lines[0].supplier_item_text).toBe('OIL FILTER 04152-YZZA6');
+    expect(normalized.lines[0].raw_text).toBe(conformingExample.lines[0].raw_text);
+    expect(computePayloadHash(normalized, {})).not.toBe(computePayloadHash(legacy, {}));
+    delete normalized.lines[0].supplier_item_text;
+    expect(computePayloadHash(normalized, {})).toBe(computePayloadHash(legacy, {}));
+  });
+
+  test.each([42, {}, 'x'.repeat(2001), 'OIL\u202eFILTER'])('rejects invalid supplier_item_text: %p', value => {
+    const payload = structuredClone(conformingExample);
+    payload.lines[0].supplier_item_text = value;
+    expect(() => validateAndNormalizeExternalPayload(payload)).toThrow(/supplier_item_text/);
+  });
+
   test('rejects missing top-level fields', () => {
     const missing = { ...conformingExample };
     delete missing.extraction_issues;

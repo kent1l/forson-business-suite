@@ -54,6 +54,8 @@ try {
       lines: [
         {
           line_no: 1,
+          raw_text: '5 PCS TOYOTA 04152-YZZA6 OIL FILTER @250.00',
+          supplier_item_text: 'TOYOTA 04152-YZZA6 OIL FILTER',
           brand: 'TOYOTA',
           part_number: '04152-YZZA6',
           description: 'Oil Filter Element',
@@ -195,17 +197,22 @@ try {
         }
       }
       mockReviewDetail.version += 1;
-      return respond(mockReviewDetail);
+      const { import_id, status, version, review_state, blockers } = mockReviewDetail;
+      return respond({ import_id, status, version, review_state, blockers });
     }
 
     if (path === '/api/goods-receipts/imports/e1000000-0000-0000-0000-000000000001/candidates') {
-      if (JSON.parse(req.postData()).row_id === 'r_2') {
-        return respond({ row_id: 'r_2', version: mockReviewDetail.version, candidates: [] });
+      const { row_id, query } = JSON.parse(req.postData());
+      if (row_id === 'r_2') {
+        return respond({ row_id: 'r_2', version: mockReviewDetail.version, candidates: [], search_status: 'available', verification: { status: 'no_candidates' } });
       }
-      return respond({
+      if (query === 'offline') return respond({ message: 'Search unavailable' }, 503);
+      const response = {
         row_id: 'r_1',
         version: mockReviewDetail.version,
         ai_status: 'available',
+        search_status: 'available',
+        verification: { status: query === 'no match' ? 'no_match' : query === 'uncertain' ? 'uncertain' : 'match', confidence: 0.96, part_id: 10 },
         candidates: [
           {
             part_id: 10,
@@ -214,14 +221,22 @@ try {
             part_number: '04152-YZZA6',
             brand_name: 'TOYOTA',
             group_name: 'FILTERS',
-            display_name: catalogNames[10],
+            display_name: query === 'slow' ? 'Stale result that must not replace new search' : catalogNames[10],
+            part_numbers: ['04152-YZZA6'],
+            match_evidence: { identifier: true, brand: true, group: true },
+            jev_verification: query === 'no match' || query === 'uncertain' ? null : { status: 'recommended', confidence: 0.96 },
             match_reason: 'exact_identifier',
             evidence_class: 'exact',
             score: 1.0,
             last_cost: 245.0,
           },
         ],
-      });
+      };
+      if (query === 'slow') {
+        setTimeout(() => respond(response).catch(() => {}), 1000);
+        return;
+      }
+      return respond(response);
     }
 
     if (path === '/api/goods-receipts/imports/e1000000-0000-0000-0000-000000000001/commit') {
@@ -370,6 +385,30 @@ try {
   await page.waitForFunction(() => document.body.innerText.includes('Select Catalog Item'));
   await page.waitForFunction(() => Array.from(document.querySelectorAll('.z-60 div')).some(div => div.textContent === 'Catalog oil filter element'));
   console.log('✓ Candidate matching drawer returned ranked candidate');
+  await page.waitForFunction(() => document.body.innerText.includes('Jev recommends · 96%'));
+  assert(await page.$eval('.z-60', el => el.innerText.includes('Cleaned Supplier Text') && el.innerText.includes('5 PCS TOYOTA')));
+  const searchFor = async text => {
+    const input = await page.$('.z-60 input[type="text"]');
+    await input.click({ clickCount: 3 });
+    await page.keyboard.press('Backspace');
+    await input.type(text);
+  };
+  await searchFor('no match');
+  await page.waitForFunction(() => document.body.innerText.includes('Jev found no reliable match'));
+  assert.equal(await page.$eval('.z-60', el => el.innerText.includes('Jev recommends ·')), false);
+  await searchFor('uncertain');
+  await page.waitForFunction(() => document.body.innerText.includes('Jev is uncertain'));
+  await searchFor('offline');
+  await page.waitForFunction(() => document.body.innerText.includes('Catalog search is unavailable'));
+  assert.equal(await page.$eval('.z-60', el => el.innerText.includes('No matching catalog items found.')), false);
+  const slowRequest = page.waitForRequest(request => request.url().endsWith('/candidates') && JSON.parse(request.postData() || '{}').query === 'slow');
+  await searchFor('slow');
+  await slowRequest;
+  await searchFor('newest');
+  await page.waitForFunction(() => document.body.innerText.includes('Jev recommends · 96%'));
+  await new Promise(resolve => setTimeout(resolve, 1100));
+  assert.equal(await page.$eval('.z-60', el => el.innerText.includes('Stale result')), false);
+  console.log('✓ Cleaned/raw evidence, Jev recommendation/no-match/uncertainty, search failures and late-response protection');
 
   // Select candidate
   await page.evaluate(() => {
@@ -412,6 +451,7 @@ try {
   await clickButton('Save Review');
   await page.waitForFunction(() => !document.body.innerText.includes('Unsaved changes'));
   const createdRow = mockReviewDetail.review_state.rows.find(row => row.row_id === 'r_2');
+  assert(await page.$eval('section[aria-label="Original text for line 1"]', el => el.innerText.includes('Cleaned Supplier Text') && el.innerText.includes('5 PCS TOYOTA')), 'Saving must preserve raw and cleaned source evidence');
   assert.equal(createdRow.confirmed_row.part_id, 20);
   assert.equal(createdRow.confirmed_row.stock_uom, 'PCS');
   assert.equal(createdRow.confirmed_row.delivered_quantity, '3.0000');

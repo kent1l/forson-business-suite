@@ -92,11 +92,14 @@ class JevClient {
         }
     }
 
-    async evaluateChoice({ question = 'choice', state, instructions, choices }) {
+    async evaluateChoice({ question = 'choice', state, instructions, choices, signal }) {
         if (!this.isConfigured()) return null;
         if (!Array.isArray(choices) || choices.length === 0) return null;
+        if (signal?.aborted) throw Object.assign(new Error('Jev request aborted'), { name: 'AbortError' });
         const config = this.config;
         const controller = new AbortController();
+        const abort = () => controller.abort();
+        signal?.addEventListener('abort', abort, { once: true });
         const timeout = setTimeout(() => controller.abort(), config.timeoutMs);
         try {
             const response = await this.fetchImpl(config.apiUrl, {
@@ -143,6 +146,7 @@ class JevClient {
             return { choice, confidence, model: payload.model || config.model };
         } finally {
             clearTimeout(timeout);
+            signal?.removeEventListener('abort', abort);
         }
     }
 

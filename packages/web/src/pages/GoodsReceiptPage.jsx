@@ -1109,7 +1109,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
             row_id: rowId,
             line_no: row.line_no,
             initialValues: {
-                detail: upperCatalogText(source.description || source.raw_text),
+                detail: upperCatalogText(source.supplier_item_text || source.description || source.raw_text),
                 part_numbers: upperCatalogText(source.part_number),
                 brand_id: brands.find(item => upperCatalogText(item.brand_name) === brandName)?.brand_id || '',
                 brand_name: brandName,
@@ -2248,6 +2248,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                 hasUnsavedChanges={importReview.hasUnsavedChanges}
                 candidatesByRow={importReview.candidatesByRow}
                 candidatesLoadingRow={importReview.candidatesLoadingRow}
+                candidateResultsByRow={importReview.candidateResultsByRow}
                 onQueueAction={importReview.queueAction}
                 onSaveReview={importReview.saveReview}
                 onFetchCandidates={importReview.fetchCandidates}

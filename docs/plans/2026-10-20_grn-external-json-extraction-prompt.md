@@ -28,6 +28,7 @@ Return ONLY one valid JSON object in the exact structure below. Do NOT add markd
     {
       "line_no": 1,
       "raw_text": null,
+      "supplier_item_text": null,
       "description": null,
       "brand": null,
       "part_number": null,
@@ -60,6 +61,7 @@ TRANSCRIPTION RULES
 - DOCUMENT TYPE ENUM: document_type must be null or one of: "delivery_receipt", "invoice", "packing_list", "other". Map Delivery Receipts (DR), Acknowledgement Receipts (AR), and Delivery Orders to "delivery_receipt". Map Sales Invoices (SI), Commercial Invoices, and Official Receipts (OR) to "invoice". Map Packing Lists to "packing_list". Use "other" for any other or ambiguous title.
 - ESCAPING QUOTES: All double quotes inside string values (e.g. inch marks like 8\" or quoted brands like \"COMPACT\") MUST be escaped with a backslash (\"). Unescaped double quotes will corrupt the JSON syntax.
 - raw_text must capture the literal printed wording of the line as faithfully as possible. description may be cleaned for readability, but must never include web-discovered details or inferred specs.
+- supplier_item_text is the compact identifying text for THIS item, derived only from its visible receipt wording. Retain printed brand, manufacturer part number, product/model, dimensions, grade, size, pack size, vehicle/application codes and orientation where they identify the product. Remove the row number, ordered/delivered/returned quantities, purchase units used only for counting, costs, totals, discounts, tax, selling-price handwriting, check marks and other receiving annotations. Do NOT remove identifying numbers such as 10W-40, 1L bottle size, 3/4 inch, RH/LH or model/part codes. Example: raw_text "2 PCS TOYOTA 04152-YZZA6 OIL FILTER @125.00 TOTAL 250.00 ✓" becomes supplier_item_text "TOYOTA 04152-YZZA6 OIL FILTER". Keep raw_text unchanged. Use null if a faithful item identity cannot be isolated; report ambiguity rather than inventing an identity. FBS uses this text together with raw_text for catalog matching and Jev verification. Limit this field to 2,000 characters.
 - Populate brand, part_number, supplier_item_code, and item_group_hint outside enrichment ONLY when explicitly printed or visibly identifiable on the physical page.
 - Keep document_number, part_number, and supplier_item_code as strings. Preserve letters, leading zeros, hyphens, and other meaningful punctuation.
 - document_date is the date printed on the supplier document in YYYY-MM-DD format (only when unambiguous). Do not use the date goods physically arrived. Currency is a 3-letter uppercase code (e.g. "PHP") only when unambiguous; otherwise null.
@@ -113,3 +115,5 @@ Before returning the JSON, verify:
 ```
 
 FBS validates the output against the final contract; this prompt is not a substitute for server validation. A new payload version requires updating both the plan/schema and prompt together.
+
+The optional `supplier_item_text` field extends schema v1. Older v1 JSON remains accepted and uses description/raw_text for matching. Omitting the field preserves legacy normalized payload hashes.

@@ -21,6 +21,7 @@ function getImportCapabilities() {
   return {
     enabled: isFeatureEnabled(),
     schema_version: 1,
+    optional_line_fields: ['supplier_item_text'],
     limits: {
       max_payload_bytes: MAX_PAYLOAD_BYTES,
       max_lines: MAX_LINES,

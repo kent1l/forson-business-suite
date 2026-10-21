@@ -84,6 +84,7 @@ PO linkage is performed after the new GRN draft opens, through existing controls
   "lines": [{
     "line_no": 1,
     "raw_text": "2 PCS OIL FILTER 125.00 250.00",
+    "supplier_item_text": "OIL FILTER",
     "description": "OIL FILTER",
     "brand": null,
     "part_number": null,
@@ -110,6 +111,8 @@ PO linkage is performed after the new GRN draft opens, through existing controls
 ```
 
 ### 4.2 Structural validation, limits and evidence
+
+2026-10-21 compatible extension: optional `lines[].supplier_item_text` is a string/null of at most 2,000 code points, containing only item-identifying receipt text. Preserve brand, identifiers, model, dimensions, grade, pack size and orientation; remove transaction quantities, prices, totals, discounts and receiving marks. Keep literal `raw_text` intact. It is a fallible cleaning aid for matching, never web enrichment or authority to select a part. Existing v1 payloads remain valid; when this field is omitted it stays absent from normalization to preserve existing hashes/idempotency. It is also a permitted line-level issue field. Capabilities advertises it in `optional_line_fields`.
 
 - Require exactly the four top-level fields above. `schema_version` must be integer 1; `document` an object; `lines` a nonempty array of at most 200 rows; `extraction_issues` an array of at most 400 entries. Preserve array order. `line_no` is a positive integer at most 10,000, unique and strictly increasing, with gaps permitted.
 - Only the keys shown in the example are allowed at each corresponding object path. Reject unknown keys with field paths, including arbitrary approval/workflow/ID fields. This is a path-aware allowlist: `lines[].enrichment.status` is explicitly allowed, with its enum below. Do not apply a recursive denylist to common words such as `status`. The external allowlist does not govern authenticated review actions, which have their own schema.
@@ -236,6 +239,8 @@ Save/reopen works from a query parameter `import_id` and a Saved reviews tab ins
 `GRN_JSON_IMPORT_ENABLED` defaults false on the API. Capabilities exposes its runtime value to the UI; do not read a backend env var directly in Vite. When off, create/PATCH/candidates/commit return 503 `GRN_IMPORT_DISABLED`; saved-list/GET/provenance/abandon remain available to authorized users. Existing GRNs and provenance still open normally. Maintenance runs independently. Rollback after rollout means disabling new import work while retaining additive schema and the correctness fixes; do not roll back application code below the line-identity compatibility boundary.
 
 ## 7. Candidate Matching and Integrated UI
+
+2026-10-21 implementation update: the [catalog-matching handoff](2026-10-21_grn-catalog-matching.md) supersedes the retrieval/ranking implementation details below. Matching now combines normalized identifiers, brand/group/detail tokens, trigram similarity and multiple index queries, then asks Jev to compare even a single candidate against `supplier_item_text` and original `raw_text`. Results expose advisory recommendations, no-match/uncertainty and search/provider outages; selection remains manual.
 
 Extract a shared candidate-only service from `packages/api/services/ai/features/purchaseOrderParserAI.js`, reusing its catalog lookup and optional JEV ranking. Do not call `resolveLine` over structured imported facts; it can parse quantity/price and choose a match. Preserve existing PO behavior/tests when extracting reusable functions. GRN candidates include part ID, brand/group/stock UOM, match reason, evidence class and score; no quantity/cost output or automatic part confirmation.
 

@@ -354,10 +354,17 @@ router.post('/goods-receipts/imports/:importId/candidates', protect, hasPermissi
   if (!row_id) {
     return res.status(400).json({ message: 'row_id is required.' });
   }
+  if (query != null && (typeof query !== 'string' || query.length > 500)) {
+    return res.status(400).json({ message: 'query must be a string of at most 500 characters.' });
+  }
+
+  const controller = new AbortController();
+  const abortSearch = () => { if (!res.writableEnded) controller.abort(); };
+  res.once('close', abortSearch);
 
   try {
     const { rows } = await db.query(
-      'SELECT import_id, created_by_employee_id, status, version, review_state FROM grn_import_review WHERE import_id = $1',
+      'SELECT import_id, created_by_employee_id, status, version, review_state, source_payload FROM grn_import_review WHERE import_id = $1',
       [req.params.importId]
     );
     if (!rows.length || rows[0].created_by_employee_id !== req.user.employee_id) {
@@ -380,29 +387,35 @@ router.post('/goods-receipts/imports/:importId/candidates', protect, hasPermissi
       return res.status(404).json({ message: `Row ${row_id} not found.` });
     }
 
-    const brand = row.corrections?.brand?.new_value || row.brand;
-    const partNumber = row.corrections?.part_number?.new_value || row.part_number;
-    const description = row.corrections?.description?.new_value || row.description;
-    const rawText = row.raw_text;
+    const sourceLine = review.source_payload?.lines?.find(line => line.line_no === row.line_no) || {};
+    const fact = (field) => row.corrections?.[field] ? row.corrections[field].new_value : sourceLine[field];
 
     const result = await partCandidateService.findPartCandidates({
-      brand,
-      partNumber,
-      description,
-      rawText,
+      brand: fact('brand'),
+      group: fact('item_group_hint'),
+      partNumber: fact('part_number'),
+      description: fact('description'),
+      supplierItemText: fact('supplier_item_text'),
+      rawText: sourceLine.raw_text,
       query,
+      signal: controller.signal,
     });
 
+    if (controller.signal.aborted) return;
     res.set('Cache-Control', 'no-store');
     res.json({
       row_id,
       version: review.version,
       ai_status: result.ai_status,
+      verification: result.verification,
+      search_status: result.search_status,
       candidates: result.candidates,
     });
   } catch (err) {
     console.error('Error fetching candidates:', err);
     res.status(500).json({ message: 'Error fetching candidates.', error: err.message });
+  } finally {
+    res.off('close', abortSearch);
   }
 });
 

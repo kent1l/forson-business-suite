@@ -105,11 +105,12 @@ app.use('/api', require('../routes/goodsReceiptRoutes'));
     lines: [{
       line_no: 1,
       raw_text: '2 PCS OIL FILTER 125.00 250.00',
+      supplier_item_text: 'Import Part A',
       description: 'OIL FILTER',
-      brand: null,
+      brand: `Import Brand ${runId}`,
       part_number: null,
       supplier_item_code: null,
-      item_group_hint: null,
+      item_group_hint: `Import Group ${runId}`,
       quantity: '2.0000',
       unit: 'PCS',
       unit_cost: '125.00',
@@ -174,6 +175,16 @@ app.use('/api', require('../routes/goodsReceiptRoutes'));
   assert.equal(fetched.review_state.rows.length, 1);
 
   const row1Id = fetched.review_state.rows[0].row_id;
+
+  // Matching must use immutable source facts: review rows contain no description/brand.
+  assert.equal(fetched.review_state.rows[0].description, undefined);
+  const candidates = await call('post', `/goods-receipts/imports/${importId}/candidates`, { version: 1, row_id: row1Id });
+  assert(candidates.candidates.some(part => part.part_id === partA.part_id), 'Source identity must reach catalog matching');
+  assert.equal(candidates.verification.status === 'match' && candidates.verification.part_id != null
+    ? candidates.candidates.some(part => part.part_id === candidates.verification.part_id) : true, true);
+  await call('post', `/goods-receipts/imports/${importId}/candidates`, { version: 1, row_id: row1Id, query: {} }, 400);
+  await call('post', `/goods-receipts/imports/${importId}/candidates`, { version: 999, row_id: row1Id }, 409);
+  await call('post', `/goods-receipts/imports/${importId}/candidates`, { version: 1, row_id: row1Id }, 404, token2);
 
   // 6. PATCH actions & version check
   // Stale version check: request version 99 -> 409

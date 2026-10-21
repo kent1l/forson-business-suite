@@ -16,7 +16,23 @@ export default function useGrnImportReview({ onCommitted, onError } = {}) {
   // Candidate cache and in-flight tracking
   const [candidatesByRow, setCandidatesByRow] = useState({});
   const [candidatesLoadingRow, setCandidatesLoadingRow] = useState(null);
-  const candidateReqCountRef = useRef(0);
+  const [candidateResultsByRow, setCandidateResultsByRow] = useState({});
+  const candidateRequestsRef = useRef(new Map());
+  const currentReviewRef = useRef(null);
+  currentReviewRef.current = { importId: activeImportId, version: review?.version };
+
+  useEffect(() => {
+    const requests = candidateRequestsRef.current;
+    for (const request of requests.values()) request.controller.abort();
+    requests.clear();
+    setCandidatesByRow({});
+    setCandidateResultsByRow({});
+    setCandidatesLoadingRow(null);
+    return () => {
+      for (const request of requests.values()) request.controller.abort();
+      requests.clear();
+    };
+  }, [activeImportId, review?.version]);
 
   // Fetch capabilities on mount
   useEffect(() => {
@@ -135,7 +151,7 @@ export default function useGrnImportReview({ onCommitted, onError } = {}) {
         version: review.version,
         actions: actionsToSend,
       });
-      setReview(res.data);
+      setReview(prev => ({ ...prev, ...res.data }));
       setPendingActions([]);
       setHasUnsavedChanges(false);
       setSaving(false);
@@ -154,25 +170,45 @@ export default function useGrnImportReview({ onCommitted, onError } = {}) {
   // Fetch candidates for a row with debounce and concurrency limit
   const fetchCandidates = useCallback(async (rowId, query = null) => {
     if (!activeImportId || !review) return;
-    if (candidateReqCountRef.current >= 2) return; // Concurrency limit of 2
-
-    candidateReqCountRef.current += 1;
+    const requests = candidateRequestsRef.current;
+    requests.get(rowId)?.controller.abort();
+    requests.delete(rowId);
+    if (requests.size >= 2) {
+      const oldest = requests.keys().next().value;
+      requests.get(oldest).controller.abort();
+      requests.delete(oldest);
+    }
+    const request = { controller: new AbortController() };
+    requests.set(rowId, request);
+    const isCurrent = () => requests.get(rowId) === request
+      && currentReviewRef.current?.importId === activeImportId
+      && currentReviewRef.current?.version === review.version;
     setCandidatesLoadingRow(rowId);
+    setCandidatesByRow(prev => ({ ...prev, [rowId]: [] }));
+    setCandidateResultsByRow(prev => ({ ...prev, [rowId]: null }));
     try {
       const res = await api.post(`/goods-receipts/imports/${activeImportId}/candidates`, {
         version: review.version,
         row_id: rowId,
         query,
-      });
+      }, { signal: request.controller.signal });
+      if (!isCurrent() || res.data.version !== review.version || res.data.row_id !== rowId) return;
       setCandidatesByRow(prev => ({
         ...prev,
         [rowId]: res.data.candidates || [],
       }));
+      setCandidateResultsByRow(prev => ({ ...prev, [rowId]: {
+        ai_status: res.data.ai_status, verification: res.data.verification, search_status: res.data.search_status,
+      } }));
     } catch (err) {
-      console.warn('Candidate fetch failed:', err.message);
+      if (isCurrent() && !request.controller.signal.aborted) {
+        setCandidateResultsByRow(prev => ({ ...prev, [rowId]: { search_status: 'unavailable' } }));
+      }
     } finally {
-      candidateReqCountRef.current = Math.max(0, candidateReqCountRef.current - 1);
-      setCandidatesLoadingRow(null);
+      if (requests.get(rowId) === request) {
+        requests.delete(rowId);
+        setCandidatesLoadingRow(current => current === rowId ? null : current);
+      }
     }
   }, [activeImportId, review]);
 
@@ -238,6 +274,7 @@ export default function useGrnImportReview({ onCommitted, onError } = {}) {
     pendingActions,
     candidatesByRow,
     candidatesLoadingRow,
+    candidateResultsByRow,
     fetchReview,
     createImport,
     queueAction,

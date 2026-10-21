@@ -70,6 +70,19 @@ describe('JevClient', () => {
         });
     });
 
+    test('aborts an obsolete Choice request when the caller cancels', async () => {
+        const caller = new AbortController();
+        const fetchImpl = jest.fn((_url, { signal }) => new Promise((_resolve, reject) => {
+            signal.addEventListener('abort', () => reject(Object.assign(new Error('Aborted'), { name: 'AbortError' })), { once: true });
+        }));
+        const client = new JevClient({ env: { OPENROUTER_API_KEY: 'test-key' }, fetchImpl });
+        const pending = client.evaluateChoice({ state: {}, choices: ['match', 'no_match'], signal: caller.signal });
+        caller.abort();
+        await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+        await expect(client.evaluateChoice({ state: {}, choices: ['match'], signal: caller.signal })).rejects.toMatchObject({ name: 'AbortError' });
+        expect(fetchImpl).toHaveBeenCalledTimes(1);
+    });
+
     test('sends and validates typed Score and Noul decisions', async () => {
         const fetchImpl = jest.fn()
             .mockResolvedValueOnce({ ok: true, text: async () => JSON.stringify({ answers: { ambiguity: { type: 'score', score: 1.4, confidence: 0.72 } } }) })

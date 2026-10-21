@@ -24,6 +24,12 @@ function OriginalLineText({ row, sourceLine }) {
       <div className="max-h-40 overflow-y-auto whitespace-pre-wrap break-words font-mono text-gray-900 dark:text-slate-100">
         {hasRawText ? rawText : description || 'No original description was provided.'}
       </div>
+      {sourceLine?.supplier_item_text && (
+        <div className="mt-2 border-t border-gray-200 dark:border-slate-700 pt-2">
+          <div className="font-semibold text-gray-600 dark:text-slate-400">Cleaned Supplier Text</div>
+          <div className="mt-1 whitespace-pre-wrap break-words text-gray-900 dark:text-slate-100">{sourceLine.supplier_item_text}</div>
+        </div>
+      )}
     </section>
   );
 }
@@ -41,6 +47,7 @@ export default function ImportReviewDrawer({
   hasUnsavedChanges = false,
   candidatesByRow = {},
   candidatesLoadingRow = null,
+  candidateResultsByRow = {},
   onQueueAction,
   onSaveReview,
   onFetchCandidates,
@@ -60,6 +67,13 @@ export default function ImportReviewDrawer({
   const issues = reviewState?.issues || [];
   const candidateRow = rows.find(row => row.row_id === candidateDrawerRowId);
   const candidateSourceLine = sourcePayload?.lines?.find(line => line.line_no === candidateRow?.line_no);
+  const candidateResult = candidateResultsByRow[candidateDrawerRowId];
+
+  useEffect(() => {
+    if (!isOpen || !candidateDrawerRowId) return;
+    const timer = setTimeout(() => onFetchCandidates(candidateDrawerRowId, candidateSearchQuery || null), 300);
+    return () => clearTimeout(timer);
+  }, [isOpen, candidateDrawerRowId, candidateSearchQuery, onFetchCandidates]);
 
   // Group blockers by row_id and header
   const blockersByRow = useMemo(() => {
@@ -128,7 +142,6 @@ export default function ImportReviewDrawer({
   const openCandidates = (rowId) => {
     setCandidateDrawerRowId(rowId);
     setCandidateSearchQuery('');
-    onFetchCandidates(rowId);
   };
 
   const handleSelectCandidate = (rowId, candidate) => {
@@ -706,21 +719,38 @@ export default function ImportReviewDrawer({
           <div className="py-3">
             <input
               type="text"
-              placeholder="Search catalog by SKU, detail, or part number…"
+              placeholder="Search catalog by group, brand, part number, or details…"
               value={candidateSearchQuery}
               onChange={(e) => {
                 setCandidateSearchQuery(e.target.value);
-                onFetchCandidates(candidateDrawerRowId, e.target.value);
               }}
               className="w-full px-3 py-1.5 text-xs border border-gray-300 dark:border-slate-700 rounded-lg bg-gray-50 dark:bg-slate-800 text-gray-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-primary-500"
             />
           </div>
 
+          {candidateResult && candidatesLoadingRow !== candidateDrawerRowId && (
+            <div role="status" className="mb-3 rounded-lg bg-gray-50 dark:bg-slate-800 p-3 text-xs text-gray-600 dark:text-slate-300">
+              {candidateResult.search_status === 'unavailable'
+                ? 'Catalog search is unavailable. Try again before creating a part.'
+                : candidateResult.search_status === 'partial'
+                ? 'Some catalog lookups are unavailable. Results may be incomplete; try again before creating a part.'
+                : candidateResult.verification?.status === 'match'
+                ? 'Jev recommends a catalog match below. Review the supplier text before selecting it.'
+                : candidateResult.verification?.status === 'no_match'
+                ? 'Jev found no reliable match among these results. You can search again or review the alternatives.'
+                : candidateResult.verification?.status === 'uncertain'
+                ? 'Jev is uncertain whether these items match the supplier text. Review the details carefully.'
+                : candidateResult.verification?.status === 'no_candidates'
+                ? 'No candidates found for Jev to compare. Try another search or create a part.'
+                : 'Jev verification is unavailable. Catalog results are available for manual review.'}
+            </div>
+          )}
+
           <div className="flex-1 overflow-y-auto divide-y divide-gray-100 dark:divide-slate-800">
             {candidatesLoadingRow === candidateDrawerRowId ? (
               <p className="text-xs text-gray-500 py-6 text-center">Searching catalog…</p>
             ) : (candidatesByRow[candidateDrawerRowId] || []).length === 0 ? (
-              <p className="text-xs text-gray-500 py-6 text-center">No matching catalog items found.</p>
+              <p className="text-xs text-gray-500 py-6 text-center">{['unavailable', 'partial'].includes(candidateResult?.search_status) ? 'Search could not be completed.' : candidateResult ? 'No matching catalog items found.' : 'Searching catalog…'}</p>
             ) : (
               (candidatesByRow[candidateDrawerRowId] || []).map((cand) => (
                 <div
@@ -737,6 +767,13 @@ export default function ImportReviewDrawer({
                     </span>
                   </div>
                   <div className="text-gray-900 dark:text-slate-100 font-medium">{cand.display_name}</div>
+                  {cand.part_numbers?.length > 0 && <div className="font-mono text-[11px] text-gray-600 dark:text-slate-400">{cand.part_numbers.join(' · ')}</div>}
+                  <div className="flex flex-wrap gap-1 text-[11px]">
+                    {cand.match_evidence?.identifier && <span className="rounded bg-blue-100 dark:bg-blue-950 px-1.5 py-0.5 text-blue-800 dark:text-blue-200">Part number / SKU</span>}
+                    {cand.match_evidence?.brand && <span className="rounded bg-gray-100 dark:bg-slate-800 px-1.5 py-0.5">Brand matches</span>}
+                    {cand.match_evidence?.group && <span className="rounded bg-gray-100 dark:bg-slate-800 px-1.5 py-0.5">Group matches</span>}
+                    {cand.jev_verification?.status === 'recommended' && <span className="rounded bg-emerald-100 dark:bg-emerald-950 px-1.5 py-0.5 text-emerald-800 dark:text-emerald-200">Jev recommends · {Math.round(cand.jev_verification.confidence * 100)}%</span>}
+                  </div>
                   <div className="flex items-center gap-2 text-[11px] text-gray-500">
                     <span>{cand.brand_name || 'No Brand'}</span>
                     <span>•</span>
