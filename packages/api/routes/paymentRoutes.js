@@ -8,6 +8,7 @@ const walletService = require('../services/customerWalletService');
 const withholdingTax = require('../services/withholdingTaxService');
 const arAdjustment = require('../services/arAdjustmentService');
 const arAdjustmentAuth = require('../services/arAdjustmentAuthService');
+const physicalDocumentService = require('../services/physicalDocumentService');
 
 const round2 = (n) => Math.round(((Number(n) || 0) + Number.EPSILON) * 100) / 100;
 
@@ -174,6 +175,44 @@ router.post('/payments', protect, hasPermission('ar:receive_payment'), async (re
             [customer_id, employee_id, numAmount, methodCode, resolvedMethodId,
              referenceValue, physicalReceiptNoValue, notes || null, pdcStatusValue, chequeDateValue]
         );
+
+        // Physical document posting (if physical_document or physicalReceiptNoValue provided)
+        const physicalDoc = req.body.physical_document;
+        const effectiveRecordingMethod = physicalDoc?.recording_method || (physicalReceiptNoValue ? 'PAPER' : 'NOTEBOOK');
+        let receiptResult = null;
+        if (effectiveRecordingMethod === 'PAPER' && (physicalDoc?.physical_receipt_no || physicalReceiptNoValue)) {
+            receiptResult = await physicalDocumentService.postPhysicalDocument(client, {
+                recording_method: 'PAPER',
+                series_id: physicalDoc?.series_id ? parseInt(physicalDoc.series_id, 10) : null,
+                physical_receipt_no: physicalDoc?.physical_receipt_no || physicalReceiptNoValue,
+                suggestion_token: physicalDoc?.suggestion_token || null,
+                exception: physicalDoc?.exception || null,
+                source_type: 'CUSTOMER_PAYMENT',
+                source_id: newPaymentId,
+                employee_id,
+                workstation_id: req.body.workstation_id || 'default',
+                context: 'COLLECTION',
+                request_id: req.body.request_id || null,
+            });
+
+            await client.query(
+                `UPDATE public.customer_payment
+                 SET recording_method = 'PAPER',
+                     physical_document_type_id = $1,
+                     physical_document_series_id = $2,
+                     physical_document_registry_id = $3,
+                     physical_receipt_no = $4
+                 WHERE payment_id = $5`,
+                [receiptResult.type_id || null, receiptResult.series_id || null, receiptResult.registry_id || null, receiptResult.canonical_full_reference || null, newPaymentId]
+            );
+        } else {
+            await client.query(
+                `UPDATE public.customer_payment
+                 SET recording_method = 'NOTEBOOK'
+                 WHERE payment_id = $1`,
+                [newPaymentId]
+            );
+        }
         await cashDrawer.postSourcePayment(client, { kind: 'customer', sourceId: newPaymentId, sessionId: req.body.cash_session_id, actorId: employee_id,
             notebookReceiptId: req.body.notebook_receipt_id, coveredAmount: req.body.notebook_covered_amount, canPost: cashDrawer.userCanPost(req.user) });
 
@@ -439,6 +478,214 @@ router.post('/payments', protect, hasPermission('ar:receive_payment'), async (re
         // fact it declined, and the message explains exactly what to change.
         const status = err.status || (err.statusCode && err.statusCode < 500 ? err.statusCode : 500);
         res.status(status).json({ code: err.code, message: err.message || 'Server error during payment transaction.' });
+    } finally {
+        client.release();
+    }
+});
+
+// POST /api/payments/collection-group - Grouped multi-instrument collection under a single collection receipt
+router.post('/payments/collection-group', protect, hasPermission('ar:receive_payment'), async (req, res) => {
+    const cashDrawer = require('../services/cashDrawerService');
+    const { employee_id } = req.user;
+    const {
+        customer_id,
+        request_id,
+        physical_document,
+        payments: paymentTenders = [],
+        allocations = [],
+        notes = null,
+        workstation_id = 'default',
+    } = req.body;
+
+    if (!customer_id || !Array.isArray(paymentTenders) || paymentTenders.length === 0 || !Array.isArray(allocations) || allocations.length === 0) {
+        return res.status(400).json({ message: 'Missing required fields: customer_id, payments, allocations.' });
+    }
+
+    const client = await db.getClient();
+    try {
+        await client.query('BEGIN');
+
+        // Idempotency check on request_id
+        if (request_id) {
+            const { rows: existingGroup } = await client.query(
+                `SELECT * FROM public.customer_payment_collection_group WHERE request_id = $1`,
+                [request_id]
+            );
+            if (existingGroup.length > 0) {
+                const grp = existingGroup[0];
+                const { rows: linkedPayments } = await client.query(
+                    `SELECT * FROM public.customer_payment WHERE collection_group_id = $1`,
+                    [grp.group_id]
+                );
+                await client.query('ROLLBACK');
+                return res.status(200).json({
+                    message: 'Idempotent replay: collection group already recorded',
+                    group_id: grp.group_id,
+                    group_reference: grp.group_reference,
+                    physical_receipt_no: grp.physical_receipt_no,
+                    payments: linkedPayments,
+                });
+            }
+        }
+
+        const totalPaymentAmount = paymentTenders.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
+        if (isNaN(totalPaymentAmount) || totalPaymentAmount <= 0) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ message: 'Total payment amount must be greater than zero.' });
+        }
+
+        // Create collection group
+        const groupRef = `CRG-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+        const effectiveRecordingMethod = physical_document?.recording_method || 'PAPER';
+
+        const { rows: [newGroup] } = await client.query(
+            `INSERT INTO public.customer_payment_collection_group
+             (group_reference, customer_id, created_by, request_id, recording_method, total_amount, notes)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)
+             RETURNING group_id`,
+            [groupRef, customer_id, employee_id, request_id || null, effectiveRecordingMethod, totalPaymentAmount, notes || null]
+        );
+        const groupId = newGroup.group_id;
+
+        // Atomic post physical document for the collection group
+        let receiptResult = null;
+        if (effectiveRecordingMethod === 'PAPER') {
+            receiptResult = await physicalDocumentService.postPhysicalDocument(client, {
+                recording_method: 'PAPER',
+                series_id: physical_document?.series_id ? parseInt(physical_document.series_id, 10) : null,
+                physical_receipt_no: physical_document?.physical_receipt_no,
+                suggestion_token: physical_document?.suggestion_token || null,
+                exception: physical_document?.exception || null,
+                source_type: 'COLLECTION_GROUP',
+                source_id: groupId,
+                employee_id,
+                workstation_id,
+                context: 'COLLECTION',
+                request_id: request_id || `crg:${groupId}`,
+            });
+
+            await client.query(
+                `UPDATE public.customer_payment_collection_group
+                 SET physical_document_type_id = $1,
+                     physical_document_series_id = $2,
+                     physical_document_registry_id = $3,
+                     physical_receipt_no = $4
+                 WHERE group_id = $5`,
+                [receiptResult.type_id || null, receiptResult.series_id || null, receiptResult.registry_id || null, receiptResult.canonical_full_reference || null, groupId]
+            );
+        }
+
+        const groupPrn = receiptResult?.canonical_full_reference || null;
+
+        // Create individual customer_payment records for each tender
+        const createdPayments = [];
+        for (const tender of paymentTenders) {
+            const numAmount = parseFloat(tender.amount) || 0;
+            if (numAmount <= 0) continue;
+
+            let methodRow = null;
+            if (tender.method_id) {
+                const r = await client.query(
+                    `SELECT method_id, code, name, type, config FROM payment_methods WHERE method_id = $1 AND enabled = true`,
+                    [tender.method_id]
+                );
+                methodRow = r.rows[0] || null;
+            } else if (tender.payment_method) {
+                const r = await client.query(
+                    `SELECT method_id, code, name, type, config FROM payment_methods
+                     WHERE (code = $1 OR name ILIKE $1) AND enabled = true LIMIT 1`,
+                    [tender.payment_method]
+                );
+                methodRow = r.rows[0] || null;
+            }
+            if (!methodRow) {
+                await client.query('ROLLBACK');
+                return res.status(400).json({ message: `Invalid payment method: ${tender.payment_method || tender.method_id}` });
+            }
+
+            const isCheque = methodRow.code === 'cheque' || methodRow.code === 'pdc' ||
+                methodRow.type === 'cheque' || methodRow.config?.settlement_type === 'deferred';
+            const pdcStatusValue = isCheque ? 'RECEIVED' : 'CLEARED';
+            const chequeDateValue = isCheque && tender.cheque_date ? tender.cheque_date : null;
+
+            const { rows: [{ payment_id: tenderPaymentId }] } = await client.query(
+                `INSERT INTO public.customer_payment
+                 (customer_id, employee_id, amount, payment_method, method_id, reference_number,
+                  physical_receipt_no, notes, pdc_status, cheque_date, collection_group_id, recording_method,
+                  physical_document_type_id, physical_document_series_id, physical_document_registry_id)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+                 RETURNING payment_id`,
+                [
+                    customer_id, employee_id, numAmount, methodRow.code, methodRow.method_id,
+                    tender.reference || tender.reference_number || null, groupPrn,
+                    tender.notes || null, pdcStatusValue, chequeDateValue, groupId,
+                    effectiveRecordingMethod, receiptResult?.type_id || null,
+                    receiptResult?.series_id || null, receiptResult?.registry_id || null
+                ]
+            );
+
+            await cashDrawer.postSourcePayment(client, {
+                kind: 'customer',
+                sourceId: tenderPaymentId,
+                sessionId: req.body.cash_session_id,
+                actorId: employee_id,
+                canPost: cashDrawer.userCanPost(req.user)
+            });
+
+            createdPayments.push({
+                payment_id: tenderPaymentId,
+                amount: numAmount,
+                method: methodRow.code,
+                is_cheque: isCheque,
+            });
+        }
+
+        // Allocate across invoices
+        for (const alloc of allocations) {
+            const allocAmt = parseFloat(alloc.amount_allocated) || 0;
+            if (allocAmt <= 0) continue;
+
+            const primaryPaymentId = createdPayments[0]?.payment_id;
+            await client.query(
+                `INSERT INTO invoice_payment_allocation (invoice_id, payment_id, amount_allocated)
+                 VALUES ($1, $2, $3)
+                 ON CONFLICT (invoice_id, payment_id) DO UPDATE SET amount_allocated = EXCLUDED.amount_allocated`,
+                [alloc.invoice_id, primaryPaymentId, allocAmt]
+            );
+            await client.query('SELECT recompute_invoice_settlement($1)', [alloc.invoice_id]);
+        }
+
+        // Post AR ledger entry for cleared cash
+        const clearedAmount = createdPayments.filter(p => !p.is_cheque).reduce((sum, p) => sum + p.amount, 0);
+        if (clearedAmount > 0 && createdPayments.length > 0) {
+            await arLedger.appendEntry(client, {
+                customerId: customer_id,
+                paymentId: createdPayments[0].payment_id,
+                entryType: 'PAYMENT_SETTLED',
+                amount: -clearedAmount,
+                paymentChannel: 'grouped_collection',
+                referenceNo: groupPrn,
+                notes: `Grouped collection receipt #${groupPrn || groupRef}`,
+                createdBy: employee_id,
+                paymentSource: 'customer_payment',
+            });
+        }
+
+        await client.query('COMMIT');
+        res.status(201).json({
+            message: 'Collection group payment recorded successfully.',
+            group_id: groupId,
+            group_reference: groupRef,
+            physical_receipt_no: groupPrn,
+            physical_document: receiptResult,
+            total_amount: totalPaymentAmount,
+            payments: createdPayments,
+        });
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error('POST /payments/collection-group error:', err);
+        const status = err.statusCode || (err.status && err.status < 500 ? err.status : 500);
+        res.status(status).json({ code: err.code || 'COLLECTION_GROUP_ERROR', message: err.message || 'Server error recording collection group.' });
     } finally {
         client.release();
     }

@@ -98,6 +98,7 @@ registerRoute('/api', './routes/goodsReceiptRoutes');
 // Sales & Customer Modules
 registerRoute('/api', './routes/customerRoutes');
 registerRoute('/api', './routes/invoiceRoutes');
+registerRoute('/api', './routes/physicalDocumentRoutes');
 registerRoute('/api', './routes/paymentRoutes');
 registerRoute('/api', './routes/paymentMethodRoutes');
 registerRoute('/api', './routes/stagedSaleRoutes');
