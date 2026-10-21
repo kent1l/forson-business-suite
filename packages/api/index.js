@@ -19,6 +19,7 @@ const { startNotificationGroomer } = require('./services/notificationGroomer');
 const { startAnalyticsAlertEngine } = require('./services/analyticsAlertService');
 const { startPartMergeSnapshotCleanup } = require('./services/partMergeMaintenanceService');
 const { startMasterDataMergeSnapshotCleanup } = require('./services/masterDataMergeMaintenanceService');
+const { startGrnImportMaintenance } = require('./services/grnImportMaintenanceService');
 
 // Set default timezone to Philippine Time
 process.env.TZ = 'Asia/Manila';
@@ -26,6 +27,25 @@ process.env.TZ = 'Asia/Manila';
 const app = express();
 
 app.use(cors());
+
+// External GRN JSON ingestion envelope parser limit (1,114,112 bytes) installed before global 100 KB parser
+app.use('/api/goods-receipts/imports', express.json({ limit: '1114112b' }));
+app.use('/api/goods-receipts/imports', (err, req, res, next) => {
+  if (err && err.type === 'entity.too.large') {
+    return res.status(413).json({
+      code: 'PAYLOAD_TOO_LARGE',
+      message: 'Request payload exceeds the maximum allowed size of 1,114,112 bytes.',
+    });
+  }
+  if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
+    return res.status(400).json({
+      code: 'INVALID_JSON',
+      message: 'Malformed JSON payload.',
+    });
+  }
+  next(err);
+});
+
 app.use(express.json());
 
 // Reject retired master IDs before any API workflow can post a new document.
@@ -204,6 +224,7 @@ app.listen(PORT, async () => {
 
   startPartMergeSnapshotCleanup();
   startMasterDataMergeSnapshotCleanup();
+  startGrnImportMaintenance();
 
 
   if (process.env.DISABLE_SEARCH_REPAIR_WORKER !== 'true') {

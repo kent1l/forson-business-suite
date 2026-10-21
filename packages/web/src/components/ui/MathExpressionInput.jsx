@@ -16,6 +16,7 @@ const MathExpressionInput = forwardRef(({
     value,
     onChange,
     precision = 6,
+    allowEmpty = false,
     className = '',
     placeholder,
     disabled,
@@ -40,6 +41,11 @@ const MathExpressionInput = forwardRef(({
     };
 
     const commit = () => {
+        if (allowEmpty && draft.trim() === '') {
+            setDraft('');
+            if (value !== null) onChange(null);
+            return;
+        }
         const result = evaluateMathExpression(draft);
         if (result === null) {
             setDraft(String(value ?? ''));

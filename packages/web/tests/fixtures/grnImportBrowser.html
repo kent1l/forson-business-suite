@@ -1,0 +1,66 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>GRN Import Browser Test Fixture</title>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="module">
+    import React from 'react';
+    import { createRoot } from 'react-dom/client';
+    import { AuthProvider } from '../../src/contexts/AuthContext.jsx';
+    import { SettingsProvider } from '../../src/contexts/SettingsContext.jsx';
+    import GoodsReceiptPage from '../../src/pages/GoodsReceiptPage.jsx';
+    import useGrnImportReview from '../../src/hooks/useGrnImportReview.js';
+    import '../../src/index.css';
+
+    localStorage.setItem('userSession', JSON.stringify({
+      token: 'fixture-token',
+      user: { employee_id: 1, permission_level_id: 10, username: 'tester' },
+      permissions: [
+        'goods_receipt:create',
+        'goods_receipt:view',
+        'goods_receipt:post',
+        'goods_receipt:price_sync',
+        'suppliers:view',
+        'suppliers:edit',
+        'parts:create',
+        'parts:edit',
+      ]
+    }));
+
+    const root = createRoot(document.getElementById('root'));
+
+    let renderCount = 0;
+    function ImportReviewHookHarness({ importId }) {
+      const review = useGrnImportReview({ autoMatchEnabled: true });
+      React.useEffect(() => { review.fetchReview(importId); }, [importId]);
+      window.importReviewHook = review;
+      return React.createElement('div', null, JSON.stringify(review.autoMatchProgress));
+    }
+    window.mountImportReviewHook = (importId) => {
+      renderCount += 1;
+      root.render(React.createElement(ImportReviewHookHarness, { key: renderCount, importId }));
+    };
+    window.mountGoodsReceipt = (pageState = {}) => {
+      renderCount += 1;
+      const onNavigate = (page, state) => {
+        window.lastNavigation = { page, state };
+      };
+      root.render(
+        React.createElement(AuthProvider, { key: `auth_${renderCount}` },
+          React.createElement(SettingsProvider, null,
+            React.createElement(GoodsReceiptPage, {
+              user: { employee_id: 1 },
+              onNavigate,
+              pageState,
+            })
+          )
+        )
+      );
+    };
+  </script>
+</body>
+</html>

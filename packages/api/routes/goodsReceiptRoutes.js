@@ -14,6 +14,9 @@ const apOperationIdempotency = require('../services/apOperationIdempotencyServic
 const { normalizeReceiptIdentifier } = require('../helpers/paperlessMatching');
 const { syncReceiptRecordedTag } = require('../services/paperlessService');
 const supplierReceiptReference = require('../services/supplierReceiptReferenceService');
+const grnImportService = require('../services/grnImportService');
+const grnDraftService = require('../services/grnDraftService');
+const partCandidateService = require('../services/partCandidateService');
 const router = express.Router();
 
 // Preserve the supplier's printed reference; only blank input becomes NULL.
@@ -255,6 +258,220 @@ router.get('/goods-receipts/check-physical-receipt', protect, hasPermission('goo
   }
 });
 
+// --- External Supplier Document JSON Ingestion Routes ---
+
+// GET /goods-receipts/import-capabilities
+router.get('/goods-receipts/import-capabilities', protect, hasPermission(['goods_receipt:create', 'goods_receipt:view', 'goods_receipt:post']), (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.json(grnImportService.getImportCapabilities());
+});
+
+// POST /goods-receipts/imports
+router.post('/goods-receipts/imports', protect, hasPermission('goods_receipt:create'), async (req, res) => {
+  const client = await db.getClient();
+  try {
+    const result = await grnImportService.createImport(client, req.user.employee_id, req.body);
+    res.set('Cache-Control', 'no-store');
+    res.status(result.status).json(result.data);
+  } catch (err) {
+    if (err.statusCode) {
+      return res.status(err.statusCode).json({
+        code: err.code || 'VALIDATION_ERROR',
+        message: err.message,
+        path: err.path,
+        fields: err.fields,
+      });
+    }
+    console.error('Error creating import review:', err);
+    res.status(500).json({ message: 'Internal server error creating import review.' });
+  } finally {
+    client.release();
+  }
+});
+
+// GET /goods-receipts/imports
+router.get('/goods-receipts/imports', protect, hasPermission('goods_receipt:create'), async (req, res) => {
+  try {
+    const result = await grnImportService.getImports(db, req.user.employee_id, req.query);
+    res.set('Cache-Control', 'no-store');
+    res.json(result);
+  } catch (err) {
+    console.error('Error fetching imports:', err);
+    res.status(500).json({ message: 'Internal server error fetching imports.' });
+  }
+});
+
+// GET /goods-receipts/imports/:importId
+router.get('/goods-receipts/imports/:importId', protect, hasPermission(['goods_receipt:create', 'goods_receipt:view', 'goods_receipt:post']), async (req, res) => {
+  try {
+    const result = await grnImportService.getImportById(db, req.user.employee_id, req.params.importId, req.user.permissions || []);
+    res.set('Cache-Control', 'no-store');
+    res.json(result);
+  } catch (err) {
+    if (err.statusCode) {
+      return res.status(err.statusCode).json({ message: err.message, code: err.code });
+    }
+    console.error('Error fetching import by ID:', err);
+    res.status(500).json({ message: 'Internal server error fetching import.' });
+  }
+});
+
+// PATCH /goods-receipts/imports/:importId
+router.patch('/goods-receipts/imports/:importId', protect, hasPermission('goods_receipt:create'), async (req, res) => {
+  const client = await db.getClient();
+  try {
+    await client.query('BEGIN');
+    const result = await grnImportService.patchImport(client, req.user.employee_id, req.params.importId, req.body);
+    await client.query('COMMIT');
+    res.set('Cache-Control', 'no-store');
+    res.json(result);
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    if (err.statusCode) {
+      return res.status(err.statusCode).json({
+        code: err.code || 'PATCH_ERROR',
+        message: err.message,
+        version: err.version,
+      });
+    }
+    console.error('Error patching import review:', err);
+    res.status(500).json({ message: 'Internal server error patching import review.' });
+  } finally {
+    client.release();
+  }
+});
+
+// POST /goods-receipts/imports/:importId/candidates
+router.post('/goods-receipts/imports/:importId/candidates', protect, hasPermission('goods_receipt:create'), async (req, res) => {
+  if (!grnImportService.isFeatureEnabled()) {
+    return res.status(503).json({
+      code: 'GRN_IMPORT_DISABLED',
+      message: 'External JSON import is currently disabled.',
+    });
+  }
+
+  const { version, row_id, query } = req.body || {};
+  if (!row_id) {
+    return res.status(400).json({ message: 'row_id is required.' });
+  }
+  if (query != null && (typeof query !== 'string' || query.length > 500)) {
+    return res.status(400).json({ message: 'query must be a string of at most 500 characters.' });
+  }
+
+  const controller = new AbortController();
+  const abortSearch = () => { if (!res.writableEnded) controller.abort(); };
+  res.once('close', abortSearch);
+
+  try {
+    const { rows } = await db.query(
+      'SELECT import_id, created_by_employee_id, status, version, review_state, source_payload FROM grn_import_review WHERE import_id = $1',
+      [req.params.importId]
+    );
+    if (!rows.length || rows[0].created_by_employee_id !== req.user.employee_id) {
+      return res.status(404).json({ message: 'Import review not found.' });
+    }
+    const review = rows[0];
+    if (review.status !== 'IN_REVIEW') {
+      return res.status(409).json({ message: `Import review is ${review.status}.` });
+    }
+    if (version !== undefined && review.version !== version) {
+      return res.status(409).json({
+        code: 'VERSION_CONFLICT',
+        message: `Version conflict: current version is ${review.version}, request had ${version}.`,
+        version: review.version,
+      });
+    }
+
+    const row = (review.review_state?.rows || []).find(r => r.row_id === row_id);
+    if (!row) {
+      return res.status(404).json({ message: `Row ${row_id} not found.` });
+    }
+
+    const sourceLine = review.source_payload?.lines?.find(line => line.line_no === row.line_no) || {};
+    const fact = (field) => row.corrections?.[field] ? row.corrections[field].new_value : sourceLine[field];
+
+    const result = await partCandidateService.findPartCandidates({
+      brand: fact('brand'),
+      group: fact('item_group_hint'),
+      partNumber: fact('part_number'),
+      description: fact('description'),
+      supplierItemText: fact('supplier_item_text'),
+      query,
+      signal: controller.signal,
+    });
+
+    if (controller.signal.aborted) return;
+    res.set('Cache-Control', 'no-store');
+    res.json({
+      row_id,
+      version: review.version,
+      ai_status: result.ai_status,
+      verification: result.verification,
+      search_status: result.search_status,
+      automatic_match: result.automatic_match,
+      candidates: result.candidates,
+    });
+  } catch (err) {
+    console.error('Error fetching candidates:', err);
+    res.status(500).json({ message: 'Error fetching candidates.', error: err.message });
+  } finally {
+    res.off('close', abortSearch);
+  }
+});
+
+// POST /goods-receipts/imports/:importId/abandon
+router.post('/goods-receipts/imports/:importId/abandon', protect, hasPermission('goods_receipt:create'), async (req, res) => {
+  const client = await db.getClient();
+  try {
+    await client.query('BEGIN');
+    const result = await grnImportService.abandonImport(client, req.user.employee_id, req.params.importId, req.body);
+    await client.query('COMMIT');
+    res.set('Cache-Control', 'no-store');
+    res.json(result);
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    if (err.statusCode) {
+      return res.status(err.statusCode).json({
+        code: err.code || 'ABANDON_ERROR',
+        message: err.message,
+        version: err.version,
+      });
+    }
+    console.error('Error abandoning import review:', err);
+    res.status(500).json({ message: 'Internal server error abandoning import review.' });
+  } finally {
+    client.release();
+  }
+});
+
+// POST /goods-receipts/imports/:importId/commit
+router.post('/goods-receipts/imports/:importId/commit', protect, hasPermission('goods_receipt:create'), async (req, res) => {
+  const client = await db.getClient();
+  try {
+    await client.query('BEGIN');
+    const result = await grnImportService.commitImport(client, req.user.employee_id, req.params.importId, req.body);
+    await client.query('COMMIT');
+    res.set('Cache-Control', 'no-store');
+    res.status(result.status).json(result.data);
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    if (err.statusCode) {
+      return res.status(err.statusCode).json({
+        code: err.code || 'COMMIT_ERROR',
+        message: err.message,
+        blockers: err.blockers,
+        version: err.version,
+        existingReceipts: err.existingReceipts,
+        conflictingBill: err.conflictingBill,
+      });
+    }
+    console.error('Error committing import review:', err);
+    res.status(500).json({ message: 'Internal server error committing import review.' });
+  } finally {
+    client.release();
+  }
+});
+
 router.get('/goods-receipts/:id/lines', protect, hasPermission(['goods_receipt:create', 'goods_receipt:view', 'ap:view', 'suppliers:view']), async (req, res) => {
   const { id } = req.params;
 
@@ -262,6 +479,7 @@ router.get('/goods-receipts/:id/lines', protect, hasPermission(['goods_receipt:c
     const query = `
       SELECT
         grl.grn_line_id,
+        grl.line_uuid,
         grl.quantity,
         grl.cost_price,
         grl.sale_price,
@@ -1161,22 +1379,8 @@ async function writeDraftFreight(client, grnId, freightCosts = []) {
 // Replace a draft's lines wholesale with the costed payload. Full replacement rather
 // than a diff because the UI edits the document as a single form and a partial update
 // would leave the freight allocation — which depends on every line — inconsistent.
-async function writeDraftLines(client, grnId, lines, costing) {
-  await client.query('DELETE FROM goods_receipt_line WHERE grn_id = $1', [grnId]);
-  for (const [index, line] of lines.entries()) {
-    const computed = costing.lines[index];
-    await client.query(
-      `INSERT INTO goods_receipt_line (grn_id, part_id, quantity, cost_price, sale_price,
-                                       line_discount_percent, line_discount_amount, override_freight_amount,
-                                       allocated_freight_amount, landed_unit_cost, effective_markup_percent,
-                                       return_quantity, rejection_reason, is_free_goods)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
-      [grnId, line.part_id, line.quantity, line.cost_price, computed.sale_price,
-       line.line_discount_percent ?? null, line.line_discount_amount ?? null, line.override_freight_amount ?? null,
-       computed.allocated_freight_amount, computed.landed_unit_cost, computed.effective_markup_percent,
-       computed.return_quantity, line.rejection_reason || null, computed.is_free_goods],
-    );
-  }
+async function writeDraftLines(client, grnId, lines, costing, options = {}) {
+  return grnDraftService.writeDraftLines(client, grnId, lines, costing, options);
 }
 
 function validateDraftLines(lines) {
@@ -1268,10 +1472,18 @@ router.post('/goods-receipts/drafts', protect, hasPermission('goods_receipt:crea
       supplierId: header.supplier_id, documentNo: header.supplier_document_no, documentType: header.supplier_document_type,
       grnId: draft.grn_id, billId: header.bill_id, anotherDeliveryConfirmed: header.another_delivery_confirmed,
     });
-    await writeDraftLines(client, draft.grn_id, lines, costing);
+    const { identityMappings } = await writeDraftLines(client, draft.grn_id, lines, costing, {
+      lineIdentityVersion: req.body?.line_identity_version,
+    });
     await writeDraftFreight(client, draft.grn_id, header.freight_costs);
     await client.query('COMMIT');
-    res.status(201).json({ message: 'Draft saved.', grn_id: draft.grn_id, grn_number: draft.grn_number, costing });
+    res.status(201).json({
+      message: 'Draft saved.',
+      grn_id: draft.grn_id,
+      grn_number: draft.grn_number,
+      costing,
+      identity_mappings: identityMappings,
+    });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
     if (isPhysicalReceiptConflict(err)) {
@@ -1363,7 +1575,7 @@ router.get('/goods-receipts/:id', protect, hasPermission(['goods_receipt:create'
       `SELECT gr.grn_id, gr.grn_number, gr.receipt_date, gr.supplier_id, gr.received_by, gr.po_id,
               gr.bill_id, gr.freight_bill_id, gr.status, gr.workflow_status, gr.is_backfill,
               gr.supplier_invoice_no, gr.supplier_document_no, gr.supplier_document_type, gr.another_delivery_confirmed,
-              ${includePhysicalReceipt ? 'gr.physical_receipt_no,' : 'NULL::varchar AS physical_receipt_no,'}
+              ${includePhysicalReceipt ? 'gr.physical_receipt_no,' : 'gr.supplier_invoice_no AS physical_receipt_no,'}
               gr.freight_amount, gr.freight_allocation_method,
               gr.freight_supplier_id, gr.overall_discount_percent, gr.overall_discount_amount,
               gr.sync_retail_prices, gr.created_at, gr.submitted_at, gr.posted_at,
@@ -1409,6 +1621,11 @@ router.get('/goods-receipts/:id', protect, hasPermission(['goods_receipt:create'
       [req.params.id],
     );
     grn.freight_costs = freightRows;
+    const { rows: importRows } = await db.query(
+      'SELECT import_id, status FROM grn_import_review WHERE grn_id = $1',
+      [req.params.id]
+    );
+    grn.import_provenance = importRows[0] || null;
     res.json(grn);
   } catch (err) {
     console.error('Error fetching goods receipt:', err.message);
@@ -1484,7 +1701,10 @@ router.put('/goods-receipts/:id/draft', protect, hasPermission('goods_receipt:cr
       supplierId: header.supplier_id || grn.supplier_id, documentNo: header.supplier_document_no, documentType: header.supplier_document_type,
       grnId: id, billId: header.bill_id, anotherDeliveryConfirmed: header.another_delivery_confirmed,
     });
-    await writeDraftLines(client, id, lines, costing);
+    const { identityMappings } = await writeDraftLines(client, id, lines, costing, {
+      lineIdentityVersion: req.body?.line_identity_version,
+      isUpdate: true,
+    });
     await writeDraftFreight(client, id, header.freight_costs);
     await client.query('COMMIT');
     res.json({
@@ -1495,6 +1715,7 @@ router.put('/goods-receipts/:id/draft', protect, hasPermission('goods_receipt:cr
       workflow_status: grnWorkflow.DRAFT,
       returned_to_draft: wasSubmitted,
       costing,
+      identity_mappings: identityMappings,
     });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
@@ -2002,12 +2223,16 @@ router.post('/goods-receipts/:id/sync-retail-prices', protect, hasPermission('go
 
     const { rows: updated } = await client.query(
       `UPDATE part p
-       SET last_sale_price = grl.sale_price, last_sale_price_date = CURRENT_TIMESTAMP
-       FROM goods_receipt_line grl
-       WHERE grl.grn_id = $1
-         AND grl.part_id = p.part_id
-         AND grl.sale_price IS NOT NULL
-         AND grl.quantity > grl.return_quantity
+       SET last_sale_price = grl_latest.sale_price, last_sale_price_date = CURRENT_TIMESTAMP
+       FROM (
+         SELECT DISTINCT ON (part_id) part_id, sale_price
+         FROM goods_receipt_line
+         WHERE grn_id = $1
+           AND sale_price IS NOT NULL
+           AND quantity > return_quantity
+         ORDER BY part_id, grn_line_id DESC
+       ) grl_latest
+       WHERE grl_latest.part_id = p.part_id
        RETURNING p.part_id, p.last_sale_price`,
       [id],
     );

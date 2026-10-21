@@ -17,13 +17,18 @@ import MathExpressionInput from '../components/ui/MathExpressionInput';
 import DiscountInput from '../components/ui/DiscountInput';
 import FreightAllocationWizard from '../components/goods-receipt/FreightAllocationWizard';
 import ReturnLineModal from '../components/goods-receipt/ReturnLineModal';
+import ImportExtractedJsonDialog from '../components/goods-receipt/ImportExtractedJsonDialog';
+import ImportReviewDrawer from '../components/goods-receipt/ImportReviewDrawer';
 import PartForm from '../components/forms/PartForm';
 import { formatCurrency } from '../utils/currency';
 import { computeCosting, markupFromPrice, roundUpTo, DEFAULT_MARKUP_PERCENT, MIN_MARKUP_PERCENT, PRICE_ROUNDING_INCREMENT, METHOD_A } from '../utils/grnCosting';
 import { useAuth } from '../contexts/AuthContext';
 import usePartDuplicateResolution from '../hooks/usePartDuplicateResolution';
+import useGrnImportReview from '../hooks/useGrnImportReview';
 import { supplierReference, flattenReferenceMatches } from '../utils/supplierReference';
 import { getNavContext, returnToOrigin, clearNavContext } from '../utils/apNavigationContract';
+import { createUuid } from '../utils/createUuid';
+import { receiptDateForInput, receiptDateForPayload } from '../utils/grnReceiptDate';
 
 const upperCatalogText = (value) => String(value || '').replace(/\s+/g, ' ').trim().toUpperCase();
 
@@ -100,7 +105,19 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
     const [duplicateReview, setDuplicateReview] = useState(null);
     const [duplicateReviewLoading, setDuplicateReviewLoading] = useState(false);
     const supplierDocumentInputRef = useRef(null);
+    const documentDetailsRef = useRef(null);
     const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' });
+
+    useEffect(() => {
+        const closeDocumentDetails = (event) => {
+            const details = documentDetailsRef.current;
+            if (details?.open && !details.contains(event.target)) {
+                details.open = false;
+            }
+        };
+        document.addEventListener('pointerdown', closeDocumentDetails, true);
+        return () => document.removeEventListener('pointerdown', closeDocumentDetails, true);
+    }, []);
 
     const { hasPermission } = useAuth();
     // Freight, discounts and the price-sync choice belong to the document as a whole,
@@ -118,6 +135,11 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
     const [savingDraftRow, setSavingDraftRow] = useState(false);
     const [catalogTarget, setCatalogTarget] = useState(null);
 
+    const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+    const [isImportReviewDrawerOpen, setIsImportReviewDrawerOpen] = useState(false);
+    const [importPartTarget, setImportPartTarget] = useState(null);
+    const [savingImportPart, setSavingImportPart] = useState(false);
+
     const canSubmit = hasPermission('goods_receipt:submit');
     const canPost = hasPermission('goods_receipt:post');
     const canEditSuppliers = hasPermission('suppliers:edit');
@@ -131,9 +153,10 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
     const slot = navCtx?.contextId || null;
     const draftData = useMemo(() => (stagedGrn ? {} : {
         selectedSupplier, lines, selectedPO, attachedBillId, documentType, relatedInvoiceNo, anotherDeliveryConfirmed, legacyReference,
+        receiptDate, isBackfill,
         freightAmount, freightSupplierId, freightCosts, freightMethod, overallDiscount, syncRetailPrices, physicalReceiptNo,
-    }), [stagedGrn, selectedSupplier, lines, selectedPO, attachedBillId, documentType, relatedInvoiceNo, anotherDeliveryConfirmed, legacyReference, freightAmount, freightSupplierId, freightCosts, freightMethod, overallDiscount, syncRetailPrices, physicalReceiptNo]);
-    const isEmpty = useMemo(() => (d) => (!d?.selectedSupplier && (!d?.lines || d.lines.length === 0) && !d?.selectedPO && !d?.attachedBillId), []);
+    }), [stagedGrn, selectedSupplier, lines, selectedPO, attachedBillId, documentType, relatedInvoiceNo, anotherDeliveryConfirmed, legacyReference, receiptDate, isBackfill, freightAmount, freightSupplierId, freightCosts, freightMethod, overallDiscount, syncRetailPrices, physicalReceiptNo]);
+    const isEmpty = useMemo(() => (d) => (!d?.selectedSupplier && (!d?.lines || d.lines.length === 0) && !d?.selectedPO && !d?.attachedBillId && !d?.receiptDate && !d?.isBackfill), []);
     const { status: draftStatus, lastSavedAt, draft, loaded: draftLoaded, clearDraft } = useDraft('goods-receipt', { slot, data: draftData, isEmpty, debounceMs: 750 });
 
     // The same module the API uses, generated from it, so what is shown here is exactly
@@ -147,11 +170,36 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
         recomputeSalePrice: false,
     }), [lines, freightAmount, freightMethod, overallDiscount]);
 
+    const costingByRowKey = useMemo(() => {
+        const map = new Map();
+        lines.forEach((l, i) => {
+            const key = l.line_uuid || l.client_row_key;
+            if (key) map.set(key, costing.lines[i]);
+        });
+        return map;
+    }, [lines, costing]);
+
     const costingByPart = useMemo(() => {
         const map = new Map();
         lines.forEach((l, i) => map.set(l.part_id, costing.lines[i]));
         return map;
     }, [lines, costing]);
+
+    // For duplicate parts: identify the row supplying the catalog retail price.
+    // Section 8: last eligible row in saved receipt order (greatest grn_line_id/index with sale_price != null and quantity > return_quantity).
+    const catalogPriceSuppliers = useMemo(() => {
+        const map = new Map();
+        lines.forEach((l) => {
+            if (!l.part_id) return;
+            const netQty = (Number(l.quantity) || 0) - (Number(l.return_quantity) || 0);
+            const key = l.line_uuid || l.client_row_key;
+            const computedSale = stagedGrn?.import_provenance && l.sale_price == null ? null : costingByRowKey.get(key)?.sale_price ?? l.sale_price;
+            if (computedSale != null && netQty > 0) {
+                map.set(l.part_id, key);
+            }
+        });
+        return new Set(map.values());
+    }, [lines, costingByRowKey, stagedGrn]);
 
     const totals = useMemo(() => ({
         ...costing.totals,
@@ -254,6 +302,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                 grn_number: header.grn_number,
                 workflow_status: header.workflow_status,
                 supplier_invoice_no: header.supplier_invoice_no || header.physical_receipt_no || '',
+                import_provenance: header.import_provenance || null,
             });
             setSelectedSupplier(String(header.supplier_id));
             setFreightAmount(Number(header.freight_amount) || 0);
@@ -279,9 +328,11 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
             if (header.supplier_invoice_no && header.supplier_invoice_no !== header.supplier_document_no && header.supplier_invoice_no !== header.physical_receipt_no) {
                 setRelatedInvoiceNo(header.supplier_invoice_no);
             }
-            if (header.receipt_date) setReceiptDate(String(header.receipt_date).slice(0, 10));
+            setReceiptDate(receiptDateForInput(header.receipt_date));
             setLines((linesRes.data || []).map(l => ({
                 ...l,
+                line_uuid: l.line_uuid || null,
+                client_row_key: l.line_uuid || createUuid(),
                 part_number: l.part_number || null,
                 part_numbers: l.part_numbers || null,
                 quantity: Number(l.quantity),
@@ -309,10 +360,17 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
 
     // When draft loads, hydrate local state once
     useEffect(() => {
-        if (!draftLoaded) return;
+        if (!draftLoaded || pageState?.grnId || navCtx?.grnId || stagedGrn) return;
         if (draft) {
+            if (draft.receiptDate !== undefined) setReceiptDate(draft.receiptDate);
+            if (draft.isBackfill !== undefined) setIsBackfill(draft.isBackfill);
             if (draft.selectedSupplier) setSelectedSupplier(draft.selectedSupplier);
-            if (draft.lines) setLines(draft.lines);
+            if (draft.lines) {
+                setLines(draft.lines.map(l => ({
+                    ...l,
+                    client_row_key: l.client_row_key || l.line_uuid || createUuid(),
+                })));
+            }
             if (draft.selectedPO) setSelectedPO(draft.selectedPO);
             if (draft.freightAmount) setFreightAmount(draft.freightAmount);
             if (draft.freightSupplierId) setFreightSupplierId(draft.freightSupplierId);
@@ -328,7 +386,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
             if (draft.attachedBillId) setAttachedBillId(draft.attachedBillId);
             toast('Loaded your saved draft.', { icon: '📄' });
         }
-    }, [draftLoaded, draft]);
+    }, [draftLoaded, draft, pageState?.grnId, navCtx?.grnId, stagedGrn]);
 
     useEffect(() => {
         if (navCtx?.supplierId && !selectedSupplier) {
@@ -482,6 +540,8 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                     : (l.last_sale_price != null && Number(l.last_sale_price) > 0 ? Number(l.last_sale_price) : null);
                 return {
                     ...l,
+                    client_row_key: createUuid(),
+                    line_uuid: null,
                     cost_price: poCost,
                     sale_price: poSale,
                     display_name: l.display_name || l.custom_item_name,
@@ -613,10 +673,13 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
     };
 
     const addPartToLines = (part) => {
-        const existingLine = lines.find(line => line.part_id === part.part_id);
-        if (existingLine) {
+        const matchingLines = lines.filter(line => line.part_id === part.part_id);
+        if (matchingLines.length === 1) {
+            const targetKey = matchingLines[0].line_uuid || matchingLines[0].client_row_key;
             setLines(lines.map(line =>
-                line.part_id === part.part_id ? { ...line, quantity: line.quantity + 1 } : line
+                (line.line_uuid || line.client_row_key) === targetKey
+                    ? { ...line, quantity: line.quantity + 1 }
+                    : line
             ));
         } else {
             const defaultCost = (part.last_receipt_unit_cost != null && Number(part.last_receipt_unit_cost) > 0)
@@ -635,6 +698,8 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
 
             setLines([...lines, {
                 ...part,
+                client_row_key: createUuid(),
+                line_uuid: null,
                 part_id: part.part_id,
                 quantity: 1,
                 cost_price: defaultCost,
@@ -651,17 +716,17 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
         setSearchTerm('');
     };
 
-    const handleLineChange = (partId, field, value) => {
+    const handleLineChange = (rowKey, field, value) => {
         const numericValue = Number.isFinite(value) ? value : 0;
         setLines(lines.map(line =>
-            line.part_id === partId ? { ...line, [field]: numericValue } : line
+            (line.line_uuid || line.client_row_key) === rowKey ? { ...line, [field]: numericValue } : line
         ));
     };
 
     // Non-numeric line fields (discount objects, rejection reasons) that handleLineChange's
     // Number coercion would destroy.
-    const setLineFields = (partId, fields) => {
-        setLines(prev => prev.map(line => (line.part_id === partId ? { ...line, ...fields } : line)));
+    const setLineFields = (rowKey, fields) => {
+        setLines(prev => prev.map(line => ((line.line_uuid || line.client_row_key) === rowKey ? { ...line, ...fields } : line)));
     };
 
     // Price and markup are two views of the same decision, so editing either updates the
@@ -669,31 +734,31 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
     // recomputes the markup it implies. Whichever the user touched last is the one kept,
     // and both columns always show the pair that actually holds — never a requested
     // markup sitting beside a price that no longer realises it.
-    const applyMarkup = (partId, markup, price) => {
-        setLineFields(partId, { effective_markup_percent: markup, sale_price: price });
+    const applyMarkup = (rowKey, markup, price) => {
+        setLineFields(rowKey, { effective_markup_percent: markup, sale_price: price });
     };
 
-    const handleMarkupChange = (partId, markup) => {
-        const landed = costingByPart.get(partId)?.landed_unit_cost || 0;
+    const handleMarkupChange = (rowKey, markup) => {
+        const landed = costingByRowKey.get(rowKey)?.landed_unit_cost || 0;
         const nextMarkup = Number.isFinite(markup) ? markup : 0;
         if (landed <= 0) {
-            applyMarkup(partId, nextMarkup, null);
+            applyMarkup(rowKey, nextMarkup, null);
             return;
         }
         const exact = Math.round(landed * (1 + nextMarkup / 100) * 100) / 100;
         const rounded = roundUpTo(exact);
         if (rounded === exact) {
-            applyMarkup(partId, nextMarkup, exact);
+            applyMarkup(rowKey, nextMarkup, exact);
             return;
         }
         // A markup someone typed deliberately is a different thing from one the system
         // assumed, so this is the one place the rounding is put to them rather than
         // applied silently. Rounding up stays the default; keeping the exact percentage
         // is there for the lines where the margin is the number that was negotiated.
-        const line = lines.find(l => l.part_id === partId);
+        const line = lines.find(l => (l.line_uuid || l.client_row_key) === rowKey);
         setMarkupRounding({
-            partId,
-            name: line?.display_name || line?.part_number || line?.part_numbers || line?.internal_sku || `Line ${partId}`,
+            rowKey,
+            name: line?.display_name || line?.part_number || line?.part_numbers || line?.internal_sku || `Line ${line?.part_id || ''}`,
             markup: nextMarkup,
             landed,
             exact,
@@ -703,27 +768,31 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
 
     const resolveMarkupRounding = (useRounded) => {
         if (!markupRounding) return;
-        const { partId, markup, landed, exact, rounded } = markupRounding;
+        const { rowKey, markup, landed, exact, rounded } = markupRounding;
         if (useRounded) {
-            applyMarkup(partId, markupFromPrice(rounded, landed) ?? markup, rounded);
+            applyMarkup(rowKey, markupFromPrice(rounded, landed) ?? markup, rounded);
         } else {
-            applyMarkup(partId, markup, exact);
+            applyMarkup(rowKey, markup, exact);
         }
         setMarkupRounding(null);
     };
 
-    const handleSalePriceChange = (partId, price) => {
-        const landed = costingByPart.get(partId)?.landed_unit_cost || 0;
+    const handleSalePriceChange = (rowKey, price) => {
+        if (stagedGrn?.import_provenance && price == null) {
+            setLineFields(rowKey, { sale_price: null });
+            return;
+        }
+        const landed = costingByRowKey.get(rowKey)?.landed_unit_cost || 0;
         const nextPrice = Number.isFinite(price) ? price : 0;
         const derived = markupFromPrice(nextPrice, landed);
-        setLineFields(partId, {
+        setLineFields(rowKey, {
             sale_price: nextPrice,
             ...(derived != null ? { effective_markup_percent: derived } : {}),
         });
     };
 
-    const removeLine = (partId) => {
-        setLines(lines.filter(line => line.part_id !== partId));
+    const removeLine = (rowKey) => {
+        setLines(lines.filter(line => (line.line_uuid || line.client_row_key) !== rowKey));
     };
 
     const removeUncatalogedLine = (poLineId) => {
@@ -786,24 +855,31 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
     // Everything the API needs, in the shape both the one-shot post and the draft
     // endpoints accept.
     const buildPayload = () => ({
+        line_identity_version: 1,
         supplier_id: selectedSupplier,
         received_by: user.employee_id,
         bill_id: attachedBillId || null,
-        lines: lines.map(line => ({
-            part_id: line.part_id,
-            quantity: line.quantity,
-            cost_price: line.cost_price,
-            sale_price: costingByPart.get(line.part_id)?.sale_price ?? line.sale_price ?? null,
-            line_discount_percent: line.line_discount_percent ?? null,
-            line_discount_amount: line.line_discount_amount ?? null,
-            override_freight_amount: line.override_freight_amount ?? null,
-            effective_markup_percent: line.effective_markup_percent ?? DEFAULT_MARKUP_PERCENT,
-            return_quantity: line.return_quantity || 0,
-            rejection_reason: line.rejection_reason || null,
-            is_free_goods: line.is_free_goods === true,
-        })),
+        lines: lines.map((line, idx) => {
+            const rowKey = line.line_uuid || line.client_row_key;
+            const rowCosting = costingByRowKey.get(rowKey) || costing.lines[idx];
+            return {
+                line_uuid: line.line_uuid || undefined,
+                client_row_key: line.client_row_key || undefined,
+                part_id: line.part_id,
+                quantity: line.quantity,
+                cost_price: line.cost_price,
+                sale_price: stagedGrn?.import_provenance && line.sale_price == null ? null : rowCosting?.sale_price ?? line.sale_price ?? null,
+                line_discount_percent: line.line_discount_percent ?? null,
+                line_discount_amount: line.line_discount_amount ?? null,
+                override_freight_amount: line.override_freight_amount ?? null,
+                effective_markup_percent: line.effective_markup_percent ?? DEFAULT_MARKUP_PERCENT,
+                return_quantity: line.return_quantity || 0,
+                rejection_reason: line.rejection_reason || null,
+                is_free_goods: line.is_free_goods === true,
+            };
+        }),
         po_id: selectedPO ? selectedPO.po_id : null,
-        receipt_date: receiptDate || null,
+        receipt_date: receiptDateForPayload(receiptDate),
         is_backfill: isBackfill,
         supplier_document_type: documentType,
         supplier_document_no: physicalReceiptNo ? physicalReceiptNo.trim() : null,
@@ -917,6 +993,15 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                 // must stop offering to post it as though it were still approved.
                 setStagedGrn(prev => ({ ...prev, workflow_status: 'Draft' }));
             }
+            if (res.data.identity_mappings?.length) {
+                const map = new Map(res.data.identity_mappings.map(m => [m.client_row_key, m.line_uuid]));
+                setLines(prev => prev.map(l => {
+                    if (l.client_row_key && map.has(l.client_row_key)) {
+                        return { ...l, line_uuid: map.get(l.client_row_key) };
+                    }
+                    return l;
+                }));
+            }
             // The scratch buffer's job is done once the receipt is a real document.
             clearDraft();
             return res.data.grn_id;
@@ -946,10 +1031,12 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
         const line = returnTargetLine;
         if (!line) return;
 
+        const rowKey = line.line_uuid || line.client_row_key;
+
         // Before a receipt exists on the server there is nothing to call — the rejection
         // is simply part of the document being typed.
         if (!stagedGrn) {
-            setLineFields(line.part_id, {
+            setLineFields(rowKey, {
                 return_quantity: (Number(line.return_quantity) || 0) + Number(return_quantity),
                 rejection_reason: rejection_reason === 'Other' ? `Other: ${notes}` : rejection_reason,
             });
@@ -966,7 +1053,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                 error: (err) => err?.response?.data?.message || 'Could not record the return.',
             },
         );
-        setLineFields(line.part_id, {
+        setLineFields(rowKey, {
             return_quantity: (Number(line.return_quantity) || 0) + Number(return_quantity),
             rejection_reason: rejection_reason === 'Other' ? `Other: ${notes}` : rejection_reason,
         });
@@ -1017,6 +1104,104 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
         });
     };
 
+    const importReview = useGrnImportReview({
+        autoMatchEnabled: isImportReviewDrawerOpen && !importPartTarget && hasPermission('goods_receipt:create'),
+        onCommitted: async (commitResult) => {
+            toast.success(`Import committed as GRN ${commitResult.grn_number}!`);
+            setIsImportReviewDrawerOpen(false);
+            if (commitResult.grn_id) {
+                await loadStagedReceipt(commitResult.grn_id);
+            }
+        },
+        onError: (err) => {
+            toast.error(err?.response?.data?.message || err?.message || 'Import error');
+        },
+    });
+
+    const handleCreateImportPart = (rowId) => {
+        if (!canCatalogParts || importReview.review?.status !== 'IN_REVIEW') return;
+        const row = importReview.review.review_state.rows.find(item => item.row_id === rowId);
+        if (!row?.included) return;
+        const source = importReview.review.source_payload?.lines?.find(item => item.line_no === row.line_no) || {};
+        const brandName = upperCatalogText(source.brand);
+        const groupName = upperCatalogText(source.item_group_hint);
+        setImportPartTarget({
+            import_id: importReview.review.import_id,
+            row_id: rowId,
+            line_no: row.line_no,
+            initialValues: {
+                detail: upperCatalogText(source.supplier_item_text || source.description),
+                part_numbers: upperCatalogText(source.part_number),
+                brand_id: brands.find(item => upperCatalogText(item.brand_name) === brandName)?.brand_id || '',
+                brand_name: brandName,
+                group_id: groups.find(item => upperCatalogText(item.group_name) === groupName)?.group_id || '',
+                group_name: groupName,
+                measurement_unit: upperCatalogText(source.unit || 'PCS'),
+                last_cost: row.confirmed_row?.cost_price ?? source.unit_cost ?? 0,
+                last_sale_price: row.confirmed_row?.sale_price ?? 0,
+            },
+        });
+    };
+
+    const handleSaveImportPart = async (partData) => {
+        if (!canCatalogParts || !importPartTarget || savingImportPart) return;
+        setSavingImportPart(true);
+        try {
+            const result = await executePartSave({
+                endpoint: '/parts',
+                payload: { ...partData, created_by: user.employee_id },
+                brands,
+                groups,
+            });
+            if (result.outcome === 'cancelled' || result.outcome === 'error') return;
+
+            importReview.queueAction({
+                type: 'set_row',
+                row_id: importPartTarget.row_id,
+                values: {
+                    part_id: result.part.part_id,
+                    stock_uom: result.part.measurement_unit,
+                },
+            }, result.part);
+            setImportPartTarget(null);
+            toast.success(result.outcome === 'existing'
+                ? 'Existing catalog part linked to this import line.'
+                : 'Part created and linked to this import line.');
+        } finally {
+            setSavingImportPart(false);
+        }
+    };
+
+    const closeImportPartForm = () => {
+        if (!savingImportPart) setImportPartTarget(null);
+    };
+
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        const importIdParam = params.get('import_id') || pageState?.import_id;
+        if (importIdParam && hasPermission('goods_receipt:create')) {
+            importReview.fetchReview(importIdParam)
+                .then(() => setIsImportReviewDrawerOpen(true))
+                .catch(() => {});
+        }
+    }, [pageState]);
+
+    const handleOpenImportReview = async ({ payload, requestKey, importId }) => {
+        if (importId) {
+            await importReview.fetchReview(importId);
+        } else {
+            await importReview.createImport({
+                requestKey,
+                payload,
+                context: {
+                    supplier_id: selectedSupplier ? Number(selectedSupplier) : undefined,
+                    bill_id: attachedBillId ? Number(attachedBillId) : undefined,
+                },
+            });
+        }
+        setIsImportReviewDrawerOpen(true);
+    };
+
     if (loading) return <p className="text-gray-600 dark:text-slate-400">Loading data...</p>;
 
     const inputClass = "w-full h-9 px-2 border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 rounded-md text-sm text-center focus:outline-none focus:ring-2 focus:ring-primary-500";
@@ -1043,8 +1228,44 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                             </span>
                         </div>
                     )}
+                    {stagedGrn?.import_provenance && (
+                        <div className="mt-2 ml-2 inline-flex items-center gap-2 px-3 py-1 rounded-md bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 text-sm">
+                            <span className="text-indigo-600 dark:text-indigo-400 font-medium">Source:</span>
+                            <span className="font-mono text-xs text-indigo-900 dark:text-indigo-200">
+                                Imported JSON ({stagedGrn.import_provenance.import_id?.slice(0, 8)})
+                            </span>
+                            <button
+                                type="button"
+                                onClick={async () => {
+                                    await importReview.fetchReview(stagedGrn.import_provenance.import_id);
+                                    setIsImportReviewDrawerOpen(true);
+                                }}
+                                className="text-xs text-indigo-700 dark:text-indigo-300 underline font-semibold hover:text-indigo-900 ml-1"
+                            >
+                                View source review
+                            </button>
+                        </div>
+                    )}
                 </div>
                 <div className="flex items-center gap-2">
+                    {importReview.capabilities?.enabled && hasPermission('goods_receipt:create') && (
+                        <button
+                            type="button"
+                            onClick={() => {
+                                if (stagedGrn) {
+                                    if (window.confirm('You are currently viewing a saved receipt. Starting a new import will begin a new receipt. Continue?')) {
+                                        resetForm();
+                                        setIsImportModalOpen(true);
+                                    }
+                                } else {
+                                    setIsImportModalOpen(true);
+                                }
+                            }}
+                            className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition text-sm font-medium flex items-center gap-1.5 shadow-xs"
+                        >
+                            <Icon path={ICONS.download || ICONS.document} className="h-4 w-4" /> Import extracted JSON
+                        </button>
+                    )}
                     <button
                         onClick={() => onNavigate('goods_receipt_drafts')}
                         className="px-4 py-2 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-200 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition text-sm font-medium flex items-center gap-1.5"
@@ -1214,31 +1435,49 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                     <div className="space-y-3">
                         <div>
                             <label className={labelClass} htmlFor="supplier-document-number">Supplier Document No. {isBackfill ? '' : '(optional)'}</label>
-                            <input id="supplier-document-number" type="text" ref={supplierDocumentInputRef}
-                                value={physicalReceiptNo} maxLength={255}
-                                onChange={e => { setPhysicalReceiptNo(e.target.value); setAnotherDeliveryConfirmed(false); }}
-                                placeholder="Enter the number printed on the supplier paperwork"
-                                className={selectClass} />
-                            <p className="mt-1 text-xs text-gray-500 dark:text-slate-400">Use your AR, DR, SI, packing list or waybill number. We check this supplier’s existing records.</p>
+                            <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2">
+                                <input id="supplier-document-number" type="text" ref={supplierDocumentInputRef}
+                                    value={physicalReceiptNo} maxLength={255}
+                                    onChange={e => { setPhysicalReceiptNo(e.target.value); setAnotherDeliveryConfirmed(false); }}
+                                    placeholder="Enter the number printed on the supplier paperwork"
+                                    className={selectClass} />
+                                <details ref={documentDetailsRef} className="group relative text-sm">
+                                    <summary
+                                        aria-label="Document details"
+                                        title="Document details"
+                                        className="flex h-[42px] w-10 cursor-pointer list-none items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-600 hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-400 dark:hover:bg-slate-700 [&::-webkit-details-marker]:hidden"
+                                    >
+                                        <span aria-hidden="true"><Icon path={ICONS.chevronDown} className="h-4 w-4 transition-transform group-open:rotate-180" /></span>
+                                    </summary>
+                                    <div className="absolute right-0 top-full z-20 mt-2 w-80 max-w-[calc(100vw-3.5rem)] space-y-3 rounded-lg border border-gray-200 bg-white p-4 shadow-lg dark:border-slate-600 dark:bg-slate-800">
+                                        <p className="text-xs text-gray-500 dark:text-slate-400">Use your AR, DR, SI, packing list or waybill number. We check this supplier’s existing records.</p>
+                                        <label className={labelClass + ' mt-2'}>Document type (if known)</label>
+                                        <select value={documentType} onChange={e => { setDocumentType(e.target.value); setAnotherDeliveryConfirmed(false); }} className={selectClass}>
+                                            <option value="other">Unspecified / Other</option>
+                                            <option value="delivery_receipt">Delivery Receipt (DR)</option>
+                                            <option value="invoice">Sales / Tax Invoice (SI)</option>
+                                            <option value="acknowledgement">Acknowledgement Receipt (AR)</option>
+                                            <option value="packing_list">Packing List</option>
+                                            <option value="waybill">Waybill</option>
+                                        </select>
+                                        {documentType !== 'invoice' && (
+                                            <div className="mt-2">
+                                                <label className={labelClass}>Related invoice number (if supplied)</label>
+                                                <input value={relatedInvoiceNo} onChange={e => setRelatedInvoiceNo(e.target.value)} className={selectClass} />
+                                            </div>
+                                        )}
+                                        <p className="text-xs text-gray-500 dark:text-slate-400">
+                                            {isBackfill ? 'Required for a backfill. ' : ''}Use the supplier document reference to verify against payables and prevent duplicates.
+                                        </p>
+                                        {attachedBillId ? (
+                                            <p className="text-xs text-primary-700 dark:text-primary-300">Receiving against the selected payable; no new goods payable will be created.</p>
+                                        ) : !isBackfill && (
+                                            <p className="text-xs text-gray-600 dark:text-slate-400">Posting creates a new goods payable from these items. Select an existing match above if it is already recorded.</p>
+                                        )}
+                                    </div>
+                                </details>
+                            </div>
                         </div>
-                        <details className="text-sm">
-                            <summary className="cursor-pointer text-gray-600 dark:text-slate-400">Document details (optional)</summary>
-                            <label className={labelClass + ' mt-2'}>Document type (if known)</label>
-                            <select value={documentType} onChange={e => { setDocumentType(e.target.value); setAnotherDeliveryConfirmed(false); }} className={selectClass}>
-                                <option value="other">Unspecified / Other</option>
-                                <option value="delivery_receipt">Delivery Receipt (DR)</option>
-                                <option value="invoice">Sales / Tax Invoice (SI)</option>
-                                <option value="acknowledgement">Acknowledgement Receipt (AR)</option>
-                                <option value="packing_list">Packing List</option>
-                                <option value="waybill">Waybill</option>
-                            </select>
-                            {documentType !== 'invoice' && (
-                                <div className="mt-2">
-                                    <label className={labelClass}>Related invoice number (if supplied)</label>
-                                    <input value={relatedInvoiceNo} onChange={e => setRelatedInvoiceNo(e.target.value)} className={selectClass} />
-                                </div>
-                            )}
-                        </details>
 
                         {attachedBillDetails && (
                             <div className="flex items-center justify-between p-2 rounded-md bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 text-xs">
@@ -1255,15 +1494,6 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                             </div>
                         )}
 
-                        <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">
-                            {isBackfill ? 'Required for a backfill. ' : ''}Use the supplier document reference to verify against payables and prevent duplicates.
-                        </p>
-
-                        {attachedBillId ? (
-                            <p className="text-xs text-primary-700 dark:text-primary-300">Receiving against the selected payable; no new goods payable will be created.</p>
-                        ) : !isBackfill && (
-                            <p className="text-xs text-gray-600 dark:text-slate-400">Posting creates a new goods payable from these items. Select an existing match above if it is already recorded.</p>
-                        )}
                         {anotherDeliveryConfirmed && <p role="status" className="text-xs text-warning-700 dark:text-warning-300">Another physical arrival confirmed for the selected payable.</p>}
                         {physicalReceiptConflict && (
                             <div className="mt-2 rounded-lg border border-danger-200 dark:border-danger-800 bg-danger-50 dark:bg-danger-950/30 p-3" role="status" aria-live="polite">
@@ -1555,7 +1785,8 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                         </thead>
                         <tbody>
                             {lines.map((line, index) => {
-                              const computed = costing.lines[index] || costingByPart.get(line.part_id);
+                              const rowKey = line.line_uuid || line.client_row_key || `row_${index}`;
+                              const computed = costing.lines[index] || costingByRowKey.get(rowKey) || costingByPart.get(line.part_id);
                               const belowMinMarkup = (computed?.landed_unit_cost || 0) > 0
                                   && (computed?.effective_markup_percent ?? DEFAULT_MARKUP_PERCENT) < MIN_MARKUP_PERCENT;
                               const returned = Number(line.return_quantity) || 0;
@@ -1569,8 +1800,10 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                               // A cost of zero that nobody has claimed as a giveaway. The line
                               // still delivers stock; it just will not move the average cost.
                               const isUncosted = computed?.is_uncosted === true;
+                              const duplicateCount = lines.filter(l => l.part_id && l.part_id === line.part_id).length;
+                              const isCatalogPriceSupplier = catalogPriceSuppliers.has(rowKey);
                               return (
-                                <tr key={line.po_line_id || line.part_id} className="border-b border-gray-100 dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-700/40 transition-colors">
+                                <tr key={rowKey} className="border-b border-gray-100 dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-700/40 transition-colors">
                                     <td className="p-2 align-middle">
                                         <div className="flex items-center justify-between gap-2">
                                             <div className="min-w-0 flex-1">
@@ -1585,6 +1818,11 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                                                 {line.stock_on_hand !== undefined && line.stock_on_hand !== null && (
                                                     <div className={`text-xs font-medium ${Number(line.stock_on_hand) > 0 ? 'text-gray-500 dark:text-slate-400' : 'text-danger-600 dark:text-danger-400'}`}>
                                                         {Number(line.stock_on_hand) || 0} in stock
+                                                    </div>
+                                                )}
+                                                {duplicateCount > 1 && (
+                                                    <div className={`text-[11px] font-semibold mt-0.5 ${isCatalogPriceSupplier ? 'text-indigo-600 dark:text-indigo-400' : 'text-gray-400 dark:text-slate-500'}`}>
+                                                        {isCatalogPriceSupplier ? '✓ Updates catalog price' : 'Duplicate part (won’t update catalog)'}
                                                     </div>
                                                 )}
                                                 {returned > 0 && (
@@ -1617,7 +1855,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                                     <td className="p-2 align-middle">
                                         <MathExpressionInput
                                             value={line.quantity}
-                                            onChange={value => handleLineChange(line.part_id, 'quantity', value)}
+                                            onChange={value => handleLineChange(rowKey, 'quantity', value)}
                                             className={inputClass}
                                             disabled={!line.part_id}
                                         />
@@ -1625,7 +1863,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                                     <td className="p-2 align-middle">
                                         <MathExpressionInput
                                             value={line.cost_price}
-                                            onChange={value => handleLineChange(line.part_id, 'cost_price', value)}
+                                            onChange={value => handleLineChange(rowKey, 'cost_price', value)}
                                             className={inputClass}
                                             disabled={isFree || !line.part_id}
                                         />
@@ -1634,7 +1872,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                                                 <input
                                                     type="checkbox"
                                                     checked={isFree}
-                                                    onChange={e => setLineFields(line.part_id, {
+                                                    onChange={e => setLineFields(rowKey, {
                                                         is_free_goods: e.target.checked,
                                                         // Marking a line free is a claim that it cost nothing, so the
                                                         // cost has to actually go to zero — the database rejects a
@@ -1658,7 +1896,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                                             compact
                                             percent={line.line_discount_percent ?? null}
                                             amount={line.line_discount_amount ?? null}
-                                            onChange={({ percent, amount }) => setLineFields(line.part_id, {
+                                            onChange={({ percent, amount }) => setLineFields(rowKey, {
                                                 line_discount_percent: percent,
                                                 line_discount_amount: amount,
                                             })}
@@ -1680,15 +1918,17 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                                     <td className="p-2 align-middle">
                                         <MathExpressionInput
                                             value={computed?.effective_markup_percent ?? line.effective_markup_percent ?? DEFAULT_MARKUP_PERCENT}
-                                            onChange={value => handleMarkupChange(line.part_id, value)}
+                                            onChange={value => handleMarkupChange(rowKey, value)}
                                             className={`${inputClass} ${belowMinMarkup ? 'border-danger-400 dark:border-danger-600' : ''}`}
                                             aria-label={`Markup for ${line.display_name || line.part_id}`}
                                         />
                                     </td>
                                     <td className="p-2 align-middle">
                                         <MathExpressionInput
-                                            value={computed?.sale_price ?? line.sale_price ?? ''}
-                                            onChange={value => handleSalePriceChange(line.part_id, value)}
+                                            value={stagedGrn?.import_provenance && line.sale_price == null ? '' : computed?.sale_price ?? line.sale_price ?? ''}
+                                            aria-label={`Sale price for ${line.display_name || line.part_id}`}
+                                            allowEmpty={!!stagedGrn?.import_provenance}
+                                            onChange={value => handleSalePriceChange(rowKey, value)}
                                             className={`${inputClass} ${belowMinMarkup ? 'border-danger-400 dark:border-danger-600' : ''}`}
                                         />
                                         {belowMinMarkup && (
@@ -1710,7 +1950,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                                                 <Icon path={ICONS.undo || ICONS.close} className="h-5 w-5"/>
                                             </button> : null}
                                             <button
-                                                onClick={() => line.part_id ? removeLine(line.part_id) : removeUncatalogedLine(line.po_line_id)}
+                                                onClick={() => line.part_id ? removeLine(rowKey) : removeUncatalogedLine(line.po_line_id)}
                                                 className="inline-flex items-center justify-center h-8 w-8 text-danger-500 dark:text-danger-400 hover:text-danger-700 dark:hover:text-danger-300 rounded hover:bg-danger-50 dark:hover:bg-danger-900/30"
                                                 title="Remove"
                                             >
@@ -2017,6 +2257,61 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                 _lines={lines}
             />
             <DuplicateDialog />
+
+            <ImportExtractedJsonDialog
+                isOpen={isImportModalOpen}
+                onClose={() => setIsImportModalOpen(false)}
+                onOpenReview={handleOpenImportReview}
+                hasDirtyManualForm={!stagedGrn && (lines.length > 0 || !!selectedSupplier || !!physicalReceiptNo)}
+                onSaveManualDraftFirst={handleSaveAsDraft}
+            />
+
+            {/* Keep review state mounted while the part form and its nested dialogs use the shared modal layer. */}
+            <ImportReviewDrawer
+                isOpen={isImportReviewDrawerOpen && !importPartTarget}
+                onClose={() => setIsImportReviewDrawerOpen(false)}
+                reviewState={importReview.review?.review_state}
+                sourcePayload={importReview.review?.source_payload}
+                version={importReview.review?.version}
+                blockers={importReview.review?.blockers || []}
+                suppliers={suppliers}
+                saving={importReview.saving}
+                committing={importReview.committing}
+                hasUnsavedChanges={importReview.hasUnsavedChanges}
+                candidatesByRow={importReview.candidatesByRow}
+                candidatesLoadingRow={importReview.candidatesLoadingRow}
+                candidateResultsByRow={importReview.candidateResultsByRow}
+                autoMatchProgress={importReview.autoMatchProgress}
+                onRetryAutomaticMatching={importReview.retryAutomaticMatching}
+                onQueueAction={importReview.queueAction}
+                onSaveReview={importReview.saveReview}
+                onFetchCandidates={importReview.fetchCandidates}
+                onCreatePart={canCatalogParts && importReview.review?.status === 'IN_REVIEW' ? handleCreateImportPart : null}
+                onAbandonReview={importReview.abandonReview}
+                onCommitReview={importReview.commitReview}
+            />
+            <Modal
+                isOpen={!!importPartTarget}
+                onClose={closeImportPartForm}
+                title={`Create part for imported line ${importPartTarget?.line_no}`}
+                maxWidth="max-w-2xl"
+            >
+                {importPartTarget && (
+                    <fieldset disabled={savingImportPart} className="min-w-0">
+                        <PartForm
+                            key={`${importPartTarget.import_id}-${importPartTarget.row_id}`}
+                            initialValues={importPartTarget.initialValues}
+                            uppercaseText
+                            brands={brands}
+                            groups={groups}
+                            onSave={handleSaveImportPart}
+                            onCancel={closeImportPartForm}
+                            onBrandGroupAdded={refreshLookupsOnly}
+                        />
+                        {savingImportPart && <p role="status" className="mt-2 text-sm text-gray-500 dark:text-slate-400">Saving part…</p>}
+                    </fieldset>
+                )}
+            </Modal>
         </div>
     );
 };
