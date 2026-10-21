@@ -5,6 +5,29 @@ import { ICONS } from '../../constants';
 import { formatCurrency } from '../../utils/currency';
 import { REJECTION_REASONS } from '../../utils/grnCosting';
 
+function OriginalLineText({ row, sourceLine }) {
+  const rawText = sourceLine?.raw_text ?? row.raw_text;
+  const description = sourceLine?.description ?? row.description;
+  const hasRawText = typeof rawText === 'string' && rawText.trim().length > 0;
+
+  return (
+    <section
+      aria-label={`Original text for line ${row.line_no}`}
+      className="my-3 min-w-0 rounded-lg border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 p-3 text-xs"
+    >
+      <div className="mb-1 font-semibold text-gray-600 dark:text-slate-400">
+        Line {row.line_no} · {hasRawText ? 'Raw Text' : 'Original Description'}
+      </div>
+      {!hasRawText && (
+        <p className="mb-1 text-gray-500 dark:text-slate-400">No raw text was provided in the JSON.</p>
+      )}
+      <div className="max-h-40 overflow-y-auto whitespace-pre-wrap break-words font-mono text-gray-900 dark:text-slate-100">
+        {hasRawText ? rawText : description || 'No original description was provided.'}
+      </div>
+    </section>
+  );
+}
+
 export default function ImportReviewDrawer({
   isOpen,
   onClose,
@@ -34,6 +57,8 @@ export default function ImportReviewDrawer({
   const header = reviewState?.header || {};
   const rows = reviewState?.rows || [];
   const issues = reviewState?.issues || [];
+  const candidateRow = rows.find(row => row.row_id === candidateDrawerRowId);
+  const candidateSourceLine = sourcePayload?.lines?.find(line => line.line_no === candidateRow?.line_no);
 
   // Group blockers by row_id and header
   const blockersByRow = useMemo(() => {
@@ -473,13 +498,11 @@ export default function ImportReviewDrawer({
                     </div>
                   )}
 
+                  <OriginalLineText row={row} sourceLine={sourceLine} />
+
                   {/* Expanded evidence drawer */}
                   {expandedEvidence[row.row_id] && (
                     <div className="mb-3 p-3 bg-gray-50 dark:bg-slate-800 rounded-lg text-xs space-y-2 border border-gray-200 dark:border-slate-700 font-mono">
-                      <div>
-                        <span className="text-gray-500 font-sans font-semibold">Raw Text:</span>{' '}
-                        <span>{sourceLine.raw_text || row.raw_text}</span>
-                      </div>
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-[11px]">
                         <div>Description: {sourceLine.description || '—'}</div>
                         <div>Brand: {sourceLine.brand || '—'}</div>
@@ -660,6 +683,8 @@ export default function ImportReviewDrawer({
               <Icon path={ICONS.close} className="w-4 h-4" />
             </button>
           </div>
+
+          {candidateRow && <OriginalLineText row={candidateRow} sourceLine={candidateSourceLine} />}
 
           <div className="py-3">
             <input
