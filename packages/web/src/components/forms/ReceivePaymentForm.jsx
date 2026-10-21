@@ -12,6 +12,7 @@ import ManagerAuthorizationModal from '../ui/ManagerAuthorizationModal';
 import { useAuth } from '../../contexts/AuthContext';
 import { useSettings } from '../../contexts/SettingsContext';
 import NotebookCoverageFields from '../cashDrawer/NotebookCoverageFields';
+import PhysicalDocumentControl from '../common/PhysicalDocumentControl';
 
 const MIN_NOTE_LENGTH = 10;
 
@@ -29,7 +30,7 @@ const ReceivePaymentForm = ({ customer, onSave, onCancel }) => {
     const [splits, setSplits] = useState([
         { id: 1, method_id: null, amount: '', reference: '', cheque_date: '' }
     ]);
-    const [physicalReceiptNo, setPhysicalReceiptNo] = useState('');
+    const [physicalDoc, setPhysicalDoc] = useState(null);
     const [notes, setNotes] = useState('');
     const [allocations, setAllocations] = useState({});
     // Expected withholding per invoice, from the server. Keyed by invoice_id.
@@ -69,15 +70,15 @@ const ReceivePaymentForm = ({ customer, onSave, onCancel }) => {
     // Initial state snapshot for dirty check
     const initialFormData = useMemo(() => ({
         splits: [{ id: 1, method_id: null, amount: '', reference: '', cheque_date: '' }],
-        physicalReceiptNo: '',
+        physicalDoc: null,
         notes: '',
         allocations: {}
     }), []);
 
     const isFormDirty = useMemo(() => {
-        const currentData = { splits, physicalReceiptNo, notes, allocations };
+        const currentData = { splits, physicalDoc, notes, allocations };
         return JSON.stringify(currentData) !== JSON.stringify(initialFormData);
-    }, [splits, physicalReceiptNo, notes, allocations, initialFormData]);
+    }, [splits, physicalDoc, notes, allocations, initialFormData]);
 
     const isFormElement = (element) => element && (element.tagName === 'INPUT' || element.tagName === 'TEXTAREA' || element.tagName === 'SELECT');
 
@@ -298,6 +299,29 @@ const ReceivePaymentForm = ({ customer, onSave, onCancel }) => {
         const discountCarrier = payable.find(s => isChequeMethod(methodById(s.method_id))) || payable[0] || null;
         let discountSent = false;
 
+        if (payable.length > 1 && (!withholdingPayload || withholdingPayload.length === 0) && (!discountPayload || discountPayload.length === 0)) {
+            // Grouped multi-instrument collection under a single collection receipt
+            const allAllocations = Object.entries(allocations)
+                .filter(([_, amt]) => (parseFloat(amt) || 0) > 0)
+                .map(([invId, amt]) => ({ invoice_id: parseInt(invId, 10), amount_allocated: parseFloat(amt) }));
+
+            await api.post('/payments/collection-group', {
+                customer_id: customer.customer_id,
+                physical_document: physicalDoc,
+                notes: notes || null,
+                payments: payable.map(s => ({
+                    method_id: s.method_id,
+                    amount: parseFloat(s.amount) || 0,
+                    reference: s.reference || null,
+                    cheque_date: s.cheque_date || null,
+                    notebook_receipt_id: s.notebook_receipt_id || null,
+                    notebook_covered_amount: s.notebook_covered_amount ? Number(s.notebook_covered_amount) : null,
+                })),
+                allocations: allAllocations,
+            });
+            return;
+        }
+
         for (const s of splits) {
             const lineAmount = parseFloat(s.amount) || 0;
             if (lineAmount <= 0) continue;
@@ -326,7 +350,8 @@ const ReceivePaymentForm = ({ customer, onSave, onCancel }) => {
                 reference: s.reference || null,
                 cheque_date: s.cheque_date || null,
                 notes: notes || null,
-                physical_receipt_no: physicalReceiptNo || null,
+                physical_receipt_no: physicalDoc?.recording_method === 'PAPER' ? (physicalDoc.physical_receipt_no || null) : null,
+                physical_document: physicalDoc,
                 allocations: lineAllocations,
                 // Attached to the first instrument only. The deduction belongs to the
                 // collection as a whole, not to any one cheque, and repeating it on
@@ -346,7 +371,7 @@ const ReceivePaymentForm = ({ customer, onSave, onCancel }) => {
             withholdingSent = true;
             if (s === discountCarrier) discountSent = true;
         }
-    }, [unpaidInvoices, allocations, splits, physicalReceiptNo, notes, customer?.customer_id,
+    }, [unpaidInvoices, allocations, splits, physicalDoc, notes, customer?.customer_id,
         withholdingPayload, discountPayload, discountReasonCode, discountNotes, discountClientRef,
         canGrantDiscount, authToken]);
 
@@ -458,14 +483,14 @@ const ReceivePaymentForm = ({ customer, onSave, onCancel }) => {
                 </div>
 
                 <div className="flex items-center gap-3 w-full md:w-auto">
-                    <div>
-                        <label className="block text-[11px] font-medium text-slate-300 uppercase tracking-wider mb-1">Physical Receipt #</label>
-                        <input
-                            type="text"
-                            value={physicalReceiptNo}
-                            onChange={(e) => setPhysicalReceiptNo(e.target.value)}
-                            className="w-44 px-3 py-1.5 bg-slate-800/80 border border-slate-700 rounded-lg text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all"
-                            placeholder="e.g. OR-88491"
+                    <div className="w-64">
+                        <label className="block text-[11px] font-medium text-slate-300 uppercase tracking-wider mb-1">
+                            Collection Receipt (CR / OR)
+                        </label>
+                        <PhysicalDocumentControl
+                            context="COLLECTION"
+                            value={physicalDoc}
+                            onChange={setPhysicalDoc}
                         />
                     </div>
                 </div>

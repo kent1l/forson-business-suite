@@ -15,6 +15,7 @@ import DeduplicationSettings from '../components/settings/DeduplicationSettings'
 import BrandIdentitySettings from '../components/settings/BrandIdentitySettings';
 import ARAdjustmentSettings from '../components/settings/ARAdjustmentSettings';
 import AnalyticsSettings from '../components/settings/AnalyticsSettings';
+import PhysicalDocumentSettings from '../components/settings/PhysicalDocumentSettings';
 
 const MobileAppSettings = ({ settings, handleChange }) => {
     const [showQR, setShowQR] = useState(false);
@@ -709,21 +710,22 @@ const SettingsPage = ({ user }) => {
                 ) : (
                     <div>
                         <div className="mb-6 border-b border-gray-200 dark:border-slate-700">
-                            <nav className="-mb-px flex space-x-6">
-                                <button type="button" onClick={() => setActiveTab('company')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'company' ? activeTabClass : inactiveTabClass}`}>Company Info</button>
-                                <button type="button" onClick={() => setActiveTab('brand_identity')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'brand_identity' ? activeTabClass : inactiveTabClass}`}>Brand Identity</button>
-                                <button type="button" onClick={() => setActiveTab('financial')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'financial' ? activeTabClass : inactiveTabClass}`}>Financial</button>
-                                <button type="button" onClick={() => setActiveTab('payroll')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'payroll' ? activeTabClass : inactiveTabClass}`}>Payroll</button>
-                                <button type="button" onClick={() => setActiveTab('payment_methods')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'payment_methods' ? activeTabClass : inactiveTabClass}`}>Payment Methods</button>
-                                <button type="button" onClick={() => setActiveTab('ar_adjustments')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'ar_adjustments' ? activeTabClass : inactiveTabClass}`}>A/R Concessions</button>
-                                <button type="button" onClick={() => setActiveTab('analytics')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'analytics' ? activeTabClass : inactiveTabClass}`}>Analytics</button>
-                                <button type="button" onClick={() => setActiveTab('cycle_count')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'cycle_count' ? activeTabClass : inactiveTabClass}`}>Cycle Count</button>
-                                <button type="button" onClick={() => setActiveTab('deduplication')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'deduplication' ? activeTabClass : inactiveTabClass}`}>Deduplication</button>
-                                <button type="button" onClick={() => setActiveTab('tax_rates')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'tax_rates' ? activeTabClass : inactiveTabClass}`}>Tax Rates</button>
-                                <button type="button" onClick={() => setActiveTab('permissions')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'permissions' ? activeTabClass : inactiveTabClass}`}>Roles & Permissions</button>
-                                <button type="button" onClick={() => setActiveTab('backup')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'backup' ? activeTabClass : inactiveTabClass}`}>Backup & Restore</button>
-                                <button type="button" onClick={() => setActiveTab('data')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'data' ? activeTabClass : inactiveTabClass}`}>Data Utilities</button>
-                                <button type="button" onClick={() => setActiveTab('mobile_app')} className={`py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'mobile_app' ? activeTabClass : inactiveTabClass}`}>Mobile App</button>
+                            <nav className="-mb-px flex space-x-6 overflow-x-auto">
+                                <button type="button" onClick={() => setActiveTab('company')} className={`py-3 px-1 border-b-2 font-medium text-sm whitespace-nowrap ${activeTab === 'company' ? activeTabClass : inactiveTabClass}`}>Company Info</button>
+                                <button type="button" onClick={() => setActiveTab('brand_identity')} className={`py-3 px-1 border-b-2 font-medium text-sm whitespace-nowrap ${activeTab === 'brand_identity' ? activeTabClass : inactiveTabClass}`}>Brand Identity</button>
+                                <button type="button" onClick={() => setActiveTab('financial')} className={`py-3 px-1 border-b-2 font-medium text-sm whitespace-nowrap ${activeTab === 'financial' ? activeTabClass : inactiveTabClass}`}>Financial</button>
+                                <button type="button" onClick={() => setActiveTab('payroll')} className={`py-3 px-1 border-b-2 font-medium text-sm whitespace-nowrap ${activeTab === 'payroll' ? activeTabClass : inactiveTabClass}`}>Payroll</button>
+                                <button type="button" onClick={() => setActiveTab('payment_methods')} className={`py-3 px-1 border-b-2 font-medium text-sm whitespace-nowrap ${activeTab === 'payment_methods' ? activeTabClass : inactiveTabClass}`}>Payment Methods</button>
+                                <button type="button" onClick={() => setActiveTab('ar_adjustments')} className={`py-3 px-1 border-b-2 font-medium text-sm whitespace-nowrap ${activeTab === 'ar_adjustments' ? activeTabClass : inactiveTabClass}`}>A/R Concessions</button>
+                                <button type="button" onClick={() => setActiveTab('analytics')} className={`py-3 px-1 border-b-2 font-medium text-sm whitespace-nowrap ${activeTab === 'analytics' ? activeTabClass : inactiveTabClass}`}>Analytics</button>
+                                <button type="button" onClick={() => setActiveTab('cycle_count')} className={`py-3 px-1 border-b-2 font-medium text-sm whitespace-nowrap ${activeTab === 'cycle_count' ? activeTabClass : inactiveTabClass}`}>Cycle Count</button>
+                                <button type="button" onClick={() => setActiveTab('deduplication')} className={`py-3 px-1 border-b-2 font-medium text-sm whitespace-nowrap ${activeTab === 'deduplication' ? activeTabClass : inactiveTabClass}`}>Deduplication</button>
+                                <button type="button" onClick={() => setActiveTab('tax_rates')} className={`py-3 px-1 border-b-2 font-medium text-sm whitespace-nowrap ${activeTab === 'tax_rates' ? activeTabClass : inactiveTabClass}`}>Tax Rates</button>
+                                <button type="button" onClick={() => setActiveTab('physical_documents')} className={`py-3 px-1 border-b-2 font-medium text-sm whitespace-nowrap ${activeTab === 'physical_documents' ? activeTabClass : inactiveTabClass}`}>Physical Receipts</button>
+                                <button type="button" onClick={() => setActiveTab('permissions')} className={`py-3 px-1 border-b-2 font-medium text-sm whitespace-nowrap ${activeTab === 'permissions' ? activeTabClass : inactiveTabClass}`}>Roles & Permissions</button>
+                                <button type="button" onClick={() => setActiveTab('backup')} className={`py-3 px-1 border-b-2 font-medium text-sm whitespace-nowrap ${activeTab === 'backup' ? activeTabClass : inactiveTabClass}`}>Backup & Restore</button>
+                                <button type="button" onClick={() => setActiveTab('data')} className={`py-3 px-1 border-b-2 font-medium text-sm whitespace-nowrap ${activeTab === 'data' ? activeTabClass : inactiveTabClass}`}>Data Utilities</button>
+                                <button type="button" onClick={() => setActiveTab('mobile_app')} className={`py-3 px-1 border-b-2 font-medium text-sm whitespace-nowrap ${activeTab === 'mobile_app' ? activeTabClass : inactiveTabClass}`}>Mobile App</button>
                             </nav>
                         </div>
 
@@ -732,6 +734,7 @@ const SettingsPage = ({ user }) => {
                         {activeTab === 'financial' && <FinancialSettings settings={settings} handleChange={handleChange} />}
                         {activeTab === 'payroll' && <PayrollSettings settings={settings} handleChange={handleChange} />}
                         {activeTab === 'tax_rates' && <TaxRateSettings settings={settings} handleChange={handleChange} />}
+                        {activeTab === 'physical_documents' && <PhysicalDocumentSettings />}
                         {activeTab === 'ar_adjustments' && <ARAdjustmentSettings settings={settings} handleChange={handleChange} />}
                         {activeTab === 'analytics' && <AnalyticsSettings settings={settings} handleChange={handleChange} />}
                         {activeTab === 'cycle_count' && <CycleCountSettings settings={settings} handleChange={handleChange} />}

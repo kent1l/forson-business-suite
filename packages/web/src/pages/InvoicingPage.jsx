@@ -17,6 +17,7 @@ import SplitPaymentModal from '../components/ui/SplitPaymentModal';
 import NotebookCoverageFields from '../components/cashDrawer/NotebookCoverageFields';
 import MathExpressionInput from '../components/ui/MathExpressionInput';
 import SavedSalesPanel from '../components/pos/SavedSalesPanel';
+import PhysicalDocumentControl from '../components/common/PhysicalDocumentControl';
 import { useSettings } from '../contexts/SettingsContext';
 import { formatApplicationText } from '../helpers/applicationTextHelper';
 import { enrichPartsArray } from '../helpers/applicationCache';
@@ -32,7 +33,7 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
     const [paymentMethod, setPaymentMethod] = useState('');
     const [notebookReceiptId, setNotebookReceiptId] = useState('');
     const [notebookCoveredAmount, setNotebookCoveredAmount] = useState('');
-    const [physicalReceiptNo, setPhysicalReceiptNo] = useState('');
+    const [physicalDoc, setPhysicalDoc] = useState(null);
     const [isSplitPaymentModalOpen, setIsSplitPaymentModalOpen] = useState(false);
     const [terms, setTerms] = useState('');
     const [searchTerm, setSearchTerm] = useState('');
@@ -46,7 +47,6 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
     const [selectedTaxRate, setSelectedTaxRate] = useState(null);
     const [isDraftsModalOpen, setIsDraftsModalOpen] = useState(false);
     const [lastSavedDraftSignature, setLastSavedDraftSignature] = useState(null);
-    const [receiptCheck, setReceiptCheck] = useState(null); // { taken, normalized } | null
     const searchInputRef = useRef(null);
 
     const paymentMethodsKey = settings?.PAYMENT_METHODS || '';
@@ -193,24 +193,6 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
         fetchTerms();
     }, []);
 
-    // Live duplicate check for the physical receipt number (advisory — the backend
-    // auto-increments on a collision rather than rejecting, so this just sets expectations early).
-    useEffect(() => {
-        const normalized = formatPhysicalReceiptNumber(physicalReceiptNo);
-        if (!normalized) {
-            setReceiptCheck(null);
-            return;
-        }
-        const debounceTimer = setTimeout(async () => {
-            try {
-                const res = await api.get(`/invoices/check-physical-receipt/${encodeURIComponent(normalized)}`);
-                setReceiptCheck(res.data);
-            } catch (err) {
-                console.error('Failed to check physical receipt number', err);
-            }
-        }, 400);
-        return () => clearTimeout(debounceTimer);
-    }, [physicalReceiptNo]);
 
     const { saved: savedDrafts, count: savedDraftsCount, saveSale: saveDraft, remove: removeDraft, get: getDraft } = useSavedSales({
         userId: user?.employee_id,
@@ -397,7 +379,8 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
             taxRateId: selectedTaxRate?.tax_rate_id || null,
             terms,
             paymentMethod,
-            physicalReceiptNo,
+            physicalDoc,
+            physicalReceiptNo: physicalDoc?.physical_receipt_no || null,
             totals: { subtotal, tax, grandTotal: total }
         };
         const entry = saveDraft(cartSnapshot);
@@ -405,7 +388,7 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
             setLastSavedDraftSignature(draftSignature);
             toast.success('Draft saved.');
         }
-    }, [canSaveDraft, lines, selectedCustomer, selectedTaxRate, terms, paymentMethod, physicalReceiptNo, subtotal, tax, total, saveDraft, draftSignature]);
+    }, [canSaveDraft, lines, selectedCustomer, selectedTaxRate, terms, paymentMethod, physicalDoc, subtotal, tax, total, saveDraft, draftSignature]);
 
     const handleRestoreDraft = (id) => {
         const entry = getDraft(id);
@@ -431,7 +414,11 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
         if (taxRate) setSelectedTaxRate(taxRate);
         if (cart.terms !== undefined) setTerms(cart.terms);
         if (cart.paymentMethod) setPaymentMethod(cart.paymentMethod);
-        if (cart.physicalReceiptNo !== undefined) setPhysicalReceiptNo(cart.physicalReceiptNo);
+        if (cart.physicalDoc !== undefined) {
+            setPhysicalDoc(cart.physicalDoc);
+        } else if (cart.physicalReceiptNo !== undefined) {
+            setPhysicalDoc(cart.physicalReceiptNo ? { recording_method: 'PAPER', physical_receipt_no: cart.physicalReceiptNo } : null);
+        }
         removeDraft(id);
         setIsDraftsModalOpen(false);
         toast.success('Draft restored.');
@@ -501,7 +488,8 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
                 notebook_covered_amount: Number(notebookCoveredAmount) } : {}),
             terms: terms,
             payment_terms_days: parsePaymentTermsDays(terms),
-            physical_receipt_no: formatPhysicalReceiptNumber(physicalReceiptNo) || null,
+            physical_receipt_no: physicalDoc?.recording_method === 'PAPER' ? (physicalDoc.physical_receipt_no || null) : null,
+            physical_document: physicalDoc,
             tax_rate_id: selectedTaxRate?.tax_rate_id || null,
             lines: lines.map(line => ({
                 part_id: line.part_id,
@@ -522,6 +510,7 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
                 setNotebookReceiptId('');
                 setNotebookCoveredAmount('');
                 setSelectedCustomer('');
+                setPhysicalDoc(null);
                 setTerms(defaultPaymentTermsDays);
                 setLastSavedDraftSignature(null);
                 showViewInvoiceToast(response.data?.invoice_number);
@@ -534,18 +523,20 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
                 return 'Failed to create invoice.';
             },
         });
-    }, [selectedCustomer, lines, customers, terms, settings, defaultPaymentTermsDays, paymentMethod, physicalReceiptNo, selectedTaxRate, user, total, showViewInvoiceToast, notebookReceiptId, notebookCoveredAmount]);
+    }, [selectedCustomer, lines, customers, terms, settings, defaultPaymentTermsDays, paymentMethod, physicalDoc, selectedTaxRate, user, total, showViewInvoiceToast, notebookReceiptId, notebookCoveredAmount]);
 
     // Handle split payment confirmation for invoicing
     const handleConfirmSplitPayment = async (payments, physicalReceiptNo, { employeeId } = {}) => {
         try {
+            const chosenPrn = physicalDoc?.recording_method === 'PAPER' ? (physicalDoc.physical_receipt_no || null) : (physicalReceiptNo ? formatPhysicalReceiptNumber(physicalReceiptNo) : null);
             // Create the invoice with payments (atomic single-step)
             const invoicePayload = {
                 customer_id: selectedCustomer,
                 employee_id: employeeId || user.employee_id,
                 terms: terms,
                 payment_terms_days: parsePaymentTermsDays(terms),
-                physical_receipt_no: formatPhysicalReceiptNumber(physicalReceiptNo),
+                physical_receipt_no: chosenPrn,
+                physical_document: physicalDoc,
                 tax_rate_id: selectedTaxRate?.tax_rate_id || null,
                 lines: lines.map(line => ({
                     part_id: line.part_id,
@@ -560,7 +551,7 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
                     // The line's own reference wins: a cheque number is the
                     // instrument's identity and must not be overwritten with the
                     // physical receipt number, which is already sent separately.
-                    reference: p.reference || formatPhysicalReceiptNumber(physicalReceiptNo)
+                    reference: p.reference || chosenPrn
                 }))
             };
 
@@ -568,13 +559,14 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
             const returnedPhysicalReceiptNo = invoiceResponse.data.physical_receipt_no;
 
             // Check if physical receipt number was auto-incremented
-            if (returnedPhysicalReceiptNo && returnedPhysicalReceiptNo !== formatPhysicalReceiptNumber(physicalReceiptNo)) {
+            if (returnedPhysicalReceiptNo && returnedPhysicalReceiptNo !== chosenPrn) {
                 toast.success(`Invoice created! Physical receipt number was auto-incremented to: ${returnedPhysicalReceiptNo}`);
             }
 
             // Success - reset form
             setLines([]);
             setSelectedCustomer('');
+            setPhysicalDoc(null);
             setTerms(defaultPaymentTermsDays);
             setLastSavedDraftSignature(null);
             setIsSplitPaymentModalOpen(false);
@@ -717,21 +709,18 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
                         <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-2 flex items-center gap-1">
                             Physical Receipt No.
                             <InfoTip label="Physical Receipt No.">
-                                The number from your pre-printed paper receipt book, so the system record matches the paper copy the customer receives. It's normalized automatically (e.g. "si 4521" becomes "SI-4521") and must be unique.
+                                Select paper document series or Notebook. Suggested numbers follow your configured series sequence and can be reviewed before posting.
                             </InfoTip>
                         </label>
-                        <input
-                            type="text"
-                            value={physicalReceiptNo}
-                            onChange={e => setPhysicalReceiptNo(e.target.value)}
-                            className={`w-full px-3 py-2 rounded-lg shadow-xs bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 placeholder:text-gray-400 dark:placeholder:text-slate-500 focus:ring-primary-500 focus:border-primary-500 text-sm ${receiptCheck?.taken ? 'border-warning-500 dark:border-warning-600' : 'border-gray-300 dark:border-slate-600'}`}
-                            placeholder={settings?.RECEIPT_NO_HELP_TEXT || 'Enter receipt number'}
+                        <PhysicalDocumentControl
+                            context="INVOICING"
+                            value={physicalDoc}
+                            onChange={setPhysicalDoc}
+                            onTaxRateSelect={(taxRateId) => {
+                                const rate = taxRates.find(r => r.tax_rate_id === taxRateId);
+                                if (rate) setSelectedTaxRate(rate);
+                            }}
                         />
-                        {receiptCheck?.taken && (
-                            <p className="mt-1 text-xs text-warning-700 dark:text-warning-400">
-                                "{receiptCheck.normalized}" is already used on another invoice — it will be auto-assigned the next available number when posted.
-                            </p>
-                        )}
                     </div>
                     <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-2 flex items-center gap-1">
@@ -962,8 +951,8 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
                     onClose={() => setIsSplitPaymentModalOpen(false)}
                     totalDue={total || 0}
                     onConfirm={handleConfirmSplitPayment}
-                    physicalReceiptNo={physicalReceiptNo}
-                    onPhysicalReceiptChange={setPhysicalReceiptNo}
+                    physicalReceiptNo={physicalDoc?.recording_method === 'PAPER' ? (physicalDoc.physical_receipt_no || '') : ''}
+                    onPhysicalReceiptChange={(newPrn) => setPhysicalDoc(prev => ({ ...(prev || {}), recording_method: 'PAPER', physical_receipt_no: newPrn }))}
                     requirePhysicalReceipt={true}
                     employeeId={user?.employee_id}
                     terms={terms}

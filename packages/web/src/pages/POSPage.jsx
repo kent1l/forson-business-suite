@@ -27,6 +27,7 @@ import Receipt from '../components/ui/Receipt';
 import SavedSalesPanel from '../components/pos/SavedSalesPanel';
 import VehicleFilterBar from '../components/VehicleFilterBar';
 import ExchangeModal from '../components/pos/ExchangeModal';
+import PhysicalDocumentControl from '../components/common/PhysicalDocumentControl';
 import usePartDuplicateResolution from '../hooks/usePartDuplicateResolution';
 
 // Grid with Save Sale + View Saved + Void Transaction
@@ -192,7 +193,15 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
     useEffect(() => {
         console.log('[POSPage] Component loaded');
     }, []); // Only log on mount
-    const [physicalReceiptInput, setPhysicalReceiptInput] = useState('');
+    const [physicalDoc, setPhysicalDoc] = useState({
+        recording_method: null,
+        series_id: null,
+        physical_receipt_no: '',
+        suggestion_token: null,
+        exception: null,
+    });
+    const physicalReceiptInput = physicalDoc.physical_receipt_no;
+    const setPhysicalReceiptInput = (val) => setPhysicalDoc(prev => ({ ...prev, physical_receipt_no: val }));
     const [selectedTaxRate, setSelectedTaxRate] = useState(null);
     const [searchTerm, setSearchTerm] = useState('');
     const [vehicleFilter, setVehicleFilter] = useState({ make_id: null, model_id: null, engine_id: null, year: null });
@@ -635,7 +644,8 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
             const invoicePayload = {
                 customer_id: selectedCustomer.customer_id,
                 employee_id: user.employee_id,
-                physical_receipt_no: normalizedPRN || null,
+                physical_receipt_no: physicalDoc.recording_method === 'PAPER' ? (physicalDoc.physical_receipt_no || null) : null,
+                physical_document: physicalDoc,
                 tax_rate_id: selectedTaxRate?.tax_rate_id || null,
                 lines: lines.map(line => ({
                     part_id: line.part_id,
@@ -686,7 +696,7 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
             setLines([]);
             const walkIn = customers.find(c => c.first_name.toLowerCase() === 'walk-in');
             setSelectedCustomer(walkIn || null);
-            setPhysicalReceiptInput('');
+            setPhysicalDoc({ recording_method: null, series_id: null, physical_receipt_no: '', suggestion_token: null, exception: null });
             setSelectedTaxRate(null);
             setIsPaymentModalOpen(false);
 
@@ -724,7 +734,8 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
             const invoicePayload = {
                 customer_id: selectedCustomer.customer_id,
                 employee_id: employeeId || user.employee_id,
-                physical_receipt_no: normalizedPRN || null,
+                physical_receipt_no: physicalDoc.recording_method === 'PAPER' ? (physicalDoc.physical_receipt_no || null) : null,
+                physical_document: physicalDoc,
                 tax_rate_id: selectedTaxRate?.tax_rate_id || null,
                 lines: lines.map(line => ({
                     part_id: line.part_id,
@@ -774,7 +785,7 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
             setLines([]);
             const walkIn = customers.find(c => c.first_name.toLowerCase() === 'walk-in');
             setSelectedCustomer(walkIn || null);
-            setPhysicalReceiptInput('');
+            setPhysicalDoc({ recording_method: null, series_id: null, physical_receipt_no: '', suggestion_token: null, exception: null });
             setSelectedTaxRate(null);
             setIsSplitPaymentModalOpen(false);
 
@@ -1154,13 +1165,22 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
                             <div className="grid grid-cols-2 gap-4">
                                 <div className="flex flex-col">
                                     <div className="font-semibold text-sm mb-2 whitespace-nowrap flex items-center gap-1 text-gray-900 dark:text-slate-100">
-                                        Physical Receipt No:
-                                        <InfoTip label="Physical Receipt No.">
-                                            Auto-normalized to LETTERS-DIGITS format when you leave the field (e.g. "si 1234" becomes "SI-1234"). Whether it's required before you can pay depends on a store setting.
+                                        Physical Receipt:
+                                        <InfoTip label="Physical Receipt">
+                                            Select paper document series or Notebook. Suggested numbers follow your configured series sequence and can be reviewed before posting.
                                         </InfoTip>
                                     </div>
                                     <div className="p-2 bg-gray-50 dark:bg-slate-900/50 rounded-lg border border-gray-200 dark:border-slate-700">
-                                        <input ref={physicalReceiptRef} value={physicalReceiptInput} onChange={(e) => setPhysicalReceiptInput(e.target.value)} onBlur={() => setPhysicalReceiptInput(normalizePhysicalReceipt(physicalReceiptInput))} placeholder="Enter receipt no (Ctrl+P)" className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 placeholder:text-gray-400 dark:placeholder:text-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
+                                        <PhysicalDocumentControl
+                                            context="POS"
+                                            value={physicalDoc}
+                                            onChange={setPhysicalDoc}
+                                            onTaxRateSelect={(taxRateId) => {
+                                                const rate = taxRates.find(r => r.tax_rate_id === taxRateId);
+                                                if (rate) setSelectedTaxRate(rate);
+                                            }}
+                                            inputRef={physicalReceiptRef}
+                                        />
                                     </div>
                                 </div>
                                 <div className="flex flex-col">
