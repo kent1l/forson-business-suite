@@ -1575,7 +1575,7 @@ router.get('/goods-receipts/:id', protect, hasPermission(['goods_receipt:create'
       `SELECT gr.grn_id, gr.grn_number, gr.receipt_date, gr.supplier_id, gr.received_by, gr.po_id,
               gr.bill_id, gr.freight_bill_id, gr.status, gr.workflow_status, gr.is_backfill,
               gr.supplier_invoice_no, gr.supplier_document_no, gr.supplier_document_type, gr.another_delivery_confirmed,
-              ${includePhysicalReceipt ? 'gr.physical_receipt_no,' : 'NULL::varchar AS physical_receipt_no,'}
+              ${includePhysicalReceipt ? 'gr.physical_receipt_no,' : 'gr.supplier_invoice_no AS physical_receipt_no,'}
               gr.freight_amount, gr.freight_allocation_method,
               gr.freight_supplier_id, gr.overall_discount_percent, gr.overall_discount_amount,
               gr.sync_retail_prices, gr.created_at, gr.submitted_at, gr.posted_at,

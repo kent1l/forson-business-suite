@@ -159,13 +159,36 @@ describe('Goods Receipt Inventory & Pricing Routes', () => {
             db.query
                 .mockRejectedValueOnce({ code: '42703', message: 'column gr.physical_receipt_no does not exist' })
                 .mockResolvedValueOnce({ rows: [{ grn_id: 386, supplier_invoice_no: 'DR-386', physical_receipt_no: 'DR-386' }] })
+                .mockResolvedValueOnce({ rows: [] })
                 .mockResolvedValueOnce({ rows: [] });
 
             const res = await request(app).get('/api/goods-receipts/386');
 
             expect(res.status).toBe(200);
             expect(res.body.physical_receipt_no).toBe('DR-386');
+            expect(res.body.freight_costs).toEqual([]);
+            expect(res.body.import_provenance).toBeNull();
             expect(db.query.mock.calls[1][0]).not.toContain('gr.physical_receipt_no');
+            expect(db.query.mock.calls[1][0]).toContain('gr.supplier_invoice_no AS physical_receipt_no');
+            expect(db.query).toHaveBeenLastCalledWith(
+                'SELECT import_id, status FROM grn_import_review WHERE grn_id = $1',
+                ['386']
+            );
+        });
+
+        test('loads receipt details with import provenance when the migration is applied', async () => {
+            const provenance = { import_id: 'import-386', status: 'COMMITTED' };
+            db.query
+                .mockResolvedValueOnce({ rows: [{ grn_id: 386, supplier_invoice_no: 'INV-386', physical_receipt_no: 'DR-386' }] })
+                .mockResolvedValueOnce({ rows: [] })
+                .mockResolvedValueOnce({ rows: [provenance] });
+
+            const res = await request(app).get('/api/goods-receipts/386');
+
+            expect(res.status).toBe(200);
+            expect(res.body.physical_receipt_no).toBe('DR-386');
+            expect(res.body.import_provenance).toEqual(provenance);
+            expect(db.query).toHaveBeenCalledTimes(3);
         });
     });
 
