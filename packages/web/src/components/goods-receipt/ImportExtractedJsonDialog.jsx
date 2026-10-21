@@ -3,6 +3,7 @@ import Modal from '../ui/Modal';
 import Icon from '../ui/Icon';
 import { ICONS } from '../../constants';
 import api from '../../api';
+import { createUuid } from '../../utils/createUuid';
 
 const MAX_PAYLOAD_BYTES = 1048576; // 1 MiB
 
@@ -98,7 +99,7 @@ export default function ImportExtractedJsonDialog({
     setSubmitting(true);
     setParseError(null);
     try {
-      const requestKey = crypto.randomUUID();
+      const requestKey = createUuid();
       await onOpenReview({ payload: payloadToSubmit, requestKey });
       onClose();
     } catch (err) {

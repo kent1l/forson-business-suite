@@ -27,6 +27,7 @@ import usePartDuplicateResolution from '../hooks/usePartDuplicateResolution';
 import useGrnImportReview from '../hooks/useGrnImportReview';
 import { supplierReference, flattenReferenceMatches } from '../utils/supplierReference';
 import { getNavContext, returnToOrigin, clearNavContext } from '../utils/apNavigationContract';
+import { createUuid } from '../utils/createUuid';
 
 const upperCatalogText = (value) => String(value || '').replace(/\s+/g, ' ').trim().toUpperCase();
 
@@ -315,7 +316,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
             setLines((linesRes.data || []).map(l => ({
                 ...l,
                 line_uuid: l.line_uuid || null,
-                client_row_key: l.line_uuid || crypto.randomUUID(),
+                client_row_key: l.line_uuid || createUuid(),
                 part_number: l.part_number || null,
                 part_numbers: l.part_numbers || null,
                 quantity: Number(l.quantity),
@@ -349,7 +350,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
             if (draft.lines) {
                 setLines(draft.lines.map(l => ({
                     ...l,
-                    client_row_key: l.client_row_key || l.line_uuid || crypto.randomUUID(),
+                    client_row_key: l.client_row_key || l.line_uuid || createUuid(),
                 })));
             }
             if (draft.selectedPO) setSelectedPO(draft.selectedPO);
@@ -521,7 +522,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                     : (l.last_sale_price != null && Number(l.last_sale_price) > 0 ? Number(l.last_sale_price) : null);
                 return {
                     ...l,
-                    client_row_key: crypto.randomUUID(),
+                    client_row_key: createUuid(),
                     line_uuid: null,
                     cost_price: poCost,
                     sale_price: poSale,
@@ -679,7 +680,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
 
             setLines([...lines, {
                 ...part,
-                client_row_key: crypto.randomUUID(),
+                client_row_key: createUuid(),
                 line_uuid: null,
                 part_id: part.part_id,
                 quantity: 1,
