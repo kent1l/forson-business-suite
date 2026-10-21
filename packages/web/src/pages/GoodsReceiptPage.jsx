@@ -105,7 +105,19 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
     const [duplicateReview, setDuplicateReview] = useState(null);
     const [duplicateReviewLoading, setDuplicateReviewLoading] = useState(false);
     const supplierDocumentInputRef = useRef(null);
+    const documentDetailsRef = useRef(null);
     const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' });
+
+    useEffect(() => {
+        const closeDocumentDetails = (event) => {
+            const details = documentDetailsRef.current;
+            if (details?.open && !details.contains(event.target)) {
+                details.open = false;
+            }
+        };
+        document.addEventListener('pointerdown', closeDocumentDetails, true);
+        return () => document.removeEventListener('pointerdown', closeDocumentDetails, true);
+    }, []);
 
     const { hasPermission } = useAuth();
     // Freight, discounts and the price-sync choice belong to the document as a whole,
@@ -1423,31 +1435,49 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                     <div className="space-y-3">
                         <div>
                             <label className={labelClass} htmlFor="supplier-document-number">Supplier Document No. {isBackfill ? '' : '(optional)'}</label>
-                            <input id="supplier-document-number" type="text" ref={supplierDocumentInputRef}
-                                value={physicalReceiptNo} maxLength={255}
-                                onChange={e => { setPhysicalReceiptNo(e.target.value); setAnotherDeliveryConfirmed(false); }}
-                                placeholder="Enter the number printed on the supplier paperwork"
-                                className={selectClass} />
-                            <p className="mt-1 text-xs text-gray-500 dark:text-slate-400">Use your AR, DR, SI, packing list or waybill number. We check this supplier’s existing records.</p>
+                            <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2">
+                                <input id="supplier-document-number" type="text" ref={supplierDocumentInputRef}
+                                    value={physicalReceiptNo} maxLength={255}
+                                    onChange={e => { setPhysicalReceiptNo(e.target.value); setAnotherDeliveryConfirmed(false); }}
+                                    placeholder="Enter the number printed on the supplier paperwork"
+                                    className={selectClass} />
+                                <details ref={documentDetailsRef} className="group relative text-sm">
+                                    <summary
+                                        aria-label="Document details"
+                                        title="Document details"
+                                        className="flex h-[42px] w-10 cursor-pointer list-none items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-600 hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-400 dark:hover:bg-slate-700 [&::-webkit-details-marker]:hidden"
+                                    >
+                                        <span aria-hidden="true"><Icon path={ICONS.chevronDown} className="h-4 w-4 transition-transform group-open:rotate-180" /></span>
+                                    </summary>
+                                    <div className="absolute right-0 top-full z-20 mt-2 w-80 max-w-[calc(100vw-3.5rem)] space-y-3 rounded-lg border border-gray-200 bg-white p-4 shadow-lg dark:border-slate-600 dark:bg-slate-800">
+                                        <p className="text-xs text-gray-500 dark:text-slate-400">Use your AR, DR, SI, packing list or waybill number. We check this supplier’s existing records.</p>
+                                        <label className={labelClass + ' mt-2'}>Document type (if known)</label>
+                                        <select value={documentType} onChange={e => { setDocumentType(e.target.value); setAnotherDeliveryConfirmed(false); }} className={selectClass}>
+                                            <option value="other">Unspecified / Other</option>
+                                            <option value="delivery_receipt">Delivery Receipt (DR)</option>
+                                            <option value="invoice">Sales / Tax Invoice (SI)</option>
+                                            <option value="acknowledgement">Acknowledgement Receipt (AR)</option>
+                                            <option value="packing_list">Packing List</option>
+                                            <option value="waybill">Waybill</option>
+                                        </select>
+                                        {documentType !== 'invoice' && (
+                                            <div className="mt-2">
+                                                <label className={labelClass}>Related invoice number (if supplied)</label>
+                                                <input value={relatedInvoiceNo} onChange={e => setRelatedInvoiceNo(e.target.value)} className={selectClass} />
+                                            </div>
+                                        )}
+                                        <p className="text-xs text-gray-500 dark:text-slate-400">
+                                            {isBackfill ? 'Required for a backfill. ' : ''}Use the supplier document reference to verify against payables and prevent duplicates.
+                                        </p>
+                                        {attachedBillId ? (
+                                            <p className="text-xs text-primary-700 dark:text-primary-300">Receiving against the selected payable; no new goods payable will be created.</p>
+                                        ) : !isBackfill && (
+                                            <p className="text-xs text-gray-600 dark:text-slate-400">Posting creates a new goods payable from these items. Select an existing match above if it is already recorded.</p>
+                                        )}
+                                    </div>
+                                </details>
+                            </div>
                         </div>
-                        <details className="text-sm">
-                            <summary className="cursor-pointer text-gray-600 dark:text-slate-400">Document details (optional)</summary>
-                            <label className={labelClass + ' mt-2'}>Document type (if known)</label>
-                            <select value={documentType} onChange={e => { setDocumentType(e.target.value); setAnotherDeliveryConfirmed(false); }} className={selectClass}>
-                                <option value="other">Unspecified / Other</option>
-                                <option value="delivery_receipt">Delivery Receipt (DR)</option>
-                                <option value="invoice">Sales / Tax Invoice (SI)</option>
-                                <option value="acknowledgement">Acknowledgement Receipt (AR)</option>
-                                <option value="packing_list">Packing List</option>
-                                <option value="waybill">Waybill</option>
-                            </select>
-                            {documentType !== 'invoice' && (
-                                <div className="mt-2">
-                                    <label className={labelClass}>Related invoice number (if supplied)</label>
-                                    <input value={relatedInvoiceNo} onChange={e => setRelatedInvoiceNo(e.target.value)} className={selectClass} />
-                                </div>
-                            )}
-                        </details>
 
                         {attachedBillDetails && (
                             <div className="flex items-center justify-between p-2 rounded-md bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 text-xs">
@@ -1464,15 +1494,6 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                             </div>
                         )}
 
-                        <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">
-                            {isBackfill ? 'Required for a backfill. ' : ''}Use the supplier document reference to verify against payables and prevent duplicates.
-                        </p>
-
-                        {attachedBillId ? (
-                            <p className="text-xs text-primary-700 dark:text-primary-300">Receiving against the selected payable; no new goods payable will be created.</p>
-                        ) : !isBackfill && (
-                            <p className="text-xs text-gray-600 dark:text-slate-400">Posting creates a new goods payable from these items. Select an existing match above if it is already recorded.</p>
-                        )}
                         {anotherDeliveryConfirmed && <p role="status" className="text-xs text-warning-700 dark:text-warning-300">Another physical arrival confirmed for the selected payable.</p>}
                         {physicalReceiptConflict && (
                             <div className="mt-2 rounded-lg border border-danger-200 dark:border-danger-800 bg-danger-50 dark:bg-danger-950/30 p-3" role="status" aria-live="polite">
