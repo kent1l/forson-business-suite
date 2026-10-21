@@ -288,6 +288,7 @@ describe('Physical Document System - Phase 2 & 3 API & Cashier Posting Integrati
         );
         const testInvoiceId = invRes.rows[0].invoice_id;
 
+        const testPrn = `CRTEST-${Math.floor(1000 + Math.random() * 8000)}`;
         const validGroupRes = await request(app)
             .post('/api/payments/collection-group')
             .send({
@@ -296,7 +297,7 @@ describe('Physical Document System - Phase 2 & 3 API & Cashier Posting Integrati
                 physical_document: {
                     recording_method: 'PAPER',
                     series_id: colSeriesId,
-                    physical_receipt_no: 'CRTEST-500',
+                    physical_receipt_no: testPrn,
                 },
                 payments: [
                     { amount: 300, method_id: 1, payment_method: 'cash', reference_number: 'CASH-1' },
@@ -309,13 +310,13 @@ describe('Physical Document System - Phase 2 & 3 API & Cashier Posting Integrati
             .expect(201);
 
         expect(validGroupRes.body.group_id).toBeDefined();
-        expect(validGroupRes.body.physical_receipt_no).toBe('CRTEST-500');
+        expect(validGroupRes.body.physical_receipt_no).toBe(testPrn);
         expect(validGroupRes.body.payments.length).toBe(2);
 
-        // Verify only ONE registry row was created for CRTEST-500
+        // Verify only ONE registry row was created for testPrn
         const { rows: regCheck } = await db.query(
-            `SELECT count(*) FROM physical_document_registry WHERE series_id = $1 AND canonical_full_reference = 'CRTEST-500'`,
-            [colSeriesId]
+            `SELECT count(*) FROM physical_document_registry WHERE series_id = $1 AND canonical_full_reference = $2`,
+            [colSeriesId, testPrn]
         );
         expect(parseInt(regCheck[0].count, 10)).toBe(1);
 
@@ -325,7 +326,7 @@ describe('Physical Document System - Phase 2 & 3 API & Cashier Posting Integrati
             [validGroupRes.body.group_id]
         );
         expect(payCheck.length).toBe(2);
-        expect(payCheck[0].physical_receipt_no).toBe('CRTEST-500');
-        expect(payCheck[1].physical_receipt_no).toBe('CRTEST-500');
+        expect(payCheck[0].physical_receipt_no).toBe(testPrn);
+        expect(payCheck[1].physical_receipt_no).toBe(testPrn);
     });
 });
