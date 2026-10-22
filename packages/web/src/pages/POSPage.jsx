@@ -1162,8 +1162,8 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
                     </div>
                     <div className="w-full md:w-1/3 bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 flex flex-col order-1 md:order-2 shadow-card">
                         <div className="p-4 border-b border-gray-200 dark:border-slate-700">
-                            <div className="grid grid-cols-2 gap-4">
-                                <div className="flex flex-col">
+                            <div className="grid grid-cols-12 gap-3">
+                                <div className="col-span-7 flex flex-col">
                                     <div className="font-semibold text-sm mb-2 whitespace-nowrap flex items-center gap-1 text-gray-900 dark:text-slate-100">
                                         Physical Receipt:
                                         <InfoTip label="Physical Receipt">
@@ -1183,7 +1183,7 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
                                         />
                                     </div>
                                 </div>
-                                <div className="flex flex-col">
+                                <div className="col-span-5 flex flex-col">
                                     <div className="font-semibold text-sm mb-2 whitespace-nowrap flex items-center gap-1 text-gray-900 dark:text-slate-100">
                                         Tax Rate:
                                         <InfoTip label="Tax Rate">
@@ -1198,7 +1198,7 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
                                                 const rate = taxRates.find(r => r.tax_rate_id === parseInt(rateId));
                                                 setSelectedTaxRate(rate || null);
                                             }}
-                                            className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-md text-sm bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                                            className="w-full px-2 py-2 border border-gray-300 dark:border-slate-600 rounded-md text-sm bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-primary-500 truncate"
                                         >
                                             <option value="">Select tax rate...</option>
                                             {taxRates.map(rate => (
