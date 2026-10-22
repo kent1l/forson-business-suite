@@ -6,7 +6,9 @@ function getTokenSecret() {
     if (!process.env.JWT_SECRET) throw new Error('JWT_SECRET is required to sign physical receipt suggestion tokens');
     return process.env.JWT_SECRET;
 }
-const TOKEN_TTL_MS = 15 * 60 * 1000; // 15 minutes
+const TOKEN_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+const SUGGESTION_EXPIRED_MESSAGE = 'Receipt number suggestion is no longer valid. Re-select the receipt series to get a fresh number.';
 
 /**
  * Sign an opaque suggestion token with HMAC SHA-256
@@ -543,7 +545,10 @@ async function validateReference({ series_id, physical_receipt_no, suggestion_to
 
     if (suggestion_token) {
         const decoded = verifySuggestionToken(suggestion_token, employee_id);
-        if (decoded && decoded.series_id === series.series_id) {
+        if (!decoded) {
+            return { valid: false, code: 'SUGGESTION_EXPIRED', message: SUGGESTION_EXPIRED_MESSAGE };
+        }
+        if (decoded.series_id === series.series_id) {
             originalSuggestion = decoded.canonical_reference;
             if (decoded.canonical_reference === parsed.canonical) {
                 isSuggested = true;
@@ -577,6 +582,7 @@ async function postPhysicalDocument(client, {
     source_type, // 'INVOICE' | 'CUSTOMER_PAYMENT' | 'COLLECTION_GROUP'
     source_id,
     employee_id,
+    token_employee_id = null, // employee the suggestion token was issued to, if different from employee_id
     workstation_id = 'default',
     context = 'POS',
     request_id = null,
@@ -691,8 +697,14 @@ async function postPhysicalDocument(client, {
 
     // 6. Handle exception & spoilage of original suggestion if applicable
     if (suggestion_token) {
-        const decoded = verifySuggestionToken(suggestion_token, employee_id);
-        if (decoded && decoded.canonical_reference !== parsed.canonical) {
+        const decoded = verifySuggestionToken(suggestion_token, token_employee_id ?? employee_id);
+        if (!decoded) {
+            const err = new Error(SUGGESTION_EXPIRED_MESSAGE);
+            err.statusCode = 409;
+            err.code = 'SUGGESTION_EXPIRED';
+            throw err;
+        }
+        if (decoded.canonical_reference !== parsed.canonical) {
             if (!exception || !exception.reason) {
                 const err = new Error('Receipt exception reason is required when deviating from suggested number.');
                 err.statusCode = 422;

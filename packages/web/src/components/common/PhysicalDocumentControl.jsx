@@ -140,6 +140,23 @@ export default function PhysicalDocumentControl({
         });
     }, [context, fetchSuggestion, onChange, onTaxRateSelect, options.choices, options.series]);
 
+    // A restored draft carries a stale token and no local suggestion; fetch a fresh one once on mount.
+    const restoredRef = useRef(false);
+    useEffect(() => {
+        if (restoredRef.current) return;
+        restoredRef.current = true;
+        if (recordingMethod !== 'PAPER' || !selectedSeriesId || !value?.suggestion_token || value?.exception) return;
+        fetchSuggestion(selectedSeriesId).then((sug) => {
+            if (!sug?.suggestion_token) return;
+            onChange?.({
+                ...value,
+                physical_receipt_no: sug.canonical_reference || '',
+                suggestion_token: sug.suggestion_token,
+            });
+        });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
     // Load options for this context and workstation
     useEffect(() => {
         let mounted = true;
