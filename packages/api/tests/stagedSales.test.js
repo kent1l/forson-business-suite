@@ -15,6 +15,10 @@ jest.mock('../db', () => {
 });
 
 // Mock helpers and services
+jest.mock('../services/physicalDocumentService', () => ({
+  postPhysicalDocument: jest.fn().mockResolvedValue({ recording_method: 'NOTEBOOK' })
+}));
+
 jest.mock('../helpers/documentNumberGenerator', () => ({
   getNextDocumentNumber: jest.fn().mockResolvedValue('INV-2026-0001')
 }));
@@ -77,9 +81,11 @@ describe('staged sales routes', () => {
     app.use('/api', stagedSaleRoutes);
   });
 
-  beforeEach(() => {
+  beforeEach(async () => {
     jest.clearAllMocks();
-    db.query.mockResolvedValue({ rows: [] });
+    db.query.mockReset().mockResolvedValue({ rows: [] });
+    const client = await db.getClient();
+    client.query.mockReset();
   });
 
   it('POST /api/sales/staging returns 400 for missing fields', async () => {
@@ -157,8 +163,8 @@ describe('staged sales routes', () => {
       .mockResolvedValueOnce({   // get payment method
         rows: [{ method_id: 2, name: 'Cash', type: 'cash', config: {} }]
       })
-      .mockResolvedValueOnce({ rows: [] }) // check existing receipt no
       .mockResolvedValueOnce({ rows: [{ invoice_id: 50 }] }) // insert invoice
+      .mockResolvedValueOnce({ rows: [] }) // persist physical document selection
       .mockResolvedValueOnce({ rows: [{ wac_cost: '50.00' }] }) // get WAC cost
       .mockResolvedValueOnce({}) // insert invoice_line
       .mockResolvedValueOnce({}) // insert inventory_transaction
@@ -169,7 +175,7 @@ describe('staged sales routes', () => {
 
     const res = await request(app)
       .post('/api/sales/staging/42/approve-post')
-      .send({ physical_receipt_no: 'SI-999', tendered_amount: 112 });
+      .send({ physical_document: { recording_method: 'NOTEBOOK' }, tendered_amount: 112 });
 
     expect(res.status).toBe(200);
     expect(res.body).toHaveProperty('message', 'Staged sale approved and recorded successfully.');
@@ -212,7 +218,8 @@ describe('staged sales routes', () => {
       })
       .mockResolvedValue({ rows: [{ part_id: 1, tax_rate_id: 1, is_tax_inclusive_price: true, invoice_id: 51, wac_cost: '50.00' }] });
 
-    await request(app).post('/api/sales/staging/43/approve-post').send({});
+    await request(app).post('/api/sales/staging/43/approve-post')
+      .send({ physical_document: { recording_method: 'NOTEBOOK' } }).expect(200);
 
     const invoiceInsert = client.query.mock.calls.find(
       ([sql]) => typeof sql === 'string' && sql.includes('INSERT INTO invoice ')
@@ -243,7 +250,8 @@ describe('staged sales routes', () => {
       })
       .mockResolvedValue({ rows: [{ part_id: 1, tax_rate_id: 1, is_tax_inclusive_price: true, invoice_id: 52, wac_cost: '50.00' }] });
 
-    await request(app).post('/api/sales/staging/44/approve-post').send({});
+    await request(app).post('/api/sales/staging/44/approve-post')
+      .send({ physical_document: { recording_method: 'NOTEBOOK' } }).expect(200);
 
     const invoiceInsert = client.query.mock.calls.find(
       ([sql]) => typeof sql === 'string' && sql.includes('INSERT INTO invoice ')

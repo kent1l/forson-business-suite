@@ -505,6 +505,8 @@ describe('MasterDataMergeService against PostgreSQL', () => {
                 'VALUES ($1, $2, $3, 0) RETURNING invoice_id', [`REG-INV-${suffix}`, id, actorId]);
             await client.query('INSERT INTO customer_payment (customer_id, employee_id, amount) VALUES ($1, $2, 0)',
                 [id, actorId]);
+            await client.query('INSERT INTO customer_payment_collection_group (group_reference, customer_id, created_by) ' +
+                'VALUES ($1, $2, $3)', [`REG-COL-${suffix}`, id, actorId]);
             await client.query('INSERT INTO staged_sale (customer_id, employee_id, total_amount) VALUES ($1, $2, 0)',
                 [id, actorId]);
             await client.query('INSERT INTO ar_adjustment (adjustment_no, customer_id, adjustment_type, ' +
@@ -541,6 +543,9 @@ describe('MasterDataMergeService against PostgreSQL', () => {
                 'SELECT COUNT(*)::int AS count FROM ar_adjustment WHERE customer_id = $1', [id]);
             expect(restoredLedger.count).toBe(1);
             expect(restoredAdjustment.count).toBe(1);
+            const { rows: [restoredGroup] } = await client.query(
+                'SELECT customer_id FROM customer_payment_collection_group WHERE group_reference = $1', [`REG-COL-${suffix}`]);
+            expect(restoredGroup.customer_id).toBe(id);
         } finally {
             await client.query('ROLLBACK TO SAVEPOINT full_customer_registry');
         }

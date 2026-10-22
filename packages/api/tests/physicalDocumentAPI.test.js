@@ -49,8 +49,18 @@ describe('Physical Document System - Phase 2 & 3 API & Cashier Posting Integrati
     let testSeriesId;
     let testTypeId;
     let testCustomerId;
+    let testEmployeeId;
+    const suffix = `${Date.now()}_${process.pid}`;
 
     beforeAll(async () => {
+        const { rows: [employee] } = await db.query(
+            `INSERT INTO employee (first_name, last_name, permission_level_id, username, password_hash, password_salt)
+             SELECT 'Physical', 'Document Test', permission_level_id, $1, 'hash', 'salt'
+             FROM permission_level LIMIT 1 RETURNING employee_id`,
+            [`physical_doc_${suffix}`]
+        );
+        testEmployeeId = employee.employee_id;
+        mockCurrentUser.employee_id = testEmployeeId;
         // Ensure test customer exists
         const existing = await db.query(`SELECT customer_id FROM public.customer WHERE is_active = true LIMIT 1`);
         if (existing.rows.length > 0) {
@@ -77,10 +87,10 @@ describe('Physical Document System - Phase 2 & 3 API & Cashier Posting Integrati
         const seriesRes = await db.query(
             `INSERT INTO public.physical_document_series 
              (type_id, code, name, prefix, method, initial_serial, min_serial, max_serial, is_active)
-             VALUES ($1, 'TEST_SI_API_SERIES', 'Test SI API Series', 'TS', 'HIGHEST_PLUS_ONE', 1000, 1000, 9999, true)
+             VALUES ($1, $2, 'Test SI API Series', 'TS', 'HIGHEST_PLUS_ONE', 1000, 1000, 9999, true)
              ON CONFLICT (code) DO UPDATE SET is_active = true, last_issued_serial = NULL, high_water_serial = NULL
              RETURNING series_id`,
-            [testTypeId]
+            [testTypeId, `TEST_SI_API_${suffix}`]
         );
         testSeriesId = seriesRes.rows[0].series_id;
 
@@ -92,12 +102,18 @@ describe('Physical Document System - Phase 2 & 3 API & Cashier Posting Integrati
             [testSeriesId]
         );
 
-        // Map tax rate (Zero-rate and VAT)
+        // Own the fixture rates: fresh CI databases have no tax-rate seeds and
+        // sequence IDs have no guaranteed business meaning.
+        const { rows: rates } = await db.query(
+            `INSERT INTO tax_rate (rate_name, rate_percentage, is_default)
+             VALUES ($1, 0, false), ($2, 0.12, false) RETURNING tax_rate_id`,
+            [`Test zero ${suffix}`, `Test VAT ${suffix}`]
+        );
         await db.query(
             `INSERT INTO public.physical_document_series_tax (series_id, tax_rate_id, role)
-             VALUES ($1, 1, 'DEFAULT_FALLBACK'), ($1, 2, 'ALLOWED_RESOLVED')
+             VALUES ($1, $2, 'DEFAULT_FALLBACK'), ($1, $3, 'ALLOWED_RESOLVED')
              ON CONFLICT (series_id, tax_rate_id) DO NOTHING`,
-            [testSeriesId]
+            [testSeriesId, rates[0].tax_rate_id, rates[1].tax_rate_id]
         );
     });
 
@@ -252,10 +268,10 @@ describe('Physical Document System - Phase 2 & 3 API & Cashier Posting Integrati
 
         const colSeriesRes = await db.query(
             `INSERT INTO physical_document_series (type_id, code, name, prefix, method, initial_serial, is_active)
-             VALUES ($1, 'TEST_CR_SERIES', 'Test Collection Receipt Series', 'CRTEST', 'HIGHEST_PLUS_ONE', 500, true)
+             VALUES ($1, $2, 'Test Collection Receipt Series', 'CRTEST', 'HIGHEST_PLUS_ONE', 500, true)
              ON CONFLICT (code) DO UPDATE SET is_active = true
              RETURNING series_id`,
-            [colTypeId]
+            [colTypeId, `TEST_CR_${suffix}`]
         );
         const colSeriesId = colSeriesRes.rows[0].series_id;
 
@@ -282,9 +298,9 @@ describe('Physical Document System - Phase 2 & 3 API & Cashier Posting Integrati
         // Now test with dummy allocation
         const invRes = await db.query(
             `INSERT INTO public.invoice (invoice_number, customer_id, employee_id, total_amount, subtotal_ex_tax, tax_total, amount_paid, status, terms, payment_terms_days, due_date)
-             VALUES ($1, $2, 1, 1000, 1000, 0, 0, 'Unpaid', 'COD', 0, CURRENT_TIMESTAMP)
+             VALUES ($1, $2, $3, 1000, 1000, 0, 0, 'Unpaid', 'COD', 0, CURRENT_TIMESTAMP)
              RETURNING invoice_id`,
-            [`TEST-INV-CRG-${Date.now()}`, testCustomerId]
+            [`TEST-INV-CRG-${Date.now()}`, testCustomerId, testEmployeeId]
         );
         const testInvoiceId = invRes.rows[0].invoice_id;
 
@@ -376,9 +392,10 @@ describe('Physical Document System - Phase 2 & 3 API & Cashier Posting Integrati
         await db.query(
             `INSERT INTO public.physical_document_last_success
              (employee_id, workstation_id, context, last_series_id, recording_method, last_type_code, last_issuance_id, issued_at)
-             VALUES (1, 'default', 'POS', NULL, 'NOTEBOOK', 'NOTEBOOK', 'inv:test', CURRENT_TIMESTAMP)
+             VALUES ($1, 'default', 'POS', NULL, 'NOTEBOOK', 'NOTEBOOK', 'inv:test', CURRENT_TIMESTAMP)
              ON CONFLICT (employee_id, workstation_id, context)
-             DO UPDATE SET last_series_id = NULL, recording_method = 'NOTEBOOK', last_type_code = 'NOTEBOOK', issued_at = CURRENT_TIMESTAMP`
+             DO UPDATE SET last_series_id = NULL, recording_method = 'NOTEBOOK', last_type_code = 'NOTEBOOK', issued_at = CURRENT_TIMESTAMP`,
+            [testEmployeeId]
         );
 
         const posOptionsRes = await request(app)

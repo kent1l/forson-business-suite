@@ -36,6 +36,7 @@ app.use('/api', paymentRoutes);
 describe('Customer Wallet System & Endpoints', () => {
     beforeEach(() => {
         jest.clearAllMocks();
+        db.query.mockReset();
     });
 
     describe('customerWalletService', () => {
@@ -155,6 +156,8 @@ describe('Customer Wallet System & Endpoints', () => {
             client.query.mockResolvedValueOnce({ rows: [{ method_id: 1, code: 'cash', type: 'cash', config: {} }] });
             // customer_payment INSERT
             client.query.mockResolvedValueOnce({ rows: [{ payment_id: 50 }] });
+            // Mark the payment as a notebook entry (no paper receipt selected).
+            client.query.mockResolvedValueOnce({ rows: [] });
             // invoice balance calculation query
             client.query.mockResolvedValueOnce({ rows: [{ total_amount: '500.00', already_allocated: '0.00' }] });
             // invoice_payment_allocation INSERT
