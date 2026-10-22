@@ -6,7 +6,7 @@ function getTokenSecret() {
     if (!process.env.JWT_SECRET) throw new Error('JWT_SECRET is required to sign physical receipt suggestion tokens');
     return process.env.JWT_SECRET;
 }
-const TOKEN_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+const TOKEN_TTL_MS = 15 * 60 * 1000; // 15 minutes
 
 /**
  * Sign an opaque suggestion token with HMAC SHA-256
@@ -22,9 +22,10 @@ function signSuggestionToken(payload) {
 }
 
 /**
- * Verify an opaque suggestion token
+ * Verify an opaque suggestion token. When the token was issued to an employee,
+ * it is only valid for that same employee.
  */
-function verifySuggestionToken(token) {
+function verifySuggestionToken(token, employeeId = null) {
     if (!token || typeof token !== 'string') return null;
     const parts = token.split('.');
     if (parts.length !== 2) return null;
@@ -34,6 +35,7 @@ function verifySuggestionToken(token) {
     try {
         const decoded = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8'));
         if (Date.now() - decoded.iat > TOKEN_TTL_MS) return null;
+        if (decoded.employee_id != null && String(decoded.employee_id) !== String(employeeId)) return null;
         return decoded;
     } catch {
         return null;
@@ -120,7 +122,7 @@ async function isReferenceOccupied(clientOrDb, seriesId, canonicalRef, excludeRe
 /**
  * Generate next number suggestion for a series
  */
-async function getSuggestion(seriesId, _context = null, clientOrDb = null) {
+async function getSuggestion(seriesId, _context = null, clientOrDb = null, employeeId = null) {
     const runner = clientOrDb || db;
     const { rows: seriesRows } = await runner.query(
         `SELECT s.*, t.controlled_category, t.tax_designation
@@ -225,6 +227,7 @@ async function getSuggestion(seriesId, _context = null, clientOrDb = null) {
         serial: candidateSerial,
         canonical_reference: candidateRef,
         series_version: series.version,
+        employee_id: employeeId,
     };
     const suggestionToken = signSuggestionToken(tokenPayload);
 
@@ -450,7 +453,7 @@ async function getOptions({ context, workstation_id = 'default', employee_id }) 
 /**
  * Validate physical receipt reference and check availability & tax compatibility
  */
-async function validateReference({ series_id, physical_receipt_no, suggestion_token = null, lines_tax_rate_ids = [], exclude_registry_id = null }) {
+async function validateReference({ series_id, physical_receipt_no, suggestion_token = null, employee_id = null, lines_tax_rate_ids = [], exclude_registry_id = null }) {
     if (!series_id) {
         return { valid: false, code: 'SERIES_REQUIRED', message: 'Physical document series is required.' };
     }
@@ -539,7 +542,7 @@ async function validateReference({ series_id, physical_receipt_no, suggestion_to
     let exceptionRequired = false;
 
     if (suggestion_token) {
-        const decoded = verifySuggestionToken(suggestion_token);
+        const decoded = verifySuggestionToken(suggestion_token, employee_id);
         if (decoded && decoded.series_id === series.series_id) {
             originalSuggestion = decoded.canonical_reference;
             if (decoded.canonical_reference === parsed.canonical) {
@@ -688,7 +691,7 @@ async function postPhysicalDocument(client, {
 
     // 6. Handle exception & spoilage of original suggestion if applicable
     if (suggestion_token) {
-        const decoded = verifySuggestionToken(suggestion_token);
+        const decoded = verifySuggestionToken(suggestion_token, employee_id);
         if (decoded && decoded.canonical_reference !== parsed.canonical) {
             if (!exception || !exception.reason) {
                 const err = new Error('Receipt exception reason is required when deviating from suggested number.');

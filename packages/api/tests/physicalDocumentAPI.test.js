@@ -141,10 +141,13 @@ describe('Physical Document System - Phase 2 & 3 API & Cashier Posting Integrati
         expect(res.body.suggestion_token).toBeTruthy();
 
         // Verify token cryptographically
-        const verified = physicalDocumentService.verifySuggestionToken(res.body.suggestion_token);
+        const verified = physicalDocumentService.verifySuggestionToken(res.body.suggestion_token, testEmployeeId);
         expect(verified).not.toBeNull();
         expect(verified.series_id).toBe(testSeriesId);
         expect(verified.canonical_reference).toBe('TS-1000');
+
+        // Token is bound to the employee it was issued to
+        expect(physicalDocumentService.verifySuggestionToken(res.body.suggestion_token, testEmployeeId + 9999)).toBeNull();
     });
 
     test('POST /api/physical-documents/validate verifies prefix, format, and availability', async () => {

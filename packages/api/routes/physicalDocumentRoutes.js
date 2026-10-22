@@ -38,7 +38,7 @@ router.get('/physical-documents/suggestion', protect, hasPermission(['invoicing:
             return res.status(400).json({ message: 'Valid series_id query parameter is required.' });
         }
 
-        const suggestion = await physicalDocumentService.getSuggestion(seriesId, context);
+        const suggestion = await physicalDocumentService.getSuggestion(seriesId, context, null, req.user?.employee_id ?? null);
         res.json(suggestion);
     } catch (err) {
         console.error('Error fetching suggestion:', err);
@@ -55,6 +55,7 @@ router.post('/physical-documents/validate', protect, hasPermission(['invoicing:c
             series_id: series_id ? parseInt(series_id, 10) : null,
             physical_receipt_no,
             suggestion_token,
+            employee_id: req.user?.employee_id ?? null,
             lines_tax_rate_ids,
             exclude_registry_id: exclude_registry_id ? parseInt(exclude_registry_id, 10) : null,
         });
