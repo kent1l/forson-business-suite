@@ -48,6 +48,32 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
     const [isDraftsModalOpen, setIsDraftsModalOpen] = useState(false);
     const [lastSavedDraftSignature, setLastSavedDraftSignature] = useState(null);
     const searchInputRef = useRef(null);
+    const searchContainerRef = useRef(null);
+    const searchDebounceRef = useRef(null);
+    const [isSearchOpen, setIsSearchOpen] = useState(false);
+    const [isSearchFocused, setIsSearchFocused] = useState(false);
+
+    // Close search dropdown on click or focus outside
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (searchContainerRef.current && !searchContainerRef.current.contains(event.target)) {
+                setIsSearchOpen(false);
+                setIsSearchFocused(false);
+            }
+        };
+        const handleFocusOutside = (event) => {
+            if (searchContainerRef.current && !searchContainerRef.current.contains(event.target)) {
+                setIsSearchOpen(false);
+                setIsSearchFocused(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        document.addEventListener('focusin', handleFocusOutside);
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+            document.removeEventListener('focusin', handleFocusOutside);
+        };
+    }, []);
 
     const paymentMethodsKey = settings?.PAYMENT_METHODS || '';
     const paymentMethods = paymentMethodsKey ? paymentMethodsKey.split(',') : [];
@@ -78,6 +104,7 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
     useEffect(() => {
         if (searchTerm.trim() === '') {
             setSearchResults([]);
+            setIsSearchOpen(false);
             return;
         }
 
@@ -88,14 +115,17 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
                 });
                 const enriched = await enrichPartsArray(response.data || []);
                 setSearchResults(enriched);
-        } catch (error) {
-            console.error('Search error', error);
-            toast.error("Search failed.");
+                if (enriched.length > 0 && searchContainerRef.current?.contains(document.activeElement)) {
+                    setIsSearchOpen(true);
+                }
+            } catch (error) {
+                console.error('Search error', error);
+                toast.error("Search failed.");
             }
         };
 
-        const debounceTimer = setTimeout(fetchSearchResults, 300);
-        return () => clearTimeout(debounceTimer);
+        searchDebounceRef.current = setTimeout(fetchSearchResults, 300);
+        return () => clearTimeout(searchDebounceRef.current);
     }, [searchTerm]);
 
     useEffect(() => {
@@ -238,6 +268,10 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
             setLines([...lines, { ...part, part_id: part.part_id, quantity: 1, sale_price: part.last_sale_price || 0 }]);
         }
         setSearchTerm('');
+        setSearchResults([]);
+        setIsSearchOpen(false);
+        setIsSearchFocused(false);
+        resetTypeahead();
     };
 
     const { executePartSave, DuplicateDialog } = usePartDuplicateResolution();
@@ -286,6 +320,9 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
     const handleRapidScan = async (rawValue) => {
         const term = (rawValue ?? searchTerm).trim();
         if (!term) return;
+        if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+        setSearchResults([]);
+        setIsSearchOpen(false);
         try {
             const response = await api.get(`/parts/barcode/${encodeURIComponent(term)}`);
             const enriched = await enrichPartsArray([response.data]);
@@ -299,14 +336,20 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
         }
     };
 
-    const { getInputProps: getSearchInputProps, getItemProps: getSearchItemProps } = useTypeahead({
+    const {
+        getInputProps: getSearchInputProps,
+        getItemProps: getSearchItemProps,
+        reset: resetTypeahead
+    } = useTypeahead({
         items: searchResults,
         onSelect: (item) => addPartToLines(item),
         onEnterUnselected: handleRapidScan,
+        onClose: () => { setIsSearchOpen(false); },
         inputRef: searchInputRef,
         inputId: 'invoicing-search-input',
         listboxId: 'invoicing-search-results'
     });
+    const searchInputProps = getSearchInputProps();
 
     const handleLineChange = (partId, field, value) => {
         const raw = typeof value === 'number' ? value : parseFloat(value);
@@ -604,6 +647,21 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
         return () => window.removeEventListener('keydown', onKey);
     }, [selectedCustomer, lines, handlePostInvoice]);
 
+    // Keyboard shortcut (Ctrl+F / Cmd+F) to focus search bar
+    useEffect(() => {
+        const onKey = (e) => {
+            const isMac = /Mac|iPod|iPhone|iPad/.test(navigator.platform);
+            if ((isMac ? e.metaKey : e.ctrlKey) && (e.key === 'f' || e.key === 'F')) {
+                e.preventDefault();
+                searchInputRef.current?.focus();
+            } else if (e.key === 'Escape' && isSearchOpen) {
+                setIsSearchOpen(false);
+            }
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, [isSearchOpen]);
+
     if (loading) return <p className="text-gray-500 dark:text-slate-400">Loading data...</p>;
 
     return (
@@ -751,44 +809,90 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
                 </div>
                 
                 {/* Add Part Section */}
-                <div className="relative">
+                <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-2">Add Items</label>
                     <div className="flex items-center space-x-2">
-                        <div className="relative flex-grow">
+                        <div className="relative flex-grow" ref={searchContainerRef}>
                             <SearchBar
-                                {...getSearchInputProps()}
+                                {...searchInputProps}
+                                aria-expanded={isSearchOpen && searchResults.length > 0}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'ArrowDown' && !isSearchOpen && searchResults.length > 0) {
+                                        setIsSearchOpen(true);
+                                    }
+                                    searchInputProps.onKeyDown?.(e);
+                                }}
                                 ref={searchInputRef}
                                 value={searchTerm}
-                                onChange={setSearchTerm}
-                                onClear={() => setSearchTerm('')}
-                                placeholder="Search by part name, SKU, or application... (Enter to scan barcode/SKU)"
+                                onChange={(val) => {
+                                    setSearchTerm(val);
+                                    if (val.trim()) {
+                                        setIsSearchOpen(true);
+                                    } else {
+                                        setIsSearchOpen(false);
+                                        setSearchResults([]);
+                                    }
+                                }}
+                                onFocus={() => {
+                                    setIsSearchFocused(true);
+                                    if (searchTerm.trim() && searchResults.length > 0) {
+                                        setIsSearchOpen(true);
+                                    }
+                                }}
+                                onClear={() => {
+                                    setSearchTerm('');
+                                    setSearchResults([]);
+                                    setIsSearchOpen(false);
+                                    setIsSearchFocused(false);
+                                    resetTypeahead();
+                                }}
+                                placeholder="Search by part name, SKU, or application (Ctrl+F)... (Enter to scan barcode/SKU)"
                             />
+                            {isSearchOpen && searchResults.length > 0 && (
+                                <div id="invoicing-search-results-container" className="absolute z-20 w-full bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg mt-1 shadow-lg overflow-hidden flex flex-col">
+                                    <div className="flex items-center justify-between px-3 py-1.5 bg-gray-50 dark:bg-slate-700/60 border-b border-gray-200 dark:border-slate-700 text-xs text-gray-500 dark:text-slate-400">
+                                        <span>
+                                            {searchResults.length} {searchResults.length === 1 ? 'part' : 'parts'} found
+                                        </span>
+                                        <button
+                                            type="button"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setIsSearchOpen(false);
+                                            }}
+                                            className="text-gray-400 hover:text-gray-600 dark:hover:text-slate-200 text-xs px-1.5 py-0.5 rounded hover:bg-gray-200 dark:hover:bg-slate-600 transition flex items-center gap-1 cursor-pointer"
+                                            title="Minimize / Close (Esc)"
+                                        >
+                                            <span>Minimize</span>
+                                            <kbd className="text-[10px] font-mono bg-white dark:bg-slate-800 px-1 py-0.2 border border-gray-300 dark:border-slate-600 rounded">Esc</kbd>
+                                        </button>
+                                    </div>
+                                    <ul id="invoicing-search-results" className="max-h-60 overflow-y-auto scrollbar-thin divide-y divide-gray-100 dark:divide-slate-700" role="listbox">
+                                        {searchResults.map((part, index) => {
+                                            const itemProps = getSearchItemProps(index);
+                                            return (
+                                                <li key={part.part_id} {...itemProps} className={`px-4 py-3 cursor-pointer transition-colors ${itemProps['aria-selected'] ? 'bg-primary-100 dark:bg-primary-900/40' : 'hover:bg-primary-50 dark:hover:bg-slate-700/50'}`}>
+                                                    <div className="flex items-baseline justify-between">
+                                                        <div className="flex items-baseline space-x-2 flex-1 min-w-0">
+                                                            <div className="text-sm font-medium text-gray-900 dark:text-slate-100 truncate">{part.display_name}</div>
+                                                            {part.applications && <div className="text-xs text-gray-500 dark:text-slate-400 truncate">{formatApplicationText(part.applications, { style: 'searchSuggestion' })}</div>}
+                                                        </div>
+                                                        <div className="text-sm font-semibold text-gray-700 dark:text-slate-300 ml-4 font-mono">
+                                                            {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{part.last_sale_price ? Number(part.last_sale_price).toFixed(2) : '0.00'}
+                                                        </div>
+                                                    </div>
+                                                </li>
+                                            );
+                                        })}
+                                    </ul>
+                                </div>
+                            )}
                         </div>
                         <button onClick={() => setIsNewPartModalOpen(true)} className="bg-primary-50 dark:bg-primary-950/30 text-primary-700 dark:text-primary-300 border border-primary-200 dark:border-primary-800 px-4 py-2 rounded-lg font-semibold hover:bg-primary-100 dark:hover:bg-primary-900/40 transition whitespace-nowrap flex items-center text-sm shadow-xs">
                             <Icon path={ICONS.plus} className="h-5 w-5 mr-2" />
                             New Part
                         </button>
                     </div>
-                    {searchResults.length > 0 && (
-                        <ul id="invoicing-search-results" className="absolute z-10 w-full bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg mt-1 shadow-lg max-h-60 overflow-y-auto scrollbar-thin divide-y divide-gray-100 dark:divide-slate-700" role="listbox">
-                            {searchResults.map((part, index) => {
-                                const itemProps = getSearchItemProps(index);
-                                return (
-                                    <li key={part.part_id} {...itemProps} className={`px-4 py-3 cursor-pointer transition-colors ${itemProps['aria-selected'] ? 'bg-primary-100 dark:bg-primary-900/40' : 'hover:bg-primary-50 dark:hover:bg-slate-700/50'}`}>
-                                        <div className="flex items-baseline justify-between">
-                                            <div className="flex items-baseline space-x-2 flex-1 min-w-0">
-                                                <div className="text-sm font-medium text-gray-900 dark:text-slate-100 truncate">{part.display_name}</div>
-                                                {part.applications && <div className="text-xs text-gray-500 dark:text-slate-400 truncate">{formatApplicationText(part.applications, { style: 'searchSuggestion' })}</div>}
-                                            </div>
-                                            <div className="text-sm font-semibold text-gray-700 dark:text-slate-300 ml-4 font-mono">
-                                                {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{part.last_sale_price ? Number(part.last_sale_price).toFixed(2) : '0.00'}
-                                            </div>
-                                        </div>
-                                    </li>
-                                );
-                            })}
-                        </ul>
-                    )}
                 </div>
 
                 {/* Invoice Lines Table */}
