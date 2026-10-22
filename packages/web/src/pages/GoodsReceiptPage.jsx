@@ -1155,12 +1155,13 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
             });
             if (result.outcome === 'cancelled' || result.outcome === 'error') return;
 
+            const stockUom = (result.part.measurement_unit || result.part.stock_uom || partData.measurement_unit || 'pcs').trim() || 'pcs';
             importReview.queueAction({
                 type: 'set_row',
                 row_id: importPartTarget.row_id,
                 values: {
                     part_id: result.part.part_id,
-                    stock_uom: result.part.measurement_unit,
+                    stock_uom: stockUom,
                 },
             }, result.part);
             setImportPartTarget(null);

@@ -18,6 +18,15 @@ const getPartDataForMeili = async (client, partId) => {
     const query = `
         SELECT
             pv.*,
+            p.reorder_point,
+            p.warning_quantity,
+            p.measurement_unit,
+            p.tax_rate_id,
+            p.is_tax_inclusive_price,
+            p.is_price_change_allowed,
+            p.is_using_default_quantity,
+            p.is_service,
+            p.low_stock_warning,
             (SELECT ARRAY_AGG(pb.barcode) FROM part_barcode pb WHERE pb.part_id = pv.part_id) as barcodes,
             (SELECT STRING_AGG(pn.part_number, '; ') FROM part_number pn WHERE pn.part_id = pv.part_id AND ${activeAliasCondition('pn')}) as part_numbers,
                         (SELECT ARRAY_AGG(
@@ -31,6 +40,7 @@ const getPartDataForMeili = async (client, partId) => {
             (SELECT ARRAY_AGG(ARRAY[pa.year_start, pa.year_end]) FROM part_application pa WHERE pa.part_id = pv.part_id) AS application_year_ranges,
             (SELECT ARRAY_AGG(t.tag_name) FROM tag t JOIN part_tag pt ON t.tag_id = pt.tag_id WHERE pt.part_id = pv.part_id) AS tags_array
         FROM public.parts_view AS pv
+        JOIN public.part p ON pv.part_id = p.part_id
         WHERE pv.part_id = $1
     `;
     const res = await client.query(query, [partId]);
@@ -374,6 +384,15 @@ router.get('/parts', protect, hasPermission('parts:view'), async (req, res) => {
         const query = `
             SELECT
                 pv.*,
+                p.reorder_point,
+                p.warning_quantity,
+                p.measurement_unit,
+                p.tax_rate_id,
+                p.is_tax_inclusive_price,
+                p.is_price_change_allowed,
+                p.is_using_default_quantity,
+                p.is_service,
+                p.low_stock_warning,
                 (SELECT ARRAY_AGG(pb.barcode) FROM part_barcode pb WHERE pb.part_id = pv.part_id) as barcodes,
                 (SELECT STRING_AGG(pn.part_number, '; ' ORDER BY pn.display_order) FROM part_number pn WHERE pn.part_id = pv.part_id AND ${activeAliasCondition('pn')}) AS part_numbers,
                 (SELECT STRING_AGG(
@@ -395,6 +414,7 @@ router.get('/parts', protect, hasPermission('parts:view'), async (req, res) => {
                 WHERE pa.part_id = pv.part_id) AS applications,
                 (SELECT STRING_AGG(t.tag_name, ', ') FROM tag t JOIN part_tag pt ON t.tag_id = pt.tag_id WHERE pt.part_id = pv.part_id) AS tags
             FROM public.parts_view AS pv
+            JOIN public.part p ON pv.part_id = p.part_id
             WHERE pv.part_id = ANY($1::int[])
             ${orderByClause}
             ${sqlOffset}
@@ -426,7 +446,7 @@ router.get('/parts/barcode/:barcode', protect, async (req, res) => {
             `SELECT
                 p.part_id, p.internal_sku, p.detail, p.last_sale_price, p.last_cost,
                 COALESCE(p.wac_cost, 0) AS wac_cost, p.tax_rate_id, p.is_tax_inclusive_price,
-                b.brand_name, g.group_name,
+                p.measurement_unit, b.brand_name, g.group_name,
                 lr.grn_number       AS last_receipt_grn_number,
                 lr.receipt_date     AS last_receipt_date,
                 lr.cost_price       AS last_receipt_unit_cost,
@@ -691,7 +711,7 @@ router.post('/purchase-orders/:id/lines/:lineId/catalog', protect, hasPermission
         // Look for candidate duplicate: exact match in DB or Jev match
         let candidate = null;
         const { rows: duplicates } = await client.query(
-            `SELECT p.part_id, pv.display_name, pv.detail, pv.internal_sku,
+            `SELECT p.part_id, p.measurement_unit, pv.display_name, pv.detail, pv.internal_sku,
                     pv.brand_name, pv.group_name
              FROM part p
              JOIN parts_view pv ON pv.part_id = p.part_id
@@ -704,6 +724,7 @@ router.post('/purchase-orders/:id/lines/:lineId/catalog', protect, hasPermission
         if (duplicates.length) {
             candidate = {
                 part_id: duplicates[0].part_id,
+                measurement_unit: duplicates[0].measurement_unit,
                 display_name: duplicates[0].display_name,
                 detail: duplicates[0].detail,
                 internal_sku: duplicates[0].internal_sku,
