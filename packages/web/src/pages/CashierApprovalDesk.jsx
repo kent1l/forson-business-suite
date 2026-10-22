@@ -6,6 +6,7 @@ import InfoTip from '../components/ui/InfoTip';
 import { ICONS } from '../constants';
 import Modal from '../components/ui/Modal';
 import MathExpressionInput from '../components/ui/MathExpressionInput';
+import PhysicalDocumentControl from '../components/common/PhysicalDocumentControl';
 import { formatPhysicalReceiptNumber } from '../utils/receiptNumberFormatter';
 
 export default function CashierApprovalDesk({ onNavigate }) {
@@ -25,7 +26,7 @@ export default function CashierApprovalDesk({ onNavigate }) {
 
     // Modal state for details review
     const [isDetailsOpen, setIsDetailsOpen] = useState(false);
-    const [editablePrn, setEditablePrn] = useState('');
+    const [physicalDoc, setPhysicalDoc] = useState(null);
     const [editableTendered, setEditableTendered] = useState('');
 
     // Rejection sub-modal state
@@ -65,7 +66,7 @@ export default function CashierApprovalDesk({ onNavigate }) {
         try {
             const { data } = await api.get(`/sales/staging/${sale.id}`);
             setSelectedSale(data);
-            setEditablePrn(data.physical_receipt_no || '');
+            setPhysicalDoc(null);
             setEditableTendered(data.tendered_amount || '');
             setSelectedCustomerId(data.customer_id);
 
@@ -82,13 +83,22 @@ export default function CashierApprovalDesk({ onNavigate }) {
 
     const handleApprove = async () => {
         if (!selectedSale) return;
-        setActioning(true);
 
-        const formattedPrn = formatPhysicalReceiptNumber(editablePrn);
+        if (!physicalDoc?.recording_method) {
+            toast.error('Physical document selection (Paper series or Notebook) is required.');
+            return;
+        }
+        if (physicalDoc.recording_method === 'PAPER' && !physicalDoc.physical_receipt_no?.trim()) {
+            toast.error('Physical receipt reference number is required.');
+            return;
+        }
+
+        setActioning(true);
 
         try {
             await api.post(`/sales/staging/${selectedSale.id}/approve-post`, {
-                physical_receipt_no: formattedPrn,
+                physical_receipt_no: physicalDoc.recording_method === 'PAPER' ? physicalDoc.physical_receipt_no : null,
+                physical_document: physicalDoc,
                 tendered_amount: editableTendered !== '' && editableTendered !== null ? (typeof editableTendered === 'number' ? editableTendered : Number(editableTendered)) : null,
                 customer_id: selectedCustomerId
             });
@@ -341,17 +351,16 @@ export default function CashierApprovalDesk({ onNavigate }) {
                                     )}
                                 </div>
                                 <div className="mt-2">
-                                    <label className="flex items-center gap-1 text-slate-400 dark:text-slate-500 text-[10px] uppercase font-bold mb-1">Physical Receipt Number (PRN)
-                                        <InfoTip label="Physical Receipt Number (PRN)">
-                                            The physical receipt number written or printed at the point of sale — double-check it matches before approving, since approving posts the transaction permanently.
+                                    <label className="flex items-center gap-1 text-slate-400 dark:text-slate-500 text-[10px] uppercase font-bold mb-1">
+                                        Physical Document <span className="text-red-500">*</span>
+                                        <InfoTip label="Physical Document">
+                                            Select paper document series or Notebook. An explicit cashier recording decision is required before approving and posting.
                                         </InfoTip>
                                     </label>
-                                    <input
-                                        type="text"
-                                        value={editablePrn}
-                                        onChange={(e) => setEditablePrn(formatPhysicalReceiptNumber(e.target.value) || '')}
-                                        className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg text-sm font-mono focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500"
-                                        placeholder="e.g. SI-1234, ABC/5678"
+                                    <PhysicalDocumentControl
+                                        context="CASHIER_APPROVAL"
+                                        value={physicalDoc}
+                                        onChange={setPhysicalDoc}
                                     />
                                 </div>
                                 <div className="mt-2">

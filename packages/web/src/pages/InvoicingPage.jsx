@@ -17,6 +17,7 @@ import SplitPaymentModal from '../components/ui/SplitPaymentModal';
 import NotebookCoverageFields from '../components/cashDrawer/NotebookCoverageFields';
 import MathExpressionInput from '../components/ui/MathExpressionInput';
 import SavedSalesPanel from '../components/pos/SavedSalesPanel';
+import PhysicalDocumentControl from '../components/common/PhysicalDocumentControl';
 import { useSettings } from '../contexts/SettingsContext';
 import { formatApplicationText } from '../helpers/applicationTextHelper';
 import { enrichPartsArray } from '../helpers/applicationCache';
@@ -32,7 +33,7 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
     const [paymentMethod, setPaymentMethod] = useState('');
     const [notebookReceiptId, setNotebookReceiptId] = useState('');
     const [notebookCoveredAmount, setNotebookCoveredAmount] = useState('');
-    const [physicalReceiptNo, setPhysicalReceiptNo] = useState('');
+    const [physicalDoc, setPhysicalDoc] = useState(null);
     const [isSplitPaymentModalOpen, setIsSplitPaymentModalOpen] = useState(false);
     const [terms, setTerms] = useState('');
     const [searchTerm, setSearchTerm] = useState('');
@@ -46,8 +47,33 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
     const [selectedTaxRate, setSelectedTaxRate] = useState(null);
     const [isDraftsModalOpen, setIsDraftsModalOpen] = useState(false);
     const [lastSavedDraftSignature, setLastSavedDraftSignature] = useState(null);
-    const [receiptCheck, setReceiptCheck] = useState(null); // { taken, normalized } | null
     const searchInputRef = useRef(null);
+    const searchContainerRef = useRef(null);
+    const searchDebounceRef = useRef(null);
+    const [isSearchOpen, setIsSearchOpen] = useState(false);
+    const [isSearchFocused, setIsSearchFocused] = useState(false);
+
+    // Close search dropdown on click or focus outside
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (searchContainerRef.current && !searchContainerRef.current.contains(event.target)) {
+                setIsSearchOpen(false);
+                setIsSearchFocused(false);
+            }
+        };
+        const handleFocusOutside = (event) => {
+            if (searchContainerRef.current && !searchContainerRef.current.contains(event.target)) {
+                setIsSearchOpen(false);
+                setIsSearchFocused(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        document.addEventListener('focusin', handleFocusOutside);
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+            document.removeEventListener('focusin', handleFocusOutside);
+        };
+    }, []);
 
     const paymentMethodsKey = settings?.PAYMENT_METHODS || '';
     const paymentMethods = paymentMethodsKey ? paymentMethodsKey.split(',') : [];
@@ -78,6 +104,7 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
     useEffect(() => {
         if (searchTerm.trim() === '') {
             setSearchResults([]);
+            setIsSearchOpen(false);
             return;
         }
 
@@ -88,14 +115,17 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
                 });
                 const enriched = await enrichPartsArray(response.data || []);
                 setSearchResults(enriched);
-        } catch (error) {
-            console.error('Search error', error);
-            toast.error("Search failed.");
+                if (enriched.length > 0 && searchContainerRef.current?.contains(document.activeElement)) {
+                    setIsSearchOpen(true);
+                }
+            } catch (error) {
+                console.error('Search error', error);
+                toast.error("Search failed.");
             }
         };
 
-        const debounceTimer = setTimeout(fetchSearchResults, 300);
-        return () => clearTimeout(debounceTimer);
+        searchDebounceRef.current = setTimeout(fetchSearchResults, 300);
+        return () => clearTimeout(searchDebounceRef.current);
     }, [searchTerm]);
 
     useEffect(() => {
@@ -193,24 +223,6 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
         fetchTerms();
     }, []);
 
-    // Live duplicate check for the physical receipt number (advisory — the backend
-    // auto-increments on a collision rather than rejecting, so this just sets expectations early).
-    useEffect(() => {
-        const normalized = formatPhysicalReceiptNumber(physicalReceiptNo);
-        if (!normalized) {
-            setReceiptCheck(null);
-            return;
-        }
-        const debounceTimer = setTimeout(async () => {
-            try {
-                const res = await api.get(`/invoices/check-physical-receipt/${encodeURIComponent(normalized)}`);
-                setReceiptCheck(res.data);
-            } catch (err) {
-                console.error('Failed to check physical receipt number', err);
-            }
-        }, 400);
-        return () => clearTimeout(debounceTimer);
-    }, [physicalReceiptNo]);
 
     const { saved: savedDrafts, count: savedDraftsCount, saveSale: saveDraft, remove: removeDraft, get: getDraft } = useSavedSales({
         userId: user?.employee_id,
@@ -256,6 +268,10 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
             setLines([...lines, { ...part, part_id: part.part_id, quantity: 1, sale_price: part.last_sale_price || 0 }]);
         }
         setSearchTerm('');
+        setSearchResults([]);
+        setIsSearchOpen(false);
+        setIsSearchFocused(false);
+        resetTypeahead();
     };
 
     const { executePartSave, DuplicateDialog } = usePartDuplicateResolution();
@@ -304,6 +320,9 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
     const handleRapidScan = async (rawValue) => {
         const term = (rawValue ?? searchTerm).trim();
         if (!term) return;
+        if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+        setSearchResults([]);
+        setIsSearchOpen(false);
         try {
             const response = await api.get(`/parts/barcode/${encodeURIComponent(term)}`);
             const enriched = await enrichPartsArray([response.data]);
@@ -317,14 +336,20 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
         }
     };
 
-    const { getInputProps: getSearchInputProps, getItemProps: getSearchItemProps } = useTypeahead({
+    const {
+        getInputProps: getSearchInputProps,
+        getItemProps: getSearchItemProps,
+        reset: resetTypeahead
+    } = useTypeahead({
         items: searchResults,
         onSelect: (item) => addPartToLines(item),
         onEnterUnselected: handleRapidScan,
+        onClose: () => { setIsSearchOpen(false); },
         inputRef: searchInputRef,
         inputId: 'invoicing-search-input',
         listboxId: 'invoicing-search-results'
     });
+    const searchInputProps = getSearchInputProps();
 
     const handleLineChange = (partId, field, value) => {
         const raw = typeof value === 'number' ? value : parseFloat(value);
@@ -397,7 +422,8 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
             taxRateId: selectedTaxRate?.tax_rate_id || null,
             terms,
             paymentMethod,
-            physicalReceiptNo,
+            physicalDoc,
+            physicalReceiptNo: physicalDoc?.physical_receipt_no || null,
             totals: { subtotal, tax, grandTotal: total }
         };
         const entry = saveDraft(cartSnapshot);
@@ -405,7 +431,7 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
             setLastSavedDraftSignature(draftSignature);
             toast.success('Draft saved.');
         }
-    }, [canSaveDraft, lines, selectedCustomer, selectedTaxRate, terms, paymentMethod, physicalReceiptNo, subtotal, tax, total, saveDraft, draftSignature]);
+    }, [canSaveDraft, lines, selectedCustomer, selectedTaxRate, terms, paymentMethod, physicalDoc, subtotal, tax, total, saveDraft, draftSignature]);
 
     const handleRestoreDraft = (id) => {
         const entry = getDraft(id);
@@ -431,7 +457,11 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
         if (taxRate) setSelectedTaxRate(taxRate);
         if (cart.terms !== undefined) setTerms(cart.terms);
         if (cart.paymentMethod) setPaymentMethod(cart.paymentMethod);
-        if (cart.physicalReceiptNo !== undefined) setPhysicalReceiptNo(cart.physicalReceiptNo);
+        if (cart.physicalDoc !== undefined) {
+            setPhysicalDoc(cart.physicalDoc);
+        } else if (cart.physicalReceiptNo !== undefined) {
+            setPhysicalDoc(cart.physicalReceiptNo ? { recording_method: 'PAPER', physical_receipt_no: cart.physicalReceiptNo } : null);
+        }
         removeDraft(id);
         setIsDraftsModalOpen(false);
         toast.success('Draft restored.');
@@ -501,7 +531,8 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
                 notebook_covered_amount: Number(notebookCoveredAmount) } : {}),
             terms: terms,
             payment_terms_days: parsePaymentTermsDays(terms),
-            physical_receipt_no: formatPhysicalReceiptNumber(physicalReceiptNo) || null,
+            physical_receipt_no: physicalDoc?.recording_method === 'PAPER' ? (physicalDoc.physical_receipt_no || null) : null,
+            physical_document: physicalDoc,
             tax_rate_id: selectedTaxRate?.tax_rate_id || null,
             lines: lines.map(line => ({
                 part_id: line.part_id,
@@ -522,6 +553,7 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
                 setNotebookReceiptId('');
                 setNotebookCoveredAmount('');
                 setSelectedCustomer('');
+                setPhysicalDoc(null);
                 setTerms(defaultPaymentTermsDays);
                 setLastSavedDraftSignature(null);
                 showViewInvoiceToast(response.data?.invoice_number);
@@ -534,18 +566,20 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
                 return 'Failed to create invoice.';
             },
         });
-    }, [selectedCustomer, lines, customers, terms, settings, defaultPaymentTermsDays, paymentMethod, physicalReceiptNo, selectedTaxRate, user, total, showViewInvoiceToast, notebookReceiptId, notebookCoveredAmount]);
+    }, [selectedCustomer, lines, customers, terms, settings, defaultPaymentTermsDays, paymentMethod, physicalDoc, selectedTaxRate, user, total, showViewInvoiceToast, notebookReceiptId, notebookCoveredAmount]);
 
     // Handle split payment confirmation for invoicing
     const handleConfirmSplitPayment = async (payments, physicalReceiptNo, { employeeId } = {}) => {
         try {
+            const chosenPrn = physicalDoc?.recording_method === 'PAPER' ? (physicalDoc.physical_receipt_no || null) : (physicalReceiptNo ? formatPhysicalReceiptNumber(physicalReceiptNo) : null);
             // Create the invoice with payments (atomic single-step)
             const invoicePayload = {
                 customer_id: selectedCustomer,
                 employee_id: employeeId || user.employee_id,
                 terms: terms,
                 payment_terms_days: parsePaymentTermsDays(terms),
-                physical_receipt_no: formatPhysicalReceiptNumber(physicalReceiptNo),
+                physical_receipt_no: chosenPrn,
+                physical_document: physicalDoc,
                 tax_rate_id: selectedTaxRate?.tax_rate_id || null,
                 lines: lines.map(line => ({
                     part_id: line.part_id,
@@ -560,7 +594,7 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
                     // The line's own reference wins: a cheque number is the
                     // instrument's identity and must not be overwritten with the
                     // physical receipt number, which is already sent separately.
-                    reference: p.reference || formatPhysicalReceiptNumber(physicalReceiptNo)
+                    reference: p.reference || chosenPrn
                 }))
             };
 
@@ -568,13 +602,14 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
             const returnedPhysicalReceiptNo = invoiceResponse.data.physical_receipt_no;
 
             // Check if physical receipt number was auto-incremented
-            if (returnedPhysicalReceiptNo && returnedPhysicalReceiptNo !== formatPhysicalReceiptNumber(physicalReceiptNo)) {
+            if (returnedPhysicalReceiptNo && returnedPhysicalReceiptNo !== chosenPrn) {
                 toast.success(`Invoice created! Physical receipt number was auto-incremented to: ${returnedPhysicalReceiptNo}`);
             }
 
             // Success - reset form
             setLines([]);
             setSelectedCustomer('');
+            setPhysicalDoc(null);
             setTerms(defaultPaymentTermsDays);
             setLastSavedDraftSignature(null);
             setIsSplitPaymentModalOpen(false);
@@ -611,6 +646,21 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
         window.addEventListener('keydown', onKey);
         return () => window.removeEventListener('keydown', onKey);
     }, [selectedCustomer, lines, handlePostInvoice]);
+
+    // Keyboard shortcut (Ctrl+F / Cmd+F) to focus search bar
+    useEffect(() => {
+        const onKey = (e) => {
+            const isMac = /Mac|iPod|iPhone|iPad/.test(navigator.platform);
+            if ((isMac ? e.metaKey : e.ctrlKey) && (e.key === 'f' || e.key === 'F')) {
+                e.preventDefault();
+                searchInputRef.current?.focus();
+            } else if (e.key === 'Escape' && isSearchOpen) {
+                setIsSearchOpen(false);
+            }
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, [isSearchOpen]);
 
     if (loading) return <p className="text-gray-500 dark:text-slate-400">Loading data...</p>;
 
@@ -717,21 +767,18 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
                         <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-2 flex items-center gap-1">
                             Physical Receipt No.
                             <InfoTip label="Physical Receipt No.">
-                                The number from your pre-printed paper receipt book, so the system record matches the paper copy the customer receives. It's normalized automatically (e.g. "si 4521" becomes "SI-4521") and must be unique.
+                                Select paper document series or Notebook. Suggested numbers follow your configured series sequence and can be reviewed before posting.
                             </InfoTip>
                         </label>
-                        <input
-                            type="text"
-                            value={physicalReceiptNo}
-                            onChange={e => setPhysicalReceiptNo(e.target.value)}
-                            className={`w-full px-3 py-2 rounded-lg shadow-xs bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 placeholder:text-gray-400 dark:placeholder:text-slate-500 focus:ring-primary-500 focus:border-primary-500 text-sm ${receiptCheck?.taken ? 'border-warning-500 dark:border-warning-600' : 'border-gray-300 dark:border-slate-600'}`}
-                            placeholder={settings?.RECEIPT_NO_HELP_TEXT || 'Enter receipt number'}
+                        <PhysicalDocumentControl
+                            context="INVOICING"
+                            value={physicalDoc}
+                            onChange={setPhysicalDoc}
+                            onTaxRateSelect={(taxRateId) => {
+                                const rate = taxRates.find(r => r.tax_rate_id === taxRateId);
+                                if (rate) setSelectedTaxRate(rate);
+                            }}
                         />
-                        {receiptCheck?.taken && (
-                            <p className="mt-1 text-xs text-warning-700 dark:text-warning-400">
-                                "{receiptCheck.normalized}" is already used on another invoice — it will be auto-assigned the next available number when posted.
-                            </p>
-                        )}
                     </div>
                     <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-2 flex items-center gap-1">
@@ -762,44 +809,90 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
                 </div>
                 
                 {/* Add Part Section */}
-                <div className="relative">
+                <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-2">Add Items</label>
                     <div className="flex items-center space-x-2">
-                        <div className="relative flex-grow">
+                        <div className="relative flex-grow" ref={searchContainerRef}>
                             <SearchBar
-                                {...getSearchInputProps()}
+                                {...searchInputProps}
+                                aria-expanded={isSearchOpen && searchResults.length > 0}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'ArrowDown' && !isSearchOpen && searchResults.length > 0) {
+                                        setIsSearchOpen(true);
+                                    }
+                                    searchInputProps.onKeyDown?.(e);
+                                }}
                                 ref={searchInputRef}
                                 value={searchTerm}
-                                onChange={setSearchTerm}
-                                onClear={() => setSearchTerm('')}
-                                placeholder="Search by part name, SKU, or application... (Enter to scan barcode/SKU)"
+                                onChange={(val) => {
+                                    setSearchTerm(val);
+                                    if (val.trim()) {
+                                        setIsSearchOpen(true);
+                                    } else {
+                                        setIsSearchOpen(false);
+                                        setSearchResults([]);
+                                    }
+                                }}
+                                onFocus={() => {
+                                    setIsSearchFocused(true);
+                                    if (searchTerm.trim() && searchResults.length > 0) {
+                                        setIsSearchOpen(true);
+                                    }
+                                }}
+                                onClear={() => {
+                                    setSearchTerm('');
+                                    setSearchResults([]);
+                                    setIsSearchOpen(false);
+                                    setIsSearchFocused(false);
+                                    resetTypeahead();
+                                }}
+                                placeholder="Search by part name, SKU, or application (Ctrl+F)... (Enter to scan barcode/SKU)"
                             />
+                            {isSearchOpen && searchResults.length > 0 && (
+                                <div id="invoicing-search-results-container" className="absolute z-20 w-full bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg mt-1 shadow-lg overflow-hidden flex flex-col">
+                                    <div className="flex items-center justify-between px-3 py-1.5 bg-gray-50 dark:bg-slate-700/60 border-b border-gray-200 dark:border-slate-700 text-xs text-gray-500 dark:text-slate-400">
+                                        <span>
+                                            {searchResults.length} {searchResults.length === 1 ? 'part' : 'parts'} found
+                                        </span>
+                                        <button
+                                            type="button"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setIsSearchOpen(false);
+                                            }}
+                                            className="text-gray-400 hover:text-gray-600 dark:hover:text-slate-200 text-xs px-1.5 py-0.5 rounded hover:bg-gray-200 dark:hover:bg-slate-600 transition flex items-center gap-1 cursor-pointer"
+                                            title="Minimize / Close (Esc)"
+                                        >
+                                            <span>Minimize</span>
+                                            <kbd className="text-[10px] font-mono bg-white dark:bg-slate-800 px-1 py-0.2 border border-gray-300 dark:border-slate-600 rounded">Esc</kbd>
+                                        </button>
+                                    </div>
+                                    <ul id="invoicing-search-results" className="max-h-60 overflow-y-auto scrollbar-thin divide-y divide-gray-100 dark:divide-slate-700" role="listbox">
+                                        {searchResults.map((part, index) => {
+                                            const itemProps = getSearchItemProps(index);
+                                            return (
+                                                <li key={part.part_id} {...itemProps} className={`px-4 py-3 cursor-pointer transition-colors ${itemProps['aria-selected'] ? 'bg-primary-100 dark:bg-primary-900/40' : 'hover:bg-primary-50 dark:hover:bg-slate-700/50'}`}>
+                                                    <div className="flex items-baseline justify-between">
+                                                        <div className="flex items-baseline space-x-2 flex-1 min-w-0">
+                                                            <div className="text-sm font-medium text-gray-900 dark:text-slate-100 truncate">{part.display_name}</div>
+                                                            {part.applications && <div className="text-xs text-gray-500 dark:text-slate-400 truncate">{formatApplicationText(part.applications, { style: 'searchSuggestion' })}</div>}
+                                                        </div>
+                                                        <div className="text-sm font-semibold text-gray-700 dark:text-slate-300 ml-4 font-mono">
+                                                            {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{part.last_sale_price ? Number(part.last_sale_price).toFixed(2) : '0.00'}
+                                                        </div>
+                                                    </div>
+                                                </li>
+                                            );
+                                        })}
+                                    </ul>
+                                </div>
+                            )}
                         </div>
                         <button onClick={() => setIsNewPartModalOpen(true)} className="bg-primary-50 dark:bg-primary-950/30 text-primary-700 dark:text-primary-300 border border-primary-200 dark:border-primary-800 px-4 py-2 rounded-lg font-semibold hover:bg-primary-100 dark:hover:bg-primary-900/40 transition whitespace-nowrap flex items-center text-sm shadow-xs">
                             <Icon path={ICONS.plus} className="h-5 w-5 mr-2" />
                             New Part
                         </button>
                     </div>
-                    {searchResults.length > 0 && (
-                        <ul id="invoicing-search-results" className="absolute z-10 w-full bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg mt-1 shadow-lg max-h-60 overflow-y-auto scrollbar-thin divide-y divide-gray-100 dark:divide-slate-700" role="listbox">
-                            {searchResults.map((part, index) => {
-                                const itemProps = getSearchItemProps(index);
-                                return (
-                                    <li key={part.part_id} {...itemProps} className={`px-4 py-3 cursor-pointer transition-colors ${itemProps['aria-selected'] ? 'bg-primary-100 dark:bg-primary-900/40' : 'hover:bg-primary-50 dark:hover:bg-slate-700/50'}`}>
-                                        <div className="flex items-baseline justify-between">
-                                            <div className="flex items-baseline space-x-2 flex-1 min-w-0">
-                                                <div className="text-sm font-medium text-gray-900 dark:text-slate-100 truncate">{part.display_name}</div>
-                                                {part.applications && <div className="text-xs text-gray-500 dark:text-slate-400 truncate">{formatApplicationText(part.applications, { style: 'searchSuggestion' })}</div>}
-                                            </div>
-                                            <div className="text-sm font-semibold text-gray-700 dark:text-slate-300 ml-4 font-mono">
-                                                {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{part.last_sale_price ? Number(part.last_sale_price).toFixed(2) : '0.00'}
-                                            </div>
-                                        </div>
-                                    </li>
-                                );
-                            })}
-                        </ul>
-                    )}
                 </div>
 
                 {/* Invoice Lines Table */}
@@ -962,8 +1055,8 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
                     onClose={() => setIsSplitPaymentModalOpen(false)}
                     totalDue={total || 0}
                     onConfirm={handleConfirmSplitPayment}
-                    physicalReceiptNo={physicalReceiptNo}
-                    onPhysicalReceiptChange={setPhysicalReceiptNo}
+                    recordingMethod={physicalDoc?.recording_method || null}
+                    physicalReceiptNo={physicalDoc?.recording_method === 'PAPER' ? (physicalDoc.physical_receipt_no || '') : ''}
                     requirePhysicalReceipt={true}
                     employeeId={user?.employee_id}
                     terms={terms}

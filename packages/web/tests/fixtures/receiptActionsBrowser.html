@@ -1,0 +1,25 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Sales History Receipt Actions</title></head>
+<body><div id="root"></div>
+<script type="module">
+    import React from 'react';
+    import { createRoot } from 'react-dom/client';
+    import { AuthProvider } from '../../src/contexts/AuthContext.jsx';
+    import { SettingsProvider } from '../../src/contexts/SettingsContext.jsx';
+    import InvoiceDetailsModal from '../../src/components/refunds/InvoiceDetailsModal.jsx';
+    import '../../src/index.css';
+    const root = createRoot(document.getElementById('root'));
+    let count = 0;
+    window.mountReceiptDetails = (invoice, permissions = null) => {
+        count++;
+        localStorage.setItem('userSession', JSON.stringify({ token: 'fixture-token',
+            user: { employee_id: 1, permission_level_id: permissions ? 1 : 10, username: 'tester' },
+            permissions: permissions || [] }));
+        window.receiptRefreshes = 0;
+        window.receiptClosed = false;
+        root.render(React.createElement(AuthProvider, { key: count }, React.createElement(SettingsProvider, null,
+            React.createElement(InvoiceDetailsModal, { isOpen: true, invoice,
+                onClose: () => { window.receiptClosed = true; },
+                onActionSuccess: () => { window.receiptRefreshes++; } }))));
+    };
+</script></body></html>

@@ -13,7 +13,8 @@ jest.mock('../middleware/authMiddleware', () => ({
         req.user = mockUser;
         next();
     },
-    hasPermission: () => (req, res, next) => next()
+    hasPermission: () => (req, res, next) => next(),
+    userHasPermission: () => false
 }));
 
 const app = express();
@@ -27,10 +28,21 @@ describe('Paperless Matching & Cross-Table Physical Receipt Uniqueness Suite', (
     let uniqueReceiptNo;
 
     let testEmployeeId;
+    let receiptSeriesId;
 
     beforeAll(async () => {
         const uniqueSuffix = Date.now();
-        uniqueReceiptNo = `OR-UNIQ-${uniqueSuffix}`;
+        uniqueReceiptNo = `TUX-${uniqueSuffix}`;
+        const { rows: [type] } = await db.query(
+            `INSERT INTO physical_document_type (code, name, short_label, controlled_category, tax_designation, is_active)
+             VALUES ($1, 'Uniqueness test', 'TUX', 'SALES_INVOICE', 'NON_VAT', true) RETURNING type_id`, [`TUX_${uniqueSuffix}`]
+        );
+        const { rows: [series] } = await db.query(
+            `INSERT INTO physical_document_series (type_id, code, name, prefix) VALUES ($1, $2, 'Uniqueness test', 'TUX') RETURNING series_id`,
+            [type.type_id, `TUX_${uniqueSuffix}`]
+        );
+        receiptSeriesId = series.series_id;
+        await db.query("INSERT INTO physical_document_series_context (series_id, context) VALUES ($1, 'POS')", [receiptSeriesId]);
 
         // Reuse an existing permission_level to avoid sequence/PK conflicts with seeded data
         const plRes = await db.query(`SELECT permission_level_id FROM permission_level LIMIT 1`);
@@ -135,7 +147,7 @@ describe('Paperless Matching & Cross-Table Physical Receipt Uniqueness Suite', (
 
         const res = await request(app)
             .put(`/api/invoices/${inv2Id}/physical-receipt-no`)
-            .send({ physical_receipt_no: uniqueReceiptNo });
+            .send({ physical_receipt_no: uniqueReceiptNo, recording_method: 'PAPER', series_id: receiptSeriesId, reason: 'Correct duplicate receipt', expected_version: 1 });
 
         expect(res.status).toBe(409);
         expect(res.body.message).toMatch(/already exists/i);

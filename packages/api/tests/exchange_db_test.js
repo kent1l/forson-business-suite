@@ -22,6 +22,7 @@
 
 const db = require('../db');
 const { processExchange, ExchangeError } = require('../services/exchangeService');
+const physical = require('../services/physicalDocumentService');
 
 let failures = 0;
 
@@ -63,6 +64,17 @@ async function run() {
 
     const employeeId = employee.employee_id;
     const taxRateId = zeroRate.tax_rate_id;
+    let receiptSerial = stamp;
+    const { rows: [receiptType] } = await client.query(
+      `INSERT INTO physical_document_type (code, name, short_label, controlled_category, tax_designation, is_active)
+       VALUES ($1, 'Exchange receipts test', 'XQA', 'SALES_INVOICE', 'NON_VAT', true) RETURNING type_id`, [`XQA_${stamp}`]
+    );
+    const { rows: [receiptSeries] } = await client.query(
+      `INSERT INTO physical_document_series (type_id, code, name, prefix) VALUES ($1, $2, 'Exchange receipts test', 'XQA') RETURNING series_id`,
+      [receiptType.type_id, `XQA_${stamp}`]
+    );
+    await client.query("INSERT INTO physical_document_series_context (series_id, context) VALUES ($1, 'POS')", [receiptSeries.series_id]);
+    await client.query('INSERT INTO physical_document_series_tax (series_id, tax_rate_id) VALUES ($1, $2)', [receiptSeries.series_id, taxRateId]);
 
     const mkPart = async (label, price) => {
       const { rows: [part] } = await client.query(
@@ -97,7 +109,17 @@ async function run() {
          VALUES ($1, $2, $3, $4, $5, $6, $7, 0, $8, 0, false) RETURNING invoice_line_id`,
         [inv.invoice_id, partId, qty, price, round2(price * 0.6), discountAmount, taxRateId, total]
       );
-      return { invoiceId: inv.invoice_id, invoiceNumber, lineId: line.invoice_line_id };
+      const reference = `XQA-${++receiptSerial}`;
+      const assignment = await physical.postPhysicalDocument(client, {
+        recording_method: 'PAPER', series_id: receiptSeries.series_id, physical_receipt_no: reference,
+        source_type: 'INVOICE', source_id: inv.invoice_id, employee_id: employeeId,
+      });
+      await client.query(
+        `UPDATE invoice SET recording_method = 'PAPER', physical_receipt_no = $2,
+          physical_document_type_id = $3, physical_document_series_id = $4, physical_document_registry_id = $5 WHERE invoice_id = $1`,
+        [inv.invoice_id, reference, receiptType.type_id, receiptSeries.series_id, assignment.registry_id]
+      );
+      return { invoiceId: inv.invoice_id, invoiceNumber, lineId: line.invoice_line_id, reference, registryId: assignment.registry_id };
     };
 
     const invoiceRow = async (invoiceId) => {
@@ -134,10 +156,11 @@ async function run() {
     // ── Test Case 1: Even exchange (₱500 ↔ ₱500) ──────────────────────────
     console.log('\nCase 1: Even exchange');
     {
-      const { invoiceId, lineId } = await mkOriginalInvoice(fixtureCustomer, part500, 1, 500);
+      const { invoiceId, lineId, reference, registryId } = await mkOriginalInvoice(fixtureCustomer, part500, 1, 500);
       const before = await ledgerBalance(fixtureCustomer);
 
       const result = await processExchange(client, {
+        physical_document: { recording_method: 'PAPER', series_id: receiptSeries.series_id, physical_receipt_no: `XQA-${++receiptSerial}` },
         original_invoice_id: invoiceId, employee_id: employeeId,
         returned_lines: [{ invoice_line_id: lineId, quantity: 1, is_defective: false }],
         replacement_lines: [{ part_id: part500, quantity: 1, sale_price: 500 }],
@@ -146,6 +169,13 @@ async function run() {
       assert(result.net_differential === 0, `net_differential expected 0, got ${result.net_differential}`);
       assert(result.amount_due === 0, `amount_due expected 0, got ${result.amount_due}`);
       assert(result.leftover_credit === 0, `leftover_credit expected 0, got ${result.leftover_credit}`);
+      const { rows: [originalPaper] } = await client.query('SELECT state FROM physical_document_registry WHERE registry_id = $1', [registryId]);
+      const { rows: [replacementPaper] } = await client.query(
+        `SELECT r.state, i.physical_receipt_no FROM invoice i JOIN physical_document_registry r ON r.registry_id = i.physical_document_registry_id
+         WHERE i.invoice_id = $1`, [result.invoice.invoice_id]
+      );
+      assert(originalPaper.state === 'ISSUED', 'exchange preserves original paper occupancy');
+      assert(replacementPaper.state === 'ISSUED' && replacementPaper.physical_receipt_no !== reference, 'replacement uses its own registered paper receipt');
 
       const newInv = await invoiceRow(result.invoice.invoice_id);
       assert(newInv.status === 'Paid', `new invoice status expected 'Paid', got '${newInv.status}'`);
@@ -187,6 +217,7 @@ async function run() {
       const { invoiceId, lineId } = await mkOriginalInvoice(fixtureCustomer, part500, 1, 500);
 
       const result = await processExchange(client, {
+        physical_document: { recording_method: 'NOTEBOOK' },
         original_invoice_id: invoiceId, employee_id: employeeId,
         returned_lines: [{ invoice_line_id: lineId, quantity: 1, is_defective: false }],
         replacement_lines: [{ part_id: part800, quantity: 1, sale_price: 800 }],
@@ -218,6 +249,7 @@ async function run() {
       const before = await ledgerBalance(onAccountCustomer);
 
       const result = await processExchange(client, {
+        physical_document: { recording_method: 'NOTEBOOK' },
         original_invoice_id: invoiceId, employee_id: employeeId,
         returned_lines: [{ invoice_line_id: lineId, quantity: 1, is_defective: false }],
         replacement_lines: [{ part_id: part800, quantity: 1, sale_price: 800 }],
@@ -244,6 +276,7 @@ async function run() {
       const before = await ledgerBalance(onAccountCustomer);
 
       const result = await processExchange(client, {
+        physical_document: { recording_method: 'NOTEBOOK' },
         original_invoice_id: invoiceId, employee_id: employeeId,
         returned_lines: [{ invoice_line_id: lineId, quantity: 1, is_defective: false }],
         replacement_lines: [{ part_id: part350, quantity: 1, sale_price: 350 }],
@@ -276,6 +309,7 @@ async function run() {
       // to what this case checks, so just dispose of it as a cash payout to
       // keep the settlement path out of the way.
       const result = await processExchange(client, {
+        physical_document: { recording_method: 'NOTEBOOK' },
         original_invoice_id: invoiceId, employee_id: employeeId,
         returned_lines: [{ invoice_line_id: lineId, quantity: 1, is_defective: false }],
         replacement_lines: [{ part_id: part350, quantity: 1, sale_price: 350 }],
@@ -292,6 +326,7 @@ async function run() {
 
       const err = await expectRejection(
         processExchange(client, {
+        physical_document: { recording_method: 'NOTEBOOK' },
           original_invoice_id: invoiceId, employee_id: employeeId,
           returned_lines: [{ invoice_line_id: lineId, quantity: 2, is_defective: false }],
           replacement_lines: [{ part_id: part350, quantity: 1, sale_price: 350 }],
@@ -307,6 +342,7 @@ async function run() {
       const { invoiceId, lineId } = await mkOriginalInvoice(fixtureCustomer, part500, 1, 500);
 
       const result = await processExchange(client, {
+        physical_document: { recording_method: 'NOTEBOOK' },
         original_invoice_id: invoiceId, employee_id: employeeId,
         returned_lines: [{ invoice_line_id: lineId, quantity: 1, is_defective: true }],
         replacement_lines: [{ part_id: part500, quantity: 1, sale_price: 500 }],
@@ -321,6 +357,23 @@ async function run() {
       assert(cnLine.is_defective === true, `expected credit_note_line.is_defective = true, got ${cnLine.is_defective}`);
     }
 
+    console.log('\nCase 8: Duplicate replacement paper rejects without renumbering or partial financial writes');
+    {
+      const original = await mkOriginalInvoice(fixtureCustomer, part500, 1, 500);
+      await client.query('SAVEPOINT duplicate_receipt');
+      const error = await expectRejection(processExchange(client, {
+        physical_document: { recording_method: 'PAPER', series_id: receiptSeries.series_id, physical_receipt_no: original.reference },
+        original_invoice_id: original.invoiceId, employee_id: employeeId,
+        returned_lines: [{ invoice_line_id: original.lineId, quantity: 1, is_defective: false }],
+        replacement_lines: [{ part_id: part500, quantity: 1, sale_price: 500 }],
+      }), 'already issued');
+      assert(error?.code === 'RECEIPT_NUMBER_TAKEN', 'duplicate paper returns a recoverable conflict');
+      await client.query('ROLLBACK TO SAVEPOINT duplicate_receipt');
+      const { rows: [count] } = await client.query('SELECT count(*)::int AS n FROM credit_note WHERE invoice_id = $1', [original.invoiceId]);
+      assert(count.n === 0, 'duplicate paper leaves no partial credit note');
+      const { rows: [paper] } = await client.query('SELECT state, canonical_full_reference FROM physical_document_registry WHERE registry_id = $1', [original.registryId]);
+      assert(paper.state === 'ISSUED' && paper.canonical_full_reference === original.reference, 'original paper identity survives unchanged');
+    }
     if (failures === 0) {
       console.log('\nexchange_db_test: all assertions passed');
     } else {

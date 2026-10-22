@@ -110,18 +110,20 @@ const MainLayout = ({ user, onLogout, onNavigate, currentPage, pageState, posLin
             case 'pay_components': return <PayComponentsPage />;
             case 'work_schedules': return <WorkSchedulesPage />;
             case 'my_pay': return <MyPayslipsPage />;
-            case 'settings': return <SettingsPage user={user} />;
+            case 'settings': return <SettingsPage user={user} onNavigate={onNavigate} />;
             default: return <Dashboard />;
         }
     };
 
 
+    const fullScreen = currentPage === 'settings';
+
     return (
         <div className="flex h-screen bg-slate-50 dark:bg-slate-950 font-sans text-gray-800 dark:text-slate-100">
-            <Sidebar user={user} onNavigate={onNavigate} currentPage={currentPage} isOpen={sidebarOpen} setIsOpen={setSidebarOpen} />
+            {!fullScreen && <Sidebar user={user} onNavigate={onNavigate} currentPage={currentPage} isOpen={sidebarOpen} setIsOpen={setSidebarOpen} />}
             <div className="flex-1 flex flex-col overflow-hidden">
-                <Header user={user} onLogout={onLogout} onMenuClick={() => setSidebarOpen(true)} onOpenSearch={() => setPaletteOpen(true)} onNavigate={onNavigate} />
-                {CASH_BOX_ENABLED && <CashSessionBar onNavigate={onNavigate} currentPage={currentPage} />}
+                {!fullScreen && <Header user={user} onLogout={onLogout} onMenuClick={() => setSidebarOpen(true)} onOpenSearch={() => setPaletteOpen(true)} onNavigate={onNavigate} />}
+                {CASH_BOX_ENABLED && !fullScreen && <CashSessionBar onNavigate={onNavigate} currentPage={currentPage} />}
                 <main className="flex-1 overflow-x-hidden overflow-y-auto bg-slate-50 dark:bg-slate-950 p-4 sm:p-6 md:p-8">
                     {renderPage()}
                 </main>

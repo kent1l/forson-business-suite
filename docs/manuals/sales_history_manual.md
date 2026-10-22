@@ -195,11 +195,27 @@ to edit receipt numbers — the button only appears if you have that permission.
 
 1. Open the invoice's details (see above).
 2. Click **Edit Receipt No.**
-3. Type the correct number — it formats automatically as you type (e.g. `SI-1234`, `ABC/5678`).
-4. Click **Save**, or **Cancel** to discard the change.
+3. Choose **Paper receipt**, the configured series, and the correct number (for example `SI-1234`), or explicitly choose **Notebook** if no paper was issued.
+4. If a number was already recorded, choose what happened to that original paper:
+   - **Never used** releases a mistaken assignment. This requires the separate **Release mistakenly assigned unused physical receipt numbers** permission.
+   - **Spoiled** keeps the number blocked because the paper is unusable.
+   - **Already issued** marks it voided and keeps the number blocked.
+5. Enter a reason, review the outcome preview, and click **Save receipt correction**. Cancel discards the form.
+
+Previously assigned numbers and reasons remain under **Receipt history**. Correcting a receipt does not change sale amounts, taxes, payments, or the cashier's next-number continuation. A conflicting number or incompatible series is rejected; the system does not substitute a different paper number. Cancelled invoices retain their receipt history and cannot be reassigned.
 
 **Example:** An invoice was saved with a blank Physical Receipt No.; editing it in and typing
-`SI-4652` saves it correctly formatted as `SI-4652`.
+`SI-4652`, selecting its series, and providing a reason records that paper assignment.
+
+## How To — Void an Invoice and Account for its Paper
+
+1. Open the transaction details and click **Void Invoice**.
+2. Choose the original paper outcome using the same rules above. A transaction without a paper assignment does not need a paper outcome.
+3. Enter the void reason and click **Confirm void**. Stock and A/R reversals and the receipt outcome are committed together.
+
+Spoiled and voided references remain blocked and visible in history. An authorized unused-number release makes the number available without rewinding the sequence. An invoice with issued credit notes cannot be voided again.
+
+**Correct & Restart** asks for this same paper decision at approval. **Exchange Items** preserves the original receipt and requires a separate Paper or Notebook decision for the replacement sale. Refunds, payment settlement, and date corrections preserve the original paper assignment.
 
 ## How To — Process a Refund (Credit Note)
 

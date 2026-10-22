@@ -28,6 +28,7 @@ const POLICY = Object.freeze({
             ['customer_duplicate_suggestion', 'duplicate_customer_id', 'workflow'],
             ['invoice', 'customer_id', 'move'],
             ['customer_payment', 'customer_id', 'move'],
+            ['customer_payment_collection_group', 'customer_id', 'move'],
             ['staged_sale', 'customer_id', 'move'],
             ['ar_adjustment', 'customer_id', 'move'],
             ['ar_adjustment_authorization_log', 'customer_id', 'move'],

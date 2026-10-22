@@ -2,11 +2,11 @@ const express = require('express');
 const db = require('../db');
 const { protect, hasPermission } = require('../middleware/authMiddleware');
 const { getNextDocumentNumber } = require('../helpers/documentNumberGenerator');
-const { formatPhysicalReceiptNumber } = require('../helpers/receiptNumberFormatter');
 const { validatePaymentTerms } = require('../helpers/paymentTermsHelper');
 const { calculateInvoiceTax, storeTaxBreakdown, validateTaxCalculation } = require('../services/taxCalculationService');
 const arLedger = require('../services/arLedgerService');
 const { validateCapturedAt } = require('../services/offlineCaptureService');
+const physicalDocumentService = require('../services/physicalDocumentService');
 
 const router = express.Router();
 
@@ -32,6 +32,12 @@ router.post('/sales/staging', protect, hasPermission('pos:use'), async (req, res
 
     if (!customer_id || !lines || !Array.isArray(lines) || lines.length === 0) {
         return res.status(400).json({ message: 'Missing required staging fields.' });
+    }
+    if ((physical_receipt_no && String(physical_receipt_no).trim().length > 0) || req.body.physical_document) {
+        return res.status(422).json({
+            message: 'Physical receipt assignment is cashier-only at approval time. Partsmen stage sales without assigning physical receipts.',
+            code: 'PARTSMAN_RECEIPT_ASSIGNMENT_PROHIBITED'
+        });
     }
     if (client_ref && !UUID_RE.test(client_ref)) {
         return res.status(400).json({ message: 'client_ref must be a UUID' });
@@ -430,17 +436,15 @@ router.post('/sales/staging/:id/approve-post', protect, hasPermission('invoicing
         const amountPaid = isCreditSale ? 0 : (parseFloat(total_amount) || 0);
         const invoiceStatus = isCreditSale ? 'Unpaid' : 'Paid';
 
-        // Verify and process physical receipt number (prefer user input from approval modal)
-        const prnSource = physical_receipt_no !== undefined ? physical_receipt_no : staged.physical_receipt_no;
-        let prn = formatPhysicalReceiptNumber(prnSource);
-        if (prn) {
-            const existing = await client.query(
-                `SELECT invoice_id FROM invoice WHERE LOWER(physical_receipt_no) = LOWER($1) AND physical_receipt_no IS NOT NULL`,
-                [prn]
-            );
-            if (existing.rows.length > 0) {
-                prn = `${prn}-STG-${id}`;
-            }
+        // Physical document assignment: explicit cashier decision required (no fallback to staged, no auto suffix)
+        const { physical_document } = req.body;
+        const effectiveRecordingMethod = physical_document?.recording_method || (physical_receipt_no ? 'PAPER' : null);
+        if (!effectiveRecordingMethod) {
+            await client.query('ROLLBACK');
+            return res.status(422).json({
+                message: 'Physical document selection (Paper or Notebook) is required for cashier approval.',
+                code: 'RECEIPT_ASSIGNMENT_REQUIRED'
+            });
         }
 
         /*
@@ -485,7 +489,7 @@ router.post('/sales/staging/:id/approve-post', protect, hasPermission('invoicing
             termsValidation.normalizedTerms,
             termsValidation.canonicalDays,
             termsValidation.dueDate,
-            prn,
+            null,
             taxCalculation.tax_calculation_version,
             invoiceDate,
             staged.staged_date,
@@ -493,6 +497,52 @@ router.post('/sales/staging/:id/approve-post', protect, hasPermission('invoicing
         ]);
 
         const invoiceId = invoiceRes.rows[0].invoice_id;
+
+        // Atomic physical document issuance under cashier approval
+        let receiptResult;
+        try {
+            receiptResult = await physicalDocumentService.postPhysicalDocument(client, {
+                recording_method: effectiveRecordingMethod,
+                series_id: physical_document?.series_id ? parseInt(physical_document.series_id, 10) : null,
+                physical_receipt_no: physical_document?.physical_receipt_no || physical_receipt_no,
+                suggestion_token: physical_document?.suggestion_token || null,
+                exception: physical_document?.exception || null,
+                source_type: 'INVOICE',
+                source_id: invoiceId,
+                employee_id: reviewerId,
+                workstation_id: req.body.workstation_id || 'default',
+                context: 'CASHIER_APPROVAL',
+                request_id: req.body.request_id || `approve:staged:${id}`,
+                lines_tax_rate_ids: [staged.tax_rate_id].filter(Boolean),
+            });
+        } catch (receiptErr) {
+            await client.query('ROLLBACK');
+            const statusCode = receiptErr.statusCode || 400;
+            return res.status(statusCode).json({
+                message: receiptErr.message,
+                code: receiptErr.code || 'PHYSICAL_RECEIPT_ERROR'
+            });
+        }
+
+        const prn = receiptResult.canonical_full_reference || null;
+
+        await client.query(
+            `UPDATE public.invoice
+             SET recording_method = $1,
+                 physical_document_type_id = $2,
+                 physical_document_series_id = $3,
+                 physical_document_registry_id = $4,
+                 physical_receipt_no = $5
+             WHERE invoice_id = $6`,
+            [
+                receiptResult.recording_method,
+                receiptResult.type_id || null,
+                receiptResult.series_id || null,
+                receiptResult.registry_id || null,
+                prn,
+                invoiceId
+            ]
+        );
 
         // Ledger: INVOICE_POSTED for credit / on account sales
         if (isCreditSale) {
@@ -603,7 +653,9 @@ router.post('/sales/staging/:id/approve-post', protect, hasPermission('invoicing
         const responseBody = {
             message: 'Staged sale approved and recorded successfully.',
             invoice_id: invoiceId,
-            invoice_number
+            invoice_number,
+            physical_receipt_no: prn,
+            physical_document: receiptResult,
         };
         await cashDrawer.finishSourceRequest(client, sourceRequest, 200, responseBody);
         await client.query('COMMIT');

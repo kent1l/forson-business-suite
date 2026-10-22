@@ -2,6 +2,10 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 require('dotenv').config({ path: path.resolve(__dirname, '../../.env') });
+if (!process.env.JWT_SECRET) {
+    console.error('FATAL: JWT_SECRET is not set. Refusing to start.');
+    process.exit(1);
+}
 const { setupMeiliSearch } = require('./meilisearch-setup');
 const { startMeiliListener } = require('./meili-listener');
 const { startMeiliApplicationsListener } = require('./meili-app-listener');
@@ -98,6 +102,7 @@ registerRoute('/api', './routes/goodsReceiptRoutes');
 // Sales & Customer Modules
 registerRoute('/api', './routes/customerRoutes');
 registerRoute('/api', './routes/invoiceRoutes');
+registerRoute('/api', './routes/physicalDocumentRoutes');
 registerRoute('/api', './routes/paymentRoutes');
 registerRoute('/api', './routes/paymentMethodRoutes');
 registerRoute('/api', './routes/stagedSaleRoutes');

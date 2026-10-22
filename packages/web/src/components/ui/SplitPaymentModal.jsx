@@ -20,7 +20,7 @@ const SplitPaymentModal = ({
     existingPayments = [],
     onConfirm,
     physicalReceiptNo = '',
-    onPhysicalReceiptChange = () => {},
+    recordingMethod = null,
     employeeId = null,
     customerName = '',
     terms = '',
@@ -291,8 +291,12 @@ const SplitPaymentModal = ({
                 if (isChequeMethod(method) && !payment.cheque_date) {
                     errors.push(`Date on cheque (maturity) is required for ${method.name}`);
                 }
-                if (method.config.requires_receipt_no && !physicalReceiptNo.trim()) {
-                    errors.push(`Physical receipt number is required for ${method.name}`);
+                if (method.config.requires_receipt_no) {
+                    if (recordingMethod !== 'PAPER') {
+                        errors.push(`${method.name} requires a paper receipt. Select a receipt series (not Notebook) in the Physical Receipt control.`);
+                    } else if (!physicalReceiptNo.trim()) {
+                        errors.push(`Physical receipt number is required for ${method.name}`);
+                    }
                 }
                 if (!method.config.change_allowed && tenderedAmount > amountPaid) {
                     errors.push(`Change not allowed for ${method.name}`);
@@ -581,16 +585,13 @@ const SplitPaymentModal = ({
                             <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-2">
                                 Physical Receipt Number <span className="text-danger-600">*</span>
                             </label>
-                            <input
-                                type="text"
-                                value={physicalReceiptNo}
-                                onChange={(e) => onPhysicalReceiptChange(e.target.value)}
-                                className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 shadow-sm focus:ring-primary-500 focus:border-primary-500"
-                                placeholder={settings?.RECEIPT_NO_HELP_TEXT || 'Enter pre-printed receipt number'}
-                                required
-                            />
+                            <div className="px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-gray-100 dark:bg-slate-800 text-gray-900 dark:text-slate-100 font-mono text-sm">
+                                {recordingMethod === 'PAPER' && physicalReceiptNo ? physicalReceiptNo : '— not set —'}
+                            </div>
                             <p className="text-xs text-amber-800 dark:text-amber-300 mt-1">
-                                This payment method requires a physical receipt number.
+                                {recordingMethod === 'PAPER'
+                                    ? 'One paper receipt covers this whole invoice. Change it in the Physical Receipt control on the page behind this dialog.'
+                                    : 'This payment method requires a paper receipt. Notebook is not allowed; close this dialog and select a series in the Physical Receipt control.'}
                             </p>
                         </div>
                     )}

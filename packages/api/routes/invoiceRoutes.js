@@ -12,6 +12,8 @@ const walletService = require('../services/customerWalletService');
 const arAdjustment = require('../services/arAdjustmentService');
 const arAdjustmentAuth = require('../services/arAdjustmentAuthService');
 const { normalizeStatusFilter } = require('../helpers/invoiceStatusFilter');
+const physicalDocumentService = require('../services/physicalDocumentService');
+const invoiceReceipt = require('../services/invoiceReceiptService');
 const router = express.Router();
 
 // Shared WHERE-clause builder for the invoice listing/export endpoints.
@@ -338,13 +340,20 @@ router.get('/invoices/:id/lines-with-refunds', protect, hasPermission('invoicing
 });
 
 // GET /invoices/check-physical-receipt/:prn - live-check whether a physical receipt number is already taken
-// (the create-invoice flow below auto-increments on a collision rather than rejecting, so this is advisory only)
 router.get('/invoices/check-physical-receipt/:prn', protect, hasPermission('invoicing:create'), async (req, res) => {
     const prn = formatPhysicalReceiptNumber(req.params.prn);
     if (!prn) {
         return res.json({ taken: false, normalized: null });
     }
+    const seriesId = req.query.series_id ? parseInt(req.query.series_id, 10) : null;
     try {
+        if (seriesId) {
+            const { rows } = await db.query(
+                `SELECT public.is_series_physical_receipt_no_taken($1, $2) AS is_taken`,
+                [seriesId, prn]
+            );
+            return res.json({ taken: !!rows[0]?.is_taken, normalized: prn, series_id: seriesId });
+        }
         const { rows } = await db.query(
             `SELECT public.is_physical_receipt_no_taken($1) AS is_taken`,
             [prn]
@@ -566,41 +575,16 @@ router.post('/invoices', protect, hasPermission('invoicing:create'), async (req,
             }
         }
 
-        // Normalize physical receipt number: trim and treat empty as null
-        let prn = formatPhysicalReceiptNumber(physical_receipt_no);
-        
-        // If a physical receipt number is provided, ensure it's unique
-        if (prn) {
-            let attempts = 0;
-            let basePrn = prn;
-            let isUnique = false;
-            
-            while (!isUnique && attempts < 10) {
-                const { rows: checkRows } = await client.query(
-                    `SELECT public.is_physical_receipt_no_taken($1) AS is_taken`,
-                    [prn]
-                );
-                
-                if (!checkRows[0]?.is_taken) {
-                    isUnique = true;
-                } else {
-                    attempts++;
-                    // Auto-increment: DR-4652 -> DR-4653, DR-4654, etc.
-                    const match = basePrn.match(/^(.+?)(\d+)$/);
-                    if (match) {
-                        const prefix = match[1];
-                        const number = parseInt(match[2]) + attempts;
-                        prn = `${prefix}${number}`;
-                    } else {
-                        // If no number pattern, append attempt number
-                        prn = `${basePrn}-${attempts}`;
-                    }
-                }
-            }
-            
-            if (!isUnique) {
-                throw new Error('Unable to generate unique physical receipt number after multiple attempts');
-            }
+        const { physical_document } = req.body;
+        const effectiveRecordingMethod = physical_document?.recording_method || (physical_receipt_no ? 'PAPER' : 'NOTEBOOK');
+        const candidatePrn = formatPhysicalReceiptNumber(physical_document?.physical_receipt_no || physical_receipt_no);
+
+        if (effectiveRecordingMethod === 'PAPER' && !candidatePrn) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({
+                message: 'Physical receipt number is required when recording method is Paper.',
+                code: 'RECEIPT_ASSIGNMENT_REQUIRED'
+            });
         }
 
         const invoiceQuery = `
@@ -608,12 +592,59 @@ router.post('/invoices', protect, hasPermission('invoicing:create'), async (req,
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, $3)
             RETURNING invoice_id;
         `;
-    // Debug: log computed financials to aid troubleshooting
-    console.log(`Creating invoice ${invoice_number} - total_amount=${total_amount}, subtotal_ex_tax=${subtotal_ex_tax}, tax_total=${tax_total}, amount_paid=${paid}, status=${status}, payment_terms_days=${canonicalDays}, due_date=${dueDate}`);
+        // Debug: log computed financials to aid troubleshooting
+        console.log(`Creating invoice ${invoice_number} - total_amount=${total_amount}, subtotal_ex_tax=${subtotal_ex_tax}, tax_total=${tax_total}, amount_paid=${paid}, status=${status}, payment_terms_days=${canonicalDays}, due_date=${dueDate}`);
 
-    // Store numeric paid amount and computed status with tax breakdown
-    const invoiceResult = await client.query(invoiceQuery, [invoice_number, customer_id, employee_id, total_amount, subtotal_ex_tax, tax_total, paid, status, normalizedTerms, canonicalDays, dueDate, prn, taxCalculation.tax_calculation_version]);
+        // Store numeric paid amount and computed status with tax breakdown
+        const invoiceResult = await client.query(invoiceQuery, [invoice_number, customer_id, employee_id, total_amount, subtotal_ex_tax, tax_total, paid, status, normalizedTerms, canonicalDays, dueDate, null, taxCalculation.tax_calculation_version]);
         const newInvoiceId = invoiceResult.rows[0].invoice_id;
+
+        // Atomic physical document issuance
+        let receiptResult;
+        try {
+            receiptResult = await physicalDocumentService.postPhysicalDocument(client, {
+                recording_method: effectiveRecordingMethod,
+                series_id: physical_document?.series_id ? parseInt(physical_document.series_id, 10) : null,
+                physical_receipt_no: candidatePrn,
+                suggestion_token: physical_document?.suggestion_token || null,
+                exception: physical_document?.exception || null,
+                source_type: 'INVOICE',
+                source_id: newInvoiceId,
+                employee_id,
+                token_employee_id: req.user?.employee_id ?? employee_id,
+                workstation_id: req.body.workstation_id || 'default',
+                context: 'POS',
+                request_id: req.body.request_id || req.headers['x-request-id'] || null,
+                lines_tax_rate_ids: lines.map(l => l.tax_rate_id).filter(Boolean),
+            });
+        } catch (receiptErr) {
+            await client.query('ROLLBACK');
+            const statusCode = receiptErr.statusCode || 400;
+            return res.status(statusCode).json({
+                message: receiptErr.message,
+                code: receiptErr.code || 'PHYSICAL_RECEIPT_ERROR'
+            });
+        }
+
+        const prn = receiptResult.canonical_full_reference || null;
+
+        await client.query(
+            `UPDATE public.invoice
+             SET recording_method = $1,
+                 physical_document_type_id = $2,
+                 physical_document_series_id = $3,
+                 physical_document_registry_id = $4,
+                 physical_receipt_no = $5
+             WHERE invoice_id = $6`,
+            [
+                receiptResult.recording_method,
+                receiptResult.type_id || null,
+                receiptResult.series_id || null,
+                receiptResult.registry_id || null,
+                prn,
+                newInvoiceId
+            ]
+        );
 
         if (correctionCase) {
             await client.query(
@@ -1001,7 +1032,22 @@ router.put('/invoices/payments/:payment_id/settle', protect, hasPermission('invo
     try {
         await client.query('BEGIN');
 
-        // Update payment status to settled
+        // Match void/refund lock order: invoice first, then its payment.
+        const { rows: [sourceInvoice] } = await client.query(
+            `SELECT i.invoice_id, i.status FROM invoice i
+             WHERE i.invoice_id = (SELECT invoice_id FROM invoice_payments WHERE payment_id = $1)
+             FOR UPDATE OF i`, [payment_id]
+        );
+        if (!sourceInvoice) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ message: 'Payment not found.' });
+        }
+        if (sourceInvoice.status === 'Cancelled') {
+            await client.query('ROLLBACK');
+            return res.status(409).json({ message: 'Cannot settle a payment on a voided invoice.' });
+        }
+
+        // Update payment status to settled.
         const { rows: paymentRows } = await client.query(`
             UPDATE invoice_payments
             SET payment_status = 'settled', settled_at = CURRENT_TIMESTAMP
@@ -1063,7 +1109,7 @@ router.delete('/invoices/:id', protect, hasPermission('invoice:delete'), async (
         await client.query('BEGIN');
 
         const { rows: invoiceRows } = await client.query(
-            'SELECT invoice_number, customer_id, status FROM invoice WHERE invoice_id = $1 FOR UPDATE',
+            'SELECT * FROM invoice WHERE invoice_id = $1 FOR UPDATE',
             [id]
         );
         if (invoiceRows.length === 0) {
@@ -1093,6 +1139,8 @@ router.delete('/invoices/:id', protect, hasPermission('invoice:delete'), async (
                 message: 'Cannot void an invoice with issued credit notes. The refund is the final correction for this sale.'
             });
         }
+
+        await invoiceReceipt.voidReceipt(client, invoiceRows[0], req.body || {}, req.user.employee_id, userHasPermission(req, 'invoice:release_receipt_no'));
 
         // Refunds are rejected above, so every sold quantity is reversed once.
         const { rows: lines } = await client.query(`
@@ -1192,10 +1240,9 @@ router.delete('/invoices/:id', protect, hasPermission('invoice:delete'), async (
             });
         }
 
-        // Free the physical receipt number for reuse and mark the invoice voided.
-        // invoice_number and all line/payment/ledger history are preserved intact.
+        // Paper disposition was recorded atomically with the reversal above.
         await client.query(
-            `UPDATE invoice SET status = 'Cancelled', physical_receipt_no = NULL WHERE invoice_id = $1`,
+            `UPDATE invoice SET status = 'Cancelled' WHERE invoice_id = $1`,
             [id]
         );
 
@@ -1204,57 +1251,42 @@ router.delete('/invoices/:id', protect, hasPermission('invoice:delete'), async (
     } catch (err) {
         await client.query('ROLLBACK');
         console.error('Void invoice error:', err.message);
-        res.status(500).json({ message: 'Server error voiding invoice', error: err.message });
+        res.status(err.statusCode || 500).json({ message: err.message || 'Server error voiding invoice', code: err.code });
     } finally {
         client.release();
     }
 });
 
-// PUT /api/invoices/:id/physical-receipt-no - Update physical receipt number
-router.put('/invoices/:id/physical-receipt-no', protect, hasPermission('invoice:edit_receipt_no'), async (req, res) => {
-    const { id } = req.params;
-    const { physical_receipt_no } = req.body;
-
-    if (!id || isNaN(parseInt(id))) {
-        return res.status(400).json({ message: 'Invalid invoice ID.' });
-    }
-
+// Current paper assignment, permitted sales series, and immutable correction history.
+router.get('/invoices/:id/receipt-control', protect, hasPermission(['invoicing:create', 'invoice:edit_receipt_no', 'invoice:delete', 'sales_correction:create', 'sales_correction:approve']), async (req, res) => {
     try {
-        // Normalize physical receipt number: trim and treat empty as null
-        const prn = formatPhysicalReceiptNumber(physical_receipt_no);
+        if (!/^\d+$/.test(req.params.id)) return res.status(400).json({ message: 'Invalid invoice ID.' });
+        res.json(await invoiceReceipt.getSnapshot(Number(req.params.id)));
+    } catch (err) {
+        res.status(err.statusCode || 500).json({ message: err.message, code: err.code });
+    }
+});
 
-        // Check if another invoice or payment already has this physical receipt number
-        if (prn) {
-            const { rows: checkRows } = await db.query(
-                `SELECT public.is_physical_receipt_no_taken($1, $2) AS is_taken`,
-                [prn, parseInt(id)]
-            );
-            if (checkRows[0]?.is_taken) {
-                return res.status(409).json({ message: 'Physical Receipt No already exists. Please use a unique number.' });
-            }
-        }
-
-        // Update the invoice
-        const updateQuery = `
-            UPDATE invoice 
-            SET physical_receipt_no = $1
-            WHERE invoice_id = $2
-            RETURNING invoice_id, physical_receipt_no
-        `;
-        const { rows } = await db.query(updateQuery, [prn, id]);
-
-        if (rows.length === 0) {
+// Correct the assignment without replaying financial entries or ordinary issuance.
+router.put('/invoices/:id/physical-receipt-no', protect, hasPermission('invoice:edit_receipt_no'), async (req, res) => {
+    if (!/^\d+$/.test(req.params.id)) return res.status(400).json({ message: 'Invalid invoice ID.' });
+    const client = await db.getClient();
+    try {
+        await client.query('BEGIN');
+        const { rows: [invoice] } = await client.query('SELECT * FROM public.invoice WHERE invoice_id = $1 FOR UPDATE', [req.params.id]);
+        if (!invoice) {
+            await client.query('ROLLBACK');
             return res.status(404).json({ message: 'Invoice not found.' });
         }
-
-        res.json({ 
-            message: 'Physical receipt number updated successfully.',
-            invoice_id: rows[0].invoice_id,
-            physical_receipt_no: rows[0].physical_receipt_no
-        });
+        const updated = await invoiceReceipt.correctReceipt(client, invoice, req.body || {}, req.user.employee_id,
+            userHasPermission(req, 'invoice:release_receipt_no'));
+        await client.query('COMMIT');
+        res.json({ ...updated, message: 'Physical receipt assignment corrected.' });
     } catch (err) {
-        console.error('Update physical receipt no error:', err.message);
-        res.status(500).json({ message: 'Server error updating physical receipt number.', error: err.message });
+        await client.query('ROLLBACK');
+        res.status(err.statusCode || (err.code === '23505' ? 409 : 500)).json({ message: err.message, code: err.code });
+    } finally {
+        client.release();
     }
 });
 

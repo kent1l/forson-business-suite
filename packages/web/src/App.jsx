@@ -1,5 +1,6 @@
 /* eslint-disable no-unused-vars */
 import { useState, useEffect } from 'react';
+import { flushSync } from 'react-dom';
 import api from './api';
 import { Toaster } from 'react-hot-toast';
 import LoginScreen from './pages/LoginScreen';
@@ -25,8 +26,17 @@ function AppContent() {
     };
 
     const handleNavigate = (page, state = null) => {
-        setCurrentPage(page);
-        setPageState(state);
+        const apply = () => {
+            setCurrentPage(page);
+            setPageState(state);
+        };
+        // Smooth crossfade when entering/leaving the full-screen settings page
+        const crossesSettings = (page === 'settings') !== (currentPage === 'settings');
+        if (crossesSettings && document.startViewTransition) {
+            document.startViewTransition(() => flushSync(apply));
+        } else {
+            apply();
+        }
         recordVisit(page);
     };
 

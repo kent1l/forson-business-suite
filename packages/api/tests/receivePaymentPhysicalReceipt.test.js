@@ -24,9 +24,12 @@ describe('AR Payment Physical Receipt # & SOA Reference Integration Suite', () =
     let testCustomerId;
     let testInvoiceId;
     let testEmployeeId;
+    let testSeriesId;
+    let testReceiptNo;
 
     beforeAll(async () => {
         const uniqueSuffix = Date.now();
+        testReceiptNo = `ORPMT-${uniqueSuffix}`;
         const uniqueEmail = `soareceipt_${uniqueSuffix}@test.com`;
 
         // Reuse an existing permission_level to avoid sequence/PK conflicts with seeded data
@@ -42,6 +45,17 @@ describe('AR Payment Physical Receipt # & SOA Reference Integration Suite', () =
         testEmployeeId = empRes.rows[0].employee_id;
         mockUser.employee_id = testEmployeeId;
         mockUser.user_id = testEmployeeId;
+
+        const { rows: [series] } = await db.query(`
+            INSERT INTO physical_document_series (type_id, code, name, prefix, method, initial_serial, is_active)
+            SELECT type_id, $1, 'Payment reference test', 'ORPMT', 'HIGHEST_PLUS_ONE', $2, true
+            FROM physical_document_type WHERE code = 'COLLECTION_RECEIPT'
+            RETURNING series_id
+        `, [`PAYMENT_REF_${uniqueSuffix}`, uniqueSuffix]);
+        testSeriesId = series.series_id;
+        await db.query(`UPDATE physical_document_type SET is_active = true WHERE code = 'COLLECTION_RECEIPT'`);
+        await db.query(`INSERT INTO physical_document_series_context (series_id, context, workstation_id, is_active)
+            VALUES ($1, 'COLLECTION', 'default', true)`, [testSeriesId]);
 
         const custRes = await db.query(`
             INSERT INTO customer (company_name, first_name, last_name, email, phone, credit_limit)
@@ -105,7 +119,11 @@ describe('AR Payment Physical Receipt # & SOA Reference Integration Suite', () =
                 method_id: 1, // Cash / Bank / Default
                 payment_method: 'cash',
                 reference: 'GCASH-987654321', // Internal tracking ref
-                physical_receipt_no: 'OR-PMT-9988', // Printed physical receipt #
+                physical_document: {
+                    recording_method: 'PAPER',
+                    series_id: testSeriesId,
+                    physical_receipt_no: testReceiptNo,
+                },
                 notes: 'Test receive payment physical receipt',
                 allocations: [
                     { invoice_id: testInvoiceId, amount_allocated: 2000.00 }
@@ -123,7 +141,7 @@ describe('AR Payment Physical Receipt # & SOA Reference Integration Suite', () =
         `, [res.body.payment_id]);
 
         expect(cpRes.rows.length).toBe(1);
-        expect(cpRes.rows[0].physical_receipt_no).toBe('OR-PMT-9988');
+        expect(cpRes.rows[0].physical_receipt_no).toBe(testReceiptNo);
         expect(cpRes.rows[0].reference_number).toBe('GCASH-987654321');
     });
 
@@ -134,9 +152,9 @@ describe('AR Payment Physical Receipt # & SOA Reference Integration Suite', () =
         expect(res.status).toBe(200);
         const paymentRow = res.body.ledger_rows.find(r => r.event_type === 'PAYMENT_SETTLED');
         expect(paymentRow).toBeDefined();
-        expect(paymentRow.physical_receipt_no).toBe('OR-PMT-9988');
-        expect(paymentRow.primary_ref).toBe('OR-PMT-9988');
-        expect(paymentRow.reference).toBe('OR-PMT-9988');
+        expect(paymentRow.physical_receipt_no).toBe(testReceiptNo);
+        expect(paymentRow.primary_ref).toBe(testReceiptNo);
+        expect(paymentRow.reference).toBe(testReceiptNo);
         expect(paymentRow.sub_ref).toMatch(/^PMT-\d{6}-\d{4}$/);
         expect(paymentRow.payment_ref_no).toBe('GCASH-987654321');
     });

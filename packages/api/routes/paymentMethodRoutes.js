@@ -516,11 +516,11 @@ router.post('/invoices/:id/payments', ...invoicePaymentsMiddlewares, async (req,
                 notebookReceiptId: payment.notebook_receipt_id, coveredAmount: payment.notebook_covered_amount, canPost: cashDrawer.userCanPost(req.user) });
         }
 
-        // Update physical receipt number if provided
+        // Update physical receipt number if provided and not already assigned on the invoice
         const formattedReceiptNo = formatPhysicalReceiptNumber(physical_receipt_no);
         if (formattedReceiptNo) {
             await client.query(
-                'UPDATE invoice SET physical_receipt_no = $1 WHERE invoice_id = $2',
+                'UPDATE invoice SET physical_receipt_no = $1 WHERE invoice_id = $2 AND (physical_receipt_no IS NULL OR physical_receipt_no = \'\')',
                 [formattedReceiptNo, invoice_id]
             );
         }

@@ -2,6 +2,7 @@
 
 const db = require('../db');
 const arLedger = require('./arLedgerService');
+const invoiceReceipt = require('./invoiceReceiptService');
 
 const AUTOMATIC_RESOLUTION = 'CANCEL_ONLY';
 
@@ -26,8 +27,7 @@ async function assertFeatureEnabled(client) {
 
 async function getInvoiceState(client, invoiceId, { lock = false } = {}) {
     const { rows: [invoice] } = await client.query(
-        `SELECT i.invoice_id, i.invoice_number, i.customer_id, i.employee_id, i.invoice_date,
-                i.status, i.physical_receipt_no, i.total_amount,
+        `SELECT i.*,
                 COALESCE(p.payment_count, 0)::int AS payment_count,
                 COALESCE(p.settled_amount, 0) AS settled_amount,
                 COALESCE(p.pending_amount, 0) AS pending_amount,
@@ -109,7 +109,8 @@ async function preview(invoiceId) {
     }
 }
 
-async function executeCancelOnly(client, { caseId, invoice, employeeId }) {
+async function executeCancelOnly(client, { caseId, invoice, employeeId, receiptDecision, canRelease }) {
+    await invoiceReceipt.voidReceipt(client, invoice, receiptDecision, employeeId, canRelease);
     const { rows: lines } = await client.query(
         `SELECT part_id, quantity FROM invoice_line WHERE invoice_id = $1 ORDER BY invoice_line_id`,
         [invoice.invoice_id],
@@ -138,9 +139,7 @@ async function executeCancelOnly(client, { caseId, invoice, employeeId }) {
             createdBy: employeeId,
         });
     }
-    // Physical receipt numbers remain attached to the cancelled original.  A
-    // replacement must receive a new identity; this is intentionally different
-    // from the legacy simple-void endpoint.
+    // Paper disposition uses the same audited workflow as ordinary invoice voiding.
     await client.query(`UPDATE invoice SET status = 'Cancelled' WHERE invoice_id = $1`, [invoice.invoice_id]);
 }
 
@@ -183,7 +182,7 @@ async function createCase({ invoiceId, reasonCode, reasonText, requestedBy, idem
     }
 }
 
-async function approveAndExecute(caseId, approverId) {
+async function approveAndExecute(caseId, approverId, receiptDecision = {}, canRelease = false) {
     const client = await db.getClient();
     try {
         await client.query('BEGIN');
@@ -215,7 +214,7 @@ async function approveAndExecute(caseId, approverId) {
             `UPDATE sales_correction_case SET state = 'EXECUTING', approved_by = $2, approved_at = NOW(), executed_at = NOW()
               WHERE correction_case_id = $1`, [caseId, approverId],
         );
-        await executeCancelOnly(client, { caseId, invoice, employeeId: approverId });
+        await executeCancelOnly(client, { caseId, invoice, employeeId: approverId, receiptDecision, canRelease });
         const { rows: [completed] } = await client.query(
             `UPDATE sales_correction_case SET state = 'COMPLETED', completed_at = NOW()
               WHERE correction_case_id = $1 RETURNING *`, [caseId],

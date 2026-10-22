@@ -4,6 +4,7 @@ const express = require('express');
 jest.mock('../middleware/authMiddleware', () => ({
     protect: (req, _res, next) => { req.user = { employee_id: 7 }; next(); },
     hasPermission: () => (_req, _res, next) => next(),
+    userHasPermission: () => false,
 }));
 
 jest.mock('../services/salesCorrectionService', () => ({
@@ -47,6 +48,6 @@ describe('sales correction routes', () => {
         corrections.approveAndExecute.mockResolvedValue({ correction_case_id: 12, state: 'COMPLETED' });
         const res = await request(app).post('/api/sales-corrections/12/approve');
         expect(res.status).toBe(200);
-        expect(corrections.approveAndExecute).toHaveBeenCalledWith(12, 7);
+        expect(corrections.approveAndExecute).toHaveBeenCalledWith(12, 7, {}, false);
     });
 });
