@@ -766,7 +766,7 @@ const SettingsPage = ({ user, onNavigate }) => {
     };
 
     return (
-        <div className="w-full">
+        <div className="w-full settings-enter">
             <div className="flex items-center gap-3 mb-6">
                 <button
                     type="button"
@@ -803,7 +803,7 @@ const SettingsPage = ({ user, onNavigate }) => {
                             <X size={16} /> Exit
                         </button>
                     </header>
-                    <div className="p-4 sm:p-6 lg:p-8">{panels[activeTab]}</div>
+                    <div key={activeTab} className="p-4 sm:p-6 lg:p-8 settings-panel-in">{panels[activeTab]}</div>
                     {showSave && (
                         <form onSubmit={handleSave} className="sticky bottom-0 flex justify-end gap-3 px-4 sm:px-6 lg:px-8 py-3 border-t border-gray-200 dark:border-slate-700 bg-white/90 dark:bg-slate-800/90 backdrop-blur rounded-b-xl">
                             <button type="button" onClick={handleBack} className="px-5 py-2 rounded-lg border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-200 hover:bg-gray-100 dark:hover:bg-slate-700 transition">Cancel</button>
