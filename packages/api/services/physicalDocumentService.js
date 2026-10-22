@@ -256,7 +256,15 @@ async function getOptions({ context, workstation_id = 'default', employee_id }) 
         allow_notebook: true,
     };
 
-    // 2. Get active series eligible for this context
+    // 2. Get active document types configured in application settings
+    const { rows: allActiveTypes } = await db.query(
+        `SELECT type_id, code, name, short_label, controlled_category, tax_designation, default_method, is_active
+         FROM public.physical_document_type
+         WHERE is_active = true
+         ORDER BY name`
+    );
+
+    // 3. Get active series eligible for this context
     const { rows: seriesRows } = await db.query(
         `SELECT s.series_id, s.type_id, s.code, s.name, s.prefix, s.method, s.version,
                 t.code AS type_code, t.name AS type_name, t.short_label, t.controlled_category, t.tax_designation
@@ -272,7 +280,7 @@ async function getOptions({ context, workstation_id = 'default', employee_id }) 
         [context, workstation_id]
     );
 
-    // 3. For each series, load tax mappings
+    // 4. For each series, load tax mappings
     const seriesIds = seriesRows.map(s => s.series_id);
     let taxMappingsBySeries = new Map();
     if (seriesIds.length > 0) {
@@ -297,40 +305,124 @@ async function getOptions({ context, workstation_id = 'default', employee_id }) 
         default_tax_rate_id: (taxMappingsBySeries.get(s.series_id) || []).find(t => t.role === 'DEFAULT_FALLBACK')?.tax_rate_id || null,
     }));
 
-    // 4. Resolve default selection according to policy
+    // 5. Build dynamic choices array entirely from application settings
+    const choices = seriesList.map(s => ({
+        key: String(s.series_id),
+        series_id: s.series_id,
+        type_id: s.type_id,
+        type_code: s.type_code,
+        recording_method: 'PAPER',
+        label: s.short_label || s.prefix,
+        title: `${s.name} (${s.prefix})`,
+        prefix: s.prefix,
+        default_tax_rate_id: s.default_tax_rate_id,
+    }));
+
+    // Add Notebook choice if active in document types and permitted by selection policy
+    const notebookType = allActiveTypes.find(t => t.code === 'NOTEBOOK' || t.controlled_category === 'NOTEBOOK');
+    if (notebookType && policy.allow_notebook !== false) {
+        choices.push({
+            key: 'NOTEBOOK',
+            series_id: null,
+            type_id: notebookType.type_id,
+            type_code: notebookType.code,
+            recording_method: 'NOTEBOOK',
+            label: notebookType.short_label || 'Notebook',
+            title: notebookType.name || 'Notebook / Manual Log',
+            prefix: null,
+            default_tax_rate_id: null,
+        });
+    }
+
+    // 6. Resolve default selection according to policy and page-level history
+    let defaultChoice = null;
     let defaultSeriesId = null;
+    let defaultRecordingMethod = 'PAPER';
     let selectionRequired = false;
 
     if (policy.mode === 'FIXED_DEFAULT') {
-        const exists = seriesList.some(s => s.series_id === policy.fixed_or_fallback_series_id);
-        defaultSeriesId = exists ? policy.fixed_or_fallback_series_id : null;
-        selectionRequired = !defaultSeriesId;
+        const found = choices.find(c => c.series_id === policy.fixed_or_fallback_series_id);
+        if (found) {
+            defaultChoice = found.key;
+            defaultSeriesId = found.series_id;
+            defaultRecordingMethod = found.recording_method;
+        } else if (choices.length > 0) {
+            defaultChoice = choices[0].key;
+            defaultSeriesId = choices[0].series_id;
+            defaultRecordingMethod = choices[0].recording_method;
+        }
+        selectionRequired = !defaultChoice;
     } else if (policy.mode === 'LAST_SUCCESSFUL') {
-        // Lookup last success for this cashier + workstation + context
+        let lastSuccess = null;
         if (employee_id) {
             const { rows: lsRows } = await db.query(
-                `SELECT last_series_id FROM public.physical_document_last_success
+                `SELECT last_series_id, recording_method, last_type_code FROM public.physical_document_last_success
                  WHERE employee_id = $1 AND workstation_id = $2 AND context = $3`,
                 [employee_id, workstation_id, context]
             );
             if (lsRows.length > 0) {
-                const lsSeriesId = lsRows[0].last_series_id;
-                const isEligible = seriesList.some(s => s.series_id === lsSeriesId);
-                if (isEligible) {
-                    defaultSeriesId = lsSeriesId;
+                lastSuccess = lsRows[0];
+            }
+        }
+        if (!lastSuccess) {
+            const { rows: lsRows } = await db.query(
+                `SELECT last_series_id, recording_method, last_type_code FROM public.physical_document_last_success
+                 WHERE context = $1
+                 ORDER BY issued_at DESC
+                 LIMIT 1`,
+                [context]
+            );
+            if (lsRows.length > 0) {
+                lastSuccess = lsRows[0];
+            }
+        }
+
+        if (lastSuccess) {
+            if (lastSuccess.recording_method === 'NOTEBOOK') {
+                const nbChoice = choices.find(c => c.key === 'NOTEBOOK');
+                if (nbChoice) {
+                    defaultChoice = 'NOTEBOOK';
+                    defaultSeriesId = null;
+                    defaultRecordingMethod = 'NOTEBOOK';
+                }
+            } else if (lastSuccess.last_series_id) {
+                const sChoice = choices.find(c => c.series_id === lastSuccess.last_series_id);
+                if (sChoice) {
+                    defaultChoice = sChoice.key;
+                    defaultSeriesId = sChoice.series_id;
+                    defaultRecordingMethod = 'PAPER';
+                }
+            } else if (lastSuccess.last_type_code) {
+                const tChoice = choices.find(c => c.type_code === lastSuccess.last_type_code);
+                if (tChoice) {
+                    defaultChoice = tChoice.key;
+                    defaultSeriesId = tChoice.series_id;
+                    defaultRecordingMethod = tChoice.recording_method;
                 }
             }
         }
-        // Fallback to configured fallback if not found
-        if (!defaultSeriesId && policy.fixed_or_fallback_series_id) {
-            const isFallbackEligible = seriesList.some(s => s.series_id === policy.fixed_or_fallback_series_id);
-            if (isFallbackEligible) {
-                defaultSeriesId = policy.fixed_or_fallback_series_id;
+
+        // Fallback to configured fallback series if not resolved yet
+        if (!defaultChoice && policy.fixed_or_fallback_series_id) {
+            const fbChoice = choices.find(c => c.series_id === policy.fixed_or_fallback_series_id);
+            if (fbChoice) {
+                defaultChoice = fbChoice.key;
+                defaultSeriesId = fbChoice.series_id;
+                defaultRecordingMethod = fbChoice.recording_method;
             }
         }
-        selectionRequired = !defaultSeriesId;
+
+        // If still not resolved, take first available choice
+        if (!defaultChoice && choices.length > 0) {
+            defaultChoice = choices[0].key;
+            defaultSeriesId = choices[0].series_id;
+            defaultRecordingMethod = choices[0].recording_method;
+        }
+
+        selectionRequired = !defaultChoice;
     } else {
         // ALWAYS_ASK
+        defaultChoice = null;
         defaultSeriesId = null;
         selectionRequired = true;
     }
@@ -341,10 +433,14 @@ async function getOptions({ context, workstation_id = 'default', employee_id }) 
         policy: {
             mode: policy.mode,
             allow_notebook: policy.allow_notebook,
+            default_choice: defaultChoice,
             default_series_id: defaultSeriesId,
+            default_recording_method: defaultRecordingMethod,
             selection_required: selectionRequired,
         },
+        choices,
         series: seriesList,
+        types: allActiveTypes,
     };
 }
 
@@ -482,6 +578,20 @@ async function postPhysicalDocument(client, {
 }) {
     // 1. Notebook branch
     if (recording_method === 'NOTEBOOK') {
+        if (employee_id) {
+            await client.query(
+                `INSERT INTO public.physical_document_last_success
+                 (employee_id, workstation_id, context, last_series_id, recording_method, last_type_code, last_issuance_id, issued_at)
+                 VALUES ($1, $2, $3, NULL, 'NOTEBOOK', 'NOTEBOOK', $4, CURRENT_TIMESTAMP)
+                 ON CONFLICT (employee_id, workstation_id, context)
+                 DO UPDATE SET last_series_id = NULL,
+                               recording_method = 'NOTEBOOK',
+                               last_type_code = 'NOTEBOOK',
+                               last_issuance_id = EXCLUDED.last_issuance_id,
+                               issued_at = CURRENT_TIMESTAMP`,
+                [employee_id, workstation_id, context, `${source_type ? source_type.toLowerCase() : 'notebook'}:${source_id || ''}`]
+            );
+        }
         return {
             recording_method: 'NOTEBOOK',
             series_id: null,
@@ -677,16 +787,23 @@ async function postPhysicalDocument(client, {
     );
 
     // 10. Update last_success preference for cashier + workstation + context
-    await client.query(
-        `INSERT INTO public.physical_document_last_success
-         (employee_id, workstation_id, context, last_series_id, last_issuance_id, issued_at)
-         VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)
-         ON CONFLICT (employee_id, workstation_id, context)
-         DO UPDATE SET last_series_id = EXCLUDED.last_series_id,
-                       last_issuance_id = EXCLUDED.last_issuance_id,
-                       issued_at = CURRENT_TIMESTAMP`,
-        [employee_id, workstation_id, context, series.series_id, `${source_type.toLowerCase()}:${source_id}`]
-    );
+    if (employee_id) {
+        const { rows: tRows } = await client.query(`SELECT code FROM public.physical_document_type WHERE type_id = $1`, [series.type_id]);
+        const seriesTypeCode = tRows[0]?.code || null;
+
+        await client.query(
+            `INSERT INTO public.physical_document_last_success
+             (employee_id, workstation_id, context, last_series_id, recording_method, last_type_code, last_issuance_id, issued_at)
+             VALUES ($1, $2, $3, $4, 'PAPER', $5, $6, CURRENT_TIMESTAMP)
+             ON CONFLICT (employee_id, workstation_id, context)
+             DO UPDATE SET last_series_id = EXCLUDED.last_series_id,
+                           recording_method = 'PAPER',
+                           last_type_code = EXCLUDED.last_type_code,
+                           last_issuance_id = EXCLUDED.last_issuance_id,
+                           issued_at = CURRENT_TIMESTAMP`,
+            [employee_id, workstation_id, context, series.series_id, seriesTypeCode, `${source_type.toLowerCase()}:${source_id}`]
+        );
+    }
 
     // 11. Append ISSUED audit event
     await client.query(

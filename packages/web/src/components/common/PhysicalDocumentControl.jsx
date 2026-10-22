@@ -36,43 +36,36 @@ export default function PhysicalDocumentControl({
     const selectedSeriesId = value?.series_id || null;
     const physicalReceiptNo = value?.physical_receipt_no || '';
 
-    // Load options for this context and workstation
-    useEffect(() => {
-        let mounted = true;
-        setLoading(true);
-        api.get('/physical-documents/options', {
-            params: { context, workstation_id: workstationId }
-        })
-            .then(res => {
-                if (!mounted) return;
-                const data = res.data;
-                setOptions(data);
+    const STORAGE_KEY_PREFIX = 'forson:last_doc_type:';
 
-                // If pristine and a default series is suggested by policy
-                if (!value?.recording_method && !value?.series_id) {
-                    if (data.policy?.default_series_id) {
-                        selectSeries(data.policy.default_series_id, data.series);
-                    } else if (!data.policy?.selection_required && data.policy?.allow_notebook && data.series?.length === 0) {
-                        // Notebook fallback if no series
-                        onChange?.({
-                            recording_method: 'NOTEBOOK',
-                            series_id: null,
-                            physical_receipt_no: '',
-                            suggestion_token: null,
-                            exception: null,
-                        });
-                    }
-                }
-            })
-            .catch(err => {
-                console.error('Failed to load physical document options:', err);
-            })
-            .finally(() => {
-                if (mounted) setLoading(false);
-            });
+    const resolveInitialChoiceKey = useCallback((data) => {
+        if (!data || !data.choices || data.choices.length === 0) return null;
 
-        return () => { mounted = false; };
-    }, [context, workstationId]);
+        // 1. Check local storage for last used type on this page/context
+        try {
+            const savedChoice = localStorage.getItem(`${STORAGE_KEY_PREFIX}${context}`);
+            if (savedChoice && data.choices.some(c => c.key === savedChoice)) {
+                return savedChoice;
+            }
+        } catch {
+            // ignore storage error
+        }
+
+        // 2. Policy-configured default choice or default series
+        if (data.policy?.default_choice && data.choices.some(c => c.key === String(data.policy.default_choice))) {
+            return String(data.policy.default_choice);
+        }
+        if (data.policy?.default_series_id && data.choices.some(c => c.series_id === data.policy.default_series_id)) {
+            return String(data.policy.default_series_id);
+        }
+
+        // 3. Fallback to first available choice if selection not strictly required
+        if (!data.policy?.selection_required && data.choices.length > 0) {
+            return data.choices[0].key;
+        }
+
+        return null;
+    }, [context]);
 
     // Helper to fetch suggestion for a chosen series
     const fetchSuggestion = useCallback(async (seriesId) => {
@@ -92,9 +85,29 @@ export default function PhysicalDocumentControl({
         }
     }, [context]);
 
-    // Handle user selecting a series or Notebook from dropdown
-    const selectSeries = async (seriesId, seriesList = options.series) => {
-        if (seriesId === 'NOTEBOOK') {
+    // Handle user selecting a choice (series or notebook) from dropdown
+    const selectChoice = useCallback(async (choiceKey, choicesList = options.choices || [], seriesList = options.series || []) => {
+        if (!choiceKey) {
+            onChange?.({
+                recording_method: null,
+                series_id: null,
+                physical_receipt_no: '',
+                suggestion_token: null,
+                exception: null,
+            });
+            return;
+        }
+
+        // Persist choice for this page/context
+        try {
+            localStorage.setItem(`${STORAGE_KEY_PREFIX}${context}`, choiceKey);
+        } catch {
+            // ignore storage error
+        }
+
+        const choice = choicesList.find(c => c.key === choiceKey);
+
+        if (choiceKey === 'NOTEBOOK' || choice?.recording_method === 'NOTEBOOK') {
             setSuggestion(null);
             setPopoverOpen(false);
             onChange?.({
@@ -107,17 +120,8 @@ export default function PhysicalDocumentControl({
             return;
         }
 
-        const numericId = parseInt(seriesId, 10);
-        if (!numericId) {
-            onChange?.({
-                recording_method: null,
-                series_id: null,
-                physical_receipt_no: '',
-                suggestion_token: null,
-                exception: null,
-            });
-            return;
-        }
+        const numericId = parseInt(choice?.series_id || choiceKey, 10);
+        if (!numericId) return;
 
         const foundSeries = seriesList.find(s => s.series_id === numericId);
         const sug = await fetchSuggestion(numericId);
@@ -134,7 +138,48 @@ export default function PhysicalDocumentControl({
             suggestion_token: sug?.suggestion_token || null,
             exception: null,
         });
-    };
+    }, [context, fetchSuggestion, onChange, onTaxRateSelect, options.choices, options.series]);
+
+    // Load options for this context and workstation
+    useEffect(() => {
+        let mounted = true;
+        setLoading(true);
+        api.get('/physical-documents/options', {
+            params: { context, workstation_id: workstationId }
+        })
+            .then(res => {
+                if (!mounted) return;
+                const data = res.data;
+                setOptions(data);
+
+                // If pristine, auto-select last used choice on that page or policy default
+                if (!value?.recording_method && !value?.series_id) {
+                    const initialKey = resolveInitialChoiceKey(data);
+                    if (initialKey) {
+                        selectChoice(initialKey, data.choices, data.series);
+                    }
+                }
+            })
+            .catch(err => {
+                console.error('Failed to load physical document options:', err);
+            })
+            .finally(() => {
+                if (mounted) setLoading(false);
+            });
+
+        return () => { mounted = false; };
+    }, [context, workstationId]);
+
+    // Watch for parent reset: auto-reapply last used type and fetch next suggestion
+    useEffect(() => {
+        if (loading || !options.choices || options.choices.length === 0) return;
+        if (!value?.recording_method && !value?.series_id) {
+            const initialKey = resolveInitialChoiceKey(options);
+            if (initialKey) {
+                selectChoice(initialKey, options.choices, options.series);
+            }
+        }
+    }, [value?.recording_method, value?.series_id, loading, options, resolveInitialChoiceKey, selectChoice]);
 
     // When text input blurs, check if user changed from original suggestion
     const handleInputBlur = () => {
@@ -226,16 +271,16 @@ export default function PhysicalDocumentControl({
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [popoverOpen, suggestion]);
 
-    const activeSeries = options.series || [];
-    const currentSeries = activeSeries.find(s => s.series_id === selectedSeriesId);
+    const activeChoices = options.choices || [];
+    const currentSeries = (options.series || []).find(s => s.series_id === selectedSeriesId);
     const isNotebook = recordingMethod === 'NOTEBOOK';
 
     return (
         <div ref={containerRef} className={`relative flex items-center gap-1 w-full ${className}`}>
-            {/* Series / Document Type Dropdown */}
+            {/* Document Type Dropdown */}
             <select
-                value={isNotebook ? 'NOTEBOOK' : (selectedSeriesId || '')}
-                onChange={(e) => selectSeries(e.target.value)}
+                value={isNotebook ? 'NOTEBOOK' : (selectedSeriesId ? String(selectedSeriesId) : '')}
+                onChange={(e) => selectChoice(e.target.value)}
                 disabled={disabled || loading}
                 aria-label="Physical document type selection"
                 className="w-1/3 min-w-[75px] max-w-[110px] px-2 py-2 border border-gray-300 dark:border-slate-600 rounded-md text-xs font-semibold bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-primary-500"
@@ -243,14 +288,11 @@ export default function PhysicalDocumentControl({
                 {options.policy?.selection_required && !selectedSeriesId && !isNotebook && (
                     <option value="">Doc...</option>
                 )}
-                {activeSeries.map(s => (
-                    <option key={s.series_id} value={s.series_id} title={s.name}>
-                        {s.short_label || s.prefix}
+                {activeChoices.map(c => (
+                    <option key={c.key} value={c.key} title={c.title}>
+                        {c.label}
                     </option>
                 ))}
-                {options.policy?.allow_notebook && (
-                    <option value="NOTEBOOK">Notebook</option>
-                )}
             </select>
 
             {/* Editable Physical Reference / Number */}

@@ -7,7 +7,7 @@ import InfoTip from '../ui/InfoTip';
 import { ICONS } from '../../constants';
 
 export default function PhysicalDocumentSettings() {
-    const [subTab, setSubTab] = useState('series'); // 'series' | 'policies' | 'spoilage'
+    const [subTab, setSubTab] = useState('types'); // 'types' | 'series' | 'policies' | 'spoilage'
     const [loading, setLoading] = useState(true);
 
     // Master data
@@ -23,6 +23,8 @@ export default function PhysicalDocumentSettings() {
     const [spoilageSearch, setSpoilageSearch] = useState('');
 
     // Modals
+    const [typeModalOpen, setTypeModalOpen] = useState(false);
+    const [editingType, setEditingType] = useState(null);
     const [seriesModalOpen, setSeriesModalOpen] = useState(false);
     const [editingSeries, setEditingSeries] = useState(null);
     const [sequenceModalOpen, setSequenceModalOpen] = useState(false);
@@ -75,27 +77,65 @@ export default function PhysicalDocumentSettings() {
         }
     }, [subTab, loadSpoilage]);
 
+    const handleToggleTypeActive = async (typeItem) => {
+        try {
+            await api.patch(`/settings/physical-document-types/${typeItem.type_id}`, {
+                is_active: !typeItem.is_active,
+            });
+            toast.success(`Document type "${typeItem.name}" ${!typeItem.is_active ? 'activated' : 'deactivated'}.`);
+            loadData();
+        } catch (err) {
+            console.error('Failed to toggle type active state:', err);
+            toast.error(err.response?.data?.message || 'Failed to update document type.');
+        }
+    };
+
+    const handleDeleteType = async (typeItem) => {
+        const seriesCount = parseInt(typeItem.series_count || 0, 10);
+        const confirmMsg = seriesCount > 0
+            ? `Document type "${typeItem.name}" is used by ${seriesCount} series and cannot be permanently deleted. Do you want to deactivate it instead?`
+            : `Are you sure you want to permanently delete document type "${typeItem.name}"?`;
+
+        if (!window.confirm(confirmMsg)) return;
+
+        try {
+            const res = await api.delete(`/settings/physical-document-types/${typeItem.type_id}`);
+            toast.success(res.data?.message || 'Document type updated.');
+            loadData();
+        } catch (err) {
+            console.error('Failed to delete/deactivate document type:', err);
+            toast.error(err.response?.data?.message || 'Failed to delete document type.');
+        }
+    };
+
     return (
         <div className="space-y-6">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-gray-200 dark:border-slate-700 pb-4">
                 <div>
                     <h2 className="text-lg font-bold text-gray-900 dark:text-slate-100 flex items-center gap-2">
-                        Physical Document Series & Selection Policy
+                        Physical Documents & Types
                         <InfoTip label="Physical Documents">
-                            Configure pre-printed paper receipt series (Sales Invoices, Delivery Receipts, Collection Receipts), number suggestion methods, tax rate linkages, and default selection rules.
+                            Configure document types (Sales Invoices, Delivery Receipts, Collection Receipts, Notebooks, Custom types), paper receipt series, suggestion methods, tax rate linkages, and cashier pre-selection policies.
                         </InfoTip>
                     </h2>
                     <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">
-                        Ensures cashier-entered receipt numbers strictly track real paper booklets and accurately mirror statutory BIR tax mappings.
+                        All cashier dropdown choices are dynamically driven by these settings with zero hardcoded options, and automatically default to the cashier's last used type on each page.
                     </p>
                 </div>
                 <div className="flex bg-gray-100 dark:bg-slate-800 p-1 rounded-lg">
                     <button
                         type="button"
+                        onClick={() => setSubTab('types')}
+                        className={`px-3 py-1.5 text-xs font-semibold rounded-md transition ${subTab === 'types' ? 'bg-white dark:bg-slate-900 text-primary-600 dark:text-primary-400 shadow-xs' : 'text-gray-600 dark:text-slate-400'}`}
+                    >
+                        Document Types
+                    </button>
+                    <button
+                        type="button"
                         onClick={() => setSubTab('series')}
                         className={`px-3 py-1.5 text-xs font-semibold rounded-md transition ${subTab === 'series' ? 'bg-white dark:bg-slate-900 text-primary-600 dark:text-primary-400 shadow-xs' : 'text-gray-600 dark:text-slate-400'}`}
                     >
-                        Series & Types
+                        Series
                     </button>
                     <button
                         type="button"
@@ -118,6 +158,115 @@ export default function PhysicalDocumentSettings() {
                 <div className="py-8 text-center text-sm text-gray-500">Loading document configuration...</div>
             ) : (
                 <>
+                    {/* TAB 0: DOCUMENT TYPES */}
+                    {subTab === 'types' && (
+                        <div className="space-y-4">
+                            <div className="flex justify-between items-center">
+                                <span className="text-xs text-gray-500 dark:text-slate-400">
+                                    {types.length} configured document types
+                                </span>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setEditingType(null);
+                                        setTypeModalOpen(true);
+                                    }}
+                                    className="px-3 py-1.5 bg-primary-600 hover:bg-primary-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-xs transition"
+                                >
+                                    <Icon path={ICONS.plus} className="w-3.5 h-3.5" />
+                                    Add Document Type
+                                </button>
+                            </div>
+
+                            <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-slate-700">
+                                <table className="w-full text-left text-xs">
+                                    <thead className="bg-gray-50 dark:bg-slate-800/80 text-gray-600 dark:text-slate-300 border-b border-gray-200 dark:border-slate-700 uppercase font-semibold">
+                                        <tr>
+                                            <th className="px-4 py-3">Short Label / Code</th>
+                                            <th className="px-4 py-3">Type Name</th>
+                                            <th className="px-4 py-3">Category</th>
+                                            <th className="px-4 py-3">Tax Designation</th>
+                                            <th className="px-4 py-3">Default Method</th>
+                                            <th className="px-4 py-3">Series Count</th>
+                                            <th className="px-4 py-3">Status</th>
+                                            <th className="px-4 py-3 text-right">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-200 dark:divide-slate-700/60 font-sans">
+                                        {types.length === 0 ? (
+                                            <tr>
+                                                <td colSpan="8" className="px-4 py-8 text-center text-gray-500">
+                                                    No document types configured. Click "Add Document Type" to create one.
+                                                </td>
+                                            </tr>
+                                        ) : (
+                                            types.map(t => (
+                                                <tr key={t.type_id} className="hover:bg-gray-50/50 dark:hover:bg-slate-800/50">
+                                                    <td className="px-4 py-3 font-mono font-bold text-gray-900 dark:text-slate-100">
+                                                        <span className="px-2 py-0.5 bg-slate-100 dark:bg-slate-800 rounded border border-slate-300 dark:border-slate-700 text-primary-700 dark:text-primary-300">
+                                                            {t.short_label}
+                                                        </span>
+                                                        <span className="ml-2 font-normal text-gray-500 text-[11px]">
+                                                            {t.code}
+                                                        </span>
+                                                    </td>
+                                                    <td className="px-4 py-3 font-medium text-gray-900 dark:text-slate-100">
+                                                        {t.name}
+                                                    </td>
+                                                    <td className="px-4 py-3 text-gray-600 dark:text-slate-300">
+                                                        <span className="inline-block px-1.5 py-0.5 rounded text-[10px] bg-slate-100 dark:bg-slate-800 font-semibold">
+                                                            {t.controlled_category}
+                                                        </span>
+                                                    </td>
+                                                    <td className="px-4 py-3 text-gray-600 dark:text-slate-300">
+                                                        <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold ${t.tax_designation === 'VAT' ? 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300' : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300'}`}>
+                                                            {t.tax_designation}
+                                                        </span>
+                                                    </td>
+                                                    <td className="px-4 py-3 text-gray-600 dark:text-slate-400">
+                                                        {t.default_method === 'HIGHEST_PLUS_ONE' ? 'Highest + 1' : (t.default_method === 'LAST_ISSUED_PLUS_ONE' ? 'Last Issued + 1' : 'None')}
+                                                    </td>
+                                                    <td className="px-4 py-3 font-mono text-gray-700 dark:text-slate-300">
+                                                        {t.series_count || 0}
+                                                    </td>
+                                                    <td className="px-4 py-3">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleToggleTypeActive(t)}
+                                                            className={`px-2 py-0.5 rounded-full text-[10px] font-semibold transition cursor-pointer ${t.is_active ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100' : 'bg-gray-100 dark:bg-slate-800 text-gray-500 hover:bg-gray-200'}`}
+                                                            title="Click to toggle active status"
+                                                        >
+                                                            {t.is_active ? 'Active' : 'Inactive'}
+                                                        </button>
+                                                    </td>
+                                                    <td className="px-4 py-3 text-right space-x-2">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                setEditingType(t);
+                                                                setTypeModalOpen(true);
+                                                            }}
+                                                            className="text-xs font-semibold text-primary-600 hover:text-primary-700 dark:text-primary-400"
+                                                        >
+                                                            Edit
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleDeleteType(t)}
+                                                            className="text-xs font-semibold text-danger-600 hover:text-danger-700 dark:text-danger-400"
+                                                        >
+                                                            {parseInt(t.series_count || 0, 10) > 0 ? (t.is_active ? 'Deactivate' : 'Disabled') : 'Delete'}
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            ))
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    )}
+
                     {/* TAB 1: SERIES LIST */}
                     {subTab === 'series' && (
                         <div className="space-y-4">
@@ -327,6 +476,22 @@ export default function PhysicalDocumentSettings() {
                     )}
                 </>
             )}
+
+            {/* MODAL: DOCUMENT TYPE EDITOR */}
+            <Modal
+                isOpen={typeModalOpen}
+                onClose={() => setTypeModalOpen(false)}
+                title={editingType ? `Edit Document Type: ${editingType.name}` : 'Create Document Type'}
+            >
+                <DocumentTypeEditorForm
+                    typeItem={editingType}
+                    onSaved={() => {
+                        setTypeModalOpen(false);
+                        loadData();
+                    }}
+                    onCancel={() => setTypeModalOpen(false)}
+                />
+            </Modal>
 
             {/* MODAL: SERIES EDITOR */}
             <Modal
@@ -1027,6 +1192,176 @@ function CorrectSpoilForm({ record, onSaved, onCancel }) {
                     className="px-4 py-1.5 bg-danger-600 hover:bg-danger-700 text-white rounded-md text-xs font-semibold"
                 >
                     {submitting ? 'Correcting...' : 'Confirm Correction'}
+                </button>
+            </div>
+        </form>
+    );
+}
+
+// Subcomponent: Document Type Editor Form
+function DocumentTypeEditorForm({ typeItem, onSaved, onCancel }) {
+    const isEdit = !!typeItem;
+    const [formData, setFormData] = useState({
+        code: typeItem?.code || '',
+        name: typeItem?.name || '',
+        short_label: typeItem?.short_label || '',
+        controlled_category: typeItem?.controlled_category || 'SALES_INVOICE',
+        tax_designation: typeItem?.tax_designation || 'VAT',
+        default_method: typeItem?.default_method || 'HIGHEST_PLUS_ONE',
+        is_active: typeItem?.is_active !== false,
+    });
+    const [submitting, setSubmitting] = useState(false);
+
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        setSubmitting(true);
+        try {
+            if (isEdit) {
+                await api.patch(`/settings/physical-document-types/${typeItem.type_id}`, {
+                    name: formData.name,
+                    short_label: formData.short_label,
+                    controlled_category: formData.controlled_category,
+                    tax_designation: formData.tax_designation,
+                    default_method: formData.default_method,
+                    is_active: formData.is_active,
+                });
+                toast.success('Document type updated successfully!');
+            } else {
+                await api.post('/settings/physical-document-types', formData);
+                toast.success('Document type created successfully!');
+            }
+            onSaved?.();
+        } catch (err) {
+            console.error('Failed to save document type:', err);
+            toast.error(err.response?.data?.message || 'Failed to save document type.');
+        } finally {
+            setSubmitting(false);
+        }
+    };
+
+    return (
+        <form onSubmit={handleSubmit} className="space-y-4 text-xs">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                    <label className="block font-semibold text-gray-700 dark:text-slate-300 mb-1">
+                        Type Code *
+                    </label>
+                    <input
+                        type="text"
+                        value={formData.code}
+                        onChange={(e) => setFormData(prev => ({ ...prev, code: e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, '_') }))}
+                        disabled={isEdit}
+                        placeholder="e.g. SALES_INVOICE_VAT"
+                        className="w-full px-3 py-1.5 border border-gray-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 font-mono disabled:opacity-60"
+                        required
+                    />
+                </div>
+                <div>
+                    <label className="block font-semibold text-gray-700 dark:text-slate-300 mb-1">
+                        Short Label *
+                    </label>
+                    <input
+                        type="text"
+                        value={formData.short_label}
+                        onChange={(e) => setFormData(prev => ({ ...prev, short_label: e.target.value }))}
+                        placeholder="e.g. SI VAT or Notebook"
+                        maxLength={20}
+                        className="w-full px-3 py-1.5 border border-gray-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100"
+                        required
+                    />
+                </div>
+            </div>
+
+            <div>
+                <label className="block font-semibold text-gray-700 dark:text-slate-300 mb-1">
+                    Display Name *
+                </label>
+                <input
+                    type="text"
+                    value={formData.name}
+                    onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                    placeholder="e.g. Sales Invoice — VAT"
+                    className="w-full px-3 py-1.5 border border-gray-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100"
+                    required
+                />
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                    <label className="block font-semibold text-gray-700 dark:text-slate-300 mb-1">
+                        Category
+                    </label>
+                    <select
+                        value={formData.controlled_category}
+                        onChange={(e) => setFormData(prev => ({ ...prev, controlled_category: e.target.value }))}
+                        className="w-full px-3 py-1.5 border border-gray-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100"
+                    >
+                        <option value="SALES_INVOICE">SALES_INVOICE</option>
+                        <option value="COLLECTION_RECEIPT">COLLECTION_RECEIPT</option>
+                        <option value="DELIVERY_RECEIPT">DELIVERY_RECEIPT</option>
+                        <option value="CHARGE_INVOICE">CHARGE_INVOICE</option>
+                        <option value="OFFICIAL_RECEIPT">OFFICIAL_RECEIPT</option>
+                        <option value="NOTEBOOK">NOTEBOOK</option>
+                        <option value="OTHER">OTHER</option>
+                    </select>
+                </div>
+                <div>
+                    <label className="block font-semibold text-gray-700 dark:text-slate-300 mb-1">
+                        Tax Designation
+                    </label>
+                    <select
+                        value={formData.tax_designation}
+                        onChange={(e) => setFormData(prev => ({ ...prev, tax_designation: e.target.value }))}
+                        className="w-full px-3 py-1.5 border border-gray-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100"
+                    >
+                        <option value="VAT">VAT</option>
+                        <option value="NON_VAT">NON_VAT</option>
+                        <option value="EXEMPT">EXEMPT</option>
+                        <option value="NOT_APPLICABLE">NOT_APPLICABLE</option>
+                    </select>
+                </div>
+                <div>
+                    <label className="block font-semibold text-gray-700 dark:text-slate-300 mb-1">
+                        Default Method
+                    </label>
+                    <select
+                        value={formData.default_method}
+                        onChange={(e) => setFormData(prev => ({ ...prev, default_method: e.target.value }))}
+                        className="w-full px-3 py-1.5 border border-gray-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100"
+                    >
+                        <option value="HIGHEST_PLUS_ONE">Highest + 1</option>
+                        <option value="LAST_ISSUED_PLUS_ONE">Last Issued + 1</option>
+                        <option value="NONE">None / Manual</option>
+                    </select>
+                </div>
+            </div>
+
+            <div className="pt-2">
+                <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                        type="checkbox"
+                        checked={formData.is_active}
+                        onChange={(e) => setFormData(prev => ({ ...prev, is_active: e.target.checked }))}
+                        className="rounded text-primary-600 focus:ring-primary-500"
+                    />
+                    <span className="font-semibold text-gray-700 dark:text-slate-300">Active (Visible in selection options and series editor)</span>
+                </label>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-3 border-t border-gray-200 dark:border-slate-700">
+                <button
+                    type="button"
+                    onClick={onCancel}
+                    className="px-3 py-1.5 border border-gray-300 dark:border-slate-600 rounded-md text-xs font-semibold text-gray-700 dark:text-slate-300"
+                >
+                    Cancel
+                </button>
+                <button
+                    type="submit"
+                    disabled={submitting}
+                    className="px-4 py-1.5 bg-primary-600 hover:bg-primary-700 text-white rounded-md text-xs font-semibold transition"
+                >
+                    {submitting ? 'Saving...' : (isEdit ? 'Update Document Type' : 'Create Document Type')}
                 </button>
             </div>
         </form>

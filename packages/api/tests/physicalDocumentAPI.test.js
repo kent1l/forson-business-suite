@@ -329,4 +329,67 @@ describe('Physical Document System - Phase 2 & 3 API & Cashier Posting Integrati
         expect(payCheck[0].physical_receipt_no).toBe(testPrn);
         expect(payCheck[1].physical_receipt_no).toBe(testPrn);
     });
+
+    test('Document Type Settings CRUD & Dynamic Choices in /options', async () => {
+        // 1. Create a custom document type via API
+        const typeCode = `TEST_TYPE_${Date.now()}`;
+        const createRes = await request(app)
+            .post('/api/settings/physical-document-types')
+            .send({
+                code: typeCode,
+                name: 'Custom Billing Statement',
+                short_label: 'CBS',
+                controlled_category: 'OTHER',
+                tax_designation: 'VAT',
+                default_method: 'HIGHEST_PLUS_ONE',
+                is_active: true,
+            })
+            .expect(201);
+
+        expect(createRes.body.type_id).toBeDefined();
+        expect(createRes.body.code).toBe(typeCode);
+        const newTypeId = createRes.body.type_id;
+
+        // 2. Fetch types list
+        const typesRes = await request(app)
+            .get('/api/settings/physical-document-types')
+            .expect(200);
+        const foundType = typesRes.body.find(t => t.type_id === newTypeId);
+        expect(foundType).toBeDefined();
+        expect(foundType.short_label).toBe('CBS');
+
+        // 3. Update document type
+        const updateRes = await request(app)
+            .patch(`/api/settings/physical-document-types/${newTypeId}`)
+            .send({ short_label: 'CBS-MOD' })
+            .expect(200);
+        expect(updateRes.body.short_label).toBe('CBS-MOD');
+
+        // 4. Verify /api/physical-documents/options contains choices array
+        const optionsRes = await request(app)
+            .get('/api/physical-documents/options?context=POS&workstation_id=default')
+            .expect(200);
+        expect(Array.isArray(optionsRes.body.choices)).toBe(true);
+        expect(optionsRes.body.choices.some(c => c.key === 'NOTEBOOK')).toBe(true);
+
+        // 5. Test pre-selection of last type used on that page
+        await db.query(
+            `INSERT INTO public.physical_document_last_success
+             (employee_id, workstation_id, context, last_series_id, recording_method, last_type_code, last_issuance_id, issued_at)
+             VALUES (1, 'default', 'POS', NULL, 'NOTEBOOK', 'NOTEBOOK', 'inv:test', CURRENT_TIMESTAMP)
+             ON CONFLICT (employee_id, workstation_id, context)
+             DO UPDATE SET last_series_id = NULL, recording_method = 'NOTEBOOK', last_type_code = 'NOTEBOOK', issued_at = CURRENT_TIMESTAMP`
+        );
+
+        const posOptionsRes = await request(app)
+            .get('/api/physical-documents/options?context=POS&workstation_id=default')
+            .expect(200);
+        expect(posOptionsRes.body.policy.default_choice).toBe('NOTEBOOK');
+        expect(posOptionsRes.body.policy.default_recording_method).toBe('NOTEBOOK');
+
+        // 6. Delete (soft-delete) custom document type
+        await request(app)
+            .delete(`/api/settings/physical-document-types/${newTypeId}`)
+            .expect(200);
+    });
 });

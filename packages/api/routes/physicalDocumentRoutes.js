@@ -72,7 +72,10 @@ router.post('/physical-documents/validate', protect, hasPermission(['invoicing:c
 router.get('/settings/physical-document-types', protect, hasPermission(['settings:edit', 'invoicing:create', 'pos:use']), async (_req, res) => {
     try {
         const { rows } = await db.query(
-            `SELECT * FROM public.physical_document_type ORDER BY type_id`
+            `SELECT t.*, 
+                    (SELECT COUNT(*)::int FROM public.physical_document_series s WHERE s.type_id = t.type_id) AS series_count
+             FROM public.physical_document_type t 
+             ORDER BY t.type_id`
         );
         res.json(rows);
     } catch (err) {
@@ -81,11 +84,46 @@ router.get('/settings/physical-document-types', protect, hasPermission(['setting
     }
 });
 
+// POST /api/settings/physical-document-types
+router.post('/settings/physical-document-types', protect, hasPermission('settings:edit'), async (req, res) => {
+    try {
+        const { code, name, short_label, controlled_category, tax_designation, default_method, is_active } = req.body;
+        const employeeId = req.user?.employee_id;
+
+        if (!code || !name) {
+            return res.status(400).json({ message: 'Code and Name are required fields.' });
+        }
+
+        const normalizedCode = String(code).trim().toUpperCase().replace(/[^A-Z0-9_]/g, '_');
+        const shortLabel = (short_label || normalizedCode.slice(0, 10)).trim();
+        const category = (controlled_category || 'SALES_INVOICE').trim().toUpperCase();
+        const taxDesig = tax_designation || 'VAT';
+        const method = default_method || 'HIGHEST_PLUS_ONE';
+        const active = is_active !== undefined ? Boolean(is_active) : true;
+
+        const { rows } = await db.query(
+            `INSERT INTO public.physical_document_type
+             (code, name, short_label, controlled_category, tax_designation, default_method, is_active, created_by, updated_by)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8)
+             RETURNING *`,
+            [normalizedCode, String(name).trim(), shortLabel, category, taxDesig, method, active, employeeId]
+        );
+
+        res.status(201).json(rows[0]);
+    } catch (err) {
+        if (err.code === '23505') {
+            return res.status(409).json({ message: `Document type code "${req.body.code}" already exists.` });
+        }
+        console.error('Error creating document type:', err);
+        res.status(500).json({ message: err.message || 'Server error creating document type.' });
+    }
+});
+
 // PATCH /api/settings/physical-document-types/:id
 router.patch('/settings/physical-document-types/:id', protect, hasPermission('settings:edit'), async (req, res) => {
     try {
         const typeId = parseInt(req.params.id, 10);
-        const { name, short_label, is_active, default_method } = req.body;
+        const { name, short_label, is_active, default_method, controlled_category, tax_designation } = req.body;
         const employeeId = req.user?.employee_id;
 
         const { rows } = await db.query(
@@ -94,11 +132,22 @@ router.patch('/settings/physical-document-types/:id', protect, hasPermission('se
                  short_label = COALESCE($2, short_label),
                  is_active = COALESCE($3, is_active),
                  default_method = COALESCE($4, default_method),
+                 controlled_category = COALESCE($5, controlled_category),
+                 tax_designation = COALESCE($6, tax_designation),
                  updated_at = CURRENT_TIMESTAMP,
-                 updated_by = $5
-             WHERE type_id = $6
+                 updated_by = $7
+             WHERE type_id = $8
              RETURNING *`,
-            [name, short_label, is_active, default_method, employeeId, typeId]
+            [
+                name !== undefined ? String(name).trim() : null,
+                short_label !== undefined ? String(short_label).trim() : null,
+                is_active !== undefined ? Boolean(is_active) : null,
+                default_method !== undefined ? default_method : null,
+                controlled_category !== undefined ? String(controlled_category).trim().toUpperCase() : null,
+                tax_designation !== undefined ? tax_designation : null,
+                employeeId,
+                typeId
+            ]
         );
 
         if (rows.length === 0) {
@@ -108,6 +157,37 @@ router.patch('/settings/physical-document-types/:id', protect, hasPermission('se
     } catch (err) {
         console.error('Error updating document type:', err);
         res.status(500).json({ message: 'Server error updating document type.' });
+    }
+});
+
+// DELETE /api/settings/physical-document-types/:id
+router.delete('/settings/physical-document-types/:id', protect, hasPermission('settings:edit'), async (req, res) => {
+    try {
+        const typeId = parseInt(req.params.id, 10);
+        const { rows: linkedSeries } = await db.query(
+            `SELECT series_id FROM public.physical_document_series WHERE type_id = $1 LIMIT 1`,
+            [typeId]
+        );
+        if (linkedSeries.length > 0) {
+            // Soft-deactivate if linked to series
+            await db.query(
+                `UPDATE public.physical_document_type SET is_active = false, updated_at = CURRENT_TIMESTAMP WHERE type_id = $1`,
+                [typeId]
+            );
+            return res.json({ message: 'Document type deactivated because it is linked to existing series.', deactivated: true });
+        }
+
+        const { rows } = await db.query(
+            `DELETE FROM public.physical_document_type WHERE type_id = $1 RETURNING *`,
+            [typeId]
+        );
+        if (rows.length === 0) {
+            return res.status(404).json({ message: 'Document type not found.' });
+        }
+        res.json({ message: 'Document type deleted successfully.' });
+    } catch (err) {
+        console.error('Error deleting document type:', err);
+        res.status(500).json({ message: 'Server error deleting document type.' });
     }
 });
 
