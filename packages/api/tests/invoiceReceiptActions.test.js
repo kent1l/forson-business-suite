@@ -58,7 +58,11 @@ describe('Sales History receipt actions (real PostgreSQL)', () => {
     beforeAll(async () => {
         // These tests write financial audit evidence. Run against an isolated DB;
         // never delete immutable ledgers or disable their protective triggers.
-        const { rows: [emp] } = await db.query('SELECT employee_id FROM employee LIMIT 1');
+        const { rows: [emp] } = await db.query(
+            `INSERT INTO employee (first_name, last_name, permission_level_id, username, password_hash, password_salt)
+             SELECT 'Receipt', 'Action Test', permission_level_id, $1, 'hash', 'salt'
+             FROM permission_level LIMIT 1 RETURNING employee_id`, [`receipt_action_${stamp}`]
+        );
         employeeId = emp.employee_id;
         const { rows: [cust] } = await db.query("INSERT INTO customer (first_name, last_name) VALUES ('ReceiptAction', $1) RETURNING customer_id", [String(stamp)]);
         customerId = cust.customer_id;
@@ -73,9 +77,26 @@ describe('Sales History receipt actions (real PostgreSQL)', () => {
         );
         seriesId = series.series_id;
         await db.query("INSERT INTO physical_document_series_context (series_id, context) VALUES ($1, 'POS')", [seriesId]);
-        const { rows: [part] } = await db.query('SELECT part_id FROM part LIMIT 1');
+        // Own these fixtures so a fresh, unseeded CI database and test order
+        // cannot change the invoice lines or tax compatibility checks.
+        const { rows: [brand] } = await db.query(
+            'INSERT INTO brand (brand_name, brand_code) VALUES ($1, $2) RETURNING brand_id',
+            [`Receipt action ${stamp}`, `RA${String(stamp).slice(-8)}`]
+        );
+        const { rows: [group] } = await db.query(
+            'INSERT INTO "group" (group_name, group_code) VALUES ($1, $2) RETURNING group_id',
+            [`Receipt action ${stamp}`, `RA${String(stamp).slice(-8)}`]
+        );
+        const { rows: [tax] } = await db.query(
+            'INSERT INTO tax_rate (rate_name, rate_percentage, is_default) VALUES ($1, 0, false) RETURNING tax_rate_id',
+            [`Receipt action ${stamp}`]
+        );
+        const { rows: [part] } = await db.query(
+            `INSERT INTO part (internal_sku, detail, brand_id, group_id, tax_rate_id)
+             VALUES ($1, 'Receipt action test part', $2, $3, $4) RETURNING part_id`,
+            [`RQA-${stamp}`, brand.brand_id, group.group_id, tax.tax_rate_id]
+        );
         partId = part.part_id;
-        const { rows: [tax] } = await db.query('SELECT tax_rate_id FROM tax_rate LIMIT 1');
         taxRateId = tax.tax_rate_id;
     });
     beforeEach(() => {

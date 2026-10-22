@@ -1,3 +1,6 @@
+// Route tests bypass login, but receipt suggestions still use real HMAC signing.
+process.env.JWT_SECRET = process.env.JWT_SECRET || 'physical-document-api-test-secret';
+
 let mockCurrentUser = {
     employee_id: 1,
     username: 'admin',
