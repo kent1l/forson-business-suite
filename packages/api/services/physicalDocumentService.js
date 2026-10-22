@@ -2,7 +2,10 @@ const crypto = require('crypto');
 const db = require('../db');
 const { formatPhysicalReceiptNumber } = require('../helpers/receiptNumberFormatter');
 
-const TOKEN_SECRET = process.env.JWT_SECRET || 'fbs-physical-receipt-secret-key';
+function getTokenSecret() {
+    if (!process.env.JWT_SECRET) throw new Error('JWT_SECRET is required to sign physical receipt suggestion tokens');
+    return process.env.JWT_SECRET;
+}
 const TOKEN_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 /**
@@ -14,7 +17,7 @@ function signSuggestionToken(payload) {
         iat: Date.now(),
     });
     const encoded = Buffer.from(data).toString('base64url');
-    const hmac = crypto.createHmac('sha256', TOKEN_SECRET).update(encoded).digest('base64url');
+    const hmac = crypto.createHmac('sha256', getTokenSecret()).update(encoded).digest('base64url');
     return `${encoded}.${hmac}`;
 }
 
@@ -26,7 +29,7 @@ function verifySuggestionToken(token) {
     const parts = token.split('.');
     if (parts.length !== 2) return null;
     const [encoded, signature] = parts;
-    const expectedSig = crypto.createHmac('sha256', TOKEN_SECRET).update(encoded).digest('base64url');
+    const expectedSig = crypto.createHmac('sha256', getTokenSecret()).update(encoded).digest('base64url');
     if (signature !== expectedSig) return null;
     try {
         const decoded = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8'));
