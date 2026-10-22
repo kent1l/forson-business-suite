@@ -20,6 +20,7 @@ router.post('/invoices/exchange', protect, hasPermission('invoicing:create'), as
 
         const result = await processExchange(client, {
             ...req.body,
+            employee_id: req.user.employee_id,
             override_credit_limit: req.body.override_credit_limit === true,
             manager_override: req.body.manager_override === true,
             requesting_permissions: req.user?.permissions || [],
@@ -34,6 +35,7 @@ router.post('/invoices/exchange', protect, hasPermission('invoicing:create'), as
         await client.query('ROLLBACK');
         if (err.replay) return res.status(err.replay.status).json(err.replay.body);
         if (err.status) return res.status(err.status).json({ code: err.code, message: err.message });
+        if (err.statusCode && !(err instanceof ExchangeError)) return res.status(err.statusCode).json({ code: err.code, message: err.message });
         if (err instanceof ExchangeError) {
             const { statusCode, ...body } = err;
             return res.status(statusCode).json({ message: err.message, ...body });

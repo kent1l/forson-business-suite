@@ -1,5 +1,5 @@
 const express = require('express');
-const { protect, hasPermission } = require('../middleware/authMiddleware');
+const { protect, hasPermission, userHasPermission } = require('../middleware/authMiddleware');
 const corrections = require('../services/salesCorrectionService');
 
 const router = express.Router();
@@ -32,7 +32,8 @@ router.post('/sales-corrections', protect, hasPermission('sales_correction:creat
 
 router.post('/sales-corrections/:id/approve', protect, hasPermission('sales_correction:approve'), async (req, res) => {
     try {
-        const caseRow = await corrections.approveAndExecute(Number(req.params.id), req.user.employee_id);
+        const caseRow = await corrections.approveAndExecute(Number(req.params.id), req.user.employee_id,
+            req.body.receipt_decision || {}, userHasPermission(req, 'invoice:release_receipt_no'));
         res.json({ case: caseRow, message: 'Correction completed. Start the replacement sale with a new invoice number.' });
     } catch (error) { return sendError(res, error); }
 });

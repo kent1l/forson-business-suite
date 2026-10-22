@@ -42,6 +42,7 @@ describe('PUT /invoices/payments/:payment_id/settle', () => {
     const client = await db.getClient();
     client.query
       .mockResolvedValueOnce({}) // BEGIN
+      .mockResolvedValueOnce({ rows: [{ invoice_id: 55, status: 'Unpaid' }] }) // lock invoice
       .mockResolvedValueOnce({   // UPDATE invoice_payments ... RETURNING
         rows: [{ invoice_id: 55, amount_paid: '250.00', method_id: 3, reference: 'REF-1' }]
       })
@@ -69,6 +70,7 @@ describe('PUT /invoices/payments/:payment_id/settle', () => {
     const client = await db.getClient();
     client.query
       .mockResolvedValueOnce({}) // BEGIN
+      .mockResolvedValueOnce({ rows: [{ invoice_id: 55, status: 'Paid' }] }) // lock invoice
       .mockResolvedValueOnce({ rows: [] }) // UPDATE ... RETURNING (no match)
       .mockResolvedValueOnce({}); // ROLLBACK
 
@@ -79,5 +81,14 @@ describe('PUT /invoices/payments/:payment_id/settle', () => {
       ([sql]) => typeof sql === 'string' && sql.includes('append_ar_ledger_entry')
     );
     expect(ledgerCall).toBeUndefined();
+  });
+  test('rejects settlement on a voided invoice before updating its payment', async () => {
+    const client = await db.getClient();
+    client.query.mockResolvedValueOnce({})
+      .mockResolvedValueOnce({ rows: [{ invoice_id: 55, status: 'Cancelled' }] })
+      .mockResolvedValueOnce({});
+    const res = await request(app).put('/api/invoices/payments/301/settle');
+    expect(res.status).toBe(409);
+    expect(client.query.mock.calls.some(([sql]) => typeof sql === 'string' && sql.includes('UPDATE invoice_payments'))).toBe(false);
   });
 });

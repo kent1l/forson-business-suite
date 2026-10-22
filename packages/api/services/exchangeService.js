@@ -29,7 +29,7 @@
  */
 
 const { getNextDocumentNumber } = require('../helpers/documentNumberGenerator');
-const { formatPhysicalReceiptNumber } = require('../helpers/receiptNumberFormatter');
+const physicalDocuments = require('./physicalDocumentService');
 const { validatePaymentTerms } = require('../helpers/paymentTermsHelper');
 const { calculateInvoiceTax, storeTaxBreakdown, validateTaxCalculation, computeTaxForBase } = require('./taxCalculationService');
 const arLedger = require('./arLedgerService');
@@ -75,7 +75,7 @@ async function processExchange(client, payload) {
         payments,
         downgrade_disposition,
         cash_session_id,
-        physical_receipt_no,
+        physical_document,
         notes,
         override_credit_limit = false,
         manager_override = false,
@@ -92,6 +92,9 @@ async function processExchange(client, payload) {
     }
     if (!Array.isArray(replacement_lines) || replacement_lines.length === 0) {
         throw new ExchangeError('At least one replacement line is required.');
+    }
+    if (!physical_document || !['PAPER', 'NOTEBOOK'].includes(physical_document.recording_method)) {
+        throw new ExchangeError('Choose a paper receipt or Notebook for the replacement sale.', 422);
     }
 
     const { rows: [originalInvoice] } = await client.query(
@@ -349,23 +352,7 @@ async function processExchange(client, payload) {
     // ── 6. Replacement invoice (mirrors invoiceRoutes.js POST /invoices) ──
     const invoice_number = await getNextDocumentNumber(client, 'INV');
 
-    let prn = formatPhysicalReceiptNumber(physical_receipt_no);
-    if (prn) {
-        let attempts = 0;
-        let basePrn = prn;
-        let isUnique = false;
-        while (!isUnique && attempts < 10) {
-            const { rows: checkRows } = await client.query(`SELECT public.is_physical_receipt_no_taken($1) AS is_taken`, [prn]);
-            if (!checkRows[0]?.is_taken) {
-                isUnique = true;
-            } else {
-                attempts++;
-                const match = basePrn.match(/^(.+?)(\d+)$/);
-                prn = match ? `${match[1]}${parseInt(match[2]) + attempts}` : `${basePrn}-${attempts}`;
-            }
-        }
-        if (!isUnique) throw new Error('Unable to generate unique physical receipt number after multiple attempts');
-    }
+    let prn = null;
 
     // Booked today, always -- PRD Decision #1. status/amount_paid seeded here
     // are provisional; recompute_invoice_settlement corrects them in step 8
@@ -376,6 +363,29 @@ async function processExchange(client, payload) {
         RETURNING invoice_id;
     `, [invoice_number, customer_id, employee_id, replacementTotal, subtotal_ex_tax, tax_total, normalizedTerms, canonicalDays, dueDate, prn, taxCalculation.tax_calculation_version, original_invoice_id]);
     const newInvoiceId = invoiceResult.rows[0].invoice_id;
+
+    if (physical_document.recording_method === 'PAPER') {
+        const { rows: eligible } = await client.query(
+            `SELECT 1 FROM physical_document_series s JOIN physical_document_type t ON t.type_id = s.type_id
+             WHERE s.series_id = $1 AND s.is_active AND t.is_active
+             AND t.controlled_category NOT IN ('COLLECTION_RECEIPT', 'NOTEBOOK')
+             AND EXISTS (SELECT 1 FROM physical_document_series_context sc WHERE sc.series_id = s.series_id
+                 AND sc.is_active AND sc.context IN ('POS', 'INVOICING', 'CASHIER_APPROVAL'))`, [physical_document.series_id]
+        );
+        if (!eligible.length) throw new ExchangeError('Choose an active sales receipt series.', 422);
+    }
+    const assignment = await physicalDocuments.postPhysicalDocument(client, {
+        ...physical_document, source_type: 'INVOICE', source_id: newInvoiceId, employee_id,
+        context: 'POS', lines_tax_rate_ids: taxCalculation.lines.map(line => line.tax_rate_id).filter(id => id != null),
+    });
+    prn = assignment.canonical_full_reference;
+    await client.query(
+        `UPDATE invoice SET physical_receipt_no = $2, recording_method = $3,
+            physical_document_series_id = $4, physical_document_registry_id = $5,
+            physical_document_type_id = (SELECT type_id FROM physical_document_series WHERE series_id = $4)
+         WHERE invoice_id = $1`,
+        [newInvoiceId, prn, assignment.recording_method, assignment.series_id, assignment.registry_id]
+    );
 
     await client.query('UPDATE credit_note SET exchange_replacement_invoice_id = $1 WHERE cn_id = $2', [newInvoiceId, newCnId]);
 

@@ -3,6 +3,7 @@ import api from '../../api';
 import toast from 'react-hot-toast';
 import Modal from '../ui/Modal';
 import { useAuth } from '../../contexts/AuthContext';
+import ReceiptActionModal from './ReceiptActionModal';
 import { createUuid } from '../../utils/createUuid';
 
 const SalesCorrectionModal = ({ isOpen, onClose, invoice, onCompleted }) => {
@@ -12,11 +13,12 @@ const SalesCorrectionModal = ({ isOpen, onClose, invoice, onCompleted }) => {
     const [reasonText, setReasonText] = useState('');
     const [caseRow, setCaseRow] = useState(null);
     const [loading, setLoading] = useState(false);
+    const [showReceiptDecision, setShowReceiptDecision] = useState(false);
 
     useEffect(() => {
         if (!isOpen || !invoice) return;
         let active = true;
-        setPreview(null); setCaseRow(null); setReasonText('');
+        setPreview(null); setCaseRow(null); setReasonText(''); setShowReceiptDecision(false);
         api.post('/sales-corrections/preview', { invoice_id: invoice.invoice_id })
             .then(({ data }) => active && setPreview(data))
             .catch(err => active && toast.error(err.response?.data?.message || 'Unable to assess this sale.'));
@@ -39,21 +41,9 @@ const SalesCorrectionModal = ({ isOpen, onClose, invoice, onCompleted }) => {
         } finally { setLoading(false); }
     };
 
-    const approve = async () => {
-        setLoading(true);
-        try {
-            const { data } = await api.post(`/sales-corrections/${caseRow.correction_case_id}/approve`);
-            setCaseRow(data.case);
-            toast.success('Sale corrected. Create the replacement as a new sale.');
-            onCompleted();
-        } catch (err) {
-            toast.error(err.response?.data?.message || 'Unable to approve correction.');
-        } finally { setLoading(false); }
-    };
-
     const proposal = preview?.proposal;
     return (
-        <Modal isOpen={isOpen} onClose={onClose} title="Correct & Restart Sale" maxWidth="max-w-2xl">
+        <Modal isOpen={isOpen} onClose={onClose} title="Correct & Restart Sale" maxWidth="max-w-2xl" zIndexClass="z-50">
             <div className="space-y-4 text-sm">
                 <p className="text-gray-600 dark:text-slate-300">
                     The original invoice remains in the audit trail. Any replacement must use a new invoice identity.
@@ -78,12 +68,15 @@ const SalesCorrectionModal = ({ isOpen, onClose, invoice, onCompleted }) => {
                 {caseRow && <div className="rounded border border-gray-200 p-3 dark:border-slate-700">
                     <div className="font-semibold">Case #{caseRow.correction_case_id}: {caseRow.state.replaceAll('_', ' ')}</div>
                     {caseRow.state === 'PENDING_APPROVAL' && (hasPermission('sales_correction:approve')
-                        ? <button disabled={loading} onClick={approve} className="mt-3 rounded bg-success-600 px-4 py-2 font-semibold text-white disabled:opacity-50">Approve and execute</button>
+                        ? <button disabled={loading} onClick={() => setShowReceiptDecision(true)} className="mt-3 rounded bg-success-600 px-4 py-2 font-semibold text-white disabled:opacity-50">Approve and execute</button>
                         : <p className="mt-2 text-warning-700 dark:text-warning-300">A manager with correction approval must approve this case.</p>)}
                     {caseRow.state === 'COMPLETED' && <p className="mt-2 text-success-700 dark:text-success-300">Completed. Close this dialog and start a clean replacement sale.</p>}
                     {caseRow.state === 'REQUIRES_MANUAL_REVIEW' && <p className="mt-2 text-warning-700 dark:text-warning-300">No financial entries were changed. Record the required payment/refund evidence during accounting review.</p>}
                 </div>}
             </div>
+            <ReceiptActionModal isOpen={showReceiptDecision} onClose={() => setShowReceiptDecision(false)}
+                invoiceId={invoice?.invoice_id} mode="restart" correctionCaseId={caseRow?.correction_case_id}
+                initialReason={reasonText} onSuccess={data => { setCaseRow(data.case); onCompleted(); onClose(); }} />
         </Modal>
     );
 };

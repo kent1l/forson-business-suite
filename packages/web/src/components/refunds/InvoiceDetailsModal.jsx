@@ -5,7 +5,7 @@ import Modal from '../ui/Modal';
 import RefundForm from './RefundForm';
 import { useSettings } from '../../contexts/SettingsContext';
 import { useAuth } from '../../contexts/AuthContext';
-import { formatPhysicalReceiptNumber } from '../../utils/receiptNumberFormatter';
+import ReceiptActionModal from './ReceiptActionModal';
 import ChangeTransactionDateModal from '../common/ChangeTransactionDateModal';
 import TransactionDateHistory from '../common/TransactionDateHistory';
 import InfoTip from '../ui/InfoTip';
@@ -41,8 +41,9 @@ void TransactionDateHistory;
 void InfoTip;
 void ExchangeModal;
 void SalesCorrectionModal;
+void ReceiptActionModal;
 
-const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
+const InvoiceDetailsModal = ({ isOpen, onClose, invoice: initialInvoice, onActionSuccess }) => {
     const { settings } = useSettings();
     const { hasPermission } = useAuth();
     const [lines, setLines] = useState([]);
@@ -52,29 +53,41 @@ const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
     const [showRefundForm, setShowRefundForm] = useState(false);
     const [showExchangeModal, setShowExchangeModal] = useState(false);
     const [isEditingReceiptNo, setIsEditingReceiptNo] = useState(false);
-    const [editingReceiptNo, setEditingReceiptNo] = useState('');
+    const [showVoid, setShowVoid] = useState(false);
+    const [invoice, setInvoice] = useState(initialInvoice);
+    const [receiptHistory, setReceiptHistory] = useState([]);
+    const [refreshKey, setRefreshKey] = useState(0);
+    const [settlingPaymentId, setSettlingPaymentId] = useState(null);
     const [showChangeDate, setShowChangeDate] = useState(false);
     const [showSalesCorrection, setShowSalesCorrection] = useState(false);
 
     useEffect(() => {
-        if (!isOpen || !invoice) return;
+        if (!isOpen || !initialInvoice) return;
 
         let cancelled = false;
         (async () => {
             setLoading(true);
             setShowRefundForm(false); // Reset on open
             setIsEditingReceiptNo(false); // Reset editing state
-            setEditingReceiptNo(invoice.physical_receipt_no || ''); // Initialize with current value
+            setInvoice(initialInvoice);
+            setShowVoid(false);
+            setShowExchangeModal(false);
+            setShowChangeDate(false);
+            setShowSalesCorrection(false);
+            setReceiptHistory([]);
 
             try {
-                // Fetch lines first (this should rarely fail independently)
-                const linesRes = await api.get(`/invoices/${invoice.invoice_id}/lines-with-refunds`);
+                const { data: snapshot } = await api.get(`/invoices/${initialInvoice.invoice_id}/receipt-control`);
+                if (cancelled) return;
+                setInvoice({ ...initialInvoice, ...snapshot.invoice });
+                setReceiptHistory(snapshot.history);
+                const linesRes = await api.get(`/invoices/${initialInvoice.invoice_id}/lines-with-refunds`);
                 if (cancelled) return;
                 setLines(linesRes.data || []);
 
                 // Then attempt to fetch payments. If payments are forbidden (403) we surface a clear message
                 try {
-                    const paymentsRes = await api.get(`/invoices/${invoice.invoice_id}/payments`);
+                    const paymentsRes = await api.get(`/invoices/${initialInvoice.invoice_id}/payments`);
                     if (cancelled) return;
                     setPayments(paymentsRes.data || []);
                     setPaymentsForbidden(false);
@@ -105,7 +118,7 @@ const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
         })();
 
         return () => { cancelled = true; };
-    }, [isOpen, invoice]);
+    }, [isOpen, initialInvoice, refreshKey]);
     
     const handleRefundSuccess = () => {
         onClose(); // Close the modal
@@ -122,77 +135,24 @@ const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
         setShowExchangeModal(false);
         onClose(); // Close the modal
         onActionSuccess(); // Trigger a refresh on the parent page
+        window.dispatchEvent(new CustomEvent('invoices:changed'));
     };
 
-    const handleDelete = async () => {
-        if (!invoice) return;
-        if (!window.confirm(`Void Invoice #${invoice.invoice_number}? This will restore stock quantities, reverse its effect on the customer's A/R balance, and free up its physical receipt number for reuse. The invoice record itself is kept for audit history and marked Cancelled.`)) return;
-        try {
-            await api.delete(`/invoices/${invoice.invoice_id}`);
-            toast.success('Invoice voided');
-            onClose();
-            onActionSuccess();
-            // Notify other parts of the app that invoices changed
-            try {
-                window.dispatchEvent(new CustomEvent('invoices:changed'));
-            } catch {
-                // ignore if window not available
-            }
-        } catch (err) {
-            toast.error(err?.response?.data?.message || 'Failed to void invoice');
-        }
-    };
-
-    const handleEditReceiptNo = () => {
-        setIsEditingReceiptNo(true);
-    };
-
-    const handleSaveReceiptNo = async () => {
-        try {
-            // Format the value immediately
-            const formattedValue = formatPhysicalReceiptNumber(editingReceiptNo);
-
-            // Send the request
-            const response = await api.put(`/invoices/${invoice.invoice_id}/physical-receipt-no`, {
-                physical_receipt_no: formattedValue
-            });
-
-            // Update the invoice object with the server response
-            invoice.physical_receipt_no = response.data.physical_receipt_no;
-
-            // Trigger UI updates
-            setIsEditingReceiptNo(false);
-            toast.success('Physical receipt number updated');
-            
-            // Trigger refresh on parent page
-            onActionSuccess();
-            
-            // Notify other parts of the app that invoices changed
-            try {
-                window.dispatchEvent(new CustomEvent('invoices:changed'));
-            } catch {
-                // ignore if window not available
-            }
-
-        } catch (error) {
-            const message = error.response?.data?.message || 'Failed to update physical receipt number';
-            toast.error(message);
-        }
-    };
-
-    const handleCancelEditReceiptNo = () => {
-        setIsEditingReceiptNo(false);
-        setEditingReceiptNo(invoice.physical_receipt_no || ''); // Reset to current value
+    const notifyChanged = () => {
+        setRefreshKey(key => key + 1);
+        onActionSuccess();
+        window.dispatchEvent(new CustomEvent('invoices:changed'));
     };
 
     const handleMarkSettled = async (paymentId) => {
+        if (settlingPaymentId) return;
+        setSettlingPaymentId(paymentId);
         try {
-            await api.patch(`/payments/${paymentId}/settle`);
+            await api.put(`/invoices/payments/${paymentId}/settle`);
             toast.success('Payment marked as settled');
             
             // Refresh payments list
-            const paymentsRes = await api.get(`/invoices/${invoice.invoice_id}/payments`);
-            setPayments(paymentsRes.data || []);
+            setRefreshKey(key => key + 1);
             
             // Trigger refresh on parent page
             onActionSuccess();
@@ -206,7 +166,7 @@ const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
         } catch (error) {
             const message = error.response?.data?.message || 'Failed to mark payment as settled';
             toast.error(message);
-        }
+        } finally { setSettlingPaymentId(null); }
     };
 
 
@@ -214,55 +174,22 @@ const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
 
     return (
         <Modal isOpen={isOpen} onClose={onClose} title={`Details for Invoice #${invoice.invoice_number}`} maxWidth="max-w-2xl">
-            {loading ? <p className="text-gray-500 dark:text-slate-400 py-4 text-center">Loading details...</p> : (
+            {loading || invoice.invoice_id !== initialInvoice?.invoice_id ? <p className="text-gray-500 dark:text-slate-400 py-4 text-center">Loading details...</p> : (
                 <div className="space-y-4">
-                    {/* Physical Receipt Number Editing Section - Only shown when editing */}
-                    {isEditingReceiptNo && (
-                        <div className="bg-gray-50 dark:bg-slate-900/50 p-4 rounded-lg border-2 border-cyan-300 dark:border-cyan-700">
-                            <div className="flex items-center justify-between">
-                                <div className="flex-1">
-                                    <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-2">
-                                        Edit Physical Receipt No.
-                                    </label>
-                                    <div className="flex items-center gap-2">
-                                        <input
-                                            type="text"
-                                            value={editingReceiptNo}
-                                            onChange={(e) => {
-                                                const value = e.target.value;
-                                                const formatted = formatPhysicalReceiptNumber(value);
-                                                if (formatted !== editingReceiptNo) {
-                                                    setEditingReceiptNo(formatted || '');
-                                                }
-                                            }}
-                                            onBlur={(e) => {
-                                                const formatted = formatPhysicalReceiptNumber(e.target.value);
-                                                setEditingReceiptNo(formatted || '');
-                                            }}
-                                            className="flex-1 px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg text-sm font-mono bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 placeholder:text-gray-400 dark:placeholder:text-slate-500 focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500"
-                                            placeholder="e.g., SI-1234, ABC/5678, or XYZ 9999"
-                                            autoFocus
-                                        />
-                                        <span className="text-xs text-gray-500 dark:text-slate-400 whitespace-nowrap">
-                                            Formats instantly as you type
-                                        </span>
-                                        <button
-                                            onClick={handleSaveReceiptNo}
-                                            className="bg-success-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-success-700 transition-colors duration-200"
-                                        >
-                                            Save
-                                        </button>
-                                        <button
-                                            onClick={handleCancelEditReceiptNo}
-                                            className="bg-gray-500 dark:bg-slate-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-600 dark:hover:bg-slate-500 transition-colors duration-200"
-                                        >
-                                            Cancel
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    )}
+                    <div className="rounded border border-gray-200 p-3 text-sm dark:border-slate-700">
+                        <span className="font-semibold">Physical receipt: </span>{invoice.physical_receipt_no || 'No paper receipt recorded'}
+                        {receiptHistory.length > 0 && <details className="mt-2">
+                            <summary className="cursor-pointer">Receipt history</summary>
+                            <ul className="mt-2 space-y-2">
+                                {receiptHistory.map(event => <li key={event.event_id}>
+                                    <span className="font-mono">{event.original_suggestion || event.submitted_reference || 'Notebook'}</span>
+                                    {event.event_type === 'REFERENCE_EDITED' && ` → ${event.submitted_reference || 'Notebook'}`}
+                                    {' — '}{event.event_type.replaceAll('_', ' ')}: {event.reason}
+                                    <div className="text-xs text-gray-500">{event.actor_name || 'System'} · {new Date(event.created_at).toLocaleString()}</div>
+                                </li>)}
+                            </ul>
+                        </details>}
+                    </div>
 
                     <div className="grid grid-cols-2 gap-4 bg-slate-50 dark:bg-slate-900/50 p-4 rounded-lg text-sm text-slate-700 dark:text-slate-300 mb-4 border border-slate-100 dark:border-slate-700 shadow-xs">
                         <div>
@@ -342,8 +269,9 @@ const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
                                                     )}
                                                 </div>
                                             </div>
-                                            {payment.payment_status?.toLowerCase() === 'pending' && (
+                                            {payment.payment_status?.toLowerCase() === 'pending' && invoice.status !== 'Cancelled' && hasPermission('invoicing:create') && (
                                                 <button
+                                                    disabled={!!settlingPaymentId}
                                                     onClick={() => handleMarkSettled(payment.payment_id)}
                                                     className="bg-success-600 text-white text-xs px-3 py-1 rounded hover:bg-success-700 transition-colors"
                                                 >
@@ -399,9 +327,9 @@ const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
                     {!showRefundForm && (
                         <div className="pt-4 flex justify-between items-center gap-3">
                             <div className="flex gap-2">
-                                {hasPermission('invoice:edit_receipt_no') && (
+                                {hasPermission('invoice:edit_receipt_no') && invoice.status !== 'Cancelled' && (
                                     <button
-                                        onClick={handleEditReceiptNo}
+                                        onClick={() => setIsEditingReceiptNo(true)}
                                         className="bg-cyan-600 dark:bg-cyan-700 text-white text-sm font-semibold px-3 py-2 rounded-lg hover:bg-cyan-700 dark:hover:bg-cyan-600 transition-colors duration-200 shadow-sm"
                                     >
                                         Edit Receipt No.
@@ -409,7 +337,7 @@ const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
                                 )}
                                 {hasPermission('invoice:delete') && invoice.status !== 'Cancelled' && (
                                     <button
-                                        onClick={handleDelete}
+                                        onClick={() => setShowVoid(true)}
                                         className="bg-white dark:bg-slate-800 border border-danger-300 dark:border-danger-700 text-danger-600 dark:text-danger-400 text-sm font-semibold px-3 py-2 rounded-lg hover:bg-danger-50 dark:hover:bg-danger-950/30 transition-colors"
                                     >
                                         Void Invoice
@@ -441,12 +369,12 @@ const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
                                         Exchange Items
                                     </button>
                                 )}
-                                <button
+                                {invoice.status !== 'Cancelled' && hasPermission('invoicing:create') && <button
                                     onClick={() => setShowRefundForm(true)}
                                     className="bg-danger-600 hover:bg-danger-700 text-white font-semibold px-4 py-2 rounded-lg transition-colors"
                                 >
                                     Process Refund
-                                </button>
+                                </button>}
                             </div>
                         </div>
                     )}
@@ -457,6 +385,11 @@ const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
                 </div>
             )}
 
+            <ReceiptActionModal isOpen={isEditingReceiptNo} onClose={() => setIsEditingReceiptNo(false)} invoiceId={invoice.invoice_id}
+                mode="edit" onSuccess={notifyChanged} />
+            <ReceiptActionModal isOpen={showVoid} onClose={() => setShowVoid(false)} invoiceId={invoice.invoice_id}
+                mode="void" onSuccess={() => { notifyChanged(); onClose(); }} />
+
             <ChangeTransactionDateModal
                 isOpen={showChangeDate}
                 onClose={() => setShowChangeDate(false)}
@@ -465,12 +398,7 @@ const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
                 currentDate={invoice.invoice_date}
                 transactionLabel={`Invoice #${invoice.invoice_number}`}
                 onApplied={() => {
-                    onActionSuccess();
-                    try {
-                        window.dispatchEvent(new CustomEvent('invoices:changed'));
-                    } catch {
-                        // ignore if window not available
-                    }
+                    notifyChanged();
                 }}
             />
 
@@ -486,8 +414,8 @@ const InvoiceDetailsModal = ({ isOpen, onClose, invoice, onActionSuccess }) => {
                 onClose={() => setShowSalesCorrection(false)}
                 invoice={invoice}
                 onCompleted={() => {
-                    onActionSuccess();
-                    window.dispatchEvent(new CustomEvent('invoices:changed'));
+                    notifyChanged();
+                    onClose();
                 }}
             />
         </Modal>

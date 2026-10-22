@@ -13,6 +13,7 @@ const arAdjustment = require('../services/arAdjustmentService');
 const arAdjustmentAuth = require('../services/arAdjustmentAuthService');
 const { normalizeStatusFilter } = require('../helpers/invoiceStatusFilter');
 const physicalDocumentService = require('../services/physicalDocumentService');
+const invoiceReceipt = require('../services/invoiceReceiptService');
 const router = express.Router();
 
 // Shared WHERE-clause builder for the invoice listing/export endpoints.
@@ -1031,7 +1032,22 @@ router.put('/invoices/payments/:payment_id/settle', protect, hasPermission('invo
     try {
         await client.query('BEGIN');
 
-        // Update payment status to settled
+        // Match void/refund lock order: invoice first, then its payment.
+        const { rows: [sourceInvoice] } = await client.query(
+            `SELECT i.invoice_id, i.status FROM invoice i
+             WHERE i.invoice_id = (SELECT invoice_id FROM invoice_payments WHERE payment_id = $1)
+             FOR UPDATE OF i`, [payment_id]
+        );
+        if (!sourceInvoice) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ message: 'Payment not found.' });
+        }
+        if (sourceInvoice.status === 'Cancelled') {
+            await client.query('ROLLBACK');
+            return res.status(409).json({ message: 'Cannot settle a payment on a voided invoice.' });
+        }
+
+        // Update payment status to settled.
         const { rows: paymentRows } = await client.query(`
             UPDATE invoice_payments
             SET payment_status = 'settled', settled_at = CURRENT_TIMESTAMP
@@ -1093,7 +1109,7 @@ router.delete('/invoices/:id', protect, hasPermission('invoice:delete'), async (
         await client.query('BEGIN');
 
         const { rows: invoiceRows } = await client.query(
-            'SELECT invoice_number, customer_id, status FROM invoice WHERE invoice_id = $1 FOR UPDATE',
+            'SELECT * FROM invoice WHERE invoice_id = $1 FOR UPDATE',
             [id]
         );
         if (invoiceRows.length === 0) {
@@ -1123,6 +1139,8 @@ router.delete('/invoices/:id', protect, hasPermission('invoice:delete'), async (
                 message: 'Cannot void an invoice with issued credit notes. The refund is the final correction for this sale.'
             });
         }
+
+        await invoiceReceipt.voidReceipt(client, invoiceRows[0], req.body || {}, req.user.employee_id, userHasPermission(req, 'invoice:release_receipt_no'));
 
         // Refunds are rejected above, so every sold quantity is reversed once.
         const { rows: lines } = await client.query(`
@@ -1222,10 +1240,9 @@ router.delete('/invoices/:id', protect, hasPermission('invoice:delete'), async (
             });
         }
 
-        // Free the physical receipt number for reuse and mark the invoice voided.
-        // invoice_number and all line/payment/ledger history are preserved intact.
+        // Paper disposition was recorded atomically with the reversal above.
         await client.query(
-            `UPDATE invoice SET status = 'Cancelled', physical_receipt_no = NULL WHERE invoice_id = $1`,
+            `UPDATE invoice SET status = 'Cancelled' WHERE invoice_id = $1`,
             [id]
         );
 
@@ -1234,105 +1251,40 @@ router.delete('/invoices/:id', protect, hasPermission('invoice:delete'), async (
     } catch (err) {
         await client.query('ROLLBACK');
         console.error('Void invoice error:', err.message);
-        res.status(500).json({ message: 'Server error voiding invoice', error: err.message });
+        res.status(err.statusCode || 500).json({ message: err.message || 'Server error voiding invoice', code: err.code });
     } finally {
         client.release();
     }
 });
 
-// PUT /api/invoices/:id/physical-receipt-no - Update physical receipt number
-router.put('/invoices/:id/physical-receipt-no', protect, hasPermission('invoice:edit_receipt_no'), async (req, res) => {
-    const { id } = req.params;
-    const { physical_receipt_no, reason } = req.body;
-    const employeeId = req.user?.employee_id;
-
-    if (!id || isNaN(parseInt(id))) {
-        return res.status(400).json({ message: 'Invalid invoice ID.' });
+// Current paper assignment, permitted sales series, and immutable correction history.
+router.get('/invoices/:id/receipt-control', protect, hasPermission(['invoicing:create', 'invoice:edit_receipt_no', 'invoice:delete', 'sales_correction:create', 'sales_correction:approve']), async (req, res) => {
+    try {
+        if (!/^\d+$/.test(req.params.id)) return res.status(400).json({ message: 'Invalid invoice ID.' });
+        res.json(await invoiceReceipt.getSnapshot(Number(req.params.id)));
+    } catch (err) {
+        res.status(err.statusCode || 500).json({ message: err.message, code: err.code });
     }
+});
 
+// Correct the assignment without replaying financial entries or ordinary issuance.
+router.put('/invoices/:id/physical-receipt-no', protect, hasPermission('invoice:edit_receipt_no'), async (req, res) => {
+    if (!/^\d+$/.test(req.params.id)) return res.status(400).json({ message: 'Invalid invoice ID.' });
     const client = await db.getClient();
     try {
         await client.query('BEGIN');
-        const invoiceId = parseInt(id, 10);
-        const { rows: invRows } = await client.query(
-            `SELECT * FROM public.invoice WHERE invoice_id = $1 FOR UPDATE`,
-            [invoiceId]
-        );
-        if (invRows.length === 0) {
+        const { rows: [invoice] } = await client.query('SELECT * FROM public.invoice WHERE invoice_id = $1 FOR UPDATE', [req.params.id]);
+        if (!invoice) {
             await client.query('ROLLBACK');
             return res.status(404).json({ message: 'Invoice not found.' });
         }
-        const inv = invRows[0];
-        const oldPrn = inv.physical_receipt_no;
-        const prn = formatPhysicalReceiptNumber(physical_receipt_no);
-
-        if (prn) {
-            const { rows: checkRows } = await client.query(
-                `SELECT public.is_physical_receipt_no_taken($1, $2) AS is_taken`,
-                [prn, invoiceId]
-            );
-            if (checkRows[0]?.is_taken) {
-                await client.query('ROLLBACK');
-                return res.status(409).json({ message: 'Physical Receipt No already exists. Please use a unique number.' });
-            }
-        }
-
-        // If invoice is linked to registry, update registry or release occupancy
-        if (inv.physical_document_registry_id) {
-            if (prn) {
-                const parsed = physicalDocumentService.parseReferenceComponents(prn);
-                await client.query(
-                    `UPDATE public.physical_document_registry
-                     SET canonical_full_reference = $1,
-                         serial_number = COALESCE($2, serial_number),
-                         version = version + 1,
-                         updated_at = CURRENT_TIMESTAMP,
-                         updated_by = $3
-                     WHERE registry_id = $4`,
-                    [prn, parsed?.serial || null, employeeId, inv.physical_document_registry_id]
-                );
-            } else {
-                await client.query(
-                    `UPDATE public.physical_document_registry
-                     SET state = 'UNOCCUPIED',
-                         version = version + 1,
-                         updated_at = CURRENT_TIMESTAMP,
-                         updated_by = $1
-                     WHERE registry_id = $2`,
-                    [employeeId, inv.physical_document_registry_id]
-                );
-            }
-        }
-
-        // Append audit event
-        await client.query(
-            `INSERT INTO public.physical_document_event
-             (series_id, registry_id, source_type, source_id, event_type, original_suggestion, submitted_reference, reason, actor_id)
-             VALUES ($1, $2, 'INVOICE', $3, 'REFERENCE_EDITED', $4, $5, $6, $7)`,
-            [inv.physical_document_series_id || null, inv.physical_document_registry_id || null, invoiceId, oldPrn, prn, reason || 'Invoice physical receipt number correction', employeeId]
-        );
-
-        // Update the invoice
-        const updateQuery = `
-            UPDATE public.invoice 
-            SET physical_receipt_no = $1,
-                recording_method = CASE WHEN $1 IS NULL THEN 'NOTEBOOK' ELSE 'PAPER' END
-            WHERE invoice_id = $2
-            RETURNING invoice_id, physical_receipt_no, recording_method
-        `;
-        const { rows } = await client.query(updateQuery, [prn, invoiceId]);
-
+        const updated = await invoiceReceipt.correctReceipt(client, invoice, req.body || {}, req.user.employee_id,
+            userHasPermission(req, 'invoice:release_receipt_no'));
         await client.query('COMMIT');
-        res.json({ 
-            message: 'Physical receipt number updated successfully.',
-            invoice_id: rows[0].invoice_id,
-            physical_receipt_no: rows[0].physical_receipt_no,
-            recording_method: rows[0].recording_method,
-        });
+        res.json({ ...updated, message: 'Physical receipt assignment corrected.' });
     } catch (err) {
         await client.query('ROLLBACK');
-        console.error('Update physical receipt no error:', err.message);
-        res.status(500).json({ message: 'Server error updating physical receipt number.', error: err.message });
+        res.status(err.statusCode || (err.code === '23505' ? 409 : 500)).json({ message: err.message, code: err.code });
     } finally {
         client.release();
     }

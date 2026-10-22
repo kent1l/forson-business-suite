@@ -11,7 +11,7 @@ import useTypeahead from '../../hooks/useTypeahead';
 import { ICONS } from '../../constants';
 import { useAuth } from '../../contexts/AuthContext';
 import { useSettings } from '../../contexts/SettingsContext';
-import { formatPhysicalReceiptNumber } from '../../utils/receiptNumberFormatter';
+import PhysicalDocumentControl from '../common/PhysicalDocumentControl';
 import { parsePaymentTermsDays } from '../../utils/terms';
 import { computeTaxPreview } from '../../utils/taxPreview';
 import useCashDrawerSession from '../../hooks/useCashDrawerSession';
@@ -93,7 +93,7 @@ const ExchangeModal = ({ isOpen, onClose, initialInvoice = null, onExchangeSucce
     const [paymentMethods, setPaymentMethods] = useState([]);
     const [paymentLine, setPaymentLine] = useState(emptyPaymentLine());
     const [downgradeDisposition, setDowngradeDisposition] = useState('cash_payout');
-    const [physicalReceiptNo, setPhysicalReceiptNo] = useState('');
+    const [physicalDocument, setPhysicalDocument] = useState({});
     const [notes, setNotes] = useState('');
     const [submitting, setSubmitting] = useState(false);
 
@@ -115,7 +115,7 @@ const ExchangeModal = ({ isOpen, onClose, initialInvoice = null, onExchangeSucce
         setCollectNow(false);
         setPaymentLine(emptyPaymentLine());
         setDowngradeDisposition('cash_payout');
-        setPhysicalReceiptNo('');
+        setPhysicalDocument({});
         setNotes('');
     }, [settings?.DEFAULT_ON_ACCOUNT_PAYMENT_TERMS]);
 
@@ -396,6 +396,11 @@ const ExchangeModal = ({ isOpen, onClose, initialInvoice = null, onExchangeSucce
     const handleSubmit = async () => {
         if (validationError) { toast.error(validationError); return; }
 
+        if (!physicalDocument.recording_method || (physicalDocument.recording_method === 'PAPER'
+            && (!physicalDocument.series_id || !physicalDocument.physical_receipt_no))) {
+            toast.error('Choose a paper receipt or Notebook for the replacement sale.');
+            return;
+        }
         const payload = {
             original_invoice_id: selectedInvoice.invoice_id,
             employee_id: user.employee_id,
@@ -412,7 +417,7 @@ const ExchangeModal = ({ isOpen, onClose, initialInvoice = null, onExchangeSucce
             })),
             terms: chargeToAccount ? String(parsePaymentTermsDays(termsDays)) : '0',
             payment_terms_days: chargeToAccount ? parsePaymentTermsDays(termsDays) : 0,
-            physical_receipt_no: formatPhysicalReceiptNumber(physicalReceiptNo) || undefined,
+            physical_document: physicalDocument,
             notes: notes.trim() || undefined,
         };
         if (showTenderFields) {
@@ -542,6 +547,7 @@ const ExchangeModal = ({ isOpen, onClose, initialInvoice = null, onExchangeSucce
                     <div className="flex items-center justify-between bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg p-3">
                         <div>
                             <div className="font-mono font-semibold text-gray-900 dark:text-slate-100">Invoice #{selectedInvoice.invoice_number}</div>
+                            <div className="text-xs text-gray-500 dark:text-slate-400">Original receipt: {selectedInvoice.physical_receipt_no || 'No paper recorded'}</div>
                             <div className="text-xs text-gray-500 dark:text-slate-400">
                                 {selectedInvoice.customer_first_name} {selectedInvoice.customer_last_name} · {new Date(selectedInvoice.invoice_date).toLocaleDateString()} · {currency}{parseFloat(selectedInvoice.total_amount).toFixed(2)}
                             </div>
@@ -843,15 +849,9 @@ const ExchangeModal = ({ isOpen, onClose, initialInvoice = null, onExchangeSucce
                 {selectedInvoice && (
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">New Physical Receipt No.</label>
-                            <input
-                                type="text"
-                                value={physicalReceiptNo}
-                                onChange={(e) => setPhysicalReceiptNo(e.target.value)}
-                                onBlur={(e) => setPhysicalReceiptNo(formatPhysicalReceiptNumber(e.target.value) || '')}
-                                placeholder="e.g., SI-1235"
-                                className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 shadow-sm font-mono"
-                            />
+                            <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Replacement receipt</label>
+                            <PhysicalDocumentControl key={selectedInvoice.invoice_id} context="POS" value={physicalDocument}
+                                onChange={setPhysicalDocument} disabled={submitting} required />
                         </div>
                         <div>
                             <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Notes</label>
