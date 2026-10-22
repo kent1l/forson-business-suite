@@ -63,6 +63,37 @@ describe('GRN External JSON Ingestion - Schema and Rules', () => {
     expect(normalized.extraction_issues).toHaveLength(0);
   });
 
+  test.each([undefined, null, '', '   '])('defaults missing or blank JSON unit %p to pcs', unit => {
+    const payload = structuredClone(conformingExample);
+    if (unit === undefined) delete payload.lines[0].unit;
+    else payload.lines[0].unit = unit;
+    const normalized = validateAndNormalizeExternalPayload(payload);
+    expect(normalized.lines[0].unit).toBe('pcs');
+    expect(initializeReviewState(normalized, {}).rows[0].confirmed_row.stock_uom).toBe('pcs');
+  });
+
+  test('preserves an explicit JSON unit', () => {
+    const payload = structuredClone(conformingExample);
+    payload.lines[0].unit = 'BOX';
+    expect(validateAndNormalizeExternalPayload(payload).lines[0].unit).toBe('BOX');
+  });
+
+  test.each([undefined, null, '', '   '])('missing stock UOM %p does not block a confirmed catalog match', stockUom => {
+    const normalized = validateAndNormalizeExternalPayload(conformingExample);
+    const state = initializeReviewState(normalized, { supplier_id: 5 });
+    const cr = state.rows[0].confirmed_row;
+    cr.part_id = 101;
+    cr.stock_uom = stockUom;
+    cr.row_confirmed = true;
+    cr.row_confirmation_digest = computeRowDigest({
+      supplierId: 5, currency: 'PHP', partId: 101, stockUom: 'pcs', unitsPerSourceUnit: '1.0000',
+    });
+    state.header.receipt_date = '2026-10-20';
+    state.header.header_confirmed = true;
+    state.header.header_confirmation_digest = computeHeaderDigest(state.header);
+    expect(calculateBlockers(state, normalized)).toEqual([]);
+  });
+
   test('accepts optional cleaned supplier identity without altering legacy payload shape or hash', () => {
     const legacy = validateAndNormalizeExternalPayload(conformingExample);
     expect(legacy.lines[0]).not.toHaveProperty('supplier_item_text');

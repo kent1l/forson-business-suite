@@ -141,7 +141,7 @@ export default function ImportReviewDrawer({
   const handleSelectCandidate = (rowId, candidate) => {
     updateRow(rowId, {
       part_id: candidate.part_id,
-      stock_uom: candidate.stock_uom,
+      stock_uom: candidate.stock_uom?.trim() ? candidate.stock_uom : 'pcs',
     }, null, candidate);
     setCandidateDrawerRowId(null);
   };
@@ -400,7 +400,7 @@ export default function ImportReviewDrawer({
                     </label>
                     {row.included && (isConfirmed
                       ? <span className="text-xs text-emerald-700 dark:text-emerald-400 flex items-center gap-1"><Icon path={ICONS.check} className="w-3.5 h-3.5" /> Confirmed</span>
-                      : <button type="button" disabled={saving || committing || !cr.part_id || !cr.stock_uom}
+                      : <button type="button" disabled={saving || committing || !cr.part_id}
                           title={!cr.part_id ? 'Select a catalog part first' : 'Confirm this catalog match and save your changes'}
                           onClick={() => onQueueAction({ type: 'confirm_row', row_id: row.row_id })}
                           className="px-3 py-1.5 text-xs font-semibold text-white bg-primary-600 hover:bg-primary-700 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed">
@@ -463,7 +463,7 @@ export default function ImportReviewDrawer({
                         </div>}
                         <div>
                           <label className="block mb-1" htmlFor={`uom-${row.row_id}`}>Stock Unit</label>
-                          <input id={`uom-${row.row_id}`} readOnly value={cr.stock_uom || ''} data-ai-filled={aiFields.includes('stock_uom') || undefined} className={fieldClass('stock_uom')} />
+                          <input id={`uom-${row.row_id}`} readOnly value={cr.stock_uom?.trim() ? cr.stock_uom : 'pcs'} data-ai-filled={aiFields.includes('stock_uom') || undefined} className={fieldClass('stock_uom')} />
                         </div>
                         <div>
                           <label className="block mb-1" htmlFor={`factor-${row.row_id}`}>Units per Supplier Unit</label>
