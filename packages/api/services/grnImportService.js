@@ -42,7 +42,7 @@ function computeRowDigest({
     supplierId: supplierId || null,
     currency: currency || null,
     partId: partId || null,
-    stockUom: stockUom || null,
+    stockUom: stockUom?.trim() ? stockUom : 'pcs',
     unitsPerSourceUnit: unitsPerSourceUnit || '1.0000',
   });
   return crypto.createHash('sha256').update(content).digest('hex');
@@ -247,16 +247,6 @@ function calculateBlockers(reviewState, sourcePayload) {
         message: `Line ${row.line_no}: Catalog part must be selected.`,
       });
     }
-    if (!cr.stock_uom) {
-      blockers.push({
-        scope: 'row',
-        row_id: row.row_id,
-        line_no: row.line_no,
-        field: 'stock_uom',
-        code: 'STOCK_UOM_REQUIRED',
-        message: `Line ${row.line_no}: Stock UOM is missing.`,
-      });
-    }
     const factor = cr.units_per_source_unit || '1.0000';
     if (!factor || Number(factor) <= 0) {
       blockers.push({
@@ -372,7 +362,7 @@ function initializeReviewState(normalizedPayload, initialContext) {
       confirmed_row: {
         ai_filled_fields: [line.quantity && 'delivered_quantity', line.unit_cost && 'cost_price'].filter(Boolean),
         part_id: null,
-        stock_uom: null,
+        stock_uom: 'pcs',
         units_per_source_unit: '1.0000',
         delivered_quantity: line.quantity || null,
         return_quantity: '0.0000',
@@ -807,7 +797,7 @@ async function patchImport(client, employeeId, importId, { version, actions }) {
           requiresReconfirm = true;
         }
         if (values.stock_uom !== undefined && values.stock_uom !== cr.stock_uom) {
-          cr.stock_uom = values.stock_uom;
+          cr.stock_uom = values.stock_uom?.trim() ? values.stock_uom : 'pcs';
           requiresReconfirm = true;
         }
         if (values.units_per_source_unit !== undefined && values.units_per_source_unit !== cr.units_per_source_unit) {
@@ -894,11 +884,12 @@ async function patchImport(client, employeeId, importId, { version, actions }) {
           throw err;
         }
         const cr = row.confirmed_row;
-        if (!cr.part_id || !cr.stock_uom) {
+        if (!cr.part_id) {
           const err = new Error('Select a catalog part before confirming the row.');
           err.statusCode = 400;
           throw err;
         }
+        cr.stock_uom = cr.stock_uom?.trim() ? cr.stock_uom : 'pcs';
         cr.row_confirmation_digest = computeRowDigest({
           supplierId: header.supplier_id,
           currency: header.confirmed_currency,

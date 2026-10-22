@@ -316,21 +316,13 @@ const Sidebar = ({ onNavigate, currentPage, isOpen, setIsOpen }) => {
                     )}
                 </div>
 
-                {/* ── Nav body ────────────────────────────────────────── */}
-                <nav
-                    className={`flex-1 overflow-y-auto overflow-x-hidden py-4 space-y-0.5 ${
-                        isCollapsed ? '[&::-webkit-scrollbar]:hidden' : ''
-                    }`}
-                    style={{
-                        scrollbarWidth: isCollapsed ? 'none' : 'thin',
-                        scrollbarColor: '#e2e8f0 transparent',
-                        msOverflowStyle: isCollapsed ? 'none' : 'auto',
-                    }}
-                >
-                    {/* Padding wrapper adjusts with collapsed state */}
-                    <div className={isCollapsed ? 'px-0 flex flex-col items-center w-full' : 'px-3'}>
+                {/* Pinned links stay outside the category scroll area. */}
+                <nav aria-label="Sidebar" className="flex-1 min-h-0 flex flex-col">
+                    <div className={`shrink-0 py-4 border-b border-slate-100 dark:border-slate-800 ${
+                        isCollapsed ? 'px-0 flex flex-col items-center w-full' : 'px-3'
+                    }`}>
                         {/* Top standalone items */}
-                        <div className={isCollapsed ? 'space-y-1 w-full flex flex-col items-center' : 'space-y-0.5 mb-4'}>
+                        <div className={isCollapsed ? 'space-y-1 w-full flex flex-col items-center' : 'space-y-0.5'}>
                             {filteredTopItems.map(item => (
                                 <NavItem
                                     key={item.page || item.name}
@@ -344,26 +336,37 @@ const Sidebar = ({ onNavigate, currentPage, isOpen, setIsOpen }) => {
                                 />
                             ))}
                         </div>
+                    </div>
 
-                        {/* Separator */}
-                        <div className={isCollapsed ? 'w-8 h-px bg-slate-200/80 dark:bg-slate-700 my-2' : 'h-px bg-slate-100 dark:bg-slate-800 mb-4'} />
-
-                        {/* Category groups */}
-                        <div className={isCollapsed ? 'space-y-1 w-full flex flex-col items-center' : 'space-y-2'}>
-                            {CATEGORIES.map(cat => (
-                                <CategoryGroup
-                                    key={cat.key}
-                                    cat={cat}
-                                    currentPage={currentPage}
-                                    onNavigate={onNavigate}
-                                    setIsOpen={setIsOpen}
-                                    isCollapsed={isCollapsed}
-                                    isOpen={!!openCategories[cat.key]}
-                                    onToggle={() => toggleCategory(cat.key)}
-                                    pendingCount={pendingCount}
-                                    hasPermission={hasPermission}
-                                />
-                            ))}
+                    {/* Only category groups scroll. */}
+                    <div
+                        className={`flex-1 min-h-0 overflow-y-auto overflow-x-hidden py-4 ${
+                            isCollapsed ? '[&::-webkit-scrollbar]:hidden' : ''
+                        }`}
+                        style={{
+                            scrollbarWidth: isCollapsed ? 'none' : 'thin',
+                            scrollbarColor: '#e2e8f0 transparent',
+                            msOverflowStyle: isCollapsed ? 'none' : 'auto',
+                        }}
+                    >
+                        <div className={isCollapsed ? 'px-0 flex flex-col items-center w-full' : 'px-3'}>
+                            {/* Category groups */}
+                            <div className={isCollapsed ? 'space-y-1 w-full flex flex-col items-center' : 'space-y-2'}>
+                                {CATEGORIES.map(cat => (
+                                    <CategoryGroup
+                                        key={cat.key}
+                                        cat={cat}
+                                        currentPage={currentPage}
+                                        onNavigate={onNavigate}
+                                        setIsOpen={setIsOpen}
+                                        isCollapsed={isCollapsed}
+                                        isOpen={!!openCategories[cat.key]}
+                                        onToggle={() => toggleCategory(cat.key)}
+                                        pendingCount={pendingCount}
+                                        hasPermission={hasPermission}
+                                    />
+                                ))}
+                            </div>
                         </div>
                     </div>
                 </nav>

@@ -518,7 +518,7 @@ function validateAndNormalizeExternalPayload(payload) {
       supplier_item_code: supplier_item_code ?? null,
       item_group_hint: item_group_hint ?? null,
       quantity,
-      unit: unit ?? null,
+      unit: unit?.trim() ? unit : 'pcs',
       unit_cost,
       printed_line_total,
       handwritten_sale_price,

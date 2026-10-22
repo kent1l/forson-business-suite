@@ -147,7 +147,7 @@ function createPartCandidateService({ dbClient = db, searchClient = meiliClient,
       return {
         part_id: row.part_id, internal_sku: row.internal_sku, detail: row.detail,
         display_name: row.display_name || row.detail, brand_name: row.brand_name, group_name: row.group_name,
-        part_numbers: row.part_numbers || [], stock_uom: row.stock_uom || 'PCS',
+        part_numbers: row.part_numbers || [], stock_uom: row.stock_uom?.trim() ? row.stock_uom : 'pcs',
         last_cost: row.last_cost != null ? Number(row.last_cost) : null,
         evidence_class: identifierMatch ? 'exact_identifier' : 'description_match',
         match_reason: identifierMatch ? (brandMatch ? 'brand_and_identifier' : 'identifier') : 'catalog_fields',

@@ -13,7 +13,6 @@ export const CATEGORIES = [
         items: [
             { name: 'Approval Queue', icon: ICONS.ar,            page: 'staged_sales',  permission: 'invoicing:create', badge: true, keywords: ['pending sales', 'cashier approval', 'staged sales'] },
             { name: 'Invoicing',      icon: ICONS.invoice,       page: 'invoicing',     permission: 'invoicing:create', keywords: ['create invoice', 'bill customer'] },
-            { name: 'Sales History',  icon: ICONS.history,       page: 'sales_history', permission: 'invoicing:create', keywords: ['past sales', 'transactions'] },
             { name: 'A/R',            icon: ICONS.ar,            page: 'ar',            permission: 'ar:view', keywords: ['accounts receivable', 'receivables', 'customer balance', 'ar'] },
         ],
     },
@@ -100,6 +99,7 @@ export const CATEGORIES = [
 const TOP_ITEMS = [
     { name: 'Dashboard',    icon: ICONS.dashboard,    page: 'dashboard',    permission: 'dashboard:view', keywords: ['home', 'overview'] },
     { name: 'POS',          icon: ICONS.pos,          page: 'pos',          permission: 'pos:use', keywords: ['point of sale', 'checkout', 'sell', 'cashier'] },
+    { name: 'Sales History',  icon: ICONS.history,       page: 'sales_history', permission: 'invoicing:create', keywords: ['past sales', 'transactions'] },
     { name: 'Power Search', icon: ICONS.power_search, page: 'power_search', permission: 'parts:view', keywords: ['find part', 'lookup', 'part search'] },
     { name: 'My Pay',       icon: ICONS.dollar,       page: 'my_pay',       permission: 'payslip:view_own', keywords: ['payslip', 'salary', 'my payroll'] },
 ];
