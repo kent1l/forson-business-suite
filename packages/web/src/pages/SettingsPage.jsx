@@ -89,7 +89,7 @@ const MobileAppSettings = ({ settings, handleChange }) => {
 };
 
 const CompanyInfoSettings = ({ settings, handleChange }) => (
-    <div className="space-y-4">
+    <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-4 items-start">
         <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Company Name</label>
             <input type="text" name="COMPANY_NAME" value={settings.COMPANY_NAME} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 rounded-lg" />
@@ -98,7 +98,7 @@ const CompanyInfoSettings = ({ settings, handleChange }) => (
             <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Company Address</label>
             <input type="text" name="COMPANY_ADDRESS" value={settings.COMPANY_ADDRESS} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 rounded-lg" />
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="contents">
             <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Company Phone</label>
                 <input type="text" name="COMPANY_PHONE" value={settings.COMPANY_PHONE} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 rounded-lg" />
@@ -108,7 +108,7 @@ const CompanyInfoSettings = ({ settings, handleChange }) => (
                 <input type="email" name="COMPANY_EMAIL" value={settings.COMPANY_EMAIL} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 rounded-lg" />
             </div>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="contents">
             <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Company Website</label>
                 <input type="text" name="COMPANY_WEBSITE" value={settings.COMPANY_WEBSITE || ''} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 rounded-lg" placeholder="https://forson.ph" />
@@ -118,7 +118,7 @@ const CompanyInfoSettings = ({ settings, handleChange }) => (
                 <input type="text" name="COMPANY_TIN" value={settings.COMPANY_TIN || ''} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 rounded-lg" placeholder="123-456-789-000" />
             </div>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="contents">
             <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Remittance Bank Name</label>
                 <input type="text" name="COMPANY_BANK_NAME" value={settings.COMPANY_BANK_NAME || ''} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 rounded-lg" placeholder="BDO Unibank, Inc." />
@@ -704,7 +704,7 @@ const SettingsPage = ({ user }) => {
     return (
         <div>
             <h1 className="text-2xl font-semibold text-gray-800 dark:text-slate-100 mb-6">Application Settings</h1>
-            <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border border-gray-200 dark:border-slate-700 max-w-4xl">
+            <div className="bg-white dark:bg-slate-800 p-4 sm:p-6 lg:p-8 rounded-xl border border-gray-200 dark:border-slate-700 w-full">
                 {activeTab === 'payment_methods' ? (
                     <PaymentMethodSettings />
                 ) : (

@@ -36,7 +36,7 @@ const AnalyticsSettings = ({ settings, handleChange }) => (
                 and turning it off here leaves Reporting and the Dashboard untouched.
             </p>
 
-            <div className="max-w-2xl space-y-4">
+            <div className="max-w-none xl:max-w-5xl space-y-4">
                 <label className="flex items-start gap-3">
                     <input
                         type="checkbox"

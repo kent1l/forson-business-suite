@@ -67,7 +67,7 @@ const ARAdjustmentSettings = ({ settings, handleChange }) => {
                     appears as a payment method and is never counted as collections.
                 </p>
 
-                <div className="space-y-4 max-w-2xl">
+                <div className="space-y-4 max-w-none xl:max-w-5xl">
                     <label className="flex items-start gap-3">
                         <input
                             type="checkbox"
