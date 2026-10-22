@@ -34,12 +34,22 @@ export function applyImportAction(review, action, selectedPart = null) {
         if (action.origin === 'automatic_match' && ['part_id', 'stock_uom'].includes(field)) origins.add(field);
         else origins.delete(field);
       }
+      const normalizedValues = Object.hasOwn(action.values, 'stock_uom') || action.values.part_id !== undefined
+        ? {
+            ...action.values,
+            stock_uom: action.values.stock_uom?.trim()
+              || selectedPart?.stock_uom?.trim()
+              || selectedPart?.measurement_unit?.trim()
+              || row.confirmed_row.stock_uom
+              || 'pcs',
+          }
+        : action.values;
       const changedMatch = ['part_id', 'stock_uom', 'units_per_source_unit']
-        .some(field => Object.hasOwn(action.values, field) && action.values[field] !== row.confirmed_row[field]);
+        .some(field => Object.hasOwn(normalizedValues, field) && normalizedValues[field] !== row.confirmed_row[field]);
       return {
         ...row,
         confirmed_row: {
-          ...row.confirmed_row, ...action.values,
+          ...row.confirmed_row, ...normalizedValues,
           ai_filled_fields: [...origins],
           row_confirmed: changedMatch ? false : row.confirmed_row.row_confirmed,
           ...(action.values.part_id !== undefined ? {

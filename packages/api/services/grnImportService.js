@@ -714,6 +714,21 @@ async function patchImport(client, employeeId, importId, { version, actions }) {
   const rowsList = reviewState.rows;
   const issuesList = reviewState.issues;
 
+  const referencedPartIds = [...new Set([
+    ...rowsList.map(r => r.confirmed_row?.part_id),
+    ...actions.map(a => a?.values?.part_id),
+  ].filter(Boolean))];
+  const catalogUomByPartId = new Map();
+  if (referencedPartIds.length > 0) {
+    const { rows: partRows } = await client.query(
+      'SELECT part_id, measurement_unit FROM part WHERE part_id = ANY($1::int[])',
+      [referencedPartIds]
+    );
+    for (const p of partRows) {
+      catalogUomByPartId.set(p.part_id, p.measurement_unit?.trim() || 'pcs');
+    }
+  }
+
   for (let aIdx = 0; aIdx < actions.length; aIdx++) {
     const action = actions[aIdx];
     if (!action || typeof action !== 'object' || !action.type) {
@@ -796,8 +811,11 @@ async function patchImport(client, employeeId, importId, { version, actions }) {
           cr.part_id = values.part_id;
           requiresReconfirm = true;
         }
-        if (values.stock_uom !== undefined && values.stock_uom !== cr.stock_uom) {
-          cr.stock_uom = values.stock_uom?.trim() ? values.stock_uom : 'pcs';
+        const nextStockUom = values.stock_uom?.trim()
+          || (values.part_id ? catalogUomByPartId.get(values.part_id) : null)
+          || (values.stock_uom !== undefined ? 'pcs' : null);
+        if (nextStockUom !== null && nextStockUom !== cr.stock_uom) {
+          cr.stock_uom = nextStockUom;
           requiresReconfirm = true;
         }
         if (values.units_per_source_unit !== undefined && values.units_per_source_unit !== cr.units_per_source_unit) {
@@ -889,7 +907,8 @@ async function patchImport(client, employeeId, importId, { version, actions }) {
           err.statusCode = 400;
           throw err;
         }
-        cr.stock_uom = cr.stock_uom?.trim() ? cr.stock_uom : 'pcs';
+        cr.stock_uom = catalogUomByPartId.get(cr.part_id)
+          || (cr.stock_uom?.trim() ? cr.stock_uom.trim() : 'pcs');
         cr.row_confirmation_digest = computeRowDigest({
           supplierId: header.supplier_id,
           currency: header.confirmed_currency,
@@ -1170,7 +1189,9 @@ async function commitImport(client, employeeId, importId, { version }) {
       err.statusCode = 422;
       throw err;
     }
-    if (p.measurement_unit && r.confirmed_row.stock_uom && p.measurement_unit !== r.confirmed_row.stock_uom) {
+    const catalogUom = p.measurement_unit?.trim() || 'pcs';
+    const confirmedUom = r.confirmed_row.stock_uom?.trim() || 'pcs';
+    if (catalogUom.toLowerCase() !== confirmedUom.toLowerCase()) {
       const err = new Error(`Part ${pid} UOM changed to '${p.measurement_unit}', does not match confirmed '${r.confirmed_row.stock_uom}'.`);
       err.statusCode = 422;
       throw err;
