@@ -5,7 +5,7 @@ import Modal from '../components/ui/Modal';
 import Icon from '../components/ui/Icon';
 import InfoTip from '../components/ui/InfoTip';
 import { ICONS } from '../constants';
-import { QrCode } from 'lucide-react';
+import { QrCode, ArrowLeft, X, Building2, Palette, FileText, Wallet, Percent, CreditCard, Receipt, Users, ClipboardList, BarChart3, Copy, ShieldCheck, DatabaseBackup, Database, Smartphone } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import BackupSettings from '../components/settings/BackupSettings';
 import DataUtilsSettings from '../components/settings/DataUtilsSettings';
@@ -643,7 +643,33 @@ const TaxRateForm = ({ rate, onSave, onCancel }) => {
 };
 
 
-const SettingsPage = ({ user }) => {
+const SETTINGS_NAV = [
+    { group: 'General', items: [
+        { id: 'company', label: 'Company Info', icon: Building2 },
+        { id: 'brand_identity', label: 'Brand Identity', icon: Palette },
+        { id: 'physical_documents', label: 'Physical Documents', icon: FileText },
+    ] },
+    { group: 'Finance', items: [
+        { id: 'financial', label: 'Financial', icon: Wallet },
+        { id: 'tax_rates', label: 'Tax Rates', icon: Percent },
+        { id: 'payment_methods', label: 'Payment Methods', icon: CreditCard },
+        { id: 'ar_adjustments', label: 'A/R Concessions', icon: Receipt },
+        { id: 'payroll', label: 'Payroll', icon: Users },
+    ] },
+    { group: 'Operations', items: [
+        { id: 'cycle_count', label: 'Cycle Count', icon: ClipboardList },
+        { id: 'analytics', label: 'Analytics', icon: BarChart3 },
+        { id: 'deduplication', label: 'Deduplication', icon: Copy },
+    ] },
+    { group: 'System', items: [
+        { id: 'permissions', label: 'Permissions', icon: ShieldCheck },
+        { id: 'backup', label: 'Backup', icon: DatabaseBackup },
+        { id: 'data', label: 'Data Utilities', icon: Database },
+        { id: 'mobile_app', label: 'Mobile App', icon: Smartphone },
+    ] },
+];
+
+const SettingsPage = ({ user, onNavigate }) => {
     const [settings, setSettings] = useState(null);
     const [loading, setLoading] = useState(true);
     const [activeTab, setActiveTab] = useState('company');
@@ -698,63 +724,93 @@ const SettingsPage = ({ user }) => {
         return <p className="text-gray-700 dark:text-slate-300">Loading settings...</p>;
     }
 
-    const inactiveTabClass = 'border-transparent text-gray-500 dark:text-slate-400 hover:border-gray-300 dark:hover:border-slate-600';
-    const activeTabClass = 'border-primary-600 text-primary-600 dark:text-primary-500';
+    const activeItem = SETTINGS_NAV.flatMap(g => g.items).find(t => t.id === activeTab);
+    const showSave = ['company', 'financial', 'payroll', 'cycle_count', 'backup', 'mobile_app', 'ar_adjustments', 'analytics'].includes(activeTab);
+    const handleBack = () => onNavigate?.('dashboard');
+
+    const panels = {
+        company: <CompanyInfoSettings settings={settings} handleChange={handleChange} />,
+        brand_identity: <BrandIdentitySettings settings={settings} handleChange={handleChange} handleSave={handleSave} />,
+        financial: <FinancialSettings settings={settings} handleChange={handleChange} />,
+        payroll: <PayrollSettings settings={settings} handleChange={handleChange} />,
+        tax_rates: <TaxRateSettings settings={settings} handleChange={handleChange} />,
+        payment_methods: <PaymentMethodSettings />,
+        physical_documents: <PhysicalDocumentSettings />,
+        ar_adjustments: <ARAdjustmentSettings settings={settings} handleChange={handleChange} />,
+        analytics: <AnalyticsSettings settings={settings} handleChange={handleChange} />,
+        cycle_count: <CycleCountSettings settings={settings} handleChange={handleChange} />,
+        deduplication: <DeduplicationSettings />,
+        permissions: <PermissionsSettings />,
+        backup: <BackupSettings settings={settings} handleChange={handleChange} handleSave={handleSave} />,
+        data: <DataUtilsSettings />,
+        mobile_app: <MobileAppSettings settings={settings} handleChange={handleChange} />,
+    };
+
+    const navBtn = (t, mobile) => {
+        const NavIcon = t.icon;
+        const active = activeTab === t.id;
+        return (
+            <button
+                key={t.id}
+                type="button"
+                onClick={() => setActiveTab(t.id)}
+                aria-current={active ? 'page' : undefined}
+                className={`flex items-center gap-2.5 rounded-lg text-sm font-medium transition whitespace-nowrap ${mobile ? 'px-3 py-2 shrink-0' : 'w-full px-3 py-2 text-left'} ${active
+                    ? 'bg-primary-50 text-primary-700 dark:bg-primary-500/10 dark:text-primary-400'
+                    : 'text-gray-600 hover:bg-gray-100 dark:text-slate-400 dark:hover:bg-slate-700/50'}`}
+            >
+                <NavIcon size={16} className="shrink-0" />
+                {t.label}
+            </button>
+        );
+    };
 
     return (
-        <div>
-            <h1 className="text-2xl font-semibold text-gray-800 dark:text-slate-100 mb-6">Application Settings</h1>
-            <div className="bg-white dark:bg-slate-800 p-4 sm:p-6 lg:p-8 rounded-xl border border-gray-200 dark:border-slate-700 w-full">
-                {activeTab === 'payment_methods' ? (
-                    <PaymentMethodSettings />
-                ) : (
-                    <div>
-                        <div className="mb-6 border-b border-gray-200 dark:border-slate-700">
-                            <nav className="-mb-px flex space-x-6 overflow-x-auto">
-                                <button type="button" onClick={() => setActiveTab('company')} className={`py-3 px-1 border-b-2 font-medium text-sm whitespace-nowrap ${activeTab === 'company' ? activeTabClass : inactiveTabClass}`}>Company Info</button>
-                                <button type="button" onClick={() => setActiveTab('brand_identity')} className={`py-3 px-1 border-b-2 font-medium text-sm whitespace-nowrap ${activeTab === 'brand_identity' ? activeTabClass : inactiveTabClass}`}>Brand Identity</button>
-                                <button type="button" onClick={() => setActiveTab('financial')} className={`py-3 px-1 border-b-2 font-medium text-sm whitespace-nowrap ${activeTab === 'financial' ? activeTabClass : inactiveTabClass}`}>Financial</button>
-                                <button type="button" onClick={() => setActiveTab('payroll')} className={`py-3 px-1 border-b-2 font-medium text-sm whitespace-nowrap ${activeTab === 'payroll' ? activeTabClass : inactiveTabClass}`}>Payroll</button>
-                                <button type="button" onClick={() => setActiveTab('payment_methods')} className={`py-3 px-1 border-b-2 font-medium text-sm whitespace-nowrap ${activeTab === 'payment_methods' ? activeTabClass : inactiveTabClass}`}>Payment Methods</button>
-                                <button type="button" onClick={() => setActiveTab('ar_adjustments')} className={`py-3 px-1 border-b-2 font-medium text-sm whitespace-nowrap ${activeTab === 'ar_adjustments' ? activeTabClass : inactiveTabClass}`}>A/R Concessions</button>
-                                <button type="button" onClick={() => setActiveTab('analytics')} className={`py-3 px-1 border-b-2 font-medium text-sm whitespace-nowrap ${activeTab === 'analytics' ? activeTabClass : inactiveTabClass}`}>Analytics</button>
-                                <button type="button" onClick={() => setActiveTab('cycle_count')} className={`py-3 px-1 border-b-2 font-medium text-sm whitespace-nowrap ${activeTab === 'cycle_count' ? activeTabClass : inactiveTabClass}`}>Cycle Count</button>
-                                <button type="button" onClick={() => setActiveTab('deduplication')} className={`py-3 px-1 border-b-2 font-medium text-sm whitespace-nowrap ${activeTab === 'deduplication' ? activeTabClass : inactiveTabClass}`}>Deduplication</button>
-                                <button type="button" onClick={() => setActiveTab('tax_rates')} className={`py-3 px-1 border-b-2 font-medium text-sm whitespace-nowrap ${activeTab === 'tax_rates' ? activeTabClass : inactiveTabClass}`}>Tax Rates</button>
-                                <button type="button" onClick={() => setActiveTab('physical_documents')} className={`py-3 px-1 border-b-2 font-medium text-sm whitespace-nowrap ${activeTab === 'physical_documents' ? activeTabClass : inactiveTabClass}`}>Physical Receipts</button>
-                                <button type="button" onClick={() => setActiveTab('permissions')} className={`py-3 px-1 border-b-2 font-medium text-sm whitespace-nowrap ${activeTab === 'permissions' ? activeTabClass : inactiveTabClass}`}>Roles & Permissions</button>
-                                <button type="button" onClick={() => setActiveTab('backup')} className={`py-3 px-1 border-b-2 font-medium text-sm whitespace-nowrap ${activeTab === 'backup' ? activeTabClass : inactiveTabClass}`}>Backup & Restore</button>
-                                <button type="button" onClick={() => setActiveTab('data')} className={`py-3 px-1 border-b-2 font-medium text-sm whitespace-nowrap ${activeTab === 'data' ? activeTabClass : inactiveTabClass}`}>Data Utilities</button>
-                                <button type="button" onClick={() => setActiveTab('mobile_app')} className={`py-3 px-1 border-b-2 font-medium text-sm whitespace-nowrap ${activeTab === 'mobile_app' ? activeTabClass : inactiveTabClass}`}>Mobile App</button>
-                            </nav>
+        <div className="w-full">
+            <div className="flex items-center gap-3 mb-6">
+                <button
+                    type="button"
+                    onClick={handleBack}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-300 dark:border-slate-600 text-sm font-medium text-gray-700 dark:text-slate-200 hover:bg-gray-100 dark:hover:bg-slate-700 transition"
+                >
+                    <ArrowLeft size={16} /> Back
+                </button>
+                <div>
+                    <h1 className="text-2xl font-semibold text-gray-800 dark:text-slate-100 leading-tight">Application Settings</h1>
+                    <p className="text-sm text-gray-500 dark:text-slate-400">Manage your company, finance, system and security preferences.</p>
+                </div>
+            </div>
+
+            <div className="flex flex-col lg:flex-row gap-6 items-start">
+                {/* Mobile / tablet: horizontal scroll pills */}
+                <nav className="lg:hidden w-full flex gap-1 overflow-x-auto pb-1" aria-label="Settings sections">
+                    {SETTINGS_NAV.flatMap(g => g.items).map(t => navBtn(t, true))}
+                </nav>
+                {/* Desktop: grouped sidebar */}
+                <nav className="hidden lg:block w-64 shrink-0 sticky top-4 space-y-5 bg-white dark:bg-slate-800 p-3 rounded-xl border border-gray-200 dark:border-slate-700 max-h-[calc(100vh-2rem)] overflow-y-auto" aria-label="Settings sections">
+                    {SETTINGS_NAV.map(g => (
+                        <div key={g.group}>
+                            <p className="px-3 mb-1 text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-slate-500">{g.group}</p>
+                            <div className="space-y-0.5">{g.items.map(t => navBtn(t, false))}</div>
                         </div>
+                    ))}
+                </nav>
 
-                        {activeTab === 'company' && <CompanyInfoSettings settings={settings} handleChange={handleChange} />}
-                        {activeTab === 'brand_identity' && <BrandIdentitySettings settings={settings} handleChange={handleChange} handleSave={handleSave} />}
-                        {activeTab === 'financial' && <FinancialSettings settings={settings} handleChange={handleChange} />}
-                        {activeTab === 'payroll' && <PayrollSettings settings={settings} handleChange={handleChange} />}
-                        {activeTab === 'tax_rates' && <TaxRateSettings settings={settings} handleChange={handleChange} />}
-                        {activeTab === 'physical_documents' && <PhysicalDocumentSettings />}
-                        {activeTab === 'ar_adjustments' && <ARAdjustmentSettings settings={settings} handleChange={handleChange} />}
-                        {activeTab === 'analytics' && <AnalyticsSettings settings={settings} handleChange={handleChange} />}
-                        {activeTab === 'cycle_count' && <CycleCountSettings settings={settings} handleChange={handleChange} />}
-                        {activeTab === 'deduplication' && <DeduplicationSettings />}
-                        {activeTab === 'permissions' && <PermissionsSettings />}
-                        {activeTab === 'backup' && <BackupSettings settings={settings} handleChange={handleChange} handleSave={handleSave} />}
-                        {activeTab === 'data' && <DataUtilsSettings />}
-                        {activeTab === 'mobile_app' && <MobileAppSettings settings={settings} handleChange={handleChange} />}
-
-                        {['company', 'financial', 'payroll', 'cycle_count', 'backup', 'mobile_app', 'ar_adjustments', 'analytics'].includes(activeTab) && (
-                            <form onSubmit={handleSave}>
-                                <div className="pt-4 flex justify-end mt-6 border-t border-gray-200 dark:border-slate-700">
-                                    <button type="submit" className="bg-primary-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-primary-700 transition">
-                                        Save Settings
-                                    </button>
-                                </div>
-                            </form>
-                        )}
-                    </div>
-                )}
+                <section className="flex-1 min-w-0 w-full bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700">
+                    <header className="flex items-center justify-between gap-3 px-4 sm:px-6 lg:px-8 py-4 border-b border-gray-200 dark:border-slate-700">
+                        <h2 className="text-lg font-semibold text-gray-800 dark:text-slate-100">{activeItem?.label}</h2>
+                        <button type="button" onClick={handleBack} className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-800 dark:text-slate-400 dark:hover:text-slate-100" title="Exit settings">
+                            <X size={16} /> Exit
+                        </button>
+                    </header>
+                    <div className="p-4 sm:p-6 lg:p-8">{panels[activeTab]}</div>
+                    {showSave && (
+                        <form onSubmit={handleSave} className="sticky bottom-0 flex justify-end gap-3 px-4 sm:px-6 lg:px-8 py-3 border-t border-gray-200 dark:border-slate-700 bg-white/90 dark:bg-slate-800/90 backdrop-blur rounded-b-xl">
+                            <button type="button" onClick={handleBack} className="px-5 py-2 rounded-lg border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-200 hover:bg-gray-100 dark:hover:bg-slate-700 transition">Cancel</button>
+                            <button type="submit" className="bg-primary-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-primary-700 transition">Save Settings</button>
+                        </form>
+                    )}
+                </section>
             </div>
         </div>
     );
