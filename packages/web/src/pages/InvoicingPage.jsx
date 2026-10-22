@@ -1055,8 +1055,8 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
                     onClose={() => setIsSplitPaymentModalOpen(false)}
                     totalDue={total || 0}
                     onConfirm={handleConfirmSplitPayment}
+                    recordingMethod={physicalDoc?.recording_method || null}
                     physicalReceiptNo={physicalDoc?.recording_method === 'PAPER' ? (physicalDoc.physical_receipt_no || '') : ''}
-                    onPhysicalReceiptChange={(newPrn) => setPhysicalDoc(prev => ({ ...(prev || {}), recording_method: 'PAPER', physical_receipt_no: newPrn }))}
                     requirePhysicalReceipt={true}
                     employeeId={user?.employee_id}
                     terms={terms}

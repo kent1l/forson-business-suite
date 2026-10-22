@@ -1344,8 +1344,8 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
                     onClose={() => setIsSplitPaymentModalOpen(false)}
                     totalDue={total || 0}
                     onConfirm={handleConfirmSplitPayment}
-                    physicalReceiptNo={physicalReceiptInput}
-                    onPhysicalReceiptChange={setPhysicalReceiptInput}
+                    physicalReceiptNo={physicalDoc.recording_method === 'PAPER' ? physicalReceiptInput : ''}
+                    recordingMethod={physicalDoc.recording_method}
                     employeeId={user?.employee_id}
                     customerName={selectedCustomer ? `${selectedCustomer.first_name} ${selectedCustomer.last_name || ''}`.trim() : ''}
                     customer={selectedCustomer}
