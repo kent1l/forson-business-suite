@@ -320,9 +320,23 @@ export default function PhysicalDocumentControl({
                     value={isNotebook ? 'No physical receipt' : physicalReceiptNo}
                     onChange={(e) => {
                         if (isNotebook) return;
+                        const raw = e.target.value.toUpperCase().trim();
+                        const known = [...(options.series || [])]
+                            .filter(s => s.prefix)
+                            .sort((a, b) => b.prefix.length - a.prefix.length);
+                        const matched = known.find(s => raw.startsWith(s.prefix.toUpperCase()));
+                        // Typed a prefix belonging to another document type: switch to it
+                        if (matched && matched.series_id !== selectedSeriesId) {
+                            selectChoice(String(matched.series_id));
+                            return;
+                        }
+                        // Prefix is locked to the selected series; only the serial is editable
+                        const lockedPrefix = currentSeries?.prefix?.toUpperCase();
+                        if (!lockedPrefix) return;
+                        const serial = (matched ? raw.slice(lockedPrefix.length) : raw).replace(/\D/g, '');
                         onChange?.({
                             ...value,
-                            physical_receipt_no: e.target.value,
+                            physical_receipt_no: `${lockedPrefix}-${serial}`,
                         });
                     }}
                     onBlur={handleInputBlur}
