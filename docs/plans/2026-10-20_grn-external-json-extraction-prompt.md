@@ -71,7 +71,9 @@ TRANSCRIPTION RULES
 
 INTERNET RESEARCH RULES
 - Research product identity only: manufacturer/brand, part number, product description, and likely item group. Search using clues visible on the scan.
+- When browsing is available, actively research each distinct item using its visible brand, part number, and identifying specifications. Prefer official manufacturer catalogs and product pages; use reputable distributor listings as secondary evidence. Search results are leads, not inspected sources: open the relevant pages and read the supporting content before making a suggestion.
 - Put ALL web-derived findings in enrichment. Never change a transcribed field based on web research. Never use the internet to fill missing receipt numbers, dates, quantities, supplier costs, totals, or handwritten values.
+- Check brand, the full part number including suffixes, dimensions, model/application, pack size, and orientation wherever available. Distinguish an exact product identity from an OEM cross-reference, compatible replacement, or merely similar item. An OEM reference alone does not verify the printed aftermarket brand. If sources materially disagree, explain the conflict in reason and leave unsupported suggested fields null.
 - Set enrichment.status to:
   - "verified_suggestion" only when an exact visible brand/manufacturer AND part number match an accessible official manufacturer catalog or product page, the proposed identity is supported there, and there is no material conflict;
   - "possible_suggestion" when evidence is relevant but incomplete, such as a reputable distributor listing, partial identifier, cross-reference, or lack of official OEM confirmation;
@@ -79,8 +81,10 @@ INTERNET RESEARCH RULES
 - For each source actually opened and inspected, add an object to sources (max 20 per line):
   {"url": "https://actual-page-url", "supporting_text": "specific text on the page supporting the suggestion"}
   (Remember to escape any double quotes inside supporting_text).
+- CRITICAL - PLAIN URL STRINGS ONLY: sources[].url must be the actual page's absolute HTTPS URL, at most 2,048 characters, with no embedded username or password. Put the URL directly inside the JSON string. Correct: "url": "https://example.com/product". Incorrect: "url": "[https://example.com/product](https://example.com/product)". Never wrap URLs in Markdown links, angle brackets, HTML, backticks, or citation markers. These formatting rules apply inside JSON strings as well as outside the JSON object.
+- supporting_text must faithfully describe or briefly quote content actually inspected on that page and identify which suggestion it supports. Do not present search snippets, an unvisited link, or a guessed URL as verified evidence. Retain usable source URLs so a reviewer can independently inspect the research.
 - Explain the evidence or uncertainty briefly in reason. Do not invent URLs, quotes, visits, or numerical confidence scores. Do not claim fitment or interchangeability without separate explicit evidence.
-- If browsing is unavailable, preserve the transcription and set enrichment.status to "unresolved". Do not fail the extraction merely because internet research failed.
+- If browsing is unavailable or no usable evidence can be inspected for an item, preserve its transcription, set enrichment.status to "unresolved", leave unsupported suggested fields null, and return sources: []. Explain the research limitation in reason. Never add placeholder or fabricated sources to fill the array. Do not fail the extraction merely because internet research failed.
 
 EXTRACTION ISSUE RULES
 Report uncertainties and discrepancies as structured objects in extraction_issues:
@@ -110,7 +114,9 @@ Before returning the JSON, verify:
 3. All internal double quotes within strings (such as 8\" or \"COMPACT\") are escaped with backslashes.
 4. No item rows were skipped or merged.
 5. All web research is strictly confined inside enrichment.
-6. Output is raw, valid JSON with no markdown formatting.
+6. Every sources[].url is a plain absolute HTTPS URL without Markdown wrappers, citation markers, or embedded credentials, and refers to a page actually opened and inspected. Use sources: [] when no usable evidence was inspected.
+7. Every research suggestion is supported by its cited page content; cross-references and compatibility claims are not represented as exact product verification. Uncertainty and material conflicts are stated in reason.
+8. Output is raw, valid JSON with no markdown formatting, including inside URL values. If a JSON parser is available, parse the final output and correct syntax errors before returning it.
 ```
 
 FBS validates the output against the final contract; this prompt is not a substitute for server validation. A new payload version requires updating both the plan/schema and prompt together.
