@@ -875,8 +875,8 @@ const ChequePrintingPage = ({ onNavigateSection }) => {
             )}
 
             {/* Main Editor Grid */}
-            <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
-                <div className="xl:col-span-2 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl p-4 space-y-4">
+            <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_300px] gap-4 items-start">
+                <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl p-4 space-y-4">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                         <div className="flex items-center gap-2">
                             <h2 className="text-sm font-semibold text-gray-700 dark:text-slate-300 uppercase tracking-wide">
