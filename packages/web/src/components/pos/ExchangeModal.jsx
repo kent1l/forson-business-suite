@@ -646,7 +646,12 @@ const ExchangeModal = ({ isOpen, onClose, initialInvoice = null, onExchangeSucce
                                                 <div className="font-medium text-gray-900 dark:text-slate-100 truncate">{part.display_name}</div>
                                                 <div className="flex justify-between text-xs text-gray-500 dark:text-slate-400">
                                                     <span className="truncate">{part.part_numbers}</span>
-                                                    <span>{currency}{Number(part.last_sale_price || 0).toFixed(2)}</span>
+                                                    <span className="flex items-baseline space-x-2 ml-2 shrink-0">
+                                                        <span className={`font-medium ${Number(part.stock_on_hand) > 0 ? 'text-gray-500 dark:text-slate-400' : 'text-danger-600 dark:text-danger-400'}`}>
+                                                            {Number(part.stock_on_hand) || 0} in stock
+                                                        </span>
+                                                        <span>{currency}{Number(part.last_sale_price || 0).toFixed(2)}</span>
+                                                    </span>
                                                 </div>
                                             </li>
                                         ))}

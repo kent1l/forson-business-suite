@@ -877,8 +877,13 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
                                                             <div className="text-sm font-medium text-gray-900 dark:text-slate-100 truncate">{part.display_name}</div>
                                                             {part.applications && <div className="text-xs text-gray-500 dark:text-slate-400 truncate">{formatApplicationText(part.applications, { style: 'searchSuggestion' })}</div>}
                                                         </div>
-                                                        <div className="text-sm font-semibold text-gray-700 dark:text-slate-300 ml-4 font-mono">
-                                                            {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{part.last_sale_price ? Number(part.last_sale_price).toFixed(2) : '0.00'}
+                                                        <div className="flex items-baseline space-x-2 ml-4 shrink-0">
+                                                            <span className={`text-xs font-medium ${Number(part.stock_on_hand) > 0 ? 'text-gray-500 dark:text-slate-400' : 'text-danger-600 dark:text-danger-400'}`}>
+                                                                {Number(part.stock_on_hand) || 0} in stock
+                                                            </span>
+                                                            <span className="text-sm font-semibold text-gray-700 dark:text-slate-300 font-mono">
+                                                                {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{part.last_sale_price ? Number(part.last_sale_price).toFixed(2) : '0.00'}
+                                                            </span>
                                                         </div>
                                                     </div>
                                                 </li>

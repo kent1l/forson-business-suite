@@ -108,8 +108,18 @@ const AttachItemsModal = ({ isOpen, onClose, supplierId, supplierName, bill, onA
                         <ul className="absolute z-10 w-full bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-md mt-1 shadow-lg max-h-48 overflow-y-auto">
                             {searchResults.map((part) => (
                                 <li key={part.part_id} onClick={() => addPart(part)}
-                                    className="px-4 py-2 cursor-pointer hover:bg-primary-50 dark:hover:bg-slate-700/60 text-sm text-gray-800 dark:text-slate-100 truncate">
-                                    {part.display_name}
+                                    className="px-4 py-2 cursor-pointer hover:bg-primary-50 dark:hover:bg-slate-700/60 text-sm text-gray-800 dark:text-slate-100">
+                                    <div className="flex items-baseline justify-between">
+                                        <span className="truncate flex-1 min-w-0">{part.display_name}</span>
+                                        <span className="flex items-baseline space-x-2 ml-2 shrink-0">
+                                            <span className={`text-xs font-medium ${Number(part.stock_on_hand) > 0 ? 'text-gray-500 dark:text-slate-400' : 'text-danger-600 dark:text-danger-400'}`}>
+                                                {Number(part.stock_on_hand) || 0} in stock
+                                            </span>
+                                            <span className="text-sm font-semibold text-gray-700 dark:text-slate-300">
+                                                {formatCurrency(part.last_sale_price)}
+                                            </span>
+                                        </span>
+                                    </div>
                                 </li>
                             ))}
                         </ul>
