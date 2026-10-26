@@ -957,7 +957,7 @@ const ChequePrintingPage = ({ onNavigateSection }) => {
                         </div>
                     )}
 
-                    <div className="hidden md:grid grid-cols-[48px_120px_1fr_160px_1fr_90px] gap-3 px-2 text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide">
+                    <div className="hidden md:grid grid-cols-[48px_160px_1fr_160px_1fr_90px] gap-3 px-2 text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide">
                         <div className="flex items-center justify-center">
                             <input
                                 type="checkbox"
@@ -980,7 +980,7 @@ const ChequePrintingPage = ({ onNavigateSection }) => {
                         const isTrailingBlank = idx === rows.length - 1 && !row.payee && !row.amount && !row.memo;
                         const isQueued = Boolean(row.cheque_record_id);
                         return (
-                            <div key={idx} className={`border rounded-xl p-3 grid grid-cols-1 md:grid-cols-[48px_120px_1fr_160px_1fr_90px] gap-3 md:items-center transition-colors ${isTrailingBlank ? 'border-dashed border-gray-300 dark:border-slate-700 bg-transparent' : isQueued ? 'border-primary-200 dark:border-primary-900/50 bg-primary-50/40 dark:bg-primary-900/10' : 'border-gray-200 dark:border-slate-700 bg-gray-50/70 dark:bg-slate-900/40'}`}>
+                            <div key={idx} className={`border rounded-xl p-3 grid grid-cols-1 md:grid-cols-[48px_160px_1fr_160px_1fr_90px] gap-3 md:items-center transition-colors ${isTrailingBlank ? 'border-dashed border-gray-300 dark:border-slate-700 bg-transparent' : isQueued ? 'border-primary-200 dark:border-primary-900/50 bg-primary-50/40 dark:bg-primary-900/10' : 'border-gray-200 dark:border-slate-700 bg-gray-50/70 dark:bg-slate-900/40'}`}>
                                 {/* Mobile inclusion toggle */}
                                 {!isTrailingBlank && (
                                     <div className="flex md:hidden items-center justify-between pb-2 border-b border-gray-100 dark:border-slate-700/60">
