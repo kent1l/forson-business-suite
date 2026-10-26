@@ -345,8 +345,6 @@ export default function PhysicalDocumentControl({
                     className={`w-full px-3 py-2 border rounded-md text-sm font-mono focus:outline-none focus:ring-2 ${
                         isNotebook
                             ? 'bg-gray-100 dark:bg-slate-800/60 text-gray-400 dark:text-slate-500 italic border-dashed border-gray-300 dark:border-slate-700'
-                            : value?.exception?.reason === 'SPOILED_SUGGESTION'
-                            ? 'bg-amber-50 dark:bg-amber-950/30 border-amber-400 text-amber-900 dark:text-amber-200 focus:ring-amber-500'
                             : 'bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 border-gray-300 dark:border-slate-600 focus:ring-primary-500'
                     }`}
                 />
@@ -354,6 +352,11 @@ export default function PhysicalDocumentControl({
                     <div className="absolute right-2 top-2.5">
                         <span className="inline-block w-3 h-3 border-2 border-primary-500 border-t-transparent rounded-full animate-spin" />
                     </div>
+                )}
+                {!isNotebook && value?.exception?.reason === 'SPOILED_SUGGESTION' && (
+                    <p role="status" className="mt-1 text-xs text-gray-500 dark:text-slate-400">
+                        Suggested receipt {value.exception.spoiled_reference} will be marked spoiled at checkout.
+                    </p>
                 )}
             </div>
 

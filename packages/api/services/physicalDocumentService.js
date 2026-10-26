@@ -512,7 +512,7 @@ async function validateReference({ series_id, physical_receipt_no, suggestion_to
         return {
             valid: false,
             code: occ.state === 'SPOILED' ? 'RECEIPT_NUMBER_SPOILED' : 'RECEIPT_NUMBER_TAKEN',
-            message: `Physical receipt number ${parsed.canonical} is already ${occ.state.toLowerCase()}.`,
+            message: `Physical receipt number ${parsed.canonical} is already ${occ.state.toLowerCase()}. Choose an unused receipt number.`,
             canonical: parsed.canonical,
             serial: parsed.serial,
         };
@@ -689,7 +689,7 @@ async function postPhysicalDocument(client, {
     // 5. Check occupancy of entered reference under lock
     const occ = await isReferenceOccupied(client, series.series_id, parsed.canonical);
     if (occ.occupied) {
-        const err = new Error(`Physical receipt number ${parsed.canonical} is already ${occ.state.toLowerCase()}.`);
+        const err = new Error(`Physical receipt number ${parsed.canonical} is already ${occ.state.toLowerCase()}. Choose an unused receipt number.`);
         err.statusCode = 409;
         err.code = occ.state === 'SPOILED' ? 'RECEIPT_NUMBER_SPOILED' : 'RECEIPT_NUMBER_TAKEN';
         throw err;
@@ -753,7 +753,7 @@ async function postPhysicalDocument(client, {
                     `INSERT INTO public.physical_document_event
                      (series_id, registry_id, request_id, event_type, original_suggestion, submitted_reference, reason, notes, actor_id)
                      VALUES ($1, $2, $3, 'SPOILED', $4, $5, $6, $7, $8)`,
-                    [series.series_id, spoiledRows[0].registry_id, request_id, 'SPOILED',
+                    [series.series_id, spoiledRows[0].registry_id, request_id,
                      spoiledRef, parsed.canonical, exception.reason, exception.notes || null, employee_id]
                 );
             }

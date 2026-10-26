@@ -24,6 +24,7 @@ import SplitPaymentModal from '../components/ui/SplitPaymentModal';
 import PriceQuantityModal from '../components/ui/PriceQuantityModal';
 import MathExpressionInput from '../components/ui/MathExpressionInput';
 import Receipt from '../components/ui/Receipt';
+import { getSaleErrorMessage } from '../utils/saleErrorMessage';
 import SavedSalesPanel from '../components/pos/SavedSalesPanel';
 import VehicleFilterBar from '../components/VehicleFilterBar';
 import ExchangeModal from '../components/pos/ExchangeModal';
@@ -719,11 +720,7 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
 
         } catch (err) {
             console.error('Payment processing error:', err);
-            if (err?.response?.status === 409) {
-                toast.error(err.response.data?.message || 'Physical Receipt No already exists.');
-            } else {
-                toast.error('Failed to process sale.');
-            }
+            toast.error(getSaleErrorMessage(err, 'Failed to process sale. Please try again.'));
         }
     };
 
@@ -808,16 +805,7 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
 
         } catch (err) {
             console.error('POS split payment error:', err);
-            const backendMessage = err?.response?.data?.message || err?.response?.data?.error || err?.message;
-            if (err?.response?.status === 409) {
-                toast.error(backendMessage || 'Physical Receipt No already exists.');
-                return;
-            }
-            if (backendMessage) {
-                toast.error(backendMessage);
-            } else {
-                toast.error('Failed to process split payments.');
-            }
+            toast.error(getSaleErrorMessage(err, 'Failed to process split payments. Please try again.'));
         }
     };
 
