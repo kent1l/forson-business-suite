@@ -50,6 +50,7 @@ const AttachItemsModal = ({ isOpen, onClose, supplierId, supplierName, bill, onA
             return [...prev, {
                 part_id: part.part_id,
                 display_name: part.display_name,
+                measurement_unit: part.measurement_unit || 'PC',
                 quantity: 1,
                 cost_price: typeof part.last_cost !== 'undefined' ? part.last_cost : 0,
             }];
@@ -113,7 +114,7 @@ const AttachItemsModal = ({ isOpen, onClose, supplierId, supplierName, bill, onA
                                         <span className="truncate flex-1 min-w-0">{part.display_name}</span>
                                         <span className="flex items-baseline space-x-2 ml-2 shrink-0">
                                             <span className={`text-xs font-medium ${Number(part.stock_on_hand) > 0 ? 'text-gray-500 dark:text-slate-400' : 'text-danger-600 dark:text-danger-400'}`}>
-                                                {Number(part.stock_on_hand) || 0} in stock
+                                                {Number(part.stock_on_hand) || 0} {part.measurement_unit || 'PC'} in stock
                                             </span>
                                             <span className="text-sm font-semibold text-gray-700 dark:text-slate-300">
                                                 {formatCurrency(part.last_sale_price)}
@@ -131,7 +132,7 @@ const AttachItemsModal = ({ isOpen, onClose, supplierId, supplierName, bill, onA
                         <thead className="bg-gray-50 dark:bg-slate-900/60 border-b border-gray-200 dark:border-slate-700">
                             <tr>
                                 <th className="p-2 font-semibold text-gray-600 dark:text-slate-300">Part</th>
-                                <th className="p-2 font-semibold text-gray-600 dark:text-slate-300 w-20 text-center">Qty</th>
+                                <th className="p-2 font-semibold text-gray-600 dark:text-slate-300 w-28 text-center">Qty</th>
                                 <th className="p-2 font-semibold text-gray-600 dark:text-slate-300 w-28 text-center">Cost</th>
                                 <th className="p-2 font-semibold text-gray-600 dark:text-slate-300 w-24 text-right">Total</th>
                                 <th className="p-2 w-10"></th>
@@ -142,12 +143,15 @@ const AttachItemsModal = ({ isOpen, onClose, supplierId, supplierName, bill, onA
                                 <tr key={line.part_id} className="border-b border-gray-100 dark:border-slate-700">
                                     <td className="p-2 text-gray-800 dark:text-slate-100 truncate max-w-[10rem]">{line.display_name}</td>
                                     <td className="p-2">
-                                        <MathExpressionInput
-                                            precision={2}
-                                            value={line.quantity}
-                                            onChange={(val) => updateLine(line.part_id, 'quantity', val)}
-                                            className="w-full h-8 px-1 text-center border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 rounded"
-                                        />
+                                        <div className="flex items-center gap-1.5">
+                                            <MathExpressionInput
+                                                precision={2}
+                                                value={line.quantity}
+                                                onChange={(val) => updateLine(line.part_id, 'quantity', val)}
+                                                className="w-full h-8 px-1 text-center border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 rounded"
+                                            />
+                                            <span className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-slate-400 shrink-0">{line.measurement_unit || 'PC'}</span>
+                                        </div>
                                     </td>
                                     <td className="p-2">
                                         <MathExpressionInput

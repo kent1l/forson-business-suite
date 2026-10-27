@@ -492,7 +492,8 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
                 tax_rate_id: line.tax_rate_id || null,
                 is_tax_inclusive_price: line.is_tax_inclusive_price || false,
                 detail: line.detail,
-                display_name: line.display_name
+                display_name: line.display_name,
+                measurement_unit: line.measurement_unit
             })),
             selectedCustomer: selectedCustomer?.customer_id || null
         });
@@ -905,7 +906,8 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
                 part_id: l.part_id,
                 display_name: l.display_name,
                 quantity: l.quantity,
-                sale_price: l.sale_price
+                sale_price: l.sale_price,
+                measurement_unit: l.measurement_unit
             })),
             customerId: selectedCustomer?.customer_id || null,
             taxRateId: selectedTaxRate?.tax_rate_id || null,
@@ -1009,7 +1011,8 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
             part_id: i.part_id,
             display_name: i.display_name,
             quantity: i.quantity,
-            sale_price: i.sale_price
+            sale_price: i.sale_price,
+            measurement_unit: i.measurement_unit
         }));
         setLines(restoredLines);
         const customer = customers.find(c => String(c.customer_id) === String(cart.customerId));
@@ -1093,7 +1096,7 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
                                                         </div>
                                                         <div className="flex items-baseline space-x-2 ml-2 shrink-0">
                                                             <span className={`text-xs font-medium ${Number(part.stock_on_hand) > 0 ? 'text-gray-500 dark:text-slate-400' : 'text-danger-600 dark:text-danger-400'}`}>
-                                                                {Number(part.stock_on_hand) || 0} in stock
+                                                                {Number(part.stock_on_hand) || 0} {part.measurement_unit || 'PC'} in stock
                                                             </span>
                                                             <span className="text-sm font-semibold text-gray-700 dark:text-slate-300">
                                                                 {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{part.last_sale_price ? Number(part.last_sale_price).toFixed(2) : '0.00'}
@@ -1217,6 +1220,7 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
                                                 onChange={(val) => handleLineChange(line.part_id, 'quantity', val)}
                                                 className="w-16 px-2 py-1 border border-gray-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 text-sm focus:outline-none focus:ring-1 focus:ring-primary-500"
                                             />
+                                            <span className="ml-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-slate-400">{line.measurement_unit || 'PC'}</span>
                                             <span className="mx-2 text-sm text-gray-500 dark:text-slate-400">x</span>
                                             <MathExpressionInput
                                                 precision={2}

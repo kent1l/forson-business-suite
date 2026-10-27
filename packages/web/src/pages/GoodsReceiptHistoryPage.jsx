@@ -616,7 +616,7 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
                                                         step="0.01"
                                                     />
                                                 ) : (
-                                                    line.quantity
+                                                    <span>{line.quantity}{line.measurement_unit ? <span className="ml-1 text-xs font-sans font-semibold text-gray-500 dark:text-slate-400">{line.measurement_unit}</span> : null}</span>
                                                 )}
                                             </td>
                                             <td className="p-3 text-sm text-center font-mono">
@@ -632,7 +632,7 @@ const GoodsReceiptHistoryPage = ({ user: _user }) => {
                                                 )}
                                             </td>
                                             <td className={`p-3 text-sm text-center font-mono ${fullyReturned ? 'line-through text-gray-400 dark:text-slate-500' : 'font-medium text-gray-900 dark:text-slate-100'}`}>
-                                                {accepted}
+                                                {accepted}{line.measurement_unit ? <span className="ml-1 text-xs font-sans font-semibold text-gray-500 dark:text-slate-400">{line.measurement_unit}</span> : null}
                                             </td>
                                             <td className="p-3 text-sm text-right font-mono text-gray-700 dark:text-slate-300">
                                                 {isEditMode ? (

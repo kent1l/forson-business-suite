@@ -494,6 +494,7 @@ router.get('/goods-receipts/:id/lines', protect, hasPermission(['goods_receipt:c
         grl.rejection_reason,
         grl.part_id AS part_id,
         p.internal_sku,
+        p.measurement_unit,
         (
           SELECT STRING_AGG(pn.part_number, ', ' ORDER BY COALESCE(pn.display_order, 1))
           FROM part_number pn

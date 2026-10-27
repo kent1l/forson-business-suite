@@ -265,6 +265,7 @@ const ExchangeModal = ({ isOpen, onClose, initialInvoice = null, onExchangeSucce
                 part_id: part.part_id,
                 display_name: part.display_name || part.detail || `Part #${part.part_id}`,
                 part_numbers: part.part_numbers,
+                measurement_unit: part.measurement_unit || 'PC',
                 quantity: 1,
                 sale_price: Number(part.last_sale_price) || 0,
                 discount_amount: 0,
@@ -444,7 +445,7 @@ const ExchangeModal = ({ isOpen, onClose, initialInvoice = null, onExchangeSucce
             // (returned/replacement lines, tender, disposition) plus the
             // server's authoritative totals and document numbers.
             const receiptData = {
-                lines: validReplacementLines.map(l => ({ part_id: l.part_id, display_name: l.display_name, quantity: Number(l.quantity), sale_price: Number(l.sale_price) })),
+                lines: validReplacementLines.map(l => ({ part_id: l.part_id, display_name: l.display_name, quantity: Number(l.quantity), sale_price: Number(l.sale_price), measurement_unit: l.measurement_unit })),
                 total: res.data.invoice.total_amount,
                 subtotal: res.data.invoice.subtotal_ex_tax,
                 tax: res.data.invoice.tax_total,
@@ -455,7 +456,7 @@ const ExchangeModal = ({ isOpen, onClose, initialInvoice = null, onExchangeSucce
                     original_physical_receipt_no: selectedInvoice.physical_receipt_no || null,
                     cn_number: res.data.credit_note.cn_number,
                     returned_lines: selectedReturnLines.map(l => ({
-                        display_name: l.display_name, quantity: l.returnQuantity, sale_price: Number(l.sale_price), is_defective: !!l.is_defective,
+                        display_name: l.display_name, quantity: l.returnQuantity, sale_price: Number(l.sale_price), is_defective: !!l.is_defective, measurement_unit: l.measurement_unit,
                     })),
                     return_credit: res.data.credit_note.total_amount,
                     net_differential: res.data.net_differential,
@@ -590,7 +591,7 @@ const ExchangeModal = ({ isOpen, onClose, initialInvoice = null, onExchangeSucce
                                                     />
                                                     <div className="flex-grow min-w-0">
                                                         <p className={`text-sm font-medium truncate ${available <= 0 ? 'text-danger-500 dark:text-danger-400' : 'text-gray-900 dark:text-slate-100'}`}>{line.display_name}</p>
-                                                        <p className="text-xs text-gray-500 dark:text-slate-400">Sold {line.quantity}, Returned {line.quantity_refunded || 0}, Available {available} · {currency}{parseFloat(line.sale_price).toFixed(2)}</p>
+                                                        <p className="text-xs text-gray-500 dark:text-slate-400">Sold {line.quantity} {line.measurement_unit || 'PC'}, Returned {line.quantity_refunded || 0}, Available {available} {line.measurement_unit || 'PC'} · {currency}{parseFloat(line.sale_price).toFixed(2)}</p>
                                                     </div>
                                                     {selected && (
                                                         <MathExpressionInput
@@ -648,7 +649,7 @@ const ExchangeModal = ({ isOpen, onClose, initialInvoice = null, onExchangeSucce
                                                     <span className="truncate">{part.part_numbers}</span>
                                                     <span className="flex items-baseline space-x-2 ml-2 shrink-0">
                                                         <span className={`font-medium ${Number(part.stock_on_hand) > 0 ? 'text-gray-500 dark:text-slate-400' : 'text-danger-600 dark:text-danger-400'}`}>
-                                                            {Number(part.stock_on_hand) || 0} in stock
+                                                            {Number(part.stock_on_hand) || 0} {part.measurement_unit || 'PC'} in stock
                                                         </span>
                                                         <span>{currency}{Number(part.last_sale_price || 0).toFixed(2)}</span>
                                                     </span>
@@ -672,6 +673,7 @@ const ExchangeModal = ({ isOpen, onClose, initialInvoice = null, onExchangeSucce
                                             className="w-14 px-2 py-1 border border-gray-300 dark:border-slate-600 rounded-md text-sm bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100"
                                             min={0}
                                         />
+                                        <span className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-slate-400 shrink-0">{line.measurement_unit || 'PC'}</span>
                                         <MathExpressionInput
                                             precision={2}
                                             value={line.sale_price}

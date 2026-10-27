@@ -321,6 +321,7 @@ router.get('/sales/staging/:id', protect, hasPermission('pos:use'), async (req, 
                 ('₱' || TO_CHAR(ssl.sale_price, 'FM999,999,999.00')) as price_formatted,
                 ('₱' || TO_CHAR(ssl.quantity * ssl.sale_price, 'FM999,999,999.00')) as total_formatted,
                 p.internal_sku as sku,
+                p.measurement_unit,
                 (SELECT display_name FROM public.parts_view pv WHERE pv.part_id = p.part_id) AS name,
                 -- Current stock, so the approval desk can see when a sale
                 -- staged offline is asking for more than is left. Only on the

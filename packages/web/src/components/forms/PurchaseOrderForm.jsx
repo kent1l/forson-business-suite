@@ -147,6 +147,7 @@ const PurchaseOrderForm = ({ user, onSave, onCancel, existingPO }) => {
                 match_status: 'exact',
                 confirmed: true,
                 quantity: 1,
+                unit: part.measurement_unit || 'PC',
                 cost_price: part.last_cost || 0
             }];
             setFormData(prev => ({ ...prev, lines: newLines }));
@@ -369,7 +370,7 @@ const PurchaseOrderForm = ({ user, onSave, onCancel, existingPO }) => {
                                     </div>
                                     <div className="flex items-baseline space-x-2 ml-2 shrink-0">
                                         <span className={`text-xs font-medium ${Number(part.stock_on_hand) > 0 ? 'text-gray-500 dark:text-slate-400' : 'text-danger-600 dark:text-danger-400'}`}>
-                                            {Number(part.stock_on_hand) || 0} in stock
+                                            {Number(part.stock_on_hand) || 0} {part.measurement_unit || 'PC'} in stock
                                         </span>
                                         <span className="text-sm font-semibold text-gray-700 dark:text-slate-300">
                                             ₱{part.last_sale_price ? Number(part.last_sale_price).toFixed(2) : '0.00'}
@@ -388,7 +389,7 @@ const PurchaseOrderForm = ({ user, onSave, onCancel, existingPO }) => {
                     <thead className="sticky top-0 bg-gray-50 dark:bg-slate-800 text-xs uppercase tracking-wide text-gray-500 dark:text-slate-400">
                         <tr>
                             <th className="p-2 font-semibold">Item</th>
-                            <th className="p-2 w-20 text-center font-semibold">Qty</th>
+                            <th className="p-2 w-28 text-center font-semibold">Qty</th>
                             <th className="p-2 w-28 text-center font-semibold">Unit price</th>
                             <th className="p-2 w-12"><span className="sr-only">Remove</span></th>
                         </tr>
@@ -414,13 +415,16 @@ const PurchaseOrderForm = ({ user, onSave, onCancel, existingPO }) => {
                                         {!line.part_id && line.match_status !== 'ambiguous' && <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">🆕 Draft</span>}
                                     </div>
                                 </td>
-                                <td className="p-2 w-20">
-                                    <MathExpressionInput
-                                        precision={2}
-                                        value={line.quantity}
-                                        onChange={val => handleLineChange(key, 'quantity', val)}
-                                        className="w-full p-1 border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 rounded-md text-center font-mono text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
-                                    />
+                                <td className="p-2 w-28">
+                                    <div className="flex items-center gap-1.5">
+                                        <MathExpressionInput
+                                            precision={2}
+                                            value={line.quantity}
+                                            onChange={val => handleLineChange(key, 'quantity', val)}
+                                            className="w-full p-1 border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 rounded-md text-center font-mono text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                                        />
+                                        <span className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-slate-400 shrink-0">{line.unit || line.measurement_unit || 'PC'}</span>
+                                    </div>
                                 </td>
                                 <td className="p-2 w-28">
                                     <MathExpressionInput

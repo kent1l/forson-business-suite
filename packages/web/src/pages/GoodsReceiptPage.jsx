@@ -1623,7 +1623,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                                                         </div>
                                                         <div className="flex items-baseline space-x-2 ml-2 shrink-0">
                                                             <span className={`text-xs font-medium ${Number(part.stock_on_hand) > 0 ? 'text-gray-500 dark:text-slate-400' : 'text-danger-600 dark:text-danger-400'}`}>
-                                                                {Number(part.stock_on_hand) || 0} in stock
+                                                                {Number(part.stock_on_hand) || 0} {part.measurement_unit || 'PC'} in stock
                                                             </span>
                                                             <span className="text-sm font-semibold text-gray-700 dark:text-slate-300">
                                                                 {formatCurrency(part.last_sale_price)}
@@ -1819,7 +1819,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                                                     ))}
                                                 {line.stock_on_hand !== undefined && line.stock_on_hand !== null && (
                                                     <div className={`text-xs font-medium ${Number(line.stock_on_hand) > 0 ? 'text-gray-500 dark:text-slate-400' : 'text-danger-600 dark:text-danger-400'}`}>
-                                                        {Number(line.stock_on_hand) || 0} in stock
+                                                        {Number(line.stock_on_hand) || 0} {line.measurement_unit || line.unit || 'PC'} in stock
                                                     </div>
                                                 )}
                                                 {duplicateCount > 1 && (
@@ -1855,12 +1855,15 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                                         </div>
                                     </td>
                                     <td className="p-2 align-middle">
-                                        <MathExpressionInput
-                                            value={line.quantity}
-                                            onChange={value => handleLineChange(rowKey, 'quantity', value)}
-                                            className={inputClass}
-                                            disabled={!line.part_id}
-                                        />
+                                        <div className="flex items-center gap-1.5">
+                                            <MathExpressionInput
+                                                value={line.quantity}
+                                                onChange={value => handleLineChange(rowKey, 'quantity', value)}
+                                                className={inputClass}
+                                                disabled={!line.part_id}
+                                            />
+                                            <span className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-slate-400 shrink-0">{line.measurement_unit || line.unit || 'PC'}</span>
+                                        </div>
                                     </td>
                                     <td className="p-2 align-middle">
                                         <MathExpressionInput

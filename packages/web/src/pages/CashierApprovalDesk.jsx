@@ -125,7 +125,8 @@ export default function CashierApprovalDesk({ onNavigate }) {
                 discount_amount: Number(item.discount_amount) || 0,
                 tax_rate_id: selectedSale.tax_rate_id || null,
                 detail: item.name,
-                display_name: item.name
+                display_name: item.name,
+                measurement_unit: item.measurement_unit
             })),
             selectedCustomer: selectedCustomerId, // Pass updated customer ID
             staged_sale_id: selectedSale.id // link staging record to resolve on post
@@ -410,7 +411,7 @@ export default function CashierApprovalDesk({ onNavigate }) {
                                                             )}
                                                         </td>
                                                         <td className="px-4 py-2.5 text-slate-500 dark:text-slate-400 font-mono text-xs">{item.sku}</td>
-                                                        <td className={`px-4 py-2.5 text-right font-medium ${short ? 'text-amber-700 dark:text-amber-300' : 'text-slate-800 dark:text-slate-200'}`}>{item.qty}</td>
+                                                        <td className={`px-4 py-2.5 text-right font-medium ${short ? 'text-amber-700 dark:text-amber-300' : 'text-slate-800 dark:text-slate-200'}`}>{item.qty} {item.measurement_unit || 'PC'}</td>
                                                         <td className="px-4 py-2.5 text-right text-slate-700 dark:text-slate-300">{item.price_formatted}</td>
                                                         <td className="px-4 py-2.5 text-right font-bold text-slate-900 dark:text-slate-50">{item.total_formatted}</td>
                                                     </tr>
