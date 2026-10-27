@@ -1,3 +1,59 @@
+const UOM_ALIASES = {
+  pc: 'pcs', pcs: 'pcs', pce: 'pcs', pces: 'pcs', piece: 'pcs', pieces: 'pcs', ea: 'pcs', each: 'pcs', unit: 'pcs', units: 'pcs',
+  set: 'set', sets: 'set',
+  bx: 'box', bxs: 'box', box: 'box', boxes: 'box',
+  btl: 'btl', btls: 'btl', bottle: 'btl', bottles: 'btl',
+  pr: 'pair', prs: 'pair', pair: 'pair', pairs: 'pair',
+  rl: 'roll', rls: 'roll', roll: 'roll', rolls: 'roll',
+  can: 'can', cans: 'can',
+  bg: 'bag', bgs: 'bag', bag: 'bag', bags: 'bag',
+  drm: 'drum', drum: 'drum', drums: 'drum',
+  pail: 'pail', pails: 'pail',
+  pk: 'pack', pks: 'pack', pkg: 'pack', pkgs: 'pack', pack: 'pack', packs: 'pack',
+  kit: 'kit', kits: 'kit',
+  assy: 'assy', assembly: 'assy', assemblies: 'assy',
+  ft: 'ft', feet: 'ft', foot: 'ft',
+  m: 'm', mtr: 'm', mtrs: 'm', meter: 'm', meters: 'm', metre: 'm', metres: 'm',
+  cm: 'cm', centimeter: 'cm', centimeters: 'cm',
+  mm: 'mm', millimeter: 'mm', millimeters: 'mm',
+  in: 'in', inch: 'in', inches: 'in',
+  yd: 'yd', yds: 'yd', yard: 'yd', yards: 'yd',
+  l: 'l', ltr: 'l', ltrs: 'l', liter: 'l', liters: 'l', litre: 'l', litres: 'l',
+  ml: 'ml', milliliter: 'ml', milliliters: 'ml',
+  gal: 'gal', gals: 'gal', gallon: 'gal', gallons: 'gal',
+  qt: 'qt', qts: 'qt', quart: 'qt', quarts: 'qt',
+  pt: 'pt', pts: 'pt', pint: 'pt', pints: 'pt',
+  kg: 'kg', kgs: 'kg', kilo: 'kg', kilos: 'kg', kilogram: 'kg', kilograms: 'kg',
+  g: 'g', gm: 'g', gms: 'g', gram: 'g', grams: 'g',
+  lb: 'lb', lbs: 'lb', pound: 'lb', pounds: 'lb',
+  oz: 'oz', ounce: 'oz', ounces: 'oz',
+  dz: 'doz', doz: 'doz', dozen: 'doz', dozens: 'doz',
+  cs: 'case', case: 'case', cases: 'case',
+  ctn: 'ctn', ctns: 'ctn', crt: 'ctn', carton: 'ctn', cartons: 'ctn',
+  tb: 'tube', tube: 'tube', tubes: 'tube',
+  sht: 'sheet', sheet: 'sheet', sheets: 'sheet',
+};
+
+export function normalizeUom(value, fallback = 'pcs') {
+  if (typeof value !== 'string') return fallback;
+  const cleaned = value
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase()
+    .replace(/\.+$/g, '')
+    .replace(/(?:\/|\()e?s\)?$/g, '')
+    .trim();
+  if (!cleaned || !/[a-z]/.test(cleaned)) return fallback;
+  return UOM_ALIASES[cleaned] || cleaned;
+}
+
+export function stripJsonCodeFence(text) {
+  if (typeof text !== 'string') return '';
+  const trimmed = text.trim();
+  const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  return fenced ? fenced[1].trim() : trimmed;
+}
+
 // Cosmetic provenance only; matching and confirmation remain server decisions.
 export function aiFilledRowFields(row, sourceLine = {}) {
   const cr = row.confirmed_row || {};
@@ -37,11 +93,13 @@ export function applyImportAction(review, action, selectedPart = null) {
       const normalizedValues = Object.hasOwn(action.values, 'stock_uom') || action.values.part_id !== undefined
         ? {
             ...action.values,
-            stock_uom: action.values.stock_uom?.trim()
-              || selectedPart?.stock_uom?.trim()
-              || selectedPart?.measurement_unit?.trim()
-              || row.confirmed_row.stock_uom
-              || 'pcs',
+            stock_uom: normalizeUom(
+              action.values.stock_uom?.trim()
+                || selectedPart?.stock_uom?.trim()
+                || selectedPart?.measurement_unit?.trim()
+                || row.confirmed_row.stock_uom
+                || 'pcs'
+            ),
           }
         : action.values;
       const changedMatch = ['part_id', 'stock_uom', 'units_per_source_unit']
@@ -86,9 +144,10 @@ Work in two strict passes:
 1. TRANSCRIBE what the document visibly says, including printed text and warehouse handwriting.
 2. RESEARCH product identity on the internet where useful. Keep research strictly isolated in enrichment.
 
-Return ONLY one valid JSON object in the exact structure below. Do NOT add markdown code fences (no \`\`\`json or \`\`\`). Do NOT add introductory text, commentary, or approval instructions.
-The first non-whitespace character MUST be { and the last MUST be }. Include the enclosing braces: never start with just "schema_version": 1. Return the object itself, not a quoted/escaped JSON string, multiple objects, or a partial fragment. Do not include comments, trailing commas, ellipses, or omitted sections.
+Return ONLY one valid JSON object enclosed in a single \`\`\`json ... \`\`\` markdown code block for easy copy and paste. Do NOT add any introductory text, commentary, or approval instructions before or after the code block.
+Inside the \`\`\`json code block, the first non-whitespace character MUST be { and the last MUST be }. Include the enclosing braces: never start with just "schema_version": 1. Return the object itself, not a quoted/escaped JSON string, multiple objects, or a partial fragment. Do not include comments, trailing commas, ellipses, or omitted sections.
 
+\`\`\`json
 {
   "schema_version": 1,
   "document": {
@@ -127,6 +186,7 @@ The first non-whitespace character MUST be { and the last MUST be }. Include the
   ],
   "extraction_issues": []
 }
+\`\`\`
 
 TRANSCRIPTION RULES
 - Fill document fields and line fields OUTSIDE enrichment ONLY from visible ink on the scan. Never fill them from internet results or assumptions. Use null when absent or illegible.
@@ -135,6 +195,7 @@ TRANSCRIPTION RULES
 - Never sort or regroup lines by brand, part number, description, item group, price, or research results. Keep each row's identity, quantity, unit, cost, total, handwriting, and enrichment attached to that SAME source row. Research must never move an item to another row or exchange identities between rows. Preserve duplicate items as separate rows in their original positions.
 - CRITICAL - DECIMAL STRINGS ONLY: Quantities, unit costs, line totals, and document totals MUST be plain unsigned decimal strings or null (e.g. "4", "4.0000", "3750.00", "13500.00", "23868.00"). NEVER output raw JSON numbers for quantities or money. Numbers are strictly allowed ONLY as integers for schema_version and line_no. Do not use commas, currency symbols (₱, $), negative signs, or exponent notation. Quantity permits up to 4 decimal places; money permits up to 2 decimal places. A printed zero amount is "0.00", not null.
 - DOCUMENT TYPE ENUM: document_type must be null or one of: "delivery_receipt", "invoice", "packing_list", "other". Map Delivery Receipts (DR), Acknowledgement Receipts (AR), and Delivery Orders to "delivery_receipt". Map Sales Invoices (SI), Commercial Invoices, and Official Receipts (OR) to "invoice". Map Packing Lists to "packing_list". Use "other" for any other or ambiguous title.
+- STANDARD UOM (unit): Normalize unit to a standard lowercase UOM code so equivalent labels remain consistent. Map "PC", "PCS", "PC/S", "PC/s", "PCE", "EA", "EACH", "PIECE", "PIECES", "UNIT", "UNITS" to "pcs". Map "SET", "SETS", "SET/S", "SET/s" to "set". Map "BOX", "BOXES", "BX", "BXS" to "box". Map "BTL", "BTLS", "BTL/S", "BOTTLE", "BOTTLES" to "btl". Map "PR", "PAIR", "PAIRS" to "pair"; "RL", "ROLL", "ROLLS" to "roll"; "CAN", "CANS" to "can"; "BG", "BAG", "BAGS" to "bag"; "DRM", "DRUM", "DRUMS" to "drum"; "PAIL", "PAILS" to "pail"; "PK", "PKG", "PACK", "PACKS" to "pack"; "KIT", "KITS" to "kit"; "ASSY", "ASSEMBLY" to "assy"; "FT", "FEET", "FOOT" to "ft"; "M", "MTR", "METER", "METERS" to "m"; "L", "LTR", "LITER", "LITERS" to "l"; "ML" to "ml"; "GAL", "GALLON" to "gal"; "QT", "QUART" to "qt"; "KG", "KILO", "KILOS" to "kg"; "G", "GM", "GRAM", "GRAMS" to "g"; "DOZ", "DZ", "DOZEN" to "doz"; "CS", "CASE" to "case"; "CTN", "CARTON" to "ctn"; "TUBE" to "tube"; "SHEET" to "sheet". Use null when no unit is printed on the row (FBS defaults null to "pcs"). Never output mixed-case or slash-plural variants like "PC/s", "PC/S", "PCS", or "SET/S".
 - ESCAPING QUOTES: All double quotes inside string values (e.g. inch marks like 8\\" or quoted brands like \\"COMPACT\\") MUST be escaped with a backslash (\\"). Unescaped double quotes will corrupt the JSON syntax.
 - This applies to EVERY string, including supplier_item_text, description, suggested_description, reason, supporting_text, receiving_mark, and issue messages. Valid JSON examples: "description": "HOSE LONG 5\\" (1PC/BOX)" and "suggested_description": "Wheel Cylinder (11/16\\")". Escape backslashes as \\\\ and literal line breaks as \\n inside strings. Use ordinary ASCII double quotes as JSON delimiters. If a serialization tool is available, build the data object and serialize it with JSON.stringify or an equivalent JSON serializer rather than manually assembling JSON text.
 - supplier_item_text is the cleaned receipt wording used for automatic catalog matching and Jev verification. description is an optional cleaned product description for compatibility. Neither field may include web-discovered details or inferred specs. Do not output the full uncleaned line as raw_text; that legacy field is neither displayed nor used for matching.
@@ -188,13 +249,13 @@ Report uncertainties and discrepancies as structured objects in extraction_issue
 FINAL QUALITY CONTROL
 Before returning the JSON, verify:
 1. Every quantity, unit cost, line total, and document total is a DECIMAL STRING (e.g. "4", "3750.00"), NOT a JSON number.
-2. document_type is null or one of "delivery_receipt", "invoice", "packing_list", "other".
+2. document_type is null or one of "delivery_receipt", "invoice", "packing_list", "other", and every line unit is null or a standardized lowercase UOM code (e.g. "pcs", "set", "box", "btl").
 3. All internal double quotes within strings (such as 8\\" or \\"COMPACT\\") are escaped with backslashes.
 4. Compare the lines array against the source images row by row: the first output item matches the first source item, the second matches the second, and so on through all pages. No rows were skipped, merged, sorted, or exchanged. Each row's quantities, prices, annotations, and research remain attached to its own item identity, and line_no increases sequentially across pages.
 5. All web research is strictly confined inside enrichment.
 6. Every sources[].url is a plain absolute HTTPS URL without Markdown wrappers, citation markers, or embedded credentials, and refers to a page actually opened and inspected. Use sources: [] when no usable evidence was inspected.
 7. Every research suggestion is supported by its cited page content; cross-references and compatibility claims are not represented as exact product verification. Uncertainty and material conflicts are stated in reason.
-8. The complete output starts with { and ends with }, includes every required section and both enclosing braces, and contains exactly one JSON object. There is no surrounding prose, code fence, trailing comma, or double-encoded JSON string.
+8. The complete output is enclosed in a single \`\`\`json ... \`\`\` code block with no surrounding prose before or after it. Inside the code block, the content starts with { and ends with }, includes every required section and both enclosing braces, and contains exactly one JSON object with no trailing comma or double-encoded JSON string.
 9. Recheck inch marks and quoted text in EVERY string, including research evidence and issue messages. Internal double quotes must appear as \\" in the returned JSON text; no unescaped inch marks may terminate a value early.
-10. If a JSON parser is available, parse the EXACT final output, including any file contents supplied, and confirm the parsed value is an object, not a string or array. Correct any errors and repeat the check before returning it. Without a parser, check syntax carefully but do not claim parser validation. Return only the complete JSON object with plain URL values and no Markdown formatting.`;
+10. If a JSON parser is available, parse the EXACT JSON content inside the code block and confirm the parsed value is an object, not a string or array. Correct any errors and repeat the check before returning it. Without a parser, check syntax carefully but do not claim parser validation. Return only the single \`\`\`json ... \`\`\` code block containing the complete JSON object with plain URL values.`;
 

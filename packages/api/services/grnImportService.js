@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const { manilaDateString } = require('../helpers/manilaDate');
+const { normalizeUom } = require('../helpers/normalizeEntity');
 const grnCosting = require('./grnCostingService');
 const { createGrnDraft } = require('./grnDraftService');
 const {
@@ -42,7 +43,7 @@ function computeRowDigest({
     supplierId: supplierId || null,
     currency: currency || null,
     partId: partId || null,
-    stockUom: stockUom?.trim() ? stockUom : 'pcs',
+    stockUom: normalizeUom(stockUom),
     unitsPerSourceUnit: unitsPerSourceUnit || '1.0000',
   });
   return crypto.createHash('sha256').update(content).digest('hex');
@@ -725,7 +726,7 @@ async function patchImport(client, employeeId, importId, { version, actions }) {
       [referencedPartIds]
     );
     for (const p of partRows) {
-      catalogUomByPartId.set(p.part_id, p.measurement_unit?.trim() || 'pcs');
+      catalogUomByPartId.set(p.part_id, normalizeUom(p.measurement_unit));
     }
   }
 
@@ -811,9 +812,9 @@ async function patchImport(client, employeeId, importId, { version, actions }) {
           cr.part_id = values.part_id;
           requiresReconfirm = true;
         }
-        const nextStockUom = values.stock_uom?.trim()
+        const nextStockUom = (typeof values.stock_uom === 'string' && values.stock_uom.trim() ? normalizeUom(values.stock_uom) : null)
           || (values.part_id ? catalogUomByPartId.get(values.part_id) : null)
-          || (values.stock_uom !== undefined ? 'pcs' : null);
+          || (values.stock_uom !== undefined ? normalizeUom(values.stock_uom) : null);
         if (nextStockUom !== null && nextStockUom !== cr.stock_uom) {
           cr.stock_uom = nextStockUom;
           requiresReconfirm = true;
@@ -908,7 +909,7 @@ async function patchImport(client, employeeId, importId, { version, actions }) {
           throw err;
         }
         cr.stock_uom = catalogUomByPartId.get(cr.part_id)
-          || (cr.stock_uom?.trim() ? cr.stock_uom.trim() : 'pcs');
+          || normalizeUom(cr.stock_uom);
         cr.row_confirmation_digest = computeRowDigest({
           supplierId: header.supplier_id,
           currency: header.confirmed_currency,
@@ -1189,9 +1190,9 @@ async function commitImport(client, employeeId, importId, { version }) {
       err.statusCode = 422;
       throw err;
     }
-    const catalogUom = p.measurement_unit?.trim() || 'pcs';
-    const confirmedUom = r.confirmed_row.stock_uom?.trim() || 'pcs';
-    if (catalogUom.toLowerCase() !== confirmedUom.toLowerCase()) {
+    const catalogUom = normalizeUom(p.measurement_unit);
+    const confirmedUom = normalizeUom(r.confirmed_row.stock_uom);
+    if (catalogUom !== confirmedUom) {
       const err = new Error(`Part ${pid} UOM changed to '${p.measurement_unit}', does not match confirmed '${r.confirmed_row.stock_uom}'.`);
       err.statusCode = 422;
       throw err;

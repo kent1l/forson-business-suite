@@ -9,6 +9,7 @@ import MathExpressionInput from '../ui/MathExpressionInput';
 import ApplicationSearchCombobox from '../applications/ApplicationSearchCombobox';
 import PartApplicationManager from '../../pages/PartApplicationManager';
 import { postWithJevConfirmation } from '../../helpers/jevConfirmation';
+import { normalizeUom } from '../../utils/grnImportReview';
 
 const BrandGroupForm = ({ type, onSave, onCancel, initialName = '', uppercaseText = false }) => {
     const [name, setName] = useState(initialName || '');
@@ -81,7 +82,7 @@ const computeInitialState = (source, isBulkEdit, settings) => {
             is_active: source.is_active ?? true,
             last_cost: source.last_cost ?? 0,
             last_sale_price: source.last_sale_price ?? 0,
-            measurement_unit: source.measurement_unit || 'pcs',
+            measurement_unit: normalizeUom(source.measurement_unit),
             tax_rate_id: source.tax_rate_id || '',
             is_price_change_allowed: source.is_price_change_allowed ?? true,
             is_using_default_quantity: source.is_using_default_quantity ?? true,
@@ -239,13 +240,16 @@ const PartForm = ({ part, initialValues = null, uppercaseText = false, brands, g
 
     const handleSubmit = useCallback((e) => {
         e.preventDefault();
-        onSave({ ...formData, tags, barcodes, applications: selectedApps }); // include linked applications
-    }, [formData, tags, barcodes, selectedApps, onSave]);
+        const normalizedMeasurementUnit = isBulkEdit
+            ? (formData.measurement_unit ? normalizeUom(formData.measurement_unit, '') : '')
+            : normalizeUom(formData.measurement_unit);
+        onSave({ ...formData, measurement_unit: normalizedMeasurementUnit, tags, barcodes, applications: selectedApps }); // include linked applications
+    }, [formData, isBulkEdit, tags, barcodes, selectedApps, onSave]);
 
     const handleChange = (e) => {
         const { name, type, checked } = e.target;
         let { value } = e.target;
-        if (uppercaseText && ['detail', 'part_numbers_string', 'measurement_unit'].includes(name)) {
+        if (uppercaseText && ['detail', 'part_numbers_string'].includes(name)) {
             value = value.toUpperCase();
         }
         setFormData(prev => ({ ...prev, [name]: type === 'checkbox' ? checked : value }));

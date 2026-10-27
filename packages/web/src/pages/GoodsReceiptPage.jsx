@@ -29,6 +29,7 @@ import { supplierReference, flattenReferenceMatches } from '../utils/supplierRef
 import { getNavContext, returnToOrigin, clearNavContext } from '../utils/apNavigationContract';
 import { createUuid } from '../utils/createUuid';
 import { receiptDateForInput, receiptDateForPayload } from '../utils/grnReceiptDate';
+import { normalizeUom } from '../utils/grnImportReview';
 
 const upperCatalogText = (value) => String(value || '').replace(/\s+/g, ' ').trim().toUpperCase();
 
@@ -818,7 +819,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
             brand_name: upperCatalogText(draft.brand),
             group_id: group?.group_id || '',
             group_name: upperCatalogText(draft.group),
-            measurement_unit: upperCatalogText(draft.purchase_uom || catalogTarget.unit || 'PCS'),
+            measurement_unit: normalizeUom(draft.purchase_uom || catalogTarget.unit),
             last_cost: catalogTarget.cost_price || 0,
         };
     }, [catalogTarget?.po_line_id]);
@@ -1136,7 +1137,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                 brand_name: brandName,
                 group_id: groups.find(item => upperCatalogText(item.group_name) === groupName)?.group_id || '',
                 group_name: groupName,
-                measurement_unit: upperCatalogText(source.unit || 'PCS'),
+                measurement_unit: normalizeUom(source.unit),
                 last_cost: row.confirmed_row?.cost_price ?? source.unit_cost ?? 0,
                 last_sale_price: row.confirmed_row?.sale_price ?? 0,
             },
@@ -1155,7 +1156,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
             });
             if (result.outcome === 'cancelled' || result.outcome === 'error') return;
 
-            const stockUom = (result.part.measurement_unit || result.part.stock_uom || partData.measurement_unit || 'pcs').trim() || 'pcs';
+            const stockUom = normalizeUom(result.part.measurement_unit || result.part.stock_uom || partData.measurement_unit);
             importReview.queueAction({
                 type: 'set_row',
                 row_id: importPartTarget.row_id,

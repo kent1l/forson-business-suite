@@ -527,7 +527,7 @@ try {
   assert.equal(createdParts.length, 1);
   assert.equal(Number(createdParts[0].brand_id), 1);
   assert.equal(Number(createdParts[0].group_id), 1);
-  assert.equal(createdParts[0].measurement_unit, 'PCS');
+  assert.equal(createdParts[0].measurement_unit, 'pcs');
   assert.equal(createdParts[0].last_cost, '150.00');
   assert.equal(createdParts[0].last_sale_price, '225.00');
   await clickButton('Save Review');
@@ -535,7 +535,7 @@ try {
   const createdRow = mockReviewDetail.review_state.rows.find(row => row.row_id === 'r_2');
   assert(await page.$eval('section[aria-label="Supplier item text for line 1"]', el => el.innerText.includes('Cleaned Supplier Text') && el.innerText.includes('TOYOTA 04152-YZZA6 OIL FILTER') && !el.innerText.includes('5 PCS')), 'Saving must preserve cleaned item evidence without showing original raw text');
   assert.equal(createdRow.confirmed_row.part_id, 20);
-  assert.equal(createdRow.confirmed_row.stock_uom, 'PCS');
+  assert.equal(createdRow.confirmed_row.stock_uom, 'pcs');
   assert.equal(createdRow.confirmed_row.delivered_quantity, '3.0000');
   assert.equal(createdRow.confirmed_row.return_quantity, '1.0000');
   assert.equal(createdRow.confirmed_row.cost_price, '150.00');

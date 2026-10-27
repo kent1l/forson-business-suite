@@ -72,10 +72,19 @@ describe('GRN External JSON Ingestion - Schema and Rules', () => {
     expect(initializeReviewState(normalized, {}).rows[0].confirmed_row.stock_uom).toBe('pcs');
   });
 
-  test('preserves an explicit JSON unit', () => {
+  test.each([
+    ['BOX', 'box'],
+    ['PC/s', 'pcs'],
+    ['PC/S', 'pcs'],
+    ['PCS', 'pcs'],
+    ['pc', 'pcs'],
+    ['EA', 'pcs'],
+    ['SET/S', 'set'],
+    ['BTL', 'btl'],
+  ])('normalizes explicit JSON unit %p to canonical UOM %p', (rawUnit, expectedUnit) => {
     const payload = structuredClone(conformingExample);
-    payload.lines[0].unit = 'BOX';
-    expect(validateAndNormalizeExternalPayload(payload).lines[0].unit).toBe('BOX');
+    payload.lines[0].unit = rawUnit;
+    expect(validateAndNormalizeExternalPayload(payload).lines[0].unit).toBe(expectedUnit);
   });
 
   test.each([undefined, null, '', '   '])('missing stock UOM %p does not block a confirmed catalog match', stockUom => {

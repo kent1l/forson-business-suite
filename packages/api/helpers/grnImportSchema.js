@@ -1,4 +1,5 @@
 const crypto = require('crypto');
+const { normalizeUom } = require('./normalizeEntity');
 
 const MAX_PAYLOAD_BYTES = 1048576; // 1 MiB canonical UTF-8
 const MAX_LINES = 200;
@@ -518,7 +519,7 @@ function validateAndNormalizeExternalPayload(payload) {
       supplier_item_code: supplier_item_code ?? null,
       item_group_hint: item_group_hint ?? null,
       quantity,
-      unit: unit?.trim() ? unit : 'pcs',
+      unit: normalizeUom(unit),
       unit_cost,
       printed_line_total,
       handwritten_sale_price,

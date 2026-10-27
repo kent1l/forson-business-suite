@@ -6,7 +6,7 @@ import { ICONS } from '../../constants';
 import api from '../../api';
 import { createUuid } from '../../utils/createUuid';
 import { copyToClipboard } from '../../utils/clipboard';
-import { GRN_EXTRACTION_PROMPT } from '../../utils/grnImportReview';
+import { GRN_EXTRACTION_PROMPT, stripJsonCodeFence } from '../../utils/grnImportReview';
 
 const MAX_PAYLOAD_BYTES = 1048576; // 1 MiB
 const PROMPT_TOOLTIP_TEXT =
@@ -106,7 +106,7 @@ export default function ImportExtractedJsonDialog({
 
     let parsedPayload;
     try {
-      parsedPayload = JSON.parse(jsonText);
+      parsedPayload = JSON.parse(stripJsonCodeFence(jsonText));
     } catch (err) {
       setParseError(`Malformed JSON syntax: ${err.message}`);
       textAreaRef.current?.focus();
@@ -145,7 +145,7 @@ export default function ImportExtractedJsonDialog({
         await onSaveManualDraftFirst();
       }
       setConfirmManualSave(false);
-      const parsed = JSON.parse(jsonText);
+      const parsed = JSON.parse(stripJsonCodeFence(jsonText));
       await proceedWithPayload(parsed);
     } catch (err) {
       setSubmitting(false);

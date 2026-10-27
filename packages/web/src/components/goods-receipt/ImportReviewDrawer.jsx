@@ -3,7 +3,7 @@ import Icon from '../ui/Icon';
 import { ICONS } from '../../constants';
 import { formatCurrency } from '../../utils/currency';
 import { REJECTION_REASONS } from '../../utils/grnCosting';
-import { aiFilledRowFields, aiFilledHeaderFields } from '../../utils/grnImportReview';
+import { aiFilledRowFields, aiFilledHeaderFields, normalizeUom } from '../../utils/grnImportReview';
 
 const importFieldClass = ai => `w-full min-w-0 px-3 py-2 border rounded-lg text-gray-900 dark:text-slate-100 ${ai
   ? 'border-blue-300 bg-blue-50 dark:border-blue-800 dark:bg-blue-950/40'
@@ -141,7 +141,7 @@ export default function ImportReviewDrawer({
   const handleSelectCandidate = (rowId, candidate) => {
     updateRow(rowId, {
       part_id: candidate.part_id,
-      stock_uom: candidate.stock_uom?.trim() ? candidate.stock_uom : 'pcs',
+      stock_uom: normalizeUom(candidate.stock_uom),
     }, null, candidate);
     setCandidateDrawerRowId(null);
   };
@@ -463,7 +463,7 @@ export default function ImportReviewDrawer({
                         </div>}
                         <div>
                           <label className="block mb-1" htmlFor={`uom-${row.row_id}`}>Stock Unit</label>
-                          <input id={`uom-${row.row_id}`} readOnly value={cr.stock_uom?.trim() ? cr.stock_uom : 'pcs'} data-ai-filled={aiFields.includes('stock_uom') || undefined} className={fieldClass('stock_uom')} />
+                          <input id={`uom-${row.row_id}`} readOnly value={normalizeUom(cr.stock_uom)} data-ai-filled={aiFields.includes('stock_uom') || undefined} className={fieldClass('stock_uom')} />
                         </div>
                         <div>
                           <label className="block mb-1" htmlFor={`factor-${row.row_id}`}>Units per Supplier Unit</label>
@@ -597,7 +597,7 @@ export default function ImportReviewDrawer({
                       {cand.internal_sku}
                     </span>
                     <span className="text-[11px] text-gray-500 dark:text-slate-400">
-                      UOM: {cand.stock_uom}
+                      UOM: {normalizeUom(cand.stock_uom)}
                     </span>
                   </div>
                   <div className="text-gray-900 dark:text-slate-100 font-medium">{cand.display_name}</div>
