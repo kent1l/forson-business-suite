@@ -556,6 +556,88 @@ router.put('/settings/physical-document-selection-policies', protect, hasPermiss
     }
 });
 
+// A bounded, paginated view of a physical booklet, including numbers without a record.
+router.get('/settings/physical-document-monitor', protect, hasPermission('settings:edit'), async (req, res) => {
+    try {
+        const seriesId = Number(req.query.series_id);
+        const page = Number(req.query.page || 1);
+        if (!Number.isSafeInteger(seriesId) || seriesId < 1 || !Number.isSafeInteger(page) || page < 1) return res.status(400).json({ message: 'Invalid series or page.' });
+        const { rows: seriesRows } = await db.query('SELECT * FROM public.physical_document_series WHERE series_id = $1', [seriesId]);
+        const series = seriesRows[0];
+        if (!series) return res.status(404).json({ message: 'Series not found.' });
+        if (series.min_serial == null || series.max_serial == null) return res.json({ needs_bounds: true, items: [], total: 0 });
+        const start = BigInt(series.min_serial) + BigInt(page - 1) * 25n;
+        const end = BigInt(series.max_serial);
+        if (start > end) return res.json({ items: [], total: String(end - BigInt(series.min_serial) + 1n) });
+        const last = start + 24n < end ? start + 24n : end;
+        const { rows } = await db.query(`
+            SELECT n.serial_number, UPPER(s.prefix) || '-' || n.serial_number AS reference,
+                r.registry_id, r.state, r.version, r.updated_at, follow_up.reason AS follow_up_reason,
+                COALESCE(links.sources, '[]'::json) AS sources,
+                legacy.invoices, legacy.payments
+            FROM public.physical_document_series s
+            CROSS JOIN generate_series($2::bigint, $3::bigint) n(serial_number)
+            LEFT JOIN LATERAL (
+                SELECT * FROM public.physical_document_registry r
+                WHERE r.series_id = s.series_id AND r.serial_number = n.serial_number
+                ORDER BY (r.state IN ('ISSUED','VOIDED','SPOILED')) DESC, r.updated_at DESC, r.registry_id DESC LIMIT 1
+            ) r ON true
+            LEFT JOIN LATERAL (
+                SELECT reason FROM public.physical_document_event ev
+                WHERE ev.series_id = s.series_id AND ev.submitted_reference = UPPER(s.prefix) || '-' || n.serial_number AND ev.event_type = 'FOLLOW_UP'
+                ORDER BY ev.created_at DESC, ev.event_id DESC LIMIT 1
+            ) follow_up ON true
+            LEFT JOIN LATERAL (
+                SELECT json_agg(json_build_object('type', l.source_type, 'id', COALESCE(l.invoice_id, l.payment_id, l.collection_group_id))) AS sources
+                FROM public.physical_document_source_link l WHERE l.registry_id = r.registry_id
+            ) links ON true
+            LEFT JOIN LATERAL (
+                SELECT ARRAY(SELECT invoice_id FROM public.invoice WHERE UPPER(TRIM(physical_receipt_no)) = UPPER(s.prefix) || '-' || n.serial_number) AS invoices,
+                       ARRAY(SELECT payment_id FROM public.customer_payment WHERE UPPER(TRIM(physical_receipt_no)) = UPPER(s.prefix) || '-' || n.serial_number) AS payments
+            ) legacy ON true
+            WHERE s.series_id = $1 ORDER BY n.serial_number`, [seriesId, String(start), String(last)]);
+        res.json({ items: rows, total: String(end - BigInt(series.min_serial) + 1n) });
+    } catch (err) {
+        console.error('Error fetching receipt monitor:', err);
+        res.status(500).json({ message: 'Failed to load receipt monitor.' });
+    }
+});
+
+router.get('/settings/physical-document-monitor/history', protect, hasPermission('settings:edit'), async (req, res) => {
+    try {
+        const seriesId = Number(req.query.series_id);
+        const reference = formatPhysicalReceiptNumber(req.query.reference);
+        if (!Number.isSafeInteger(seriesId) || seriesId < 1 || !reference) return res.status(400).json({ message: 'Series and reference are required.' });
+        const { rows } = await db.query(`SELECT ev.*, e.first_name || ' ' || e.last_name AS actor_name
+            FROM public.physical_document_event ev LEFT JOIN public.employee e ON e.employee_id = ev.actor_id
+            LEFT JOIN public.physical_document_registry r ON r.registry_id = ev.registry_id
+            WHERE ev.series_id = $1 AND (ev.submitted_reference = $2 OR r.canonical_full_reference = $2)
+            ORDER BY ev.created_at DESC, ev.event_id DESC`, [seriesId, reference]);
+        res.json(rows);
+    } catch (err) {
+        console.error('Error fetching receipt history:', err);
+        res.status(500).json({ message: 'Failed to load receipt history.' });
+    }
+});
+
+router.post('/settings/physical-document-monitor/follow-up', protect, hasPermission('settings:edit'), async (req, res) => {
+    try {
+        const seriesId = Number(req.body.series_id);
+        const parsed = physicalDocumentService.parseReferenceComponents(req.body.reference);
+        const reason = typeof req.body.reason === 'string' ? req.body.reason.trim() : '';
+        if (!Number.isSafeInteger(seriesId) || seriesId < 1 || !parsed?.serial || !reason || reason.length > 100) return res.status(400).json({ message: 'Series, reference and a reason of up to 100 characters are required.' });
+        const { rows } = await db.query('SELECT prefix, min_serial, max_serial FROM public.physical_document_series WHERE series_id = $1', [seriesId]);
+        const series = rows[0];
+        if (!series || parsed.prefix !== series.prefix.toUpperCase() || series.min_serial == null || series.max_serial == null || BigInt(parsed.serial) < BigInt(series.min_serial) || BigInt(parsed.serial) > BigInt(series.max_serial)) return res.status(400).json({ message: 'Reference is outside the configured series.' });
+        await db.query(`INSERT INTO public.physical_document_event (series_id, event_type, submitted_reference, reason, actor_id)
+            VALUES ($1, 'FOLLOW_UP', $2, $3, $4)`, [seriesId, parsed.canonical, reason, req.user?.employee_id]);
+        res.status(201).json({ message: 'Follow-up recorded.' });
+    } catch (err) {
+        console.error('Error recording receipt follow-up:', err);
+        res.status(500).json({ message: 'Failed to record follow-up.' });
+    }
+});
+
 // GET /api/settings/physical-document-spoilage
 router.get('/settings/physical-document-spoilage', protect, hasPermission('settings:edit'), async (req, res) => {
     try {

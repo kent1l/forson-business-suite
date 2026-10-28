@@ -4,6 +4,7 @@ import toast from 'react-hot-toast';
 import Modal from '../ui/Modal';
 import Icon from '../ui/Icon';
 import InfoTip from '../ui/InfoTip';
+import ReceiptMonitor from './ReceiptMonitor';
 import { ICONS } from '../../constants';
 
 export default function PhysicalDocumentSettings() {
@@ -37,6 +38,8 @@ export default function PhysicalDocumentSettings() {
     const [spoilModalOpen, setSpoilModalOpen] = useState(false);
     const [correctModalOpen, setCorrectModalOpen] = useState(false);
     const [correctingRecord, setCorrectingRecord] = useState(null);
+    const [spoilTarget, setSpoilTarget] = useState(null);
+    const [monitorRefresh, setMonitorRefresh] = useState(0);
 
     // Load initial data
     const loadData = useCallback(async () => {
@@ -160,6 +163,7 @@ export default function PhysicalDocumentSettings() {
                     >
                         Selection Policies
                     </button>
+                    <button type="button" onClick={() => setSubTab('monitor')} className={`px-3 py-1.5 text-xs font-semibold rounded-md transition ${subTab === 'monitor' ? 'bg-white dark:bg-slate-900 text-primary-600 shadow-xs' : 'text-gray-600 dark:text-slate-400'}`}>Series Monitor</button>
                     <button
                         type="button"
                         onClick={() => setSubTab('spoilage')}
@@ -402,6 +406,8 @@ export default function PhysicalDocumentSettings() {
                         />
                     )}
 
+                    {subTab === 'monitor' && <ReceiptMonitor seriesList={seriesList} refresh={monitorRefresh} onSpoil={target => { setSpoilTarget(target); setSpoilModalOpen(true); }} onCorrect={record => { setCorrectingRecord(record); setCorrectModalOpen(true); }} />}
+
                     {/* TAB 3: SPOILED NUMBERS & HISTORY */}
                     {subTab === 'spoilage' && (
                         <div className="space-y-4">
@@ -421,7 +427,7 @@ export default function PhysicalDocumentSettings() {
                                 </div>
                                 <button
                                     type="button"
-                                    onClick={() => setSpoilModalOpen(true)}
+                                    onClick={() => { setSpoilTarget(null); setSpoilModalOpen(true); }}
                                     className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition"
                                 >
                                     <Icon path={ICONS.plus} className="w-3.5 h-3.5" />
@@ -575,9 +581,12 @@ export default function PhysicalDocumentSettings() {
                 title="Record Spoiled Receipt Number"
             >
                 <SpoilForm
+                    key={spoilTarget?.reference || 'new'}
                     seriesList={seriesList}
+                    initialTarget={spoilTarget}
                     onSaved={() => {
                         setSpoilModalOpen(false);
+                        setMonitorRefresh(value => value + 1);
                         loadSpoilage();
                     }}
                     onCancel={() => setSpoilModalOpen(false)}
@@ -594,6 +603,7 @@ export default function PhysicalDocumentSettings() {
                     record={correctingRecord}
                     onSaved={() => {
                         setCorrectModalOpen(false);
+                        setMonitorRefresh(value => value + 1);
                         loadSpoilage();
                     }}
                     onCancel={() => setCorrectModalOpen(false)}
@@ -1077,9 +1087,9 @@ function SequenceAdjustForm({ series, onSaved, onCancel }) {
 }
 
 // Subcomponent: Manual Spoil Form
-function SpoilForm({ seriesList, onSaved, onCancel }) {
-    const [seriesId, setSeriesId] = useState(seriesList[0]?.series_id || '');
-    const [receiptNo, setReceiptNo] = useState('');
+function SpoilForm({ seriesList, initialTarget, onSaved, onCancel }) {
+    const [seriesId, setSeriesId] = useState(initialTarget?.series_id || seriesList[0]?.series_id || '');
+    const [receiptNo, setReceiptNo] = useState(initialTarget?.reference || '');
     const [reason, setReason] = useState('');
     const [notes, setNotes] = useState('');
     const [submitting, setSubmitting] = useState(false);

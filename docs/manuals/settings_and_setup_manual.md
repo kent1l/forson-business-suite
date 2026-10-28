@@ -247,6 +247,23 @@ To disable a method instead of deleting it, select the **Enabled**/**Disabled** 
 
 **Example:** A new warehouse hire scans the QR code shown on an admin's screen, lands on the Mobile Setup page showing "Version 1.3.0 Available," taps **Download App (.apk)**, opens the file from Downloads, allows installation from that source when prompted, and the Forson app installs.
 
+## How To — Monitor Physical Receipt Numbers
+
+*Why this matters:* A physical receipt series is the numbered range printed on a booklet. Reviewing the range helps you identify issued, spoiled, voided, and unrecorded numbers.
+
+*Precision:* Check the actual paper and related transactions before deciding what happened to an unrecorded number. **No system record** does not mean the paper is unused.
+
+1. Go to **Settings** → **Physical Documents** → **Series Monitor**, and select a **Series**.
+2. If the page asks for bounds, open **Series** and edit the series so **Min Serial** and **Max Serial** match the booklet. Return to **Series Monitor**.
+3. Use **Previous** and **Next** to review the 25-number pages. **Status on this page** filters only the numbers currently displayed, so check other pages as well.
+4. Choose **View history** to see recorded events, actors, reasons, and notes. Older transactions may have no recorded events. Transaction numbers shown in the table are identifiers; they do not open the transaction from this screen.
+5. For **No system record**, choose **Flag for follow-up** and enter a reason if the number needs investigation. This records a note; it does not reserve the receipt or determine whether it is unused. If the paper is actually damaged, choose **Mark spoiled**, enter the reason, and save.
+6. For **Spoiled**, choose **Correct spoilage** only when the spoilage record was entered in error. The correction form records the reason and makes the number eligible for issuance again. The separate **Spoiled Paper** tab remains available for searching and managing spoilage records.
+
+**Example:** A booklet runs from `SI-1001` through `SI-1100`. After selecting its series, an administrator sees `SI-1003` as **No system record** and flags it for follow-up because the paper is missing. The administrator checks the booklet and transaction records before taking further action.
+
+> 📝 Note — A follow-up remains visible after it is recorded; this screen does not yet provide a resolve action. The monitor matches older invoice and payment references in a specific format, so a missing match should still be investigated.
+
 ## Field Reference
 
 | Field/Control | Description | Notes |
