@@ -235,7 +235,8 @@ export default function ImportReviewDrawer({
                   value={header.supplier_id || ''}
                   disabled={!!header.context_locked_supplier_id}
                   onChange={(e) => updateHeader({ supplier_id: e.target.value ? Number(e.target.value) : null })}
-                  className="w-full px-2.5 py-1.5 border border-gray-300 dark:border-slate-700 rounded bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100"
+                  data-ai-filled={headerAiFields.includes('supplier_id') || undefined}
+                  className={importFieldClass(headerAiFields.includes('supplier_id'))}
                 >
                   <option value="">Select Supplier</option>
                   {suppliers.map(s => (

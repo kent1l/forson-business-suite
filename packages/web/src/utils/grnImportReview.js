@@ -65,8 +65,12 @@ export function aiFilledRowFields(row, sourceLine = {}) {
 }
 
 export function aiFilledHeaderFields(header, sourceDocument = {}) {
-  return header.ai_filled_fields || Object.entries({ supplier_document_no: 'document_number',
-    supplier_document_type: 'document_type', confirmed_currency: 'currency' })
+  return header.ai_filled_fields || Object.entries({
+    supplier_document_no: 'document_number',
+    supplier_document_type: 'document_type',
+    confirmed_currency: 'currency',
+    supplier_id: 'supplier_name',
+  })
     .filter(([field, source]) => header[field] && header[field] === sourceDocument[source]).map(([field]) => field);
 }
 

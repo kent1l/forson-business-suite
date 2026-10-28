@@ -265,19 +265,15 @@ function parseIsoCalendarDate(val, path) {
   return val;
 }
 
-function parseCurrency(val, path) {
-  if (val === null || val === undefined) return null;
-  if (typeof val !== 'string') {
-    const err = new Error(`Field '${path}' must be a 3-letter currency code or null.`);
-    err.path = path;
-    throw err;
+function parseCurrency(val) {
+  if (val === null || val === undefined) return 'PHP';
+  if (typeof val !== 'string') return 'PHP';
+  const trimmed = val.trim().toUpperCase();
+  if (!trimmed) return 'PHP';
+  if (/^[A-Z]{3}$/.test(trimmed)) {
+    return trimmed;
   }
-  if (!/^[A-Z]{3}$/.test(val)) {
-    const err = new Error(`Field '${path}' must be exactly 3 uppercase letters.`);
-    err.path = path;
-    throw err;
-  }
-  return val;
+  return 'PHP';
 }
 
 function checkDisallowedKeys(obj, allowedKeys, path) {
