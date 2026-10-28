@@ -568,7 +568,7 @@ router.get('/settings/physical-document-monitor', protect, hasPermission('settin
 router.get('/settings/physical-document-monitor/history', protect, hasPermission('settings:edit'), async (req, res) => {
     try {
         const parsed = monitorService.parse(req.query.reference);
-        await monitorService.seriesFor(db, req.query.series_id, parsed.canonical);
+        await monitorService.seriesFor(db, req.query.series_id, parsed.canonical, false, false);
         const { rows } = await db.query(`SELECT ev.*, e.first_name || ' ' || e.last_name AS actor_name
             FROM physical_document_event ev LEFT JOIN employee e ON e.employee_id = ev.actor_id
             LEFT JOIN physical_document_registry r ON r.registry_id = ev.registry_id

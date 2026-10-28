@@ -1,6 +1,7 @@
 'use strict';
 
 const db = require('../db');
+const { paginateReferences } = require('../helpers/receiptMonitorPagination');
 const { formatPhysicalReceiptNumber } = require('../helpers/receiptNumberFormatter');
 
 function fail(message, statusCode = 400) { throw Object.assign(new Error(message), { statusCode }); }
@@ -56,37 +57,19 @@ async function evidence(runner, series) {
     for (const row of map.values()) row.status = row.state && row.state !== 'UNOCCUPIED' ? row.state : row.candidates.length ? (row.candidates.every(tx => tx.cancelled) ? 'VOIDED' : 'ISSUED') : 'NO_RECORD';
     return map;
 }
-async function monitor({ series_id, page = 1, status = 'ALL' }, runner = db) {
+async function monitor({ series_id, page = 1, status = 'ALL', search = '', sortBy = 'reference', sortOrder = 'asc' }, runner = db) {
     if (!/^\d+$/.test(String(page)) || BigInt(page) < 1n || BigInt(page) > 9223372036854775807n || !['ALL', 'ISSUED', 'SPOILED', 'VOIDED', 'NO_RECORD'].includes(status)) fail('Invalid page or status.');
+    if (typeof search !== 'string' || search.length > 100 || !['reference', 'status'].includes(sortBy) || !['asc', 'desc'].includes(sortOrder)) fail('Invalid search or sort option.');
     const series = await seriesFor(runner, series_id);
     if (series.min_serial == null || series.max_serial == null) return { needs_bounds: true, items: [], total: '0' };
     const min = BigInt(series.min_serial), max = BigInt(series.max_serial);
     if (min < 1n || max < min) fail('Series bounds are invalid.');
     const records = await evidence(runner, series);
-    const occupied = [...records.entries()].filter(([, row]) => row.status !== 'NO_RECORD').sort(([a], [b]) => BigInt(a) < BigInt(b) ? -1 : 1);
-    const offset = (BigInt(page) - 1n) * 25n;
-    let total, serials = [];
-    if (status === 'ALL') {
-        total = max - min + 1n;
-        for (let n = min + offset; n <= max && serials.length < 25; n++) serials.push(String(n));
-    } else if (status === 'NO_RECORD') {
-        total = max - min + 1n - BigInt(occupied.length);
-        let cursor = min, skip = offset;
-        for (const boundary of [...occupied.map(([serial]) => BigInt(serial)), max + 1n]) {
-            const size = boundary - cursor;
-            if (skip >= size) skip -= size;
-            else {
-                for (let n = cursor + skip; n < boundary && serials.length < 25; n++) serials.push(String(n));
-                skip = 0n;
-            }
-            cursor = boundary + 1n;
-            if (serials.length === 25) break;
-        }
-    } else {
-        const filtered = occupied.filter(([, row]) => row.status === status);
-        total = BigInt(filtered.length);
-        if (offset < total) serials = filtered.slice(Number(offset), Number(offset) + 25).map(([serial]) => serial);
-    }
+    const searchText = search.trim().toUpperCase();
+    const fullReference = searchText.match(/^([A-Z]{1,10})\W*([0-9]+)$/);
+    const normalizedSearch = fullReference ? `${fullReference[1]}-${BigInt(fullReference[2])}` : searchText;
+    const { total, serials } = paginateReferences(records, min, max, { prefix: series.prefix,
+        search: normalizedSearch, status, sortBy, sortOrder, page });
     const references = serials.map(n => `${series.prefix.toUpperCase()}-${n}`);
     const { rows: flags } = await runner.query(`SELECT DISTINCT ON (submitted_reference) submitted_reference, event_id, event_type, reason
         FROM physical_document_event WHERE series_id = $1 AND submitted_reference = ANY($2::text[])

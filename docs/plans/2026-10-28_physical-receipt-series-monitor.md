@@ -2,7 +2,7 @@
 
 **Status:** Implementation complete; PostgreSQL integration and browser interaction checks passed.
 **Context:** Extends the physical document registry and spoilage settings.
-**Delivery:** Original monitor committed as `86548e3`; completion changes are uncommitted in the current working tree. No migration is required. No production deployment or release was performed.
+**Delivery:** Core monitor and reconciliation committed as `84ffe39` (following `86548e3`); the merged monitor/spoilage UI changes are uncommitted in the current working tree. No migration is required. No production deployment or release was performed.
 
 ## 1. Status at a Glance
 
@@ -11,8 +11,9 @@
 | Bounded series monitor | Complete, tested | Exact bigint serials, 25 numbers per page, sparse range enumeration; §4. |
 | Status, history and follow-up | Complete, tested | Registry and normalized legacy evidence; audited, explicitly resolved follow-ups; §4. |
 | Transaction actions and reconciliation | Complete, tested | Permission-gated summaries, existing invoice correction/void UI, verified invoice/payment/group linking; §5. |
-| Status filtering and pagination | Complete, tested | Full-range filtering and correct totals; stale-response protection and empty-page handling; §4. |
+| Status filtering and pagination | Complete, tested | Full-range reference search, reference/status sorting and correct totals; stale-response protection and empty-page handling; §4. |
 | Verification | Complete | Real PostgreSQL suites, browser fixtures, API/web lint and production build; §7. |
+| Unified monitor / spoilage UI | Complete, tested | Spoiled status reuses the existing register, filters, sorting and forms within Series Monitor; §4. |
 | Verified unused | Explicitly deferred | No agreed availability rule; §6. |
 
 ## 2. For a New Session or Agent Picking This Up
@@ -34,15 +35,18 @@ Follow-ups are investigation records, not reservations. They remain open across 
 
 ## 4. Architecture & Monitor Behavior — As Built
 
-- [x] `Series Monitor` and `Spoiled Paper` remain separate settings tabs; existing spoilage search, correction and pagination are preserved.
+- [x] A single `Series Monitor` tab now contains both workflows. Selecting **Spoiled** uses the existing spoilage register endpoint and preserves reference/actor/reason search, all-series and date filters, sortable reference/series/date/actor/reason columns, reasons/notes and 10-record pages. It works without a selected series or configured bounds. The separate Spoiled Paper tab and duplicate state/loading logic were removed from `PhysicalDocumentSettings`.
 - [x] `GET /settings/physical-document-monitor` requires `settings:edit`. A selected series needs both bounds; missing bounds return `needs_bounds`. Invalid IDs, page values and statuses are rejected.
 - [x] `receiptMonitorService` combines sparse registry and normalized invoice/payment/collection-group evidence. Occupied registry states take precedence over unoccupied history. Untracked cancelled invoices show as Voided; other legacy matches show as Issued.
 - [x] Case, spacing, separators and leading zeros are normalized for numbered alphabetic prefixes. Ordinary service occupancy checks also recognize these legacy formats and collection groups, so issuance does not reuse a legacy number identified by the monitor.
 - [x] Status filtering applies across the selected range before 25-row pagination. Gap pages use intervals between occupied serials and bigint arithmetic; they never expand a huge booklet into all its numbers. Work still scales with actual recorded evidence in the range.
+- [x] Range search matches a case-insensitive reference or serial substring across the whole range; complete formatted references normalize separators and leading zeros. Reference/status headings toggle ascending/descending order before pagination. Equal statuses use numeric reference order. A digit-state counter counts and selects substring matches inside sparse intervals without expanding huge ranges; invalid search/sort parameters are rejected.
+- [x] Row actions in both range and spoilage tables use icons with native hover titles, accessible names and visible keyboard focus. Transaction links and form submit buttons keep descriptive text.
 - [x] Source links retain PRIMARY/HISTORICAL roles, including prior registry rows for the same serial. Legacy candidates are labeled separately. Transaction summaries require the relevant view permission.
-- [x] History includes events associated with the serial's registry history as well as reference-only investigation events, including actors/reasons/notes. Older transactions may have no events.
+- [x] History is available for bounded and unbounded series and includes events associated with the serial's registry history as well as reference-only investigation events, including actors/reasons/notes. Older transactions may have no events.
 - [x] Follow-up creation validates prefix/bounds and rechecks that the number has no occupied evidence under the series lock. Duplicate open flags are rejected. Resolution requires the current follow-up event ID, preserving stale-update protection and append-only history.
 - [x] Series/page/filter changes ignore stale requests. Failed loads show a retry action; empty filters show an empty-state row. A filtered page removed by a concurrent change clamps to the last remaining page.
+- [x] The polished UI includes a shared toolbar and mark-spoiled action, status badges, readable transaction roles, timeline history, loading/error/empty states, bigint-safe pagination with page jump, and responsive filters with contained table scrolling. Existing spoilage and correction forms have associated labels and reason limits.
 - [x] Mark spoiled and Correct spoilage reuse existing forms. Mark spoiled now validates prefix and any configured bounds, takes the series lock and checks normalized occupancy. Standalone spoilage still supports series without bounds.
 
 ## 5. Transaction Actions and Safe Reconciliation — As Built
@@ -62,13 +66,16 @@ Endpoints under `/settings/physical-document-monitor`:
 
 `Verified unused` remains deferred until its effect on availability and later issuance is agreed. Production deployment, release/version bump and committing were not requested.
 
-Completion changes:
+Feature and UI continuation files:
 
 - `packages/api/helpers/receiptNumberFormatter.js`
 - `packages/api/services/physicalDocumentService.js`
 - `packages/api/services/receiptMonitorService.js` (new)
+- `packages/api/helpers/receiptMonitorPagination.js` (new)
+- `packages/api/tests/receiptMonitorPagination.test.js` (new)
 - `packages/api/routes/physicalDocumentRoutes.js`
 - `packages/api/tests/receiptMonitor.test.js` (new)
+- `packages/web/src/components/settings/PhysicalDocumentSettings.jsx`
 - `packages/web/src/components/settings/ReceiptMonitor.jsx`
 - `packages/web/tests/fixtures/receiptMonitorBrowser.html` (new)
 - `packages/web/tests/receiptMonitorBrowser.mjs` (new)
@@ -97,9 +104,13 @@ git diff --check
 graphify update .
 ```
 
-All four PostgreSQL suites passed (43 tests, including 16 monitor-specific scenarios). Both browser suites passed. API/web lint and build pass; existing repository lint warnings and bundle-size warnings remain. The browser monitor fixture covers bounds/series selection, full-range filtering, pagination, no matches, history, spoilage callbacks, follow-up creation/resolution, explicit reconciliation, invoice navigation, permission visibility, retry and stale responses. The existing invoice action browser fixture separately verifies correction/void behavior. These are isolated browser fixtures, not a production end-to-end run. The disposable PostgreSQL container was removed after verification. `git diff --check` passed. Graphify refreshed successfully after retrying outside the sandbox (7,733 nodes, 13,656 edges); it reported existing extraction warnings and skipped HTML visualization because the graph exceeds its size limit. Markdown semantic indexing was not run.
+All four PostgreSQL suites passed (43 tests, including 16 monitor-specific scenarios). Both browser suites passed. The search/sort continuation also passes the monitor integration suite plus pagination checks (19 tests), including a brute-force comparison over digit boundaries/statuses/directions and exact bigint searches. Browser checks cover range search/reset, sortable headers, and icon titles/accessibility as well as the integrated workflows. API/web lint and build pass; existing repository lint warnings and bundle-size warnings remain. The browser monitor fixture covers bounds/series selection, full-range filtering, pagination, no matches, history, spoilage callbacks, follow-up creation/resolution, explicit reconciliation, invoice navigation, permission visibility, retry and stale responses. The existing invoice action browser fixture separately verifies correction/void behavior. During UI integration, all 16 monitor PostgreSQL tests passed again, including unbounded-series history. The expanded browser suite verifies the single settings tab, preserved spoiled-register search/date/sort/pagination, all-series/unbounded views, correction submission with expected version and refresh, plus desktop/mobile/dark-mode layouts. These are isolated browser fixtures, not a production end-to-end run. The disposable PostgreSQL container was removed after verification. `git diff --check` passed. Graphify refreshed successfully after retrying outside the sandbox; it reported existing extraction warnings and skipped HTML visualization because the graph exceeds its size limit. Markdown semantic indexing was not run.
 
 ## 8. Change Log
 
 - **2026-10-28:** Documented the original monitor implementation, remaining gaps and initial environment limitations.
 - **2026-10-28:** Completed filtering, follow-up lifecycle, transaction summaries/navigation and safe reconciliation; normalized legacy occupancy; verified with isolated PostgreSQL and browser fixtures and updated the settings manual. Original implementation is now committed as `86548e3`; completion work remains uncommitted.
+
+- **2026-10-28:** Merged Spoiled Paper into the monitor’s Spoiled status view per user clarification; preserved the existing register UI, filters and forms, polished range rows and modal layouts, and verified the integrated browser workflow and unbounded history. Core completion is committed as `84ffe39`; this UI continuation remains uncommitted.
+
+- **2026-10-28:** Added full-range reference/serial substring search and numeric reference/status sorting before pagination; converted both tables’ row actions to icons with hover titles and accessible names. Added database, exhaustive pagination and browser checks.

@@ -56,6 +56,23 @@ describe('Receipt monitor (isolated real PostgreSQL)', () => {
         expect((await query({ status: 'nonsense' })).status).toBe(400);
         expect((await query({ page: '1.5' })).status).toBe(400);
     });
+    test('reference search and numeric/status sorting apply before pagination', async () => {
+        const found = await query({ search: '4', sortBy: 'reference', sortOrder: 'desc' });
+        expect(found.status).toBe(200); expect(found.body.total).toBe('15');
+        expect(found.body.items.map(row => row.reference)).toEqual([54,49,48,47,46,45,44,43,42,41,40,34,24,14,4].map(ref));
+        const canonical = await query({ search: `${prefix.toLowerCase()} / 00040` });
+        expect(canonical.body.total).toBe('1'); expect(canonical.body.items[0].reference).toBe(ref(40));
+        const spoiled = await query({ status: 'SPOILED', search: '4' });
+        expect(spoiled.body.total).toBe('1'); expect(spoiled.body.items[0].reference).toBe(ref(40));
+        const statusSorted = await query({ sortBy: 'status', sortOrder: 'asc' });
+        expect(statusSorted.body.items[0].status).toBe('ISSUED'); expect(statusSorted.body.items[0].reference).toBe(ref(5));
+        expect(statusSorted.body.items[1].status).toBe('NO_RECORD'); expect(statusSorted.body.items[1].reference).toBe(ref(1));
+        const nextPage = await query({ sortOrder: 'desc', page: 2 }); expect(nextPage.body.items[0].reference).toBe(ref(35));
+        expect((await query({ search: 'not-found' })).body.total).toBe('0');
+        expect((await query({ sortBy: 'anything' })).status).toBe(400);
+        expect((await query({ sortOrder: 'anything' })).status).toBe(400);
+        expect((await query({ search: 'x'.repeat(101) })).status).toBe(400);
+    });
     test('follow-up requires a gap, resolves with optimistic concurrency and preserves history', async () => {
         const body = { series_id: seriesId, reference: ref(6), reason: 'Paper missing from booklet' };
         expect((await request(app).post(`${base}/follow-up`).send(body)).status).toBe(201);
@@ -124,6 +141,10 @@ describe('Receipt monitor (isolated real PostgreSQL)', () => {
         const res = await query({ series_id: huge.series_id, status: 'NO_RECORD', page: '360287970189640' });
         expect(res.status).toBe(200); expect(res.body.total).toBe(high); expect(res.body.items.at(-1).reference).toBe(`HUGE-${high}`);
         expect(res.body.items).toHaveLength(18);
+        const searched = await query({ series_id: huge.series_id, search: high, sortOrder: 'desc' });
+        expect(searched.body.total).toBe('1'); expect(searched.body.items[0].reference).toBe(`HUGE-${high}`);
+        const descending = await query({ series_id: huge.series_id, sortOrder: 'desc' });
+        expect(descending.body.items[0].reference).toBe(`HUGE-${high}`);
         await db.query('UPDATE physical_document_series SET min_serial=NULL, max_serial=NULL WHERE series_id=$1', [huge.series_id]);
         expect((await query({ series_id: huge.series_id })).body.needs_bounds).toBe(true);
         expect(monitor.parse(`HUGE-${high}`).serial).toBe(high);
@@ -196,6 +217,8 @@ describe('Receipt monitor (isolated real PostgreSQL)', () => {
             VALUES ($1,$2,'Unbounded','NOBND') RETURNING series_id`, [typeId, `${prefix}U`])).rows[0].series_id;
         const res = await request(app).post('/api/settings/physical-document-spoilage').send({ series_id: unbounded, physical_receipt_no: 'NOBND-123', reason: 'Damaged unbounded booklet' });
         expect(res.status).toBe(201); expect(res.body.canonical_full_reference).toBe('NOBND-123');
+        const history = await request(app).get(`${base}/history`).query({ series_id: unbounded, reference: 'NOBND-123' });
+        expect(history.status).toBe(200); expect(history.body[0].event_type).toBe('SPOILED');
         expect((await query({ series_id: unbounded })).body.needs_bounds).toBe(true);
     });
     test('overlapping series prevent reconciliation', async () => {
