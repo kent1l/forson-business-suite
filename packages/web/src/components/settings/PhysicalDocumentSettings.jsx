@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import api from '../../api';
 import toast from 'react-hot-toast';
 import Modal from '../ui/Modal';
@@ -21,6 +21,11 @@ export default function PhysicalDocumentSettings() {
     const [spoilageTotal, setSpoilageTotal] = useState(0);
     const [spoilagePage, setSpoilagePage] = useState(1);
     const [spoilageSearch, setSpoilageSearch] = useState('');
+    const [spoilageSeries, setSpoilageSeries] = useState('');
+    const [spoilageFrom, setSpoilageFrom] = useState('');
+    const [spoilageTo, setSpoilageTo] = useState('');
+    const [spoilageSort, setSpoilageSort] = useState({ field: 'recorded_at', direction: 'desc' });
+    const spoilageRequest = useRef(0);
 
     // Modals
     const [typeModalOpen, setTypeModalOpen] = useState(false);
@@ -56,16 +61,27 @@ export default function PhysicalDocumentSettings() {
     }, []);
 
     const loadSpoilage = useCallback(async () => {
+        const requestId = ++spoilageRequest.current;
         try {
             const res = await api.get('/settings/physical-document-spoilage', {
-                params: { page: spoilagePage, limit: 10, search: spoilageSearch || undefined }
+                params: { page: spoilagePage, pageSize: 10, search: spoilageSearch || undefined,
+                    series_id: spoilageSeries || undefined, date_from: spoilageFrom || undefined,
+                    date_to: spoilageTo || undefined, sortBy: spoilageSort.field, sortOrder: spoilageSort.direction }
             });
+            if (requestId !== spoilageRequest.current) return;
             setSpoilageRows(res.data.items || res.data.data || []);
             setSpoilageTotal(res.data.total || 0);
         } catch (err) {
+            if (requestId !== spoilageRequest.current) return;
             console.error('Failed to load spoilage:', err);
+            toast.error('Failed to load spoiled receipts.');
         }
-    }, [spoilagePage, spoilageSearch]);
+    }, [spoilagePage, spoilageSearch, spoilageSeries, spoilageFrom, spoilageTo, spoilageSort]);
+
+    const sortSpoilage = (field) => {
+        setSpoilageSort(current => ({ field, direction: current.field === field && current.direction === 'asc' ? 'desc' : 'asc' }));
+        setSpoilagePage(1);
+    };
 
     useEffect(() => {
         loadData();
@@ -393,7 +409,8 @@ export default function PhysicalDocumentSettings() {
                                 <div className="w-full sm:w-64">
                                     <input
                                         type="text"
-                                        placeholder="Search spoiled number..."
+                                        placeholder="Search reference, actor, reason..."
+                                        aria-label="Search spoiled receipts"
                                         value={spoilageSearch}
                                         onChange={(e) => {
                                             setSpoilageSearch(e.target.value);
@@ -412,15 +429,31 @@ export default function PhysicalDocumentSettings() {
                                 </button>
                             </div>
 
+                            <div className="flex flex-wrap items-end gap-3 text-xs">
+                                <label className="flex flex-col gap-1">Series
+                                    <select value={spoilageSeries} onChange={e => { setSpoilageSeries(e.target.value); setSpoilagePage(1); }} className="rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-1.5">
+                                        <option value="">All series</option>
+                                        {seriesList.map(series => <option key={series.series_id} value={series.series_id}>{series.name} ({series.prefix})</option>)}
+                                    </select>
+                                </label>
+                                <label className="flex flex-col gap-1">From date
+                                    <input type="date" value={spoilageFrom} max={spoilageTo || undefined} onChange={e => { setSpoilageFrom(e.target.value); setSpoilagePage(1); }} className="rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-1.5" />
+                                </label>
+                                <label className="flex flex-col gap-1">To date
+                                    <input type="date" value={spoilageTo} min={spoilageFrom || undefined} onChange={e => { setSpoilageTo(e.target.value); setSpoilagePage(1); }} className="rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-1.5" />
+                                </label>
+                                <button type="button" onClick={() => { setSpoilageSearch(''); setSpoilageSeries(''); setSpoilageFrom(''); setSpoilageTo(''); setSpoilagePage(1); }} className="px-3 py-1.5 text-primary-600 dark:text-primary-400">Clear filters</button>
+                            </div>
+
                             <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-slate-700">
                                 <table className="w-full text-left text-xs">
                                     <thead className="bg-gray-50 dark:bg-slate-800/80 text-gray-600 dark:text-slate-300 border-b border-gray-200 dark:border-slate-700 uppercase font-semibold">
                                         <tr>
-                                            <th className="px-4 py-3">Reference</th>
-                                            <th className="px-4 py-3">Series</th>
-                                            <th className="px-4 py-3">Recorded At</th>
-                                            <th className="px-4 py-3">Actor</th>
-                                            <th className="px-4 py-3">Reason / Notes</th>
+                                            {[[ 'reference', 'Reference' ], [ 'series', 'Series' ], [ 'recorded_at', 'Recorded At' ], [ 'actor', 'Actor' ], [ 'reason', 'Reason / Notes' ]].map(([field, label]) => (
+                                                <th key={field} className="px-4 py-3" aria-sort={spoilageSort.field === field ? (spoilageSort.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
+                                                    <button type="button" onClick={() => sortSpoilage(field)} className="whitespace-nowrap">{label} {spoilageSort.field === field ? (spoilageSort.direction === 'asc' ? '↑' : '↓') : '↕'}</button>
+                                                </th>
+                                            ))}
                                             <th className="px-4 py-3 text-right">Action</th>
                                         </tr>
                                     </thead>
@@ -428,7 +461,7 @@ export default function PhysicalDocumentSettings() {
                                         {spoilageRows.length === 0 ? (
                                             <tr>
                                                 <td colSpan="6" className="px-4 py-8 text-center text-gray-500 font-sans">
-                                                    No spoiled receipts recorded.
+                                                    No spoiled receipts match the current filters.
                                                 </td>
                                             </tr>
                                         ) : (
@@ -441,7 +474,7 @@ export default function PhysicalDocumentSettings() {
                                                         {r.series_name} ({r.prefix})
                                                     </td>
                                                     <td className="px-4 py-3 text-gray-500">
-                                                        {new Date(r.created_at).toLocaleString()}
+                                                        {new Date(r.spoiled_at).toLocaleString(undefined, { timeZone: 'Asia/Manila' })}
                                                     </td>
                                                     <td className="px-4 py-3 font-sans text-gray-700 dark:text-slate-300">
                                                         {r.actor_name || 'System / Cashier'}
@@ -471,6 +504,14 @@ export default function PhysicalDocumentSettings() {
                                         )}
                                     </tbody>
                                 </table>
+                            </div>
+                            <div className="flex items-center justify-between text-xs text-gray-600 dark:text-slate-400">
+                                <span>{spoilageTotal} spoiled receipt{spoilageTotal === 1 ? '' : 's'}</span>
+                                <div className="flex items-center gap-3">
+                                    <button type="button" disabled={spoilagePage <= 1} onClick={() => setSpoilagePage(page => page - 1)} className="disabled:opacity-40">Previous</button>
+                                    <span>Page {spoilagePage} of {Math.max(1, Math.ceil(spoilageTotal / 10))}</span>
+                                    <button type="button" disabled={spoilagePage * 10 >= spoilageTotal} onClick={() => setSpoilagePage(page => page + 1)} className="disabled:opacity-40">Next</button>
+                                </div>
                             </div>
                         </div>
                     )}

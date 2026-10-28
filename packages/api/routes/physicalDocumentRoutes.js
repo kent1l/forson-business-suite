@@ -559,8 +559,21 @@ router.put('/settings/physical-document-selection-policies', protect, hasPermiss
 // GET /api/settings/physical-document-spoilage
 router.get('/settings/physical-document-spoilage', protect, hasPermission('settings:edit'), async (req, res) => {
     try {
-        const { page, limit, offset } = parsePaginationQuery(req.query);
-        const { series_id, search } = req.query;
+        const { page, pageSize, offset } = parsePaginationQuery(req.query);
+        const { series_id, search, date_from, date_to, sortBy, sortOrder } = req.query;
+        const sortFields = {
+            reference: 'r.canonical_full_reference', series: 's.name',
+            recorded_at: 'COALESCE(ev.created_at, r.updated_at)',
+            actor: "COALESCE(e.first_name || ' ' || e.last_name, 'System / Cashier')",
+            reason: "COALESCE(ev.reason, 'Spoiled')",
+        };
+        const sortField = Object.hasOwn(sortFields, sortBy) ? sortFields[sortBy] : sortFields.recorded_at;
+        const direction = String(sortOrder).toLowerCase() === 'asc' ? 'ASC' : 'DESC';
+        for (const value of [date_from, date_to]) {
+            if (value && (!/^\d{4}-\d{2}-\d{2}$/.test(value) || Number.isNaN(Date.parse(`${value}T00:00:00Z`)) || new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) !== value)) {
+                return res.status(400).json({ message: 'Invalid date filter.' });
+            }
+        }
 
         let conditions = ["r.state = 'SPOILED'"];
         let params = [];
@@ -572,14 +585,31 @@ router.get('/settings/physical-document-spoilage', protect, hasPermission('setti
         }
 
         if (search) {
-            conditions.push(`r.canonical_full_reference ILIKE $${pIndex++}`);
+            conditions.push(`(r.canonical_full_reference ILIKE $${pIndex} OR s.name ILIKE $${pIndex} OR s.prefix ILIKE $${pIndex} OR COALESCE(e.first_name || ' ' || e.last_name, 'System / Cashier') ILIKE $${pIndex} OR COALESCE(ev.reason, 'Spoiled') ILIKE $${pIndex} OR ev.notes ILIKE $${pIndex})`);
+            pIndex++;
             params.push(`%${search.trim()}%`);
+        }
+        if (date_from) {
+            conditions.push(`COALESCE(ev.created_at, r.updated_at) >= ($${pIndex++}::date::timestamp AT TIME ZONE 'Asia/Manila')`);
+            params.push(date_from);
+        }
+        if (date_to) {
+            conditions.push(`COALESCE(ev.created_at, r.updated_at) < (($${pIndex++}::date + 1)::timestamp AT TIME ZONE 'Asia/Manila')`);
+            params.push(date_to);
         }
 
         const whereSql = conditions.join(' AND ');
+        const fromSql = `FROM public.physical_document_registry r
+             JOIN public.physical_document_series s ON s.series_id = r.series_id
+             LEFT JOIN LATERAL (
+                 SELECT reason, notes, actor_id, created_at FROM public.physical_document_event
+                 WHERE registry_id = r.registry_id AND event_type = 'SPOILED'
+                 ORDER BY created_at DESC, event_id DESC LIMIT 1
+             ) ev ON true
+             LEFT JOIN public.employee e ON e.employee_id = COALESCE(ev.actor_id, r.updated_by, r.created_by)`;
 
         const { rows: countRows } = await db.query(
-            `SELECT count(*) FROM public.physical_document_registry r WHERE ${whereSql}`,
+            `SELECT count(*) ${fromSql} WHERE ${whereSql}`,
             params
         );
         const total = parseInt(countRows[0].count, 10);
@@ -587,22 +617,16 @@ router.get('/settings/physical-document-spoilage', protect, hasPermission('setti
         const { rows } = await db.query(
             `SELECT r.*, s.name AS series_name, s.prefix,
                     e.first_name || ' ' || e.last_name AS actor_name,
-                    ev.reason AS spoilage_reason, ev.notes AS spoilage_notes
-             FROM public.physical_document_registry r
-             JOIN public.physical_document_series s ON s.series_id = r.series_id
-             LEFT JOIN public.employee e ON e.employee_id = r.created_by
-             LEFT JOIN LATERAL (
-                 SELECT reason, notes FROM public.physical_document_event
-                 WHERE registry_id = r.registry_id AND event_type = 'SPOILED'
-                 ORDER BY created_at DESC LIMIT 1
-             ) ev ON true
+                    ev.reason AS spoilage_reason, ev.notes AS spoilage_notes,
+                    COALESCE(ev.created_at, r.updated_at) AS spoiled_at
+             ${fromSql}
              WHERE ${whereSql}
-             ORDER BY r.created_at DESC
+             ORDER BY ${sortField} ${direction} NULLS LAST, r.registry_id DESC
              LIMIT $${pIndex++} OFFSET $${pIndex++}`,
-            [...params, limit, offset]
+            [...params, pageSize, offset]
         );
 
-        res.json(paginatedResponse(rows, total, page, limit));
+        res.json(paginatedResponse({ data: rows, total, page, pageSize }));
     } catch (err) {
         console.error('Error fetching spoiled receipts:', err);
         res.status(500).json({ message: 'Server error fetching spoiled receipts.' });
