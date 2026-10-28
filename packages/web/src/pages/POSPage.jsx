@@ -1171,6 +1171,7 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
                                             context="POS"
                                             value={physicalDoc}
                                             onChange={setPhysicalDoc}
+                                            taxRates={taxRates}
                                             onTaxRateSelect={(taxRateId) => {
                                                 const rate = taxRates.find(r => r.tax_rate_id === taxRateId);
                                                 if (rate) setSelectedTaxRate(rate);

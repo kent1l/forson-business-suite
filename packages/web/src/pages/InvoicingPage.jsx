@@ -777,6 +777,7 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
                             context="INVOICING"
                             value={physicalDoc}
                             onChange={setPhysicalDoc}
+                            taxRates={taxRates}
                             onTaxRateSelect={(taxRateId) => {
                                 const rate = taxRates.find(r => r.tax_rate_id === taxRateId);
                                 if (rate) setSelectedTaxRate(rate);
