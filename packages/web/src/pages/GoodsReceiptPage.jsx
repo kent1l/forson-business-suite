@@ -1089,10 +1089,8 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                         { icon: 'ℹ️', duration: 8000 }
                     );
                 }
-                // The server accepts thin margins on this path for backwards
-                // compatibility, but the person entering it should still hear about them.
                 if (warnings.length > 0) {
-                    toast(`${warnings.length} line${warnings.length > 1 ? 's are' : ' is'} priced below the ${MIN_MARKUP_PERCENT}% minimum markup.`,
+                    toast(`${warnings.length} line${warnings.length > 1 ? 's are' : ' is'} priced below ${MIN_MARKUP_PERCENT}% markup.`,
                         { icon: '⚠️', duration: 7000 });
                 }
                 return 'Goods receipt created successfully!';
@@ -1927,6 +1925,11 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                                             className={`${inputClass} ${belowMinMarkup ? 'border-danger-400 dark:border-danger-600' : ''}`}
                                             aria-label={`Markup for ${line.display_name || line.part_id}`}
                                         />
+                                        {belowMinMarkup && (
+                                            <span className="block mt-0.5 text-[10px] text-danger-600 dark:text-danger-400 text-center">
+                                                Warning: under {MIN_MARKUP_PERCENT}%
+                                            </span>
+                                        )}
                                     </td>
                                     <td className="p-2 align-middle">
                                         <MathExpressionInput
@@ -1936,11 +1939,6 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                                             onChange={value => handleSalePriceChange(rowKey, value)}
                                             className={`${inputClass} ${belowMinMarkup ? 'border-danger-400 dark:border-danger-600' : ''}`}
                                         />
-                                        {belowMinMarkup && (
-                                            <span className="block mt-0.5 text-[10px] text-danger-600 dark:text-danger-400 text-center">
-                                                under {MIN_MARKUP_PERCENT}%
-                                            </span>
-                                        )}
                                     </td>
                                     <td className="p-2 align-middle text-right font-mono text-sm font-medium text-gray-900 dark:text-slate-100">
                                         {formatCurrency(computed?.landed_line_total || 0)}

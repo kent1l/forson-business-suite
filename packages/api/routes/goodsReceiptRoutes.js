@@ -65,17 +65,6 @@ function assertCostingValid(costing) {
   }
 }
 
-// The 30% floor is advisory while typing and blocking at post: a draft may legitimately
-// be half-priced mid-entry, but a posted receipt writes those prices to the catalogue.
-function assertMarkupFloor(costing) {
-  const below = costing.warnings.filter((w) => w.code === 'BELOW_MIN_MARKUP');
-  if (below.length > 0) {
-    const err = new Error(`${below.map((w) => w.message).join(' ')} Adjust the prices before posting.`);
-    err.statusCode = 400;
-    throw err;
-  }
-}
-
 function isPhysicalReceiptConflict(err) {
   return err?.code === '23505' && [
     'uq_goods_receipt_supplier_physical_receipt',
@@ -699,10 +688,6 @@ router.post('/goods-receipts', protect, hasPermission('goods_receipt:create'), a
       overall_discount_amount: overallDiscountAmount,
     }, lines);
     assertCostingValid(costing);
-    // Deliberately NOT enforcing the markup floor here. This endpoint is the
-    // long-standing one-shot path used by the A/P attach-items flow and PO receiving,
-    // and rejecting a receipt it would previously have accepted would break them. The
-    // floor is enforced where prices are actually being reviewed: POST .../post.
     const markupWarnings = costing.warnings.filter((w) => w.code === 'BELOW_MIN_MARKUP');
 
     const goodsReceiptQuery = `
@@ -1837,7 +1822,6 @@ router.post('/goods-receipts/:id/post', protect, hasPermission('goods_receipt:po
       recomputeSalePrice: false,
     });
     assertCostingValid(costing);
-    assertMarkupFloor(costing);
 
     if (costing.totals.net_goods_value <= 0) {
       await client.query('ROLLBACK');
@@ -1911,6 +1895,7 @@ router.post('/goods-receipts/:id/post', protect, hasPermission('goods_receipt:po
       freight_bill_id: freightBillId,
       freight_bills: freightBills || [],
       totals: costing.totals,
+      warnings: costing.warnings.filter((w) => w.code === 'BELOW_MIN_MARKUP'),
       reconciliations: reconciliations.map((r) => ({
         part_id: r.part_id, backfill_qty: r.backfill_qty, reconcile_qty: r.reconcile_qty,
         counted_at: r.counted_at, unexplained_shortfall: r.unexplained_shortfall,
