@@ -8,6 +8,7 @@ const {
   checkExactConversion,
   calculateBlockers,
   initializeReviewState,
+  findSupplierFuzzy,
 } = require('../services/grnImportService');
 
 describe('GRN External JSON Ingestion - Schema and Rules', () => {
@@ -72,10 +73,19 @@ describe('GRN External JSON Ingestion - Schema and Rules', () => {
     expect(initializeReviewState(normalized, {}).rows[0].confirmed_row.stock_uom).toBe('pcs');
   });
 
-  test('preserves an explicit JSON unit', () => {
+  test.each([
+    ['BOX', 'box'],
+    ['PC/s', 'pcs'],
+    ['PC/S', 'pcs'],
+    ['PCS', 'pcs'],
+    ['pc', 'pcs'],
+    ['EA', 'pcs'],
+    ['SET/S', 'set'],
+    ['BTL', 'btl'],
+  ])('normalizes explicit JSON unit %p to canonical UOM %p', (rawUnit, expectedUnit) => {
     const payload = structuredClone(conformingExample);
-    payload.lines[0].unit = 'BOX';
-    expect(validateAndNormalizeExternalPayload(payload).lines[0].unit).toBe('BOX');
+    payload.lines[0].unit = rawUnit;
+    expect(validateAndNormalizeExternalPayload(payload).lines[0].unit).toBe(expectedUnit);
   });
 
   test.each([undefined, null, '', '   '])('missing stock UOM %p does not block a confirmed catalog match', stockUom => {
@@ -437,5 +447,92 @@ describe('GRN External JSON Ingestion - Schema and Rules', () => {
       expect(cr.sale_price).toBeNull();
       expect(state.issues.every(issue => !issue.resolved)).toBe(true);
     });
+
+  describe('currency parsing fallback', () => {
+    test.each([
+      [null, 'PHP'],
+      [undefined, 'PHP'],
+      ['', 'PHP'],
+      ['   ', 'PHP'],
+      ['php', 'PHP'],
+      ['PHP', 'PHP'],
+      ['  php  ', 'PHP'],
+      ['₱', 'PHP'],
+      ['PESOS', 'PHP'],
+      [123, 'PHP'],
+      ['USD', 'USD'],
+      ['usd', 'USD'],
+      ['JPY', 'JPY'],
+    ])('parses currency %p as %p', (input, expected) => {
+      const payload = structuredClone(conformingExample);
+      payload.document.currency = input;
+      const normalized = validateAndNormalizeExternalPayload(payload);
+      expect(normalized.document.currency).toBe(expected);
+    });
+  });
+
+  describe('supplier matching and review state', () => {
+    test('auto-matched supplier populates header.supplier_id and ai_filled_fields without locking', () => {
+      const normalized = validateAndNormalizeExternalPayload(conformingExample);
+      const state = initializeReviewState(normalized, {}, 42);
+      expect(state.header.supplier_id).toBe(42);
+      expect(state.header.context_locked_supplier_id).toBeNull();
+      expect(state.header.ai_filled_fields).toContain('supplier_id');
+    });
+
+    test('explicit context supplier overrides matched supplier and locks context', () => {
+      const normalized = validateAndNormalizeExternalPayload(conformingExample);
+      const state = initializeReviewState(normalized, { supplier_id: 99 }, 42);
+      expect(state.header.supplier_id).toBe(99);
+      expect(state.header.context_locked_supplier_id).toBe(99);
+      expect(state.header.ai_filled_fields).not.toContain('supplier_id');
+    });
+
+    test('findSupplierFuzzy handles empty or invalid name', async () => {
+      const mockClient = { query: jest.fn() };
+      expect(await findSupplierFuzzy(mockClient, null)).toBeNull();
+      expect(await findSupplierFuzzy(mockClient, '')).toBeNull();
+      expect(await findSupplierFuzzy(mockClient, '   ')).toBeNull();
+      expect(mockClient.query).not.toHaveBeenCalled();
+    });
+
+    test('findSupplierFuzzy returns exact match when found', async () => {
+      const mockClient = {
+        query: jest.fn().mockResolvedValueOnce({
+          rows: [{ supplier_id: 10, supplier_name: 'Toyota Genuine Parts' }],
+        }),
+      };
+      const result = await findSupplierFuzzy(mockClient, 'Toyota Genuine Parts');
+      expect(result).toEqual({ supplier_id: 10, supplier_name: 'Toyota Genuine Parts' });
+      expect(mockClient.query).toHaveBeenCalledTimes(1);
+    });
+
+    test('findSupplierFuzzy falls back to fuzzy search when exact match fails', async () => {
+      const mockClient = {
+        query: jest
+          .fn()
+          .mockResolvedValueOnce({ rows: [] }) // exact match returns empty
+          .mockResolvedValueOnce({
+            rows: [{ supplier_id: 10, supplier_name: 'Toyota Motor Philippines', score: 0.8 }],
+          }),
+      };
+      const result = await findSupplierFuzzy(mockClient, 'Toyota');
+      expect(result).toEqual({ supplier_id: 10, supplier_name: 'Toyota Motor Philippines', score: 0.8 });
+      expect(mockClient.query).toHaveBeenCalledTimes(2);
+    });
+
+    test('findSupplierFuzzy returns null when fuzzy score is below threshold', async () => {
+      const mockClient = {
+        query: jest
+          .fn()
+          .mockResolvedValueOnce({ rows: [] })
+          .mockResolvedValueOnce({
+            rows: [{ supplier_id: 99, supplier_name: 'Unrelated Company', score: 0.1 }],
+          }),
+      };
+      const result = await findSupplierFuzzy(mockClient, 'Zzz Completely Unrelated');
+      expect(result).toBeNull();
+    });
+  });
 
 });

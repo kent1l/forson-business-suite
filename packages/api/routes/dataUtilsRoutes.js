@@ -6,7 +6,7 @@ const db = require('../db');
 const { protect, isAdmin, hasPermission } = require('../middleware/authMiddleware');
 const { generateUniqueCode } = require('../helpers/codeGenerator');
 const { syncPartWithMeili } = require('../meilisearch');
-const { normalizeText, normalizeName, normalizeEmail, normalizePhone, normalizePartNumber } = require('../helpers/normalizeEntity');
+const { normalizeText, normalizeName, normalizeEmail, normalizePhone, normalizePartNumber, normalizeUom } = require('../helpers/normalizeEntity');
 const { withYearTokens } = require('../helpers/vehicleFitmentSearch');
 const router = express.Router();
 
@@ -20,6 +20,7 @@ const normalizeImportRow = (entity, row) => {
         row.brand_name = normalizeText(row.brand_name);
         row.group_name = normalizeText(row.group_name);
         row.detail = normalizeText(row.detail);
+        if (row.measurement_unit !== undefined) row.measurement_unit = normalizeUom(row.measurement_unit);
     } else if (entity === 'customers') {
         row.first_name = normalizeName(row.first_name);
         row.last_name = normalizeName(row.last_name);

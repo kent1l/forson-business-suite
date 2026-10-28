@@ -309,7 +309,7 @@ app.use('/api', require('../routes/goodsReceiptRoutes'));
       { type: 'confirm_row', row_id: unpricedRowId }, { type: 'confirm_header' },
     ],
   });
-  assert.equal(unpricedPatch.review_state.rows[0].confirmed_row.stock_uom, 'PCS', 'Catalog part UOM must be hydrated when stock_uom is omitted');
+  assert.equal(unpricedPatch.review_state.rows[0].confirmed_row.stock_uom, 'pcs', 'Catalog part UOM must be hydrated and normalized when stock_uom is omitted');
   assert.equal(unpricedPatch.blockers.length, 0, 'Unpriced rows and financial warnings must allow a draft without explanations');
   assert(unpricedPatch.review_state.rows[0].confirmed_row.ai_filled_fields.includes('part_id'));
   const changedMatch = await call('patch', `/goods-receipts/imports/${unpriced.import_id}`, {

@@ -1,4 +1,5 @@
 const crypto = require('crypto');
+const { normalizeUom } = require('./normalizeEntity');
 
 const MAX_PAYLOAD_BYTES = 1048576; // 1 MiB canonical UTF-8
 const MAX_LINES = 200;
@@ -264,19 +265,15 @@ function parseIsoCalendarDate(val, path) {
   return val;
 }
 
-function parseCurrency(val, path) {
-  if (val === null || val === undefined) return null;
-  if (typeof val !== 'string') {
-    const err = new Error(`Field '${path}' must be a 3-letter currency code or null.`);
-    err.path = path;
-    throw err;
+function parseCurrency(val) {
+  if (val === null || val === undefined) return 'PHP';
+  if (typeof val !== 'string') return 'PHP';
+  const trimmed = val.trim().toUpperCase();
+  if (!trimmed) return 'PHP';
+  if (/^[A-Z]{3}$/.test(trimmed)) {
+    return trimmed;
   }
-  if (!/^[A-Z]{3}$/.test(val)) {
-    const err = new Error(`Field '${path}' must be exactly 3 uppercase letters.`);
-    err.path = path;
-    throw err;
-  }
-  return val;
+  return 'PHP';
 }
 
 function checkDisallowedKeys(obj, allowedKeys, path) {
@@ -518,7 +515,7 @@ function validateAndNormalizeExternalPayload(payload) {
       supplier_item_code: supplier_item_code ?? null,
       item_group_hint: item_group_hint ?? null,
       quantity,
-      unit: unit?.trim() ? unit : 'pcs',
+      unit: normalizeUom(unit),
       unit_cost,
       printed_line_total,
       handwritten_sale_price,

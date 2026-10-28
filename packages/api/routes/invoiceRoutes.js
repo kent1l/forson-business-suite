@@ -286,6 +286,7 @@ router.get('/invoices/:id/lines', protect, hasPermission('invoicing:create'), as
             SELECT
                 il.*,
                 p.detail,
+                p.measurement_unit,
                 b.brand_name,
                 g.group_name,
                 (SELECT display_name FROM public.parts_view pv WHERE pv.part_id = p.part_id) AS display_name,
@@ -314,6 +315,7 @@ router.get('/invoices/:id/lines-with-refunds', protect, hasPermission('invoicing
             SELECT
                 il.*,
                 p.detail,
+                p.measurement_unit,
                 b.brand_name,
                 g.group_name,
                 (SELECT display_name FROM public.parts_view pv WHERE pv.part_id = p.part_id) AS display_name,

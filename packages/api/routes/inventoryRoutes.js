@@ -96,6 +96,7 @@ router.get('/inventory', protect, hasPermission('inventory:view'), async (req, r
                 p.part_id,
                 p.internal_sku,
                 p.detail,
+                p.measurement_unit,
                 COALESCE(p.wac_cost, 0) AS wac_cost,
                 p.reorder_point,
                 p.warning_quantity,

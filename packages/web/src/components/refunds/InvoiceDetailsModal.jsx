@@ -218,7 +218,7 @@ const InvoiceDetailsModal = ({ isOpen, onClose, invoice: initialInvoice, onActio
                                     <div>
                                         <p className="text-sm font-medium text-gray-900 dark:text-slate-100">{line.display_name}</p>
                                         <p className="text-xs text-gray-500 dark:text-slate-400">
-                                            {line.quantity} x {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{parseFloat(line.sale_price).toFixed(2)}
+                                            {line.quantity} {line.measurement_unit || 'PC'} x {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{parseFloat(line.sale_price).toFixed(2)}
                                         </p>
                                     </div>
                                     <p className="text-sm font-mono font-semibold text-gray-900 dark:text-slate-100">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{(line.quantity * line.sale_price).toFixed(2)}</p>

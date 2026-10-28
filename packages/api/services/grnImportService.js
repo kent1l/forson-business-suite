@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const { manilaDateString } = require('../helpers/manilaDate');
+const { normalizeUom } = require('../helpers/normalizeEntity');
 const grnCosting = require('./grnCostingService');
 const { createGrnDraft } = require('./grnDraftService');
 const {
@@ -42,7 +43,7 @@ function computeRowDigest({
     supplierId: supplierId || null,
     currency: currency || null,
     partId: partId || null,
-    stockUom: stockUom?.trim() ? stockUom : 'pcs',
+    stockUom: normalizeUom(stockUom),
     unitsPerSourceUnit: unitsPerSourceUnit || '1.0000',
   });
   return crypto.createHash('sha256').update(content).digest('hex');
@@ -330,12 +331,88 @@ function calculateBlockers(reviewState, sourcePayload) {
   return blockers;
 }
 
-function initializeReviewState(normalizedPayload, initialContext) {
+async function findSupplierFuzzy(client, name) {
+  if (!name || typeof name !== 'string' || !name.trim()) return null;
+  const cleanName = name.trim();
+
+  // 1. Exact match (case-insensitive, whitespace collapsed)
+  const exactRes = await client.query(
+    `SELECT supplier_id, supplier_name
+     FROM supplier
+     WHERE is_active = true AND NOT is_merged
+       AND LOWER(REGEXP_REPLACE(supplier_name, '\\s+', ' ', 'g')) = LOWER(REGEXP_REPLACE($1, '\\s+', ' ', 'g'))
+     ORDER BY supplier_id ASC
+     LIMIT 1`,
+    [cleanName]
+  );
+  if (exactRes.rows && exactRes.rows.length > 0) {
+    return exactRes.rows[0];
+  }
+
+  if (cleanName.length < 2) return null;
+
+  // 2. Fuzzy match with substring containment and pg_trgm similarity
+  try {
+    const fuzzyRes = await client.query(
+      `SELECT supplier_id, supplier_name,
+              GREATEST(
+                CASE
+                  WHEN LOWER(REGEXP_REPLACE(supplier_name, '\\s+', ' ', 'g')) = LOWER(REGEXP_REPLACE($1, '\\s+', ' ', 'g')) THEN 1.0
+                  WHEN STRPOS(LOWER(supplier_name), LOWER(TRIM($1))) > 0 THEN 0.8
+                  WHEN STRPOS(LOWER(TRIM($1)), LOWER(supplier_name)) > 0 THEN 0.7
+                  ELSE 0.0
+                END,
+                similarity(LOWER(supplier_name), LOWER($1))
+              ) AS score
+       FROM supplier
+       WHERE is_active = true AND NOT is_merged
+         AND (
+           STRPOS(LOWER(supplier_name), LOWER(TRIM($1))) > 0
+           OR STRPOS(LOWER(TRIM($1)), LOWER(supplier_name)) > 0
+           OR similarity(LOWER(supplier_name), LOWER($1)) >= 0.25
+         )
+       ORDER BY score DESC, LENGTH(supplier_name) ASC, supplier_id ASC
+       LIMIT 1`,
+      [cleanName]
+    );
+
+    if (fuzzyRes.rows && fuzzyRes.rows.length > 0 && Number(fuzzyRes.rows[0].score) >= 0.25) {
+      return fuzzyRes.rows[0];
+    }
+  } catch {
+    // If pg_trgm similarity function is unavailable in the environment, fallback to STRPOS
+    const fallbackRes = await client.query(
+      `SELECT supplier_id, supplier_name
+       FROM supplier
+       WHERE is_active = true AND NOT is_merged
+         AND (
+           STRPOS(LOWER(supplier_name), LOWER(TRIM($1))) > 0
+           OR STRPOS(LOWER(TRIM($1)), LOWER(supplier_name)) > 0
+         )
+       ORDER BY LENGTH(supplier_name) ASC, supplier_id ASC
+       LIMIT 1`,
+      [cleanName]
+    );
+    if (fallbackRes.rows && fallbackRes.rows.length > 0) {
+      return fallbackRes.rows[0];
+    }
+  }
+
+  return null;
+}
+
+function initializeReviewState(normalizedPayload, initialContext, matchedSupplierId = null) {
   const doc = normalizedPayload.document || {};
+  const resolvedSupplierId = initialContext.supplier_id || matchedSupplierId || null;
+  const isSupplierAiFilled = !initialContext.supplier_id && Boolean(matchedSupplierId);
   const header = {
-    ai_filled_fields: [doc.document_number && 'supplier_document_no', doc.document_type && 'supplier_document_type',
-      doc.currency === 'PHP' && 'confirmed_currency'].filter(Boolean),
-    supplier_id: initialContext.supplier_id || null,
+    ai_filled_fields: [
+      doc.document_number && 'supplier_document_no',
+      doc.document_type && 'supplier_document_type',
+      doc.currency === 'PHP' && 'confirmed_currency',
+      isSupplierAiFilled && 'supplier_id',
+    ].filter(Boolean),
+    supplier_id: resolvedSupplierId,
     supplier_document_no: doc.document_number || null,
     supplier_document_type: ['delivery_receipt', 'invoice', 'other'].includes(doc.document_type) ? doc.document_type : 'other',
     supplier_invoice_no: null,
@@ -491,7 +568,15 @@ async function createImport(client, employeeId, { request_key, payload, context 
   }
 
   // Create new review
-  const reviewState = initializeReviewState(normalizedPayload, validatedContext);
+  let matchedSupplierId = null;
+  if (!validatedContext.supplier_id && normalizedPayload.document?.supplier_name) {
+    const matched = await findSupplierFuzzy(client, normalizedPayload.document.supplier_name);
+    if (matched) {
+      matchedSupplierId = matched.supplier_id;
+    }
+  }
+
+  const reviewState = initializeReviewState(normalizedPayload, validatedContext, matchedSupplierId);
   const blockers = calculateBlockers(reviewState, normalizedPayload);
   const lifecycleEvents = [{
     event: 'CREATED',
@@ -725,7 +810,7 @@ async function patchImport(client, employeeId, importId, { version, actions }) {
       [referencedPartIds]
     );
     for (const p of partRows) {
-      catalogUomByPartId.set(p.part_id, p.measurement_unit?.trim() || 'pcs');
+      catalogUomByPartId.set(p.part_id, normalizeUom(p.measurement_unit));
     }
   }
 
@@ -811,9 +896,9 @@ async function patchImport(client, employeeId, importId, { version, actions }) {
           cr.part_id = values.part_id;
           requiresReconfirm = true;
         }
-        const nextStockUom = values.stock_uom?.trim()
+        const nextStockUom = (typeof values.stock_uom === 'string' && values.stock_uom.trim() ? normalizeUom(values.stock_uom) : null)
           || (values.part_id ? catalogUomByPartId.get(values.part_id) : null)
-          || (values.stock_uom !== undefined ? 'pcs' : null);
+          || (values.stock_uom !== undefined ? normalizeUom(values.stock_uom) : null);
         if (nextStockUom !== null && nextStockUom !== cr.stock_uom) {
           cr.stock_uom = nextStockUom;
           requiresReconfirm = true;
@@ -908,7 +993,7 @@ async function patchImport(client, employeeId, importId, { version, actions }) {
           throw err;
         }
         cr.stock_uom = catalogUomByPartId.get(cr.part_id)
-          || (cr.stock_uom?.trim() ? cr.stock_uom.trim() : 'pcs');
+          || normalizeUom(cr.stock_uom);
         cr.row_confirmation_digest = computeRowDigest({
           supplierId: header.supplier_id,
           currency: header.confirmed_currency,
@@ -1189,9 +1274,9 @@ async function commitImport(client, employeeId, importId, { version }) {
       err.statusCode = 422;
       throw err;
     }
-    const catalogUom = p.measurement_unit?.trim() || 'pcs';
-    const confirmedUom = r.confirmed_row.stock_uom?.trim() || 'pcs';
-    if (catalogUom.toLowerCase() !== confirmedUom.toLowerCase()) {
+    const catalogUom = normalizeUom(p.measurement_unit);
+    const confirmedUom = normalizeUom(r.confirmed_row.stock_uom);
+    if (catalogUom !== confirmedUom) {
       const err = new Error(`Part ${pid} UOM changed to '${p.measurement_unit}', does not match confirmed '${r.confirmed_row.stock_uom}'.`);
       err.statusCode = 422;
       throw err;
@@ -1327,6 +1412,7 @@ module.exports = {
   computeRowDigest,
   computeHeaderDigest,
   checkExactConversion,
+  findSupplierFuzzy,
   calculateBlockers,
   initializeReviewState,
   validateInitialContext,

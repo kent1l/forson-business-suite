@@ -4,10 +4,11 @@ import toast from 'react-hot-toast';
 import Modal from '../ui/Modal';
 import Icon from '../ui/Icon';
 import InfoTip from '../ui/InfoTip';
+import ReceiptMonitor from './ReceiptMonitor';
 import { ICONS } from '../../constants';
 
 export default function PhysicalDocumentSettings() {
-    const [subTab, setSubTab] = useState('types'); // 'types' | 'series' | 'policies' | 'spoilage'
+    const [subTab, setSubTab] = useState('types'); // 'types' | 'series' | 'policies' | 'monitor'
     const [loading, setLoading] = useState(true);
 
     // Master data
@@ -15,12 +16,6 @@ export default function PhysicalDocumentSettings() {
     const [seriesList, setSeriesList] = useState([]);
     const [policies, setPolicies] = useState([]);
     const [taxRates, setTaxRates] = useState([]);
-
-    // Spoilage state
-    const [spoilageRows, setSpoilageRows] = useState([]);
-    const [spoilageTotal, setSpoilageTotal] = useState(0);
-    const [spoilagePage, setSpoilagePage] = useState(1);
-    const [spoilageSearch, setSpoilageSearch] = useState('');
 
     // Modals
     const [typeModalOpen, setTypeModalOpen] = useState(false);
@@ -32,6 +27,8 @@ export default function PhysicalDocumentSettings() {
     const [spoilModalOpen, setSpoilModalOpen] = useState(false);
     const [correctModalOpen, setCorrectModalOpen] = useState(false);
     const [correctingRecord, setCorrectingRecord] = useState(null);
+    const [spoilTarget, setSpoilTarget] = useState(null);
+    const [monitorRefresh, setMonitorRefresh] = useState(0);
 
     // Load initial data
     const loadData = useCallback(async () => {
@@ -55,27 +52,9 @@ export default function PhysicalDocumentSettings() {
         }
     }, []);
 
-    const loadSpoilage = useCallback(async () => {
-        try {
-            const res = await api.get('/settings/physical-document-spoilage', {
-                params: { page: spoilagePage, limit: 10, search: spoilageSearch || undefined }
-            });
-            setSpoilageRows(res.data.items || res.data.data || []);
-            setSpoilageTotal(res.data.total || 0);
-        } catch (err) {
-            console.error('Failed to load spoilage:', err);
-        }
-    }, [spoilagePage, spoilageSearch]);
-
     useEffect(() => {
         loadData();
     }, [loadData]);
-
-    useEffect(() => {
-        if (subTab === 'spoilage') {
-            loadSpoilage();
-        }
-    }, [subTab, loadSpoilage]);
 
     const handleToggleTypeActive = async (typeItem) => {
         try {
@@ -119,10 +98,10 @@ export default function PhysicalDocumentSettings() {
                         </InfoTip>
                     </h2>
                     <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">
-                        All cashier dropdown choices are dynamically driven by these settings with zero hardcoded options, and automatically default to the cashier's last used type on each page.
+                        Manage paper document types, receipt series and the defaults cashiers use for sales and collections.
                     </p>
                 </div>
-                <div className="flex bg-gray-100 dark:bg-slate-800 p-1 rounded-lg">
+                <div className="flex max-w-full flex-wrap gap-1 bg-gray-100 dark:bg-slate-800 p-1 rounded-lg">
                     <button
                         type="button"
                         onClick={() => setSubTab('types')}
@@ -144,13 +123,7 @@ export default function PhysicalDocumentSettings() {
                     >
                         Selection Policies
                     </button>
-                    <button
-                        type="button"
-                        onClick={() => setSubTab('spoilage')}
-                        className={`px-3 py-1.5 text-xs font-semibold rounded-md transition ${subTab === 'spoilage' ? 'bg-white dark:bg-slate-900 text-primary-600 dark:text-primary-400 shadow-xs' : 'text-gray-600 dark:text-slate-400'}`}
-                    >
-                        Spoiled Paper
-                    </button>
+                    <button type="button" onClick={() => setSubTab('monitor')} className={`px-3 py-1.5 text-xs font-semibold rounded-md transition ${subTab === 'monitor' ? 'bg-white dark:bg-slate-900 text-primary-600 dark:text-primary-400 shadow-xs' : 'text-gray-600 dark:text-slate-400'}`}>Series Monitor</button>
                 </div>
             </div>
 
@@ -386,94 +359,8 @@ export default function PhysicalDocumentSettings() {
                         />
                     )}
 
-                    {/* TAB 3: SPOILED NUMBERS & HISTORY */}
-                    {subTab === 'spoilage' && (
-                        <div className="space-y-4">
-                            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-                                <div className="w-full sm:w-64">
-                                    <input
-                                        type="text"
-                                        placeholder="Search spoiled number..."
-                                        value={spoilageSearch}
-                                        onChange={(e) => {
-                                            setSpoilageSearch(e.target.value);
-                                            setSpoilagePage(1);
-                                        }}
-                                        className="w-full px-3 py-1.5 text-xs border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100"
-                                    />
-                                </div>
-                                <button
-                                    type="button"
-                                    onClick={() => setSpoilModalOpen(true)}
-                                    className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition"
-                                >
-                                    <Icon path={ICONS.plus} className="w-3.5 h-3.5" />
-                                    Mark Spoiled Number
-                                </button>
-                            </div>
+                    {subTab === 'monitor' && <ReceiptMonitor seriesList={seriesList} refresh={monitorRefresh} onSpoil={target => { setSpoilTarget(target); setSpoilModalOpen(true); }} onCorrect={record => { setCorrectingRecord(record); setCorrectModalOpen(true); }} onConfigureSeries={() => setSubTab('series')} />}
 
-                            <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-slate-700">
-                                <table className="w-full text-left text-xs">
-                                    <thead className="bg-gray-50 dark:bg-slate-800/80 text-gray-600 dark:text-slate-300 border-b border-gray-200 dark:border-slate-700 uppercase font-semibold">
-                                        <tr>
-                                            <th className="px-4 py-3">Reference</th>
-                                            <th className="px-4 py-3">Series</th>
-                                            <th className="px-4 py-3">Recorded At</th>
-                                            <th className="px-4 py-3">Actor</th>
-                                            <th className="px-4 py-3">Reason / Notes</th>
-                                            <th className="px-4 py-3 text-right">Action</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-gray-200 dark:divide-slate-700/60 font-mono">
-                                        {spoilageRows.length === 0 ? (
-                                            <tr>
-                                                <td colSpan="6" className="px-4 py-8 text-center text-gray-500 font-sans">
-                                                    No spoiled receipts recorded.
-                                                </td>
-                                            </tr>
-                                        ) : (
-                                            spoilageRows.map(r => (
-                                                <tr key={r.registry_id} className="hover:bg-gray-50/50 dark:hover:bg-slate-800/50">
-                                                    <td className="px-4 py-3 font-bold text-amber-700 dark:text-amber-300">
-                                                        {r.canonical_full_reference}
-                                                    </td>
-                                                    <td className="px-4 py-3 font-sans text-gray-800 dark:text-slate-200">
-                                                        {r.series_name} ({r.prefix})
-                                                    </td>
-                                                    <td className="px-4 py-3 text-gray-500">
-                                                        {new Date(r.created_at).toLocaleString()}
-                                                    </td>
-                                                    <td className="px-4 py-3 font-sans text-gray-700 dark:text-slate-300">
-                                                        {r.actor_name || 'System / Cashier'}
-                                                    </td>
-                                                    <td className="px-4 py-3 font-sans text-gray-600 dark:text-slate-400">
-                                                        <div className="font-semibold text-gray-800 dark:text-slate-200">
-                                                            {r.spoilage_reason || 'Spoiled'}
-                                                        </div>
-                                                        {r.spoilage_notes && (
-                                                            <div className="text-[11px] text-gray-500 italic">{r.spoilage_notes}</div>
-                                                        )}
-                                                    </td>
-                                                    <td className="px-4 py-3 text-right font-sans">
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => {
-                                                                setCorrectingRecord(r);
-                                                                setCorrectModalOpen(true);
-                                                            }}
-                                                            className="text-xs font-semibold text-danger-600 hover:text-danger-700 dark:text-danger-400"
-                                                        >
-                                                            Correct / Unspoil
-                                                        </button>
-                                                    </td>
-                                                </tr>
-                                            ))
-                                        )}
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    )}
                 </>
             )}
 
@@ -534,10 +421,12 @@ export default function PhysicalDocumentSettings() {
                 title="Record Spoiled Receipt Number"
             >
                 <SpoilForm
+                    key={spoilTarget?.reference || 'new'}
                     seriesList={seriesList}
+                    initialTarget={spoilTarget}
                     onSaved={() => {
                         setSpoilModalOpen(false);
-                        loadSpoilage();
+                        setMonitorRefresh(value => value + 1);
                     }}
                     onCancel={() => setSpoilModalOpen(false)}
                 />
@@ -553,7 +442,7 @@ export default function PhysicalDocumentSettings() {
                     record={correctingRecord}
                     onSaved={() => {
                         setCorrectModalOpen(false);
-                        loadSpoilage();
+                        setMonitorRefresh(value => value + 1);
                     }}
                     onCancel={() => setCorrectModalOpen(false)}
                 />
@@ -1036,9 +925,9 @@ function SequenceAdjustForm({ series, onSaved, onCancel }) {
 }
 
 // Subcomponent: Manual Spoil Form
-function SpoilForm({ seriesList, onSaved, onCancel }) {
-    const [seriesId, setSeriesId] = useState(seriesList[0]?.series_id || '');
-    const [receiptNo, setReceiptNo] = useState('');
+function SpoilForm({ seriesList, initialTarget, onSaved, onCancel }) {
+    const [seriesId, setSeriesId] = useState(initialTarget?.series_id || seriesList[0]?.series_id || '');
+    const [receiptNo, setReceiptNo] = useState(initialTarget?.reference || '');
     const [reason, setReason] = useState('');
     const [notes, setNotes] = useState('');
     const [submitting, setSubmitting] = useState(false);
@@ -1065,8 +954,9 @@ function SpoilForm({ seriesList, onSaved, onCancel }) {
     return (
         <form onSubmit={handleSubmit} className="space-y-4 text-xs">
             <div>
-                <label className="block font-semibold text-gray-700 dark:text-slate-300 mb-1">Series</label>
+                <label htmlFor="spoil-series" className="block font-semibold text-gray-700 dark:text-slate-300 mb-1">Series</label>
                 <select
+                    id="spoil-series"
                     value={seriesId}
                     onChange={(e) => setSeriesId(e.target.value)}
                     className="w-full px-3 py-1.5 border border-gray-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100"
@@ -1080,9 +970,10 @@ function SpoilForm({ seriesList, onSaved, onCancel }) {
             </div>
 
             <div>
-                <label className="block font-semibold text-gray-700 dark:text-slate-300 mb-1">Physical Receipt Number</label>
+                <label htmlFor="spoil-reference" className="block font-semibold text-gray-700 dark:text-slate-300 mb-1">Physical Receipt Number</label>
                 <input
                     type="text"
+                    id="spoil-reference"
                     value={receiptNo}
                     onChange={(e) => setReceiptNo(e.target.value)}
                     placeholder="e.g. SI-1234"
@@ -1092,9 +983,11 @@ function SpoilForm({ seriesList, onSaved, onCancel }) {
             </div>
 
             <div>
-                <label className="block font-semibold text-gray-700 dark:text-slate-300 mb-1">Reason for Spoilage *</label>
+                <label htmlFor="spoil-reason" className="block font-semibold text-gray-700 dark:text-slate-300 mb-1">Reason for Spoilage *</label>
                 <input
                     type="text"
+                    id="spoil-reason"
+                    maxLength={100}
                     value={reason}
                     onChange={(e) => setReason(e.target.value)}
                     placeholder="e.g. Torn stub, ink bleed, damaged paper"
@@ -1104,8 +997,9 @@ function SpoilForm({ seriesList, onSaved, onCancel }) {
             </div>
 
             <div>
-                <label className="block font-semibold text-gray-700 dark:text-slate-300 mb-1">Optional Notes</label>
+                <label htmlFor="spoil-notes" className="block font-semibold text-gray-700 dark:text-slate-300 mb-1">Optional Notes</label>
                 <textarea
+                    id="spoil-notes"
                     value={notes}
                     onChange={(e) => setNotes(e.target.value)}
                     rows="2"
@@ -1167,9 +1061,11 @@ function CorrectSpoilForm({ record, onSaved, onCancel }) {
             </p>
 
             <div>
-                <label className="block font-semibold text-gray-700 dark:text-slate-300 mb-1">Reason for Correction *</label>
+                <label htmlFor="spoil-correction-reason" className="block font-semibold text-gray-700 dark:text-slate-300 mb-1">Reason for Correction *</label>
                 <input
                     type="text"
+                    id="spoil-correction-reason"
+                    maxLength={100}
                     value={reason}
                     onChange={(e) => setReason(e.target.value)}
                     placeholder="e.g. Paper inspected, verified undamaged and ready for issuance"

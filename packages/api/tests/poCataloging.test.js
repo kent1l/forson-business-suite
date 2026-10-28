@@ -102,7 +102,7 @@ describe('cataloging a drafted PO line', () => {
 
         const insertCall = mockClient.query.mock.calls.find(([sql]) => String(sql).includes('INSERT INTO part (detail'));
         expect(insertCall[1][0]).toBe('MOTUL 3100 10W-40 1L');
-        expect(insertCall[1][9]).toBe('BTL');
+        expect(insertCall[1][9]).toBe('btl');
         expect(mockClient.query.mock.calls.some(([sql]) => String(sql) === 'COMMIT')).toBe(true);
         expect(mockClient.query.mock.calls.some(([sql]) => String(sql).includes('UPDATE purchase_order_line'))).toBe(true);
     });

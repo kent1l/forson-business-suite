@@ -5,7 +5,7 @@ const { meiliClient } = require('../meilisearch');
 const { enqueuePartUpsert, enqueuePartDelete } = require('../services/meiliOutboxService');
 const { activeAliasCondition, softDeleteSupported } = require('../helpers/partNumberSoftDelete');
 const { normalizePartData } = require('../helpers/normalizePart');
-const { normalizeText, normalizePartNumber } = require('../helpers/normalizeEntity');
+const { normalizeText, normalizePartNumber, normalizeUom } = require('../helpers/normalizeEntity');
 const { parsePaginationQuery, paginatedResponse } = require('../helpers/pagination');
 const { withYearTokens } = require('../helpers/vehicleFitmentSearch');
 const { generatePartDecisionToken, verifyPartDecisionToken } = require('../helpers/partDecisionToken');
@@ -246,10 +246,7 @@ const createPartWithClient = async (client, payload, createdBy, { uppercaseText 
     delete partData.created_by;
     const normalizedDetail = normalizeText(partData.detail);
     partData.detail = uppercaseText && normalizedDetail ? normalizedDetail.toUpperCase() : normalizedDetail;
-    if (typeof partData.measurement_unit === 'string') {
-        const normalizedUnit = normalizeText(partData.measurement_unit);
-        partData.measurement_unit = uppercaseText && normalizedUnit ? normalizedUnit.toUpperCase() : normalizedUnit;
-    }
+    partData.measurement_unit = normalizeUom(partData.measurement_unit);
     if (!partData.brand_id || !partData.group_id) {
         const error = new Error('Brand and group are required');
         error.statusCode = 400;
@@ -845,6 +842,7 @@ router.put('/parts/:id', protect, hasPermission(['parts:edit', 'goods_receipt:cr
     const { id } = req.params;
     const { tags, barcodes, modified_by, part_numbers_string, applications, ...partData } = req.body;
     partData.detail = normalizeText(partData.detail);
+    partData.measurement_unit = normalizeUom(partData.measurement_unit);
     // detail is optional; only brand and group are required
     if (!partData.brand_id || !partData.group_id) {
         return res.status(400).json({ message: 'Brand and group are required' });

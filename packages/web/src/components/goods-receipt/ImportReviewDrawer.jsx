@@ -3,7 +3,7 @@ import Icon from '../ui/Icon';
 import { ICONS } from '../../constants';
 import { formatCurrency } from '../../utils/currency';
 import { REJECTION_REASONS } from '../../utils/grnCosting';
-import { aiFilledRowFields, aiFilledHeaderFields } from '../../utils/grnImportReview';
+import { aiFilledRowFields, aiFilledHeaderFields, normalizeUom } from '../../utils/grnImportReview';
 
 const importFieldClass = ai => `w-full min-w-0 px-3 py-2 border rounded-lg text-gray-900 dark:text-slate-100 ${ai
   ? 'border-blue-300 bg-blue-50 dark:border-blue-800 dark:bg-blue-950/40'
@@ -141,7 +141,7 @@ export default function ImportReviewDrawer({
   const handleSelectCandidate = (rowId, candidate) => {
     updateRow(rowId, {
       part_id: candidate.part_id,
-      stock_uom: candidate.stock_uom?.trim() ? candidate.stock_uom : 'pcs',
+      stock_uom: normalizeUom(candidate.stock_uom),
     }, null, candidate);
     setCandidateDrawerRowId(null);
   };
@@ -235,7 +235,8 @@ export default function ImportReviewDrawer({
                   value={header.supplier_id || ''}
                   disabled={!!header.context_locked_supplier_id}
                   onChange={(e) => updateHeader({ supplier_id: e.target.value ? Number(e.target.value) : null })}
-                  className="w-full px-2.5 py-1.5 border border-gray-300 dark:border-slate-700 rounded bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100"
+                  data-ai-filled={headerAiFields.includes('supplier_id') || undefined}
+                  className={importFieldClass(headerAiFields.includes('supplier_id'))}
                 >
                   <option value="">Select Supplier</option>
                   {suppliers.map(s => (
@@ -463,7 +464,7 @@ export default function ImportReviewDrawer({
                         </div>}
                         <div>
                           <label className="block mb-1" htmlFor={`uom-${row.row_id}`}>Stock Unit</label>
-                          <input id={`uom-${row.row_id}`} readOnly value={cr.stock_uom?.trim() ? cr.stock_uom : 'pcs'} data-ai-filled={aiFields.includes('stock_uom') || undefined} className={fieldClass('stock_uom')} />
+                          <input id={`uom-${row.row_id}`} readOnly value={normalizeUom(cr.stock_uom)} data-ai-filled={aiFields.includes('stock_uom') || undefined} className={fieldClass('stock_uom')} />
                         </div>
                         <div>
                           <label className="block mb-1" htmlFor={`factor-${row.row_id}`}>Units per Supplier Unit</label>
@@ -597,7 +598,7 @@ export default function ImportReviewDrawer({
                       {cand.internal_sku}
                     </span>
                     <span className="text-[11px] text-gray-500 dark:text-slate-400">
-                      UOM: {cand.stock_uom}
+                      UOM: {normalizeUom(cand.stock_uom)}
                     </span>
                   </div>
                   <div className="text-gray-900 dark:text-slate-100 font-medium">{cand.display_name}</div>

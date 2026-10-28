@@ -184,7 +184,8 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
                 tax_rate_id: item.tax_rate_id || null,
                 is_tax_inclusive_price: item.is_tax_inclusive_price || false,
                 detail: item.detail,
-                display_name: item.display_name || item.detail
+                display_name: item.display_name || item.detail,
+                measurement_unit: item.measurement_unit
             }));
             setLines(mappedLines);
             if (pageState.selectedCustomer) {
@@ -416,7 +417,8 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
                 sale_price: l.sale_price,
                 discount_amount: l.discount_amount || 0,
                 tax_rate_id: l.tax_rate_id || null,
-                is_tax_inclusive_price: l.is_tax_inclusive_price || false
+                is_tax_inclusive_price: l.is_tax_inclusive_price || false,
+                measurement_unit: l.measurement_unit
             })),
             customerId: selectedCustomer || null,
             taxRateId: selectedTaxRate?.tax_rate_id || null,
@@ -445,7 +447,8 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
             sale_price: i.sale_price,
             discount_amount: i.discount_amount || 0,
             tax_rate_id: i.tax_rate_id || null,
-            is_tax_inclusive_price: i.is_tax_inclusive_price || false
+            is_tax_inclusive_price: i.is_tax_inclusive_price || false,
+            measurement_unit: i.measurement_unit
         }));
         setLines(restoredLines);
         const customer = customers.find(c => String(c.customer_id) === String(cart.customerId));
@@ -774,6 +777,7 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
                             context="INVOICING"
                             value={physicalDoc}
                             onChange={setPhysicalDoc}
+                            taxRates={taxRates}
                             onTaxRateSelect={(taxRateId) => {
                                 const rate = taxRates.find(r => r.tax_rate_id === taxRateId);
                                 if (rate) setSelectedTaxRate(rate);
@@ -877,8 +881,13 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
                                                             <div className="text-sm font-medium text-gray-900 dark:text-slate-100 truncate">{part.display_name}</div>
                                                             {part.applications && <div className="text-xs text-gray-500 dark:text-slate-400 truncate">{formatApplicationText(part.applications, { style: 'searchSuggestion' })}</div>}
                                                         </div>
-                                                        <div className="text-sm font-semibold text-gray-700 dark:text-slate-300 ml-4 font-mono">
-                                                            {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{part.last_sale_price ? Number(part.last_sale_price).toFixed(2) : '0.00'}
+                                                        <div className="flex items-baseline space-x-2 ml-4 shrink-0">
+                                                            <span className={`text-xs font-medium ${Number(part.stock_on_hand) > 0 ? 'text-gray-500 dark:text-slate-400' : 'text-danger-600 dark:text-danger-400'}`}>
+                                                                {Number(part.stock_on_hand) || 0} {part.measurement_unit || 'PC'} in stock
+                                                            </span>
+                                                            <span className="text-sm font-semibold text-gray-700 dark:text-slate-300 font-mono">
+                                                                {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{part.last_sale_price ? Number(part.last_sale_price).toFixed(2) : '0.00'}
+                                                            </span>
                                                         </div>
                                                     </div>
                                                 </li>
@@ -901,7 +910,7 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
                         <thead className="bg-gray-50 dark:bg-slate-700/40 text-gray-700 dark:text-slate-300 border-b border-gray-200 dark:border-slate-700">
                             <tr>
                                 <th className="p-4 text-sm font-semibold">Item</th>
-                                <th className="p-4 text-sm font-semibold w-28 text-center">Quantity</th>
+                                <th className="p-4 text-sm font-semibold w-36 text-center">Quantity</th>
                                 <th className="p-4 text-sm font-semibold w-36 text-right">Sale Price</th>
                                 <th className="p-4 text-sm font-semibold w-32 text-right">Discount</th>
                                 <th className="p-4 text-sm font-semibold w-40 text-center">Tax</th>
@@ -913,7 +922,12 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
                             {lines.length > 0 ? lines.map(line => (
                                 <tr key={line.part_id} className="hover:bg-gray-50 dark:hover:bg-slate-700/40 text-gray-800 dark:text-slate-200 transition-colors">
                                     <td className="p-4 text-sm font-medium text-gray-900 dark:text-slate-100">{line.display_name}</td>
-                                    <td className="p-4"><MathExpressionInput precision={2} min={0} value={line.quantity} onChange={val => handleLineChange(line.part_id, 'quantity', val)} aria-label={`Quantity for ${line.display_name}`} className="w-full p-2 border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 rounded-lg text-center font-mono text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" /></td>
+                                    <td className="p-4">
+                                        <div className="flex items-center gap-1.5">
+                                            <MathExpressionInput precision={2} min={0} value={line.quantity} onChange={val => handleLineChange(line.part_id, 'quantity', val)} aria-label={`Quantity for ${line.display_name}`} className="w-full p-2 border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 rounded-lg text-center font-mono text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
+                                            <span className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-slate-400 shrink-0">{line.measurement_unit || 'PC'}</span>
+                                        </div>
+                                    </td>
                                     <td className="p-4"><MathExpressionInput precision={2} min={0} value={line.sale_price} onChange={val => handleLineChange(line.part_id, 'sale_price', val)} aria-label={`Sale price for ${line.display_name}`} className="w-full p-2 border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 rounded-lg text-right font-mono text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" /></td>
                                     <td className="p-4"><MathExpressionInput precision={2} min={0} max={(Number(line.quantity) || 0) * (Number(line.sale_price) || 0)} value={line.discount_amount || 0} onChange={val => handleLineChange(line.part_id, 'discount_amount', val)} aria-label={`Discount for ${line.display_name}`} className="w-full p-2 border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 rounded-lg text-right font-mono text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" /></td>
                                     <td className="p-4">

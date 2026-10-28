@@ -212,7 +212,7 @@ const InventoryPage = ({ pageState = null }) => {
                                     <tr key={item.part_id} className="hover:bg-gray-50 dark:hover:bg-slate-700/40 text-gray-800 dark:text-slate-200 transition-colors">
                                         <td className="p-3 text-sm font-mono text-gray-900 dark:text-slate-100">{item.internal_sku}</td>
                                         <td className="p-3 text-sm font-medium text-gray-900 dark:text-slate-100">{item.display_name}</td>
-                                        <td className="p-3 text-sm text-center font-semibold font-mono text-gray-900 dark:text-slate-100">{stockOnHand.toLocaleString()}</td>
+                                        <td className="p-3 text-sm text-center font-semibold font-mono text-gray-900 dark:text-slate-100">{stockOnHand.toLocaleString()} <span className="text-xs font-sans font-semibold text-gray-500 dark:text-slate-400">{item.measurement_unit || 'PC'}</span></td>
                                         <td className="p-3 text-sm text-right font-mono text-gray-700 dark:text-slate-300">{settings?.DEFAULT_CURRENCY_SYMBOL || '$'}{wacCost.toFixed(2)}</td>
                                         <td className="p-3 text-sm text-right font-mono font-medium text-gray-900 dark:text-slate-100">{settings?.DEFAULT_CURRENCY_SYMBOL || '$'}{totalValue.toFixed(2)}</td>
                                         <td className="p-3 text-sm text-right">

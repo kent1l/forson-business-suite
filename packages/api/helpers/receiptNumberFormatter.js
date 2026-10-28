@@ -36,4 +36,9 @@ const formatPhysicalReceiptNumber = (receiptNumber) => {
     return formatted;
 };
 
-module.exports = { formatPhysicalReceiptNumber };
+// Internal SQL expression: column must be a trusted identifier, never request data.
+const normalizedPhysicalReceiptSql = (column = 'physical_receipt_no') =>
+    `COALESCE((SELECT parts[1] || '-' || (parts[2]::numeric)::text
+        FROM regexp_match(UPPER(TRIM(${column})), '^([A-Z]{1,10})[^A-Z0-9]*0*([0-9]+)$') AS parts), UPPER(TRIM(${column})))`;
+
+module.exports = { formatPhysicalReceiptNumber, normalizedPhysicalReceiptSql };

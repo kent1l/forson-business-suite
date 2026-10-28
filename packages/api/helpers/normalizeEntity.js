@@ -102,6 +102,53 @@ const normalizePartNumber = (value) => {
     return cleaned.toUpperCase();
 };
 
+const UOM_ALIASES = {
+    pc: 'pcs', pcs: 'pcs', pce: 'pcs', pces: 'pcs', piece: 'pcs', pieces: 'pcs', ea: 'pcs', each: 'pcs', unit: 'pcs', units: 'pcs',
+    set: 'set', sets: 'set',
+    bx: 'box', bxs: 'box', box: 'box', boxes: 'box',
+    btl: 'btl', btls: 'btl', bottle: 'btl', bottles: 'btl',
+    pr: 'pair', prs: 'pair', pair: 'pair', pairs: 'pair',
+    rl: 'roll', rls: 'roll', roll: 'roll', rolls: 'roll',
+    can: 'can', cans: 'can',
+    bg: 'bag', bgs: 'bag', bag: 'bag', bags: 'bag',
+    drm: 'drum', drum: 'drum', drums: 'drum',
+    pail: 'pail', pails: 'pail',
+    pk: 'pack', pks: 'pack', pkg: 'pack', pkgs: 'pack', pack: 'pack', packs: 'pack',
+    kit: 'kit', kits: 'kit',
+    assy: 'assy', assembly: 'assy', assemblies: 'assy',
+    ft: 'ft', feet: 'ft', foot: 'ft',
+    m: 'm', mtr: 'm', mtrs: 'm', meter: 'm', meters: 'm', metre: 'm', metres: 'm',
+    cm: 'cm', centimeter: 'cm', centimeters: 'cm',
+    mm: 'mm', millimeter: 'mm', millimeters: 'mm',
+    in: 'in', inch: 'in', inches: 'in',
+    yd: 'yd', yds: 'yd', yard: 'yd', yards: 'yd',
+    l: 'l', ltr: 'l', ltrs: 'l', liter: 'l', liters: 'l', litre: 'l', litres: 'l',
+    ml: 'ml', milliliter: 'ml', milliliters: 'ml',
+    gal: 'gal', gals: 'gal', gallon: 'gal', gallons: 'gal',
+    qt: 'qt', qts: 'qt', quart: 'qt', quarts: 'qt',
+    pt: 'pt', pts: 'pt', pint: 'pt', pints: 'pt',
+    kg: 'kg', kgs: 'kg', kilo: 'kg', kilos: 'kg', kilogram: 'kg', kilograms: 'kg',
+    g: 'g', gm: 'g', gms: 'g', gram: 'g', grams: 'g',
+    lb: 'lb', lbs: 'lb', pound: 'lb', pounds: 'lb',
+    oz: 'oz', ounce: 'oz', ounces: 'oz',
+    dz: 'doz', doz: 'doz', dozen: 'doz', dozens: 'doz',
+    cs: 'case', case: 'case', cases: 'case',
+    ctn: 'ctn', ctns: 'ctn', crt: 'ctn', carton: 'ctn', cartons: 'ctn',
+    tb: 'tube', tube: 'tube', tubes: 'tube',
+    sht: 'sheet', sheet: 'sheet', sheets: 'sheet',
+};
+
+const normalizeUom = (value, fallback = 'pcs') => {
+    if (typeof value !== 'string') return fallback;
+    const cleaned = collapseWhitespace(value)
+        .toLowerCase()
+        .replace(/\.+$/g, '')
+        .replace(/(?:\/|\()e?s\)?$/g, '')
+        .trim();
+    if (!cleaned || !/[a-z]/.test(cleaned)) return fallback;
+    return UOM_ALIASES[cleaned] || cleaned;
+};
+
 module.exports = {
     normalizeText,
     normalizeName,
@@ -109,4 +156,5 @@ module.exports = {
     normalizePhone,
     normalizePartNumber,
     normalizeTin,
+    normalizeUom,
 };

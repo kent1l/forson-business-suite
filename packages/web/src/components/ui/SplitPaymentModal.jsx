@@ -343,6 +343,24 @@ const SplitPaymentModal = ({
     }, [payments, paymentMethods, totalDue, physicalReceiptNo, discountAmount, discountReasonCode,
         discountReasons, discountNotes, settings?.DEFAULT_CURRENCY_SYMBOL]);
 
+    // Auto-allocate remaining amount to selected payment method
+    // Compute remaining at click time to avoid stale closure values.
+    const autoAllocateRemaining = (paymentId) => {
+        setPayments(prev => {
+            // Sum amounts excluding the target payment and pending payments
+            const totalPaidExcluding = prev.reduce((sum, p) => {
+                if (p.id === paymentId || (p.payment_status && p.payment_status !== 'settled')) return sum;
+                const v = parseFloat(p.amount_paid) || 0;
+                return sum + v;
+            }, 0);
+
+            const conceded = Math.round(((parseFloat(discountAmount) || 0) + Number.EPSILON) * 100) / 100;
+            const remainingNow = Math.max((totalDue || 0) - totalPaidExcluding - conceded, 0);
+
+            return prev.map(p => p.id === paymentId ? { ...p, amount_paid: remainingNow.toFixed(2) } : p);
+        });
+    };
+
     // Mark a payment as settled
     const markPaymentSettled = async (paymentId) => {
         try {
@@ -633,6 +651,7 @@ const SplitPaymentModal = ({
                             const method = paymentMethods.find(m => String(m.method_id) === String(payment.method_id));
                             const showTendered = method && method.config.change_allowed;
                             const showReference = method && method.config.requires_reference;
+                            const isWithholdingLine = method?.code === 'withholding_tax';
                             const isCheque = isChequeMethod(method);
 
                             return (
@@ -717,6 +736,17 @@ const SplitPaymentModal = ({
                                                     min={0}
                                                     required
                                                 />
+                                                {remaining > 0 && !isWithholdingLine && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => autoAllocateRemaining(payment.id)}
+                                                        className="absolute inset-y-0 right-0 px-3 bg-primary-600 text-white rounded-r-lg hover:bg-primary-700 text-xs font-semibold transition-colors cursor-pointer select-none"
+                                                        title="Allocate remaining amount"
+                                                        aria-label="Fill remaining amount"
+                                                    >
+                                                        FILL
+                                                    </button>
+                                                )}
                                             </div>
                                         </div>
 

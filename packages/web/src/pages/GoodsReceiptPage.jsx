@@ -29,6 +29,7 @@ import { supplierReference, flattenReferenceMatches } from '../utils/supplierRef
 import { getNavContext, returnToOrigin, clearNavContext } from '../utils/apNavigationContract';
 import { createUuid } from '../utils/createUuid';
 import { receiptDateForInput, receiptDateForPayload } from '../utils/grnReceiptDate';
+import { normalizeUom } from '../utils/grnImportReview';
 
 const upperCatalogText = (value) => String(value || '').replace(/\s+/g, ' ').trim().toUpperCase();
 
@@ -818,7 +819,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
             brand_name: upperCatalogText(draft.brand),
             group_id: group?.group_id || '',
             group_name: upperCatalogText(draft.group),
-            measurement_unit: upperCatalogText(draft.purchase_uom || catalogTarget.unit || 'PCS'),
+            measurement_unit: normalizeUom(draft.purchase_uom || catalogTarget.unit),
             last_cost: catalogTarget.cost_price || 0,
         };
     }, [catalogTarget?.po_line_id]);
@@ -1088,10 +1089,8 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                         { icon: 'ℹ️', duration: 8000 }
                     );
                 }
-                // The server accepts thin margins on this path for backwards
-                // compatibility, but the person entering it should still hear about them.
                 if (warnings.length > 0) {
-                    toast(`${warnings.length} line${warnings.length > 1 ? 's are' : ' is'} priced below the ${MIN_MARKUP_PERCENT}% minimum markup.`,
+                    toast(`${warnings.length} line${warnings.length > 1 ? 's are' : ' is'} priced below ${MIN_MARKUP_PERCENT}% markup.`,
                         { icon: '⚠️', duration: 7000 });
                 }
                 return 'Goods receipt created successfully!';
@@ -1136,7 +1135,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                 brand_name: brandName,
                 group_id: groups.find(item => upperCatalogText(item.group_name) === groupName)?.group_id || '',
                 group_name: groupName,
-                measurement_unit: upperCatalogText(source.unit || 'PCS'),
+                measurement_unit: normalizeUom(source.unit),
                 last_cost: row.confirmed_row?.cost_price ?? source.unit_cost ?? 0,
                 last_sale_price: row.confirmed_row?.sale_price ?? 0,
             },
@@ -1155,7 +1154,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
             });
             if (result.outcome === 'cancelled' || result.outcome === 'error') return;
 
-            const stockUom = (result.part.measurement_unit || result.part.stock_uom || partData.measurement_unit || 'pcs').trim() || 'pcs';
+            const stockUom = normalizeUom(result.part.measurement_unit || result.part.stock_uom || partData.measurement_unit);
             importReview.queueAction({
                 type: 'set_row',
                 row_id: importPartTarget.row_id,
@@ -1622,7 +1621,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                                                         </div>
                                                         <div className="flex items-baseline space-x-2 ml-2 shrink-0">
                                                             <span className={`text-xs font-medium ${Number(part.stock_on_hand) > 0 ? 'text-gray-500 dark:text-slate-400' : 'text-danger-600 dark:text-danger-400'}`}>
-                                                                {Number(part.stock_on_hand) || 0} in stock
+                                                                {Number(part.stock_on_hand) || 0} {part.measurement_unit || 'PC'} in stock
                                                             </span>
                                                             <span className="text-sm font-semibold text-gray-700 dark:text-slate-300">
                                                                 {formatCurrency(part.last_sale_price)}
@@ -1818,7 +1817,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                                                     ))}
                                                 {line.stock_on_hand !== undefined && line.stock_on_hand !== null && (
                                                     <div className={`text-xs font-medium ${Number(line.stock_on_hand) > 0 ? 'text-gray-500 dark:text-slate-400' : 'text-danger-600 dark:text-danger-400'}`}>
-                                                        {Number(line.stock_on_hand) || 0} in stock
+                                                        {Number(line.stock_on_hand) || 0} {line.measurement_unit || line.unit || 'PC'} in stock
                                                     </div>
                                                 )}
                                                 {duplicateCount > 1 && (
@@ -1854,12 +1853,15 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                                         </div>
                                     </td>
                                     <td className="p-2 align-middle">
-                                        <MathExpressionInput
-                                            value={line.quantity}
-                                            onChange={value => handleLineChange(rowKey, 'quantity', value)}
-                                            className={inputClass}
-                                            disabled={!line.part_id}
-                                        />
+                                        <div className="flex items-center gap-1.5">
+                                            <MathExpressionInput
+                                                value={line.quantity}
+                                                onChange={value => handleLineChange(rowKey, 'quantity', value)}
+                                                className={inputClass}
+                                                disabled={!line.part_id}
+                                            />
+                                            <span className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-slate-400 shrink-0">{line.measurement_unit || line.unit || 'PC'}</span>
+                                        </div>
                                     </td>
                                     <td className="p-2 align-middle">
                                         <MathExpressionInput
@@ -1923,6 +1925,11 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                                             className={`${inputClass} ${belowMinMarkup ? 'border-danger-400 dark:border-danger-600' : ''}`}
                                             aria-label={`Markup for ${line.display_name || line.part_id}`}
                                         />
+                                        {belowMinMarkup && (
+                                            <span className="block mt-0.5 text-[10px] text-danger-600 dark:text-danger-400 text-center">
+                                                Warning: under {MIN_MARKUP_PERCENT}%
+                                            </span>
+                                        )}
                                     </td>
                                     <td className="p-2 align-middle">
                                         <MathExpressionInput
@@ -1932,11 +1939,6 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                                             onChange={value => handleSalePriceChange(rowKey, value)}
                                             className={`${inputClass} ${belowMinMarkup ? 'border-danger-400 dark:border-danger-600' : ''}`}
                                         />
-                                        {belowMinMarkup && (
-                                            <span className="block mt-0.5 text-[10px] text-danger-600 dark:text-danger-400 text-center">
-                                                under {MIN_MARKUP_PERCENT}%
-                                            </span>
-                                        )}
                                     </td>
                                     <td className="p-2 align-middle text-right font-mono text-sm font-medium text-gray-900 dark:text-slate-100">
                                         {formatCurrency(computed?.landed_line_total || 0)}

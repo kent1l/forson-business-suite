@@ -28,7 +28,7 @@ if (process.env.NODE_ENV !== 'production') {
 }
 
 const db = require('../db');
-const { normalizeText, normalizeName, normalizeEmail, normalizePhone, normalizePartNumber } = require('../helpers/normalizeEntity');
+const { normalizeText, normalizeName, normalizeEmail, normalizePhone, normalizePartNumber, normalizeUom } = require('../helpers/normalizeEntity');
 
 const args = process.argv.slice(2);
 const apply = args.includes('--apply');
@@ -90,6 +90,7 @@ const TABLE_CONFIGS = [
         pk: 'part_id',
         columns: {
             detail: normalizeText,
+            measurement_unit: normalizeUom,
         },
     },
     {

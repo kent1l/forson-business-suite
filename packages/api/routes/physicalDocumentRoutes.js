@@ -1,8 +1,9 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db');
-const { protect, hasPermission } = require('../middleware/authMiddleware');
+const { protect, hasPermission, userHasPermission } = require('../middleware/authMiddleware');
 const physicalDocumentService = require('../services/physicalDocumentService');
+const monitorService = require('../services/receiptMonitorService');
 const { formatPhysicalReceiptNumber } = require('../helpers/receiptNumberFormatter');
 const { parsePaginationQuery, paginatedResponse } = require('../helpers/pagination');
 
@@ -556,11 +557,76 @@ router.put('/settings/physical-document-selection-policies', protect, hasPermiss
     }
 });
 
+// Monitor requires settings access; transaction views/mutations also require domain permission.
+const monitorError = (res, err) => {
+    if (!err.statusCode) console.error('Receipt monitor error:', err);
+    return res.status(err.statusCode || 500).json({ message: err.statusCode ? err.message : 'Unable to process receipt monitor request.' });
+};
+router.get('/settings/physical-document-monitor', protect, hasPermission('settings:edit'), async (req, res) => {
+    try { res.json(await monitorService.monitor(req.query)); } catch (err) { monitorError(res, err); }
+});
+router.get('/settings/physical-document-monitor/history', protect, hasPermission('settings:edit'), async (req, res) => {
+    try {
+        const parsed = monitorService.parse(req.query.reference);
+        await monitorService.seriesFor(db, req.query.series_id, parsed.canonical, false, false);
+        const { rows } = await db.query(`SELECT ev.*, e.first_name || ' ' || e.last_name AS actor_name
+            FROM physical_document_event ev LEFT JOIN employee e ON e.employee_id = ev.actor_id
+            LEFT JOIN physical_document_registry r ON r.registry_id = ev.registry_id
+            WHERE ev.series_id = $1 AND (ev.submitted_reference = $2 OR r.serial_number = $3)
+            ORDER BY ev.event_id DESC`, [req.query.series_id, parsed.canonical, parsed.serial]);
+        res.json(rows);
+    } catch (err) { monitorError(res, err); }
+});
+router.post('/settings/physical-document-monitor/follow-up', protect, hasPermission('settings:edit'), async (req, res) => {
+    try { res.status(201).json(await monitorService.followUp(req.body, req.user.employee_id)); }
+    catch (err) { monitorError(res, err); }
+});
+router.get('/settings/physical-document-monitor/transaction', protect, hasPermission('settings:edit'), async (req, res) => {
+    try {
+        const config = Object.hasOwn(monitorService.sourceConfig, req.query.source_type) ? monitorService.sourceConfig[req.query.source_type] : null;
+        if (!config) return res.status(400).json({ message: 'Invalid transaction type.' });
+        if (!userHasPermission(req, config.view)) return res.status(403).json({ message: 'Transaction view permission required.' });
+        const record = await monitorService.source(db, req.query.source_type, req.query.source_id);
+        // Explicit receipt/financial summary, never SELECT * into a settings response.
+        const { rows: [customer] } = await db.query('SELECT company_name, first_name, last_name FROM customer WHERE customer_id=$1', [record.customer_id]);
+        res.json({ source_type: req.query.source_type, source_id: Number(req.query.source_id),
+            customer_name: customer?.company_name || [customer?.first_name, customer?.last_name].filter(Boolean).join(' '),
+            number: record.invoice_number || record.group_reference || record.reference_number,
+            amount: record.total_amount ?? record.amount, status: record.status,
+            date: record.invoice_date || record.payment_date || record.created_at,
+            recording_method: record.recording_method, physical_receipt_no: record.physical_receipt_no,
+            physical_document_registry_id: record.physical_document_registry_id,
+            physical_document_series_id: record.physical_document_series_id,
+            physical_receipt_version: record.physical_receipt_version, collection_group_id: record.collection_group_id });
+    } catch (err) { monitorError(res, err); }
+});
+router.post('/settings/physical-document-monitor/reconcile', protect, hasPermission('settings:edit'), async (req, res) => {
+    try {
+        const config = Object.hasOwn(monitorService.sourceConfig, req.body.source_type) ? monitorService.sourceConfig[req.body.source_type] : null;
+        if (!config) return res.status(400).json({ message: 'Invalid transaction type.' });
+        if (!userHasPermission(req, config.permission) || !userHasPermission(req, config.view)) return res.status(403).json({ message: 'Transaction view and receipt assignment permissions required.' });
+        res.status(201).json(await monitorService.reconcile(req.body, req.user.employee_id));
+    } catch (err) { monitorError(res, err); }
+});
+
 // GET /api/settings/physical-document-spoilage
 router.get('/settings/physical-document-spoilage', protect, hasPermission('settings:edit'), async (req, res) => {
     try {
-        const { page, limit, offset } = parsePaginationQuery(req.query);
-        const { series_id, search } = req.query;
+        const { page, pageSize, offset } = parsePaginationQuery(req.query);
+        const { series_id, search, date_from, date_to, sortBy, sortOrder } = req.query;
+        const sortFields = {
+            reference: 'r.canonical_full_reference', series: 's.name',
+            recorded_at: 'COALESCE(ev.created_at, r.updated_at)',
+            actor: "COALESCE(e.first_name || ' ' || e.last_name, 'System / Cashier')",
+            reason: "COALESCE(ev.reason, 'Spoiled')",
+        };
+        const sortField = Object.hasOwn(sortFields, sortBy) ? sortFields[sortBy] : sortFields.recorded_at;
+        const direction = String(sortOrder).toLowerCase() === 'asc' ? 'ASC' : 'DESC';
+        for (const value of [date_from, date_to]) {
+            if (value && (!/^\d{4}-\d{2}-\d{2}$/.test(value) || Number.isNaN(Date.parse(`${value}T00:00:00Z`)) || new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) !== value)) {
+                return res.status(400).json({ message: 'Invalid date filter.' });
+            }
+        }
 
         let conditions = ["r.state = 'SPOILED'"];
         let params = [];
@@ -572,14 +638,31 @@ router.get('/settings/physical-document-spoilage', protect, hasPermission('setti
         }
 
         if (search) {
-            conditions.push(`r.canonical_full_reference ILIKE $${pIndex++}`);
+            conditions.push(`(r.canonical_full_reference ILIKE $${pIndex} OR s.name ILIKE $${pIndex} OR s.prefix ILIKE $${pIndex} OR COALESCE(e.first_name || ' ' || e.last_name, 'System / Cashier') ILIKE $${pIndex} OR COALESCE(ev.reason, 'Spoiled') ILIKE $${pIndex} OR ev.notes ILIKE $${pIndex})`);
+            pIndex++;
             params.push(`%${search.trim()}%`);
+        }
+        if (date_from) {
+            conditions.push(`COALESCE(ev.created_at, r.updated_at) >= ($${pIndex++}::date::timestamp AT TIME ZONE 'Asia/Manila')`);
+            params.push(date_from);
+        }
+        if (date_to) {
+            conditions.push(`COALESCE(ev.created_at, r.updated_at) < (($${pIndex++}::date + 1)::timestamp AT TIME ZONE 'Asia/Manila')`);
+            params.push(date_to);
         }
 
         const whereSql = conditions.join(' AND ');
+        const fromSql = `FROM public.physical_document_registry r
+             JOIN public.physical_document_series s ON s.series_id = r.series_id
+             LEFT JOIN LATERAL (
+                 SELECT reason, notes, actor_id, created_at FROM public.physical_document_event
+                 WHERE registry_id = r.registry_id AND event_type = 'SPOILED'
+                 ORDER BY created_at DESC, event_id DESC LIMIT 1
+             ) ev ON true
+             LEFT JOIN public.employee e ON e.employee_id = COALESCE(ev.actor_id, r.updated_by, r.created_by)`;
 
         const { rows: countRows } = await db.query(
-            `SELECT count(*) FROM public.physical_document_registry r WHERE ${whereSql}`,
+            `SELECT count(*) ${fromSql} WHERE ${whereSql}`,
             params
         );
         const total = parseInt(countRows[0].count, 10);
@@ -587,22 +670,16 @@ router.get('/settings/physical-document-spoilage', protect, hasPermission('setti
         const { rows } = await db.query(
             `SELECT r.*, s.name AS series_name, s.prefix,
                     e.first_name || ' ' || e.last_name AS actor_name,
-                    ev.reason AS spoilage_reason, ev.notes AS spoilage_notes
-             FROM public.physical_document_registry r
-             JOIN public.physical_document_series s ON s.series_id = r.series_id
-             LEFT JOIN public.employee e ON e.employee_id = r.created_by
-             LEFT JOIN LATERAL (
-                 SELECT reason, notes FROM public.physical_document_event
-                 WHERE registry_id = r.registry_id AND event_type = 'SPOILED'
-                 ORDER BY created_at DESC LIMIT 1
-             ) ev ON true
+                    ev.reason AS spoilage_reason, ev.notes AS spoilage_notes,
+                    COALESCE(ev.created_at, r.updated_at) AS spoiled_at
+             ${fromSql}
              WHERE ${whereSql}
-             ORDER BY r.created_at DESC
+             ORDER BY ${sortField} ${direction} NULLS LAST, r.registry_id DESC
              LIMIT $${pIndex++} OFFSET $${pIndex++}`,
-            [...params, limit, offset]
+            [...params, pageSize, offset]
         );
 
-        res.json(paginatedResponse(rows, total, page, limit));
+        res.json(paginatedResponse({ data: rows, total, page, pageSize }));
     } catch (err) {
         console.error('Error fetching spoiled receipts:', err);
         res.status(500).json({ message: 'Server error fetching spoiled receipts.' });
@@ -623,10 +700,21 @@ router.post('/settings/physical-document-spoilage', protect, hasPermission('sett
         }
 
         const formatted = formatPhysicalReceiptNumber(physical_receipt_no);
-        const parsed = physicalDocumentService.parseReferenceComponents(formatted);
-        if (!parsed || parsed.serial == null) {
+        const parsed = monitorService.parse(formatted);
+        if (!parsed) {
             await client.query('ROLLBACK');
             return res.status(400).json({ message: 'Invalid physical receipt format.' });
+        }
+
+        const series = await monitorService.seriesFor(client, series_id, parsed.canonical, true, false);
+        const monitorRow = (await monitorService.evidence(client, series)).get(String(parsed.serial));
+        if (monitorRow && monitorRow.status !== 'NO_RECORD') {
+            await client.query('ROLLBACK');
+            return res.status(409).json({ message: 'Receipt is occupied. Refresh before recording spoilage.' });
+        }
+        if (typeof reason !== 'string' || !reason.trim() || reason.trim().length > 100) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ message: 'Reason must contain 1–100 characters.' });
         }
 
         // Check if already occupied
@@ -656,7 +744,7 @@ router.post('/settings/physical-document-spoilage', protect, hasPermission('sett
     } catch (err) {
         await client.query('ROLLBACK');
         console.error('Error marking receipt as spoiled:', err);
-        res.status(500).json({ message: 'Server error recording spoilage.' });
+        res.status(err.statusCode || (err.code === '23505' ? 409 : 500)).json({ message: err.statusCode ? err.message : 'Unable to record spoilage. Refresh and retry.' });
     } finally {
         client.release();
     }

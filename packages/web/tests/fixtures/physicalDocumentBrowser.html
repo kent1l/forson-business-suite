@@ -1,0 +1,16 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Receipt override checks</title></head>
+<body><div id="root"></div>
+<script type="module">
+    import React, { useState } from 'react';
+    import { createRoot } from 'react-dom/client';
+    import PhysicalDocumentControl from '../../src/components/common/PhysicalDocumentControl.jsx';
+    import '../../src/index.css';
+
+    function Fixture() {
+        const [value, setValue] = useState({});
+        window.physicalDocumentValue = value;
+        return React.createElement(PhysicalDocumentControl, { value, onChange: setValue });
+    }
+    createRoot(document.getElementById('root')).render(React.createElement(Fixture));
+</script></body></html>

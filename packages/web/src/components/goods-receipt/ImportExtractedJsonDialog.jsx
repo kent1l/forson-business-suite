@@ -1,11 +1,16 @@
 import React, { useState, useEffect, useRef } from 'react';
+import toast from 'react-hot-toast';
 import Modal from '../ui/Modal';
 import Icon from '../ui/Icon';
 import { ICONS } from '../../constants';
 import api from '../../api';
 import { createUuid } from '../../utils/createUuid';
+import { copyToClipboard } from '../../utils/clipboard';
+import { GRN_EXTRACTION_PROMPT, stripJsonCodeFence } from '../../utils/grnImportReview';
 
 const MAX_PAYLOAD_BYTES = 1048576; // 1 MiB
+const PROMPT_TOOLTIP_TEXT =
+  'Copy the extraction prompt for your AI vision assistant (Gemini, Claude, or ChatGPT) to convert scanned supplier documents into Schema v1 JSON.';
 
 export default function ImportExtractedJsonDialog({
   isOpen,
@@ -22,8 +27,29 @@ export default function ImportExtractedJsonDialog({
   const [savedLoading, setSavedLoading] = useState(false);
   const [savedError, setSavedError] = useState(null);
   const [confirmManualSave, setConfirmManualSave] = useState(false);
+  const [promptCopied, setPromptCopied] = useState(false);
+  const [showPromptTooltip, setShowPromptTooltip] = useState(false);
   const fileInputRef = useRef(null);
   const textAreaRef = useRef(null);
+  const copyResetTimerRef = useRef(null);
+
+  useEffect(() => {
+    return () => {
+      if (copyResetTimerRef.current) clearTimeout(copyResetTimerRef.current);
+    };
+  }, []);
+
+  const handleCopyPrompt = async () => {
+    const ok = await copyToClipboard(GRN_EXTRACTION_PROMPT);
+    if (ok) {
+      setPromptCopied(true);
+      toast.success('Copied GRN extraction prompt to clipboard');
+      if (copyResetTimerRef.current) clearTimeout(copyResetTimerRef.current);
+      copyResetTimerRef.current = setTimeout(() => setPromptCopied(false), 2000);
+    } else {
+      toast.error('Failed to copy extraction prompt');
+    }
+  };
 
   // Fetch saved reviews when switching to 'saved' tab
   useEffect(() => {
@@ -80,7 +106,7 @@ export default function ImportExtractedJsonDialog({
 
     let parsedPayload;
     try {
-      parsedPayload = JSON.parse(jsonText);
+      parsedPayload = JSON.parse(stripJsonCodeFence(jsonText));
     } catch (err) {
       setParseError(`Malformed JSON syntax: ${err.message}`);
       textAreaRef.current?.focus();
@@ -119,7 +145,7 @@ export default function ImportExtractedJsonDialog({
         await onSaveManualDraftFirst();
       }
       setConfirmManualSave(false);
-      const parsed = JSON.parse(jsonText);
+      const parsed = JSON.parse(stripJsonCodeFence(jsonText));
       await proceedWithPayload(parsed);
     } catch (err) {
       setSubmitting(false);
@@ -208,9 +234,48 @@ export default function ImportExtractedJsonDialog({
 
           {activeTab === 'new' ? (
             <div className="space-y-3">
-              <p className="text-xs text-gray-500 dark:text-slate-400">
-                Paste the conforming JSON produced by the vision extraction assistant, or upload a JSON file (max 1 MiB).
-              </p>
+              <div className="flex items-start justify-between gap-3">
+                <p className="text-xs text-gray-500 dark:text-slate-400">
+                  Paste the conforming JSON produced by the vision extraction assistant, or upload a JSON file (max 1 MiB).
+                </p>
+                <div
+                  className="relative shrink-0"
+                  onMouseEnter={() => setShowPromptTooltip(true)}
+                  onMouseLeave={() => setShowPromptTooltip(false)}
+                >
+                  <button
+                    type="button"
+                    onClick={handleCopyPrompt}
+                    onFocus={() => setShowPromptTooltip(true)}
+                    onBlur={() => setShowPromptTooltip(false)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Escape' && showPromptTooltip) {
+                        e.stopPropagation();
+                        setShowPromptTooltip(false);
+                      }
+                    }}
+                    title={PROMPT_TOOLTIP_TEXT}
+                    aria-describedby="grn-copy-prompt-tooltip"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-gray-300 dark:border-slate-600 rounded text-gray-700 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-700 transition"
+                  >
+                    <Icon
+                      path={promptCopied ? ICONS.check : ICONS.copy}
+                      className={`h-3.5 w-3.5 ${promptCopied ? 'text-emerald-600 dark:text-emerald-400' : ''}`}
+                    />
+                    {promptCopied ? 'Copied!' : 'Copy Prompt'}
+                  </button>
+                  <div
+                    id="grn-copy-prompt-tooltip"
+                    role="tooltip"
+                    aria-hidden={!showPromptTooltip}
+                    className={`absolute right-0 top-full mt-1.5 z-50 w-72 p-2.5 rounded-lg bg-slate-900 dark:bg-slate-700 text-white text-[11px] leading-relaxed shadow-lg transition-opacity duration-150 ${
+                      showPromptTooltip ? 'opacity-100 visible' : 'opacity-0 invisible pointer-events-none'
+                    }`}
+                  >
+                    {PROMPT_TOOLTIP_TEXT}
+                  </div>
+                </div>
+              </div>
 
               {parseError && (
                 <div className="p-3 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 rounded-lg text-xs text-red-700 dark:text-red-300">

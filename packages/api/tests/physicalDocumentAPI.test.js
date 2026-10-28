@@ -234,6 +234,43 @@ describe('Physical Document System - Phase 2 & 3 API & Cashier Posting Integrati
         expect(spoilRes.body.canonical_full_reference).toBe('TS-1052');
         const regId = spoilRes.body.registry_id;
 
+        const list = await request(app)
+            .get('/api/settings/physical-document-spoilage')
+            .query({ series_id: testSeriesId, search: 'TS-1052', page: 1, pageSize: 1 })
+            .expect(200);
+        expect(list.body).toMatchObject({ page: 1, pageSize: 1, total: 1, totalPages: 1 });
+        expect(list.body.data).toEqual(expect.arrayContaining([
+            expect.objectContaining({ registry_id: regId, canonical_full_reference: 'TS-1052' }),
+        ]));
+
+        const secondPage = await request(app)
+            .get('/api/settings/physical-document-spoilage')
+            .query({ series_id: testSeriesId, search: 'TS-1052', page: 2, pageSize: 1 })
+            .expect(200);
+        expect(secondPage.body.data).toEqual([]);
+        expect(secondPage.body.total).toBe(1);
+
+        const other = await request(app).post('/api/settings/physical-document-spoilage')
+            .send({ series_id: testSeriesId, physical_receipt_no: 'TS-1053', reason: 'Ink smudge' }).expect(201);
+        await db.query("UPDATE physical_document_event SET created_at = '2026-01-01T16:30:00Z' WHERE registry_id = $1 AND event_type = 'SPOILED'", [regId]);
+        await db.query("UPDATE physical_document_event SET created_at = '2026-01-03T04:00:00Z' WHERE registry_id = $1 AND event_type = 'SPOILED'", [other.body.registry_id]);
+
+        const sorted = await request(app).get('/api/settings/physical-document-spoilage')
+            .query({ series_id: testSeriesId, sortBy: 'reference', sortOrder: 'desc', pageSize: 1 }).expect(200);
+        expect(sorted.body.total).toBe(2);
+        expect(sorted.body.data[0].canonical_full_reference).toBe('TS-1053');
+        const next = await request(app).get('/api/settings/physical-document-spoilage')
+            .query({ series_id: testSeriesId, sortBy: 'reference', sortOrder: 'desc', pageSize: 1, page: 2 }).expect(200);
+        expect(next.body.data[0].canonical_full_reference).toBe('TS-1052');
+
+        const filtered = await request(app).get('/api/settings/physical-document-spoilage')
+            .query({ series_id: testSeriesId, search: 'Printer', date_from: '2026-01-02', date_to: '2026-01-02' }).expect(200);
+        expect(filtered.body.total).toBe(1);
+        expect(filtered.body.data[0]).toMatchObject({ registry_id: regId, actor_name: 'Physical Document Test' });
+        await request(app).get('/api/settings/physical-document-spoilage').query({ date_from: '2026-02-30' }).expect(400);
+        await request(app).post(`/api/settings/physical-document-spoilage/${other.body.registry_id}/correct`)
+            .send({ reason: 'Test cleanup' }).expect(200);
+
         // Verify taken as spoiled
         const checkRes = await request(app)
             .post('/api/physical-documents/validate')

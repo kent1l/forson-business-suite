@@ -249,7 +249,7 @@ router.get('/purchase-orders/:id/lines', protect, hasPermission('purchase_orders
     const { id } = req.params;
     try {
         const query = `
-            SELECT pol.*, p.internal_sku, p.detail, p.last_sale_price AS last_sale_price, p.last_cost AS last_cost, b.brand_name, g.group_name,
+            SELECT pol.*, p.internal_sku, p.detail, p.measurement_unit, p.last_sale_price AS last_sale_price, p.last_cost AS last_cost, b.brand_name, g.group_name,
                    (SELECT pv.display_name FROM public.parts_view pv WHERE pv.part_id = p.part_id) AS parts_view_display_name,
                    (SELECT STRING_AGG(pn.part_number, ', ' ORDER BY COALESCE(pn.display_order, 1))
                     FROM part_number pn WHERE pn.part_id = p.part_id AND pn.deleted_at IS NULL) AS part_numbers,

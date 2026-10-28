@@ -1,6 +1,6 @@
 const crypto = require('crypto');
 const db = require('../db');
-const { formatPhysicalReceiptNumber } = require('../helpers/receiptNumberFormatter');
+const { formatPhysicalReceiptNumber, normalizedPhysicalReceiptSql } = require('../helpers/receiptNumberFormatter');
 
 function getTokenSecret() {
     if (!process.env.JWT_SECRET) throw new Error('JWT_SECRET is required to sign physical receipt suggestion tokens');
@@ -89,7 +89,7 @@ async function isReferenceOccupied(clientOrDb, seriesId, canonicalRef, excludeRe
     // 2. Check legacy invoice table
     const { rows: invRows } = await runner.query(
         `SELECT invoice_id FROM public.invoice
-         WHERE UPPER(TRIM(physical_receipt_no)) = $1
+         WHERE ${normalizedPhysicalReceiptSql()} = $1
            AND ($2::int IS NULL OR invoice_id != $2)`,
         [canonicalRef, excludeInvoiceId]
     );
@@ -105,7 +105,7 @@ async function isReferenceOccupied(clientOrDb, seriesId, canonicalRef, excludeRe
     // 3. Check legacy customer_payment table
     const { rows: payRows } = await runner.query(
         `SELECT payment_id FROM public.customer_payment
-         WHERE UPPER(TRIM(physical_receipt_no)) = $1
+         WHERE ${normalizedPhysicalReceiptSql()} = $1
            AND ($2::int IS NULL OR payment_id != $2)`,
         [canonicalRef, excludePaymentId]
     );
@@ -117,6 +117,12 @@ async function isReferenceOccupied(clientOrDb, seriesId, canonicalRef, excludeRe
             source_id: payRows[0].payment_id,
         };
     }
+
+    // Collection groups own one receipt across their tenders, including legacy groups.
+    const { rows: groups } = await runner.query(
+        `SELECT group_id FROM customer_payment_collection_group WHERE ${normalizedPhysicalReceiptSql()} = $1`, [canonicalRef]
+    );
+    if (groups.length) return { occupied: true, state: 'ISSUED', source: 'collection_group', source_id: groups[0].group_id };
 
     return { occupied: false };
 }
@@ -512,7 +518,7 @@ async function validateReference({ series_id, physical_receipt_no, suggestion_to
         return {
             valid: false,
             code: occ.state === 'SPOILED' ? 'RECEIPT_NUMBER_SPOILED' : 'RECEIPT_NUMBER_TAKEN',
-            message: `Physical receipt number ${parsed.canonical} is already ${occ.state.toLowerCase()}.`,
+            message: `Physical receipt number ${parsed.canonical} is already ${occ.state.toLowerCase()}. Choose an unused receipt number.`,
             canonical: parsed.canonical,
             serial: parsed.serial,
         };
@@ -689,7 +695,7 @@ async function postPhysicalDocument(client, {
     // 5. Check occupancy of entered reference under lock
     const occ = await isReferenceOccupied(client, series.series_id, parsed.canonical);
     if (occ.occupied) {
-        const err = new Error(`Physical receipt number ${parsed.canonical} is already ${occ.state.toLowerCase()}.`);
+        const err = new Error(`Physical receipt number ${parsed.canonical} is already ${occ.state.toLowerCase()}. Choose an unused receipt number.`);
         err.statusCode = 409;
         err.code = occ.state === 'SPOILED' ? 'RECEIPT_NUMBER_SPOILED' : 'RECEIPT_NUMBER_TAKEN';
         throw err;
@@ -753,7 +759,7 @@ async function postPhysicalDocument(client, {
                     `INSERT INTO public.physical_document_event
                      (series_id, registry_id, request_id, event_type, original_suggestion, submitted_reference, reason, notes, actor_id)
                      VALUES ($1, $2, $3, 'SPOILED', $4, $5, $6, $7, $8)`,
-                    [series.series_id, spoiledRows[0].registry_id, request_id, 'SPOILED',
+                    [series.series_id, spoiledRows[0].registry_id, request_id,
                      spoiledRef, parsed.canonical, exception.reason, exception.notes || null, employee_id]
                 );
             }

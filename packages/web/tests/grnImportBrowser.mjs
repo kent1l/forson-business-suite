@@ -348,6 +348,30 @@ try {
   await page.waitForFunction(() => document.body.innerText.includes('Import Extracted Document JSON'));
   console.log('✓ Import dialog opened successfully');
 
+  // Verify Copy Prompt button & tooltip on hover
+  const copyPromptBtnHandle = await page.evaluateHandle(() =>
+    Array.from(document.querySelectorAll('button')).find(b => b.textContent.includes('Copy Prompt'))
+  );
+  const copyPromptExists = await copyPromptBtnHandle.evaluate(el => Boolean(el));
+  assert.equal(copyPromptExists, true, 'Copy Prompt button should be present in import dialog');
+  await copyPromptBtnHandle.hover();
+  const tooltipVisible = await page.evaluate(() => {
+    const tip = document.getElementById('grn-copy-prompt-tooltip');
+    return tip && tip.getAttribute('aria-hidden') === 'false' && tip.textContent.includes('extraction prompt');
+  });
+  assert.equal(tooltipVisible, true, 'Tooltip should be visible on hover and describe the Copy Prompt button');
+  await page.evaluate(() => {
+    window.__copiedClipboardText = null;
+    navigator.clipboard.writeText = async (text) => {
+      window.__copiedClipboardText = text;
+    };
+  });
+  await copyPromptBtnHandle.click();
+  await page.waitForFunction(() => Array.from(document.querySelectorAll('button')).some(b => b.textContent.includes('Copied!')));
+  const copiedPromptText = await page.evaluate(() => window.__copiedClipboardText);
+  assert.equal(copiedPromptText?.includes('"schema_version": 1'), true, 'Copied prompt should contain Schema v1 extraction instructions');
+  console.log('✓ Copy Prompt button and hover tooltip verified');
+
   // TEST 3: Syntax error handling preserves text
   console.log('Test 3: Syntax error handling and text preservation...');
   const badJson = '{"broken": json without quotes';
@@ -503,7 +527,7 @@ try {
   assert.equal(createdParts.length, 1);
   assert.equal(Number(createdParts[0].brand_id), 1);
   assert.equal(Number(createdParts[0].group_id), 1);
-  assert.equal(createdParts[0].measurement_unit, 'PCS');
+  assert.equal(createdParts[0].measurement_unit, 'pcs');
   assert.equal(createdParts[0].last_cost, '150.00');
   assert.equal(createdParts[0].last_sale_price, '225.00');
   await clickButton('Save Review');
@@ -511,7 +535,7 @@ try {
   const createdRow = mockReviewDetail.review_state.rows.find(row => row.row_id === 'r_2');
   assert(await page.$eval('section[aria-label="Supplier item text for line 1"]', el => el.innerText.includes('Cleaned Supplier Text') && el.innerText.includes('TOYOTA 04152-YZZA6 OIL FILTER') && !el.innerText.includes('5 PCS')), 'Saving must preserve cleaned item evidence without showing original raw text');
   assert.equal(createdRow.confirmed_row.part_id, 20);
-  assert.equal(createdRow.confirmed_row.stock_uom, 'PCS');
+  assert.equal(createdRow.confirmed_row.stock_uom, 'pcs');
   assert.equal(createdRow.confirmed_row.delivered_quantity, '3.0000');
   assert.equal(createdRow.confirmed_row.return_quantity, '1.0000');
   assert.equal(createdRow.confirmed_row.cost_price, '150.00');

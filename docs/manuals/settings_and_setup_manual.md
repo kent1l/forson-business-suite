@@ -247,6 +247,25 @@ To disable a method instead of deleting it, select the **Enabled**/**Disabled** 
 
 **Example:** A new warehouse hire scans the QR code shown on an admin's screen, lands on the Mobile Setup page showing "Version 1.3.0 Available," taps **Download App (.apk)**, opens the file from Downloads, allows installation from that source when prompted, and the Forson app installs.
 
+## How To — Monitor Physical Receipt Numbers
+
+*Why this matters:* A physical receipt series is the numbered range printed on a booklet. Reviewing the range helps you identify issued, spoiled, voided, and unrecorded numbers.
+
+*Precision:* Check the actual paper and related transactions before deciding what happened to an unrecorded number. **No system record** does not mean the paper is unused.
+
+1. Go to **Settings** → **Physical Documents** → **Series Monitor**, and select a **Series**.
+2. If the page asks for bounds, open **Series** and edit the series so **Min Serial** and **Max Serial** match the booklet. Return to **Series Monitor**.
+3. Use **Previous**, **Next**, or the page jump control to review the 25-number pages. **Status** filters the entire selected range before pagination; the page count and total reflect the selected status. Use **Search receipt numbers** to find a full reference or any part of its serial number. Click the **Reference** or **Status** heading to sort ascending or descending across the filtered results; references sort by their numeric serial. **Clear search** restores the range.
+4. Row actions are icons; hover to see the action’s name. Keyboard and screen-reader users can identify each action by its accessible name. Choose **View history** to see recorded events, actors, reasons, and notes. Older transactions may have no recorded events. Select a transaction identifier to inspect its summary, when you have permission. Links show whether they are current (**PRIMARY**), historical, or an older reference match. For invoices, choose **View invoice / receipt correction and void actions** to use the existing audited workflows.
+5. For **No system record**, choose **Flag for follow-up** and enter a reason if the number needs investigation. This records a note; it does not reserve the receipt or determine whether it is unused. Choose **Resolve follow-up** with a reason after investigating. Follow-ups remain open until explicitly resolved, even if the receipt is issued or spoiled in the meantime; both events remain in history. If the paper is actually damaged, choose the row’s **Mark spoiled** action, enter the reason, and save. **Mark Spoiled Number** at the top also opens the existing spoilage form, with the selected series prefilled.
+6. Set **Status** to **Spoiled** to use the integrated spoiled-paper register. It retains reference/actor/reason search, series and date filters, sortable audit columns, and 10-record pages. Choose **All series** to review spoilage across booklets, including series without bounds. **Clear filters** resets the search, dates and series. Choose **Correct / Unspoil** only when spoilage was recorded in error; the existing correction form records your reason before making the number eligible again. **View history** shows the receipt’s audit trail. The separate Spoiled Paper tab has been merged into Series Monitor.
+
+**Example:** A booklet runs from `SI-1001` through `SI-1100`. After selecting its series, an administrator sees `SI-1003` as **No system record** and flags it for follow-up because the paper is missing. The administrator checks the booklet and transaction records before taking further action.
+
+7. For unregistered paper or an older transaction match, choose **Verify and link transaction**. Select the transaction type and ID, then **Inspect transaction**. Review the customer, amount and existing paper reference against the original paper. Check the ownership confirmation, enter a reconciliation reason, and choose **Link verified receipt**. This records paper ownership without changing the transaction's money, stock or payment allocations. It requires settings access plus the transaction's view and receipt-assignment permissions.
+
+> 📝 Note — Older numbered references with spacing, case differences or leading zeros are recognized. Missing matches still need investigation. Linking rejects conflicting receipt assignments, cancelled invoices, Notebook records and overlapping series. Link a collection group's receipt through the group itself, rather than an individual grouped payment. Existing assignments must use the transaction's correction workflow. No “verified unused” action is provided.
+
 ## Field Reference
 
 | Field/Control | Description | Notes |

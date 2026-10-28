@@ -9,6 +9,7 @@ export default function PhysicalDocumentControl({
     value = {},
     onChange,
     onTaxRateSelect,
+    taxRates = [],
     disabled = false,
     inputRef: externalInputRef,
     className = '',
@@ -17,6 +18,18 @@ export default function PhysicalDocumentControl({
     const internalInputRef = useRef(null);
     const inputRef = externalInputRef || internalInputRef;
     const containerRef = useRef(null);
+    const taxSelectionRef = useRef(onTaxRateSelect);
+    taxSelectionRef.current = onTaxRateSelect;
+    const taxRatesRef = useRef(taxRates);
+    taxRatesRef.current = taxRates;
+    const pendingNotebookTaxRef = useRef(false);
+
+    useEffect(() => {
+        if (!pendingNotebookTaxRef.current || !taxRates.length) return;
+        pendingNotebookTaxRef.current = false;
+        const zeroRate = taxRates.find(rate => rate.rate_percentage != null && Number(rate.rate_percentage) === 0);
+        if (zeroRate) taxSelectionRef.current?.(zeroRate.tax_rate_id);
+    }, [taxRates]);
 
     const [loading, setLoading] = useState(false);
     const [options, setOptions] = useState({ series: [], policy: {} });
@@ -88,6 +101,7 @@ export default function PhysicalDocumentControl({
     // Handle user selecting a choice (series or notebook) from dropdown
     const selectChoice = useCallback(async (choiceKey, choicesList = options.choices || [], seriesList = options.series || []) => {
         if (!choiceKey) {
+            pendingNotebookTaxRef.current = false;
             onChange?.({
                 recording_method: null,
                 series_id: null,
@@ -108,6 +122,9 @@ export default function PhysicalDocumentControl({
         const choice = choicesList.find(c => c.key === choiceKey);
 
         if (choiceKey === 'NOTEBOOK' || choice?.recording_method === 'NOTEBOOK') {
+            const zeroRate = taxRatesRef.current.find(rate => rate.rate_percentage != null && Number(rate.rate_percentage) === 0);
+            pendingNotebookTaxRef.current = !taxRatesRef.current.length;
+            if (zeroRate) taxSelectionRef.current?.(zeroRate.tax_rate_id);
             setSuggestion(null);
             setPopoverOpen(false);
             onChange?.({
@@ -122,13 +139,14 @@ export default function PhysicalDocumentControl({
 
         const numericId = parseInt(choice?.series_id || choiceKey, 10);
         if (!numericId) return;
+        pendingNotebookTaxRef.current = false;
 
         const foundSeries = seriesList.find(s => s.series_id === numericId);
         const sug = await fetchSuggestion(numericId);
 
         // Preselect default fallback tax rate if available
-        if (foundSeries?.default_tax_rate_id && onTaxRateSelect) {
-            onTaxRateSelect(foundSeries.default_tax_rate_id);
+        if (foundSeries?.default_tax_rate_id) {
+            taxSelectionRef.current?.(foundSeries.default_tax_rate_id);
         }
 
         onChange?.({
@@ -138,7 +156,7 @@ export default function PhysicalDocumentControl({
             suggestion_token: sug?.suggestion_token || null,
             exception: null,
         });
-    }, [context, fetchSuggestion, onChange, onTaxRateSelect, options.choices, options.series]);
+    }, [context, fetchSuggestion, onChange, options.choices, options.series]);
 
     // A restored draft carries a stale token and no local suggestion; fetch a fresh one once on mount.
     const restoredRef = useRef(false);
@@ -320,9 +338,23 @@ export default function PhysicalDocumentControl({
                     value={isNotebook ? 'No physical receipt' : physicalReceiptNo}
                     onChange={(e) => {
                         if (isNotebook) return;
+                        const raw = e.target.value.toUpperCase().trim();
+                        const known = [...(options.series || [])]
+                            .filter(s => s.prefix)
+                            .sort((a, b) => b.prefix.length - a.prefix.length);
+                        const matched = known.find(s => raw.startsWith(s.prefix.toUpperCase()));
+                        // Typed a prefix belonging to another document type: switch to it
+                        if (matched && matched.series_id !== selectedSeriesId) {
+                            selectChoice(String(matched.series_id));
+                            return;
+                        }
+                        // Prefix is locked to the selected series; only the serial is editable
+                        const lockedPrefix = currentSeries?.prefix?.toUpperCase();
+                        if (!lockedPrefix) return;
+                        const serial = (matched ? raw.slice(lockedPrefix.length) : raw).replace(/\D/g, '');
                         onChange?.({
                             ...value,
-                            physical_receipt_no: e.target.value,
+                            physical_receipt_no: `${lockedPrefix}-${serial}`,
                         });
                     }}
                     onBlur={handleInputBlur}
@@ -331,8 +363,6 @@ export default function PhysicalDocumentControl({
                     className={`w-full px-3 py-2 border rounded-md text-sm font-mono focus:outline-none focus:ring-2 ${
                         isNotebook
                             ? 'bg-gray-100 dark:bg-slate-800/60 text-gray-400 dark:text-slate-500 italic border-dashed border-gray-300 dark:border-slate-700'
-                            : value?.exception?.reason === 'SPOILED_SUGGESTION'
-                            ? 'bg-amber-50 dark:bg-amber-950/30 border-amber-400 text-amber-900 dark:text-amber-200 focus:ring-amber-500'
                             : 'bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 border-gray-300 dark:border-slate-600 focus:ring-primary-500'
                     }`}
                 />
@@ -340,6 +370,11 @@ export default function PhysicalDocumentControl({
                     <div className="absolute right-2 top-2.5">
                         <span className="inline-block w-3 h-3 border-2 border-primary-500 border-t-transparent rounded-full animate-spin" />
                     </div>
+                )}
+                {!isNotebook && value?.exception?.reason === 'SPOILED_SUGGESTION' && (
+                    <p role="status" className="mt-1 text-xs text-gray-500 dark:text-slate-400">
+                        Suggested receipt {value.exception.spoiled_reference} will be marked spoiled at checkout.
+                    </p>
                 )}
             </div>
 

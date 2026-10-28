@@ -188,7 +188,11 @@ const PowerSearchPage = () => {
                                                 </div>
                                             ) : ''}
                                         </td>
-                                        <td className="p-3 text-sm text-gray-700 dark:text-slate-300 align-top font-mono text-right">{typeof part.stock_on_hand !== 'undefined' ? Number(part.stock_on_hand).toFixed(2) : '-'}</td>
+                                        <td className="p-3 text-sm text-gray-700 dark:text-slate-300 align-top font-mono text-right">
+                                            {typeof part.stock_on_hand !== 'undefined' ? (
+                                                <span>{Number(part.stock_on_hand).toFixed(2)} <span className="text-xs font-sans font-semibold text-gray-500 dark:text-slate-400">{part.measurement_unit || 'PC'}</span></span>
+                                            ) : '-'}
+                                        </td>
                                         <MoneyCell value={part.last_receipt_unit_cost} className="text-gray-600 dark:text-slate-400" />
                                         <MoneyCell value={part.last_receipt_landed_cost ?? part.last_cost} className="text-gray-700 dark:text-slate-300" />
                                         <MoneyCell value={part.wac_cost} className="text-gray-700 dark:text-slate-300" />
@@ -233,7 +237,7 @@ const PowerSearchPage = () => {
                                         <td className="p-3 text-sm font-mono text-gray-900 dark:text-slate-100">{part.internal_sku}</td>
                                         <td className="p-3 text-sm font-medium text-gray-900 dark:text-slate-100">{part.display_name}</td>
                                         <td className="p-3 text-sm font-mono text-gray-600 dark:text-slate-400">{part.matching_part_numbers.join('; ')}</td>
-                                        <td className="p-3 text-sm text-right font-mono text-gray-700 dark:text-slate-300">{Number(part.stock_on_hand).toFixed(2)}</td>
+                                        <td className="p-3 text-sm text-right font-mono text-gray-700 dark:text-slate-300">{Number(part.stock_on_hand).toFixed(2)} <span className="text-xs font-sans font-semibold text-gray-500 dark:text-slate-400">{part.measurement_unit || 'PC'}</span></td>
                                     </tr>
                                 ))}
                             </tbody>
@@ -253,7 +257,7 @@ const PowerSearchPage = () => {
                             </div>
                             <div>
                                 <div className="text-xs font-medium text-gray-500 dark:text-slate-400 uppercase">Stock</div>
-                                <div className="font-semibold text-gray-900 dark:text-slate-100 font-mono mt-0.5">{typeof selectedPartDetail.stock_on_hand !== 'undefined' ? Number(selectedPartDetail.stock_on_hand).toFixed(2) : '-'}</div>
+                                <div className="font-semibold text-gray-900 dark:text-slate-100 font-mono mt-0.5">{typeof selectedPartDetail.stock_on_hand !== 'undefined' ? `${Number(selectedPartDetail.stock_on_hand).toFixed(2)} ${selectedPartDetail.measurement_unit || 'PC'}` : '-'}</div>
                             </div>
                         </div>
                         <PartCostLadder part={selectedPartDetail} />

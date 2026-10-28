@@ -385,7 +385,7 @@ describe('POST /goods-receipts/:id/post', () => {
     expect(syncReceiptRecordedTag).not.toHaveBeenCalled();
   });
 
-  test('posting refuses prices below the 30% markup floor', async () => {
+  test('posting accepts prices below 30% markup and returns a warning', async () => {
     wireStagedReceipt(stagedReceipt({ freight_amount: '0', freight_supplier_id: null }), [
       { grn_line_id: 1, part_id: 100, quantity: '1', cost_price: '100', sale_price: '105',
         line_discount_percent: null, line_discount_amount: null, override_freight_amount: null,
@@ -393,8 +393,10 @@ describe('POST /goods-receipts/:id/post', () => {
     ]);
 
     const res = await request(app).post('/api/goods-receipts/11/post').send({});
-    expect(res.status).toBe(400);
-    expect(res.body.message).toMatch(/30% minimum/);
+    expect(res.status).toBe(200);
+    expect(res.body.warnings).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'BELOW_MIN_MARKUP', message: expect.stringMatching(/30%/) }),
+    ]));
   });
 
   test('a receipt with no lines is refused rather than posting an empty document', async () => {

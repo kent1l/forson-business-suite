@@ -5,6 +5,8 @@
 
 Copy the prompt below into your vision assistant with all pages of one supplier document attached. Do not mix separate documents into one extraction.
 
+When importing the response, copy the complete JSON from its opening `{` through its closing `}`, including both braces. If the assistant provides a JSON file, download it and use FBS's file upload to avoid partial copying.
+
 ```text
 Extract the attached scanned auto-parts supplier document for import into an FBS Goods Receipt (GRN) draft.
 
@@ -13,6 +15,7 @@ Work in two strict passes:
 2. RESEARCH product identity on the internet where useful. Keep research strictly isolated in enrichment.
 
 Return ONLY one valid JSON object in the exact structure below. Do NOT add markdown code fences (no ```json or ```). Do NOT add introductory text, commentary, or approval instructions.
+The first non-whitespace character MUST be { and the last MUST be }. Include the enclosing braces: never start with just "schema_version": 1. Return the object itself, not a quoted/escaped JSON string, multiple objects, or a partial fragment. Do not include comments, trailing commas, ellipses, or omitted sections.
 
 {
   "schema_version": 1,
@@ -56,9 +59,12 @@ Return ONLY one valid JSON object in the exact structure below. Do NOT add markd
 TRANSCRIPTION RULES
 - Fill document fields and line fields OUTSIDE enrichment ONLY from visible ink on the scan. Never fill them from internet results or assumptions. Use null when absent or illegible.
 - Preserve every visible item row from every supplied page in its original sequence. Assign unique, strictly increasing integer line_no values (1, 2, 3...). Do not merge rows that appear to describe the same part; keep separate receipt rows distinct.
+- CRITICAL - SOURCE IMAGE ROW ORDER: The lines array MUST follow the item rows exactly as they appear in the source image, from top to bottom within each item table. Across multiple pages, follow the document's visible page numbering; if none is visible, use the supplied image order. Continue line_no sequentially across pages, without restarting at 1. If the reading order is ambiguous, report an AMBIGUOUS_VALUE issue rather than silently inventing an order.
+- Never sort or regroup lines by brand, part number, description, item group, price, or research results. Keep each row's identity, quantity, unit, cost, total, handwriting, and enrichment attached to that SAME source row. Research must never move an item to another row or exchange identities between rows. Preserve duplicate items as separate rows in their original positions.
 - CRITICAL - DECIMAL STRINGS ONLY: Quantities, unit costs, line totals, and document totals MUST be plain unsigned decimal strings or null (e.g. "4", "4.0000", "3750.00", "13500.00", "23868.00"). NEVER output raw JSON numbers for quantities or money. Numbers are strictly allowed ONLY as integers for schema_version and line_no. Do not use commas, currency symbols (₱, $), negative signs, or exponent notation. Quantity permits up to 4 decimal places; money permits up to 2 decimal places. A printed zero amount is "0.00", not null.
 - DOCUMENT TYPE ENUM: document_type must be null or one of: "delivery_receipt", "invoice", "packing_list", "other". Map Delivery Receipts (DR), Acknowledgement Receipts (AR), and Delivery Orders to "delivery_receipt". Map Sales Invoices (SI), Commercial Invoices, and Official Receipts (OR) to "invoice". Map Packing Lists to "packing_list". Use "other" for any other or ambiguous title.
 - ESCAPING QUOTES: All double quotes inside string values (e.g. inch marks like 8\" or quoted brands like \"COMPACT\") MUST be escaped with a backslash (\"). Unescaped double quotes will corrupt the JSON syntax.
+- This applies to EVERY string, including supplier_item_text, description, suggested_description, reason, supporting_text, receiving_mark, and issue messages. Valid JSON examples: "description": "HOSE LONG 5\" (1PC/BOX)" and "suggested_description": "Wheel Cylinder (11/16\")". Escape backslashes as \\ and literal line breaks as \n inside strings. Use ordinary ASCII double quotes as JSON delimiters. If a serialization tool is available, build the data object and serialize it with JSON.stringify or an equivalent JSON serializer rather than manually assembling JSON text.
 - supplier_item_text is the cleaned receipt wording used for automatic catalog matching and Jev verification. description is an optional cleaned product description for compatibility. Neither field may include web-discovered details or inferred specs. Do not output the full uncleaned line as raw_text; that legacy field is neither displayed nor used for matching.
 - supplier_item_text is the compact identifying text for THIS item, derived only from its visible receipt wording. Retain printed brand, manufacturer part number, product/model, dimensions, grade, size, pack size, vehicle/application codes and orientation where they identify the product. Remove the row number, ordered/delivered/returned quantities, purchase units used only for counting, costs, totals, discounts, tax, selling-price handwriting, check marks and other receiving annotations. Do NOT remove identifying numbers such as 10W-40, 1L bottle size, 3/4 inch, RH/LH or model/part codes. Example: receipt wording "2 PCS TOYOTA 04152-YZZA6 OIL FILTER @125.00 TOTAL 250.00 ✓" becomes supplier_item_text "TOYOTA 04152-YZZA6 OIL FILTER". Use null if a faithful item identity cannot be isolated; report ambiguity rather than inventing an identity. FBS uses this cleaned text and extracted identity fields for catalog matching and Jev verification. Limit this field to 2,000 characters.
 - Populate brand, part_number, supplier_item_code, and item_group_hint outside enrichment ONLY when explicitly printed or visibly identifiable on the physical page.
@@ -71,7 +77,9 @@ TRANSCRIPTION RULES
 
 INTERNET RESEARCH RULES
 - Research product identity only: manufacturer/brand, part number, product description, and likely item group. Search using clues visible on the scan.
+- When browsing is available, actively research each distinct item using its visible brand, part number, and identifying specifications. Prefer official manufacturer catalogs and product pages; use reputable distributor listings as secondary evidence. Search results are leads, not inspected sources: open the relevant pages and read the supporting content before making a suggestion.
 - Put ALL web-derived findings in enrichment. Never change a transcribed field based on web research. Never use the internet to fill missing receipt numbers, dates, quantities, supplier costs, totals, or handwritten values.
+- Check brand, the full part number including suffixes, dimensions, model/application, pack size, and orientation wherever available. Distinguish an exact product identity from an OEM cross-reference, compatible replacement, or merely similar item. An OEM reference alone does not verify the printed aftermarket brand. If sources materially disagree, explain the conflict in reason and leave unsupported suggested fields null.
 - Set enrichment.status to:
   - "verified_suggestion" only when an exact visible brand/manufacturer AND part number match an accessible official manufacturer catalog or product page, the proposed identity is supported there, and there is no material conflict;
   - "possible_suggestion" when evidence is relevant but incomplete, such as a reputable distributor listing, partial identifier, cross-reference, or lack of official OEM confirmation;
@@ -79,8 +87,10 @@ INTERNET RESEARCH RULES
 - For each source actually opened and inspected, add an object to sources (max 20 per line):
   {"url": "https://actual-page-url", "supporting_text": "specific text on the page supporting the suggestion"}
   (Remember to escape any double quotes inside supporting_text).
+- CRITICAL - PLAIN URL STRINGS ONLY: sources[].url must be the actual page's absolute HTTPS URL, at most 2,048 characters, with no embedded username or password. Put the URL directly inside the JSON string. Correct: "url": "https://example.com/product". Incorrect: "url": "[https://example.com/product](https://example.com/product)". Never wrap URLs in Markdown links, angle brackets, HTML, backticks, or citation markers. These formatting rules apply inside JSON strings as well as outside the JSON object.
+- supporting_text must faithfully describe or briefly quote content actually inspected on that page and identify which suggestion it supports. Do not present search snippets, an unvisited link, or a guessed URL as verified evidence. Retain usable source URLs so a reviewer can independently inspect the research.
 - Explain the evidence or uncertainty briefly in reason. Do not invent URLs, quotes, visits, or numerical confidence scores. Do not claim fitment or interchangeability without separate explicit evidence.
-- If browsing is unavailable, preserve the transcription and set enrichment.status to "unresolved". Do not fail the extraction merely because internet research failed.
+- If browsing is unavailable or no usable evidence can be inspected for an item, preserve its transcription, set enrichment.status to "unresolved", leave unsupported suggested fields null, and return sources: []. Explain the research limitation in reason. Never add placeholder or fabricated sources to fill the array. Do not fail the extraction merely because internet research failed.
 
 EXTRACTION ISSUE RULES
 Report uncertainties and discrepancies as structured objects in extraction_issues:
@@ -108,9 +118,13 @@ Before returning the JSON, verify:
 1. Every quantity, unit cost, line total, and document total is a DECIMAL STRING (e.g. "4", "3750.00"), NOT a JSON number.
 2. document_type is null or one of "delivery_receipt", "invoice", "packing_list", "other".
 3. All internal double quotes within strings (such as 8\" or \"COMPACT\") are escaped with backslashes.
-4. No item rows were skipped or merged.
+4. Compare the lines array against the source images row by row: the first output item matches the first source item, the second matches the second, and so on through all pages. No rows were skipped, merged, sorted, or exchanged. Each row's quantities, prices, annotations, and research remain attached to its own item identity, and line_no increases sequentially across pages.
 5. All web research is strictly confined inside enrichment.
-6. Output is raw, valid JSON with no markdown formatting.
+6. Every sources[].url is a plain absolute HTTPS URL without Markdown wrappers, citation markers, or embedded credentials, and refers to a page actually opened and inspected. Use sources: [] when no usable evidence was inspected.
+7. Every research suggestion is supported by its cited page content; cross-references and compatibility claims are not represented as exact product verification. Uncertainty and material conflicts are stated in reason.
+8. The complete output starts with { and ends with }, includes every required section and both enclosing braces, and contains exactly one JSON object. There is no surrounding prose, code fence, trailing comma, or double-encoded JSON string.
+9. Recheck inch marks and quoted text in EVERY string, including research evidence and issue messages. Internal double quotes must appear as \" in the returned JSON text; no unescaped inch marks may terminate a value early.
+10. If a JSON parser is available, parse the EXACT final output, including any file contents supplied, and confirm the parsed value is an object, not a string or array. Correct any errors and repeat the check before returning it. Without a parser, check syntax carefully but do not claim parser validation. Return only the complete JSON object with plain URL values and no Markdown formatting.
 ```
 
 FBS validates the output against the final contract; this prompt is not a substitute for server validation. A new payload version requires updating both the plan/schema and prompt together.

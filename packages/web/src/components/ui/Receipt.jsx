@@ -56,7 +56,7 @@ const Receipt = React.forwardRef(({ saleData, settings }, ref) => {
                             {exchange_data.returned_lines.map((line, idx) => (
                                 <tr key={idx}>
                                     <td>{line.display_name}{conditionLabel(line)}</td>
-                                    <td className="text-center">{line.quantity}</td>
+                                    <td className="text-center">{line.quantity}{line.measurement_unit ? ` ${line.measurement_unit}` : ''}</td>
                                     <td className="text-right">{Number(line.sale_price).toFixed(2)}</td>
                                     <td className="text-right">-{(line.quantity * line.sale_price).toFixed(2)}</td>
                                 </tr>
@@ -78,7 +78,7 @@ const Receipt = React.forwardRef(({ saleData, settings }, ref) => {
                             {lines.map((line, idx) => (
                                 <tr key={line.part_id || idx}>
                                     <td>{line.display_name}</td>
-                                    <td className="text-center">{line.quantity}</td>
+                                    <td className="text-center">{line.quantity}{line.measurement_unit ? ` ${line.measurement_unit}` : ''}</td>
                                     <td className="text-right">{Number(line.sale_price).toFixed(2)}</td>
                                     <td className="text-right">{(line.quantity * line.sale_price).toFixed(2)}</td>
                                 </tr>
@@ -100,7 +100,7 @@ const Receipt = React.forwardRef(({ saleData, settings }, ref) => {
                         {lines.map(line => (
                             <tr key={line.part_id}>
                                 <td>{line.display_name}</td>
-                                <td className="text-center">{line.quantity}</td>
+                                <td className="text-center">{line.quantity}{line.measurement_unit ? ` ${line.measurement_unit}` : ''}</td>
                                 <td className="text-right">{Number(line.sale_price).toFixed(2)}</td>
                                 <td className="text-right">{(line.quantity * line.sale_price).toFixed(2)}</td>
                             </tr>

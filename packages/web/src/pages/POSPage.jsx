@@ -24,6 +24,7 @@ import SplitPaymentModal from '../components/ui/SplitPaymentModal';
 import PriceQuantityModal from '../components/ui/PriceQuantityModal';
 import MathExpressionInput from '../components/ui/MathExpressionInput';
 import Receipt from '../components/ui/Receipt';
+import { getSaleErrorMessage } from '../utils/saleErrorMessage';
 import SavedSalesPanel from '../components/pos/SavedSalesPanel';
 import VehicleFilterBar from '../components/VehicleFilterBar';
 import ExchangeModal from '../components/pos/ExchangeModal';
@@ -491,7 +492,8 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
                 tax_rate_id: line.tax_rate_id || null,
                 is_tax_inclusive_price: line.is_tax_inclusive_price || false,
                 detail: line.detail,
-                display_name: line.display_name
+                display_name: line.display_name,
+                measurement_unit: line.measurement_unit
             })),
             selectedCustomer: selectedCustomer?.customer_id || null
         });
@@ -719,11 +721,7 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
 
         } catch (err) {
             console.error('Payment processing error:', err);
-            if (err?.response?.status === 409) {
-                toast.error(err.response.data?.message || 'Physical Receipt No already exists.');
-            } else {
-                toast.error('Failed to process sale.');
-            }
+            toast.error(getSaleErrorMessage(err, 'Failed to process sale. Please try again.'));
         }
     };
 
@@ -808,16 +806,7 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
 
         } catch (err) {
             console.error('POS split payment error:', err);
-            const backendMessage = err?.response?.data?.message || err?.response?.data?.error || err?.message;
-            if (err?.response?.status === 409) {
-                toast.error(backendMessage || 'Physical Receipt No already exists.');
-                return;
-            }
-            if (backendMessage) {
-                toast.error(backendMessage);
-            } else {
-                toast.error('Failed to process split payments.');
-            }
+            toast.error(getSaleErrorMessage(err, 'Failed to process split payments. Please try again.'));
         }
     };
 
@@ -917,7 +906,8 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
                 part_id: l.part_id,
                 display_name: l.display_name,
                 quantity: l.quantity,
-                sale_price: l.sale_price
+                sale_price: l.sale_price,
+                measurement_unit: l.measurement_unit
             })),
             customerId: selectedCustomer?.customer_id || null,
             taxRateId: selectedTaxRate?.tax_rate_id || null,
@@ -1021,7 +1011,8 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
             part_id: i.part_id,
             display_name: i.display_name,
             quantity: i.quantity,
-            sale_price: i.sale_price
+            sale_price: i.sale_price,
+            measurement_unit: i.measurement_unit
         }));
         setLines(restoredLines);
         const customer = customers.find(c => String(c.customer_id) === String(cart.customerId));
@@ -1103,8 +1094,13 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
                                                             <div className="text-sm font-medium text-gray-800 dark:text-slate-100 truncate">{part.display_name}</div>
                                                             {part.applications && <div className="text-xs text-gray-500 dark:text-slate-400 truncate">{formatApplicationText(part.applications, { style: 'searchSuggestion' })}</div>}
                                                         </div>
-                                                        <div className="text-sm font-semibold text-gray-700 dark:text-slate-300 ml-2">
-                                                            {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{part.last_sale_price ? Number(part.last_sale_price).toFixed(2) : '0.00'}
+                                                        <div className="flex items-baseline space-x-2 ml-2 shrink-0">
+                                                            <span className={`text-xs font-medium ${Number(part.stock_on_hand) > 0 ? 'text-gray-500 dark:text-slate-400' : 'text-danger-600 dark:text-danger-400'}`}>
+                                                                {Number(part.stock_on_hand) || 0} {part.measurement_unit || 'PC'} in stock
+                                                            </span>
+                                                            <span className="text-sm font-semibold text-gray-700 dark:text-slate-300">
+                                                                {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{part.last_sale_price ? Number(part.last_sale_price).toFixed(2) : '0.00'}
+                                                            </span>
                                                         </div>
                                                     </div>
                                                 </li>
@@ -1175,6 +1171,7 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
                                             context="POS"
                                             value={physicalDoc}
                                             onChange={setPhysicalDoc}
+                                            taxRates={taxRates}
                                             onTaxRateSelect={(taxRateId) => {
                                                 const rate = taxRates.find(r => r.tax_rate_id === taxRateId);
                                                 if (rate) setSelectedTaxRate(rate);
@@ -1224,6 +1221,7 @@ const POSPage = ({ user, lines, setLines, onNavigate, pageState }) => {
                                                 onChange={(val) => handleLineChange(line.part_id, 'quantity', val)}
                                                 className="w-16 px-2 py-1 border border-gray-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 text-sm focus:outline-none focus:ring-1 focus:ring-primary-500"
                                             />
+                                            <span className="ml-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-slate-400">{line.measurement_unit || 'PC'}</span>
                                             <span className="mx-2 text-sm text-gray-500 dark:text-slate-400">x</span>
                                             <MathExpressionInput
                                                 precision={2}
