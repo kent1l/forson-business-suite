@@ -437,7 +437,7 @@ function initializeReviewState(normalizedPayload, initialContext, matchedSupplie
       exclusion_reason: null,
       corrections: {},
       confirmed_row: {
-        ai_filled_fields: [line.quantity && 'delivered_quantity', line.unit_cost && 'cost_price'].filter(Boolean),
+        ai_filled_fields: [line.quantity && 'delivered_quantity', line.unit_cost && 'cost_price', line.handwritten_sale_price != null && 'sale_price'].filter(Boolean),
         part_id: null,
         stock_uom: 'pcs',
         units_per_source_unit: '1.0000',
@@ -447,7 +447,7 @@ function initializeReviewState(normalizedPayload, initialContext, matchedSupplie
         cost_price: line.unit_cost || null,
         cost_kind: line.unit_cost ? (line.unit_cost === '0.00' ? 'free' : 'priced') : null,
         cost_reason: null,
-        sale_price: null,
+        sale_price: line.handwritten_sale_price ?? null,
         row_confirmed: false,
         row_confirmation_digest: null,
       },

@@ -64,6 +64,17 @@ describe('GRN External JSON Ingestion - Schema and Rules', () => {
     expect(normalized.extraction_issues).toHaveLength(0);
   });
 
+  test.each([['180', '180.00'], ['0', '0.00'], [null, null]])(
+    'initializes the review sale price from handwritten value %p', (value, expected) => {
+      const payload = structuredClone(conformingExample);
+      payload.lines[0].handwritten_sale_price = value;
+      const normalized = validateAndNormalizeExternalPayload(payload);
+      const row = initializeReviewState(normalized, {}).rows[0].confirmed_row;
+      expect(row.sale_price).toBe(expected);
+      expect(row.ai_filled_fields.includes('sale_price')).toBe(expected !== null);
+    }
+  );
+
   test.each([undefined, null, '', '   '])('defaults missing or blank JSON unit %p to pcs', unit => {
     const payload = structuredClone(conformingExample);
     if (unit === undefined) delete payload.lines[0].unit;
