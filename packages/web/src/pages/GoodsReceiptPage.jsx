@@ -1129,7 +1129,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
             row_id: rowId,
             line_no: row.line_no,
             initialValues: {
-                detail: upperCatalogText(source.supplier_item_text || source.description),
+                detail: upperCatalogText(source.description || source.supplier_item_text),
                 part_numbers: upperCatalogText(source.part_number),
                 brand_id: brands.find(item => upperCatalogText(item.brand_name) === brandName)?.brand_id || '',
                 brand_name: brandName,
