@@ -29,7 +29,7 @@ const describeCandidate = (c) => {
 // endpoint only proposes -- nothing is written until "Save Selected" commits
 // each accepted row through the normal /applications + link endpoints below,
 // which independently re-validate any id the AI claimed to have matched.
-const DescribeFitmentPanel = ({ partId, onCommitted }) => {
+export const DescribeFitmentPanel = ({ partId, onCommitted, onStage }) => {
     const [text, setText] = useState('');
     const [parsing, setParsing] = useState(false);
     const [parseError, setParseError] = useState('');
@@ -147,6 +147,9 @@ const DescribeFitmentPanel = ({ partId, onCommitted }) => {
             const c = candidates[i];
             if (!c.selected) continue;
             try {
+                if (c.year_start && c.year_end && Number(c.year_start) > Number(c.year_end)) {
+                    throw new Error('Start year must not be after end year.');
+                }
                 const { data: app } = await api.post('/applications', {
                     make_id: c.make_id ?? undefined,
                     make: c.make_id ? undefined : (c.make ?? undefined),
@@ -157,11 +160,12 @@ const DescribeFitmentPanel = ({ partId, onCommitted }) => {
                     displacement_liters: c.displacement_liters ?? undefined,
                     fuel_type: c.fuel_type ?? undefined
                 });
-                await api.post(`/parts/${partId}/applications`, {
-                    application_id: app.application_id,
-                    year_start: c.year_start || null,
-                    year_end: c.year_end || null
-                });
+                const fitment = { ...app, make: c.make, model: c.model, engine: c.engine, year_start: c.year_start || null, year_end: c.year_end || null };
+                if (onStage) {
+                    onStage(fitment);
+                } else {
+                    await api.post(`/parts/${partId}/applications`, fitment);
+                }
             } catch (error) {
                 errors[i] = error.response?.data?.message || error.message;
             }
@@ -189,9 +193,10 @@ const DescribeFitmentPanel = ({ partId, onCommitted }) => {
                     Type a natural description like "Fits Hilux 2005-2015 2.5L Diesel, also Fortuner same years"
                     and review the parsed rows below before saving. Recognised makes, models, engine codes and
                     shorthand like "4D55/6" are matched instantly against the catalog; AI assistance is used only
-                    for wording that cannot be matched. Nothing is written until you save.
+                    for wording that cannot be matched. Review the results before adding them.
                 </InfoTip>
             </h4>
+            {onStage && <p className="text-xs text-gray-500 dark:text-slate-400 mb-2">Adding a fitment can create catalog entries. Save the part to link the selected fitments.</p>}
             <textarea
                 value={text}
                 onChange={(e) => setText(e.target.value)}
@@ -266,7 +271,7 @@ const DescribeFitmentPanel = ({ partId, onCommitted }) => {
                                 disabled={saving || selectedCount === 0}
                                 className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg text-sm font-medium transition-colors shadow-xs disabled:opacity-50"
                             >
-                                {saving ? 'Saving…' : `Save ${selectedCount} Selected Fitment${selectedCount === 1 ? '' : 's'}`}
+                                {saving ? 'Saving…' : `${onStage ? 'Add' : 'Save'} ${selectedCount} Selected Fitment${selectedCount === 1 ? '' : 's'}`}
                             </button>
                         </div>
                     )}

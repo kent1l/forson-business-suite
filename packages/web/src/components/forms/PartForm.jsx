@@ -4,10 +4,11 @@ import toast from 'react-hot-toast';
 import Modal from '../ui/Modal';
 import Combobox from '../ui/Combobox';
 import { useSettings } from '../../contexts/SettingsContext';
+import { useAuth } from '../../contexts/AuthContext';
 import TagInput from '../ui/TagInput'; // <-- Import TagInput
 import MathExpressionInput from '../ui/MathExpressionInput';
 import ApplicationSearchCombobox from '../applications/ApplicationSearchCombobox';
-import PartApplicationManager from '../../pages/PartApplicationManager';
+import PartApplicationManager, { DescribeFitmentPanel } from '../../pages/PartApplicationManager';
 import { postWithJevConfirmation } from '../../helpers/jevConfirmation';
 import { normalizeUom } from '../../utils/grnImportReview';
 
@@ -121,6 +122,7 @@ const extractBarcodes = (source) => {
 
 const PartForm = ({ part, initialValues = null, uppercaseText = false, brands, groups, onSave, onCancel, onBrandGroupAdded, isBulkEdit = false, selectedCount: _selectedCount = 0 }) => {
     const { settings } = useSettings();
+    const { hasPermission } = useAuth();
 
     const sessionKey = useMemo(() => {
         if (isBulkEdit) return 'bulk';
@@ -163,7 +165,11 @@ const PartForm = ({ part, initialValues = null, uppercaseText = false, brands, g
     }, [sessionKey, part, initialValues, isBulkEdit, settings]);
 
     // helper to display an application label
-    const labelForApp = (app) => [app?.make, app?.model, app?.engine].filter(Boolean).join(' ');
+    const labelForApp = (app) => {
+        const label = [app?.make, app?.model, app?.engine].filter(Boolean).join(' ');
+        const years = app?.year_start || app?.year_end ? ` (${app.year_start || ''}–${app.year_end || ''})` : '';
+        return label + years;
+    };
 
     const [isAppManagerOpen, setIsAppManagerOpen] = useState(false);
 
@@ -185,7 +191,7 @@ const PartForm = ({ part, initialValues = null, uppercaseText = false, brands, g
     const addApplication = (app) => {
         if (!app || !app.application_id) return;
         setSelectedApps(prev => {
-            if (prev.find(a => a.application_id === app.application_id)) return prev;
+            if (prev.find(a => String(a.application_id) === String(app.application_id))) return prev;
             return [...prev, app];
         });
     };
@@ -483,12 +489,7 @@ const PartForm = ({ part, initialValues = null, uppercaseText = false, brands, g
                                     <div className="text-sm text-gray-500 dark:text-slate-400">No linked applications</div>
                                 )}
                             </div>
-                            {!part && (
-                                <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">
-                                    Links to existing vehicle fitments only (no year range or new taxonomy entries here) --
-                                    use Manage after saving for year ranges or to create a new make/model/engine.
-                                </p>
-                            )}
+                            {hasPermission('applications:edit') && <DescribeFitmentPanel onStage={addApplication} onCommitted={() => {}} />}
                         </div>
                     </div>
                 )}

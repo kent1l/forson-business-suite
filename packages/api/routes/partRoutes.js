@@ -144,44 +144,35 @@ const manageBarcodes = async (client, barcodes, partId) => {
     }
 };
 
-// Links a newly-created part to any applications picked via the quick-add
-// search combobox on the "New Part" form (no year range -- that combobox
-// doesn't collect one, same as the equivalent quick-add on the edit form;
-// staff use PartApplicationManager's "Manage" afterward for year ranges).
-// Create-only: a new part has no pre-existing links, so this is pure insert,
-// unlike edit-time reconciliation (add + remove) which isn't implemented.
-// Mirrors deriveVehicleEngineFitment() in partApplicationRoutes.js so a
-// full make+model+engine fitment picked at creation still feeds the
-// vehicle_engine_fitment cross-reference the same way a post-creation link does.
+// Add staged fitments while preserving existing links and their year ranges.
 const manageApplications = async (client, applications, partId) => {
     if (!Array.isArray(applications) || applications.length === 0) return;
-
-    const applicationIds = [...new Set(
-        applications.map(a => a?.application_id).filter(Boolean)
-    )];
-
-    for (const applicationId of applicationIds) {
+    const seen = new Set();
+    for (const application of applications) {
+        const applicationId = application?.application_id;
+        if (!applicationId || seen.has(String(applicationId))) continue;
+        seen.add(String(applicationId));
+        const yearStart = application.year_start || null;
+        const yearEnd = application.year_end || null;
         await client.query(
-            `INSERT INTO part_application (part_id, application_id)
-             VALUES ($1, $2)
+            `INSERT INTO part_application (part_id, application_id, year_start, year_end)
+             VALUES ($1, $2, $3, $4)
              ON CONFLICT (part_id, application_id) DO NOTHING`,
-            [partId, applicationId]
+            [partId, applicationId, yearStart, yearEnd]
         );
-
         const { rows } = await client.query(
             'SELECT model_id, engine_id FROM application WHERE application_id = $1',
             [applicationId]
         );
         const app = rows[0];
         if (!app || !app.model_id || !app.engine_id) continue;
-
         await client.query(
             `INSERT INTO vehicle_engine_fitment (model_id, engine_id, year_start, year_end)
-             VALUES ($1, $2, NULL, NULL)
+             VALUES ($1, $2, $3, $4)
              ON CONFLICT (model_id, engine_id) DO UPDATE SET
                  year_start = LEAST(vehicle_engine_fitment.year_start, EXCLUDED.year_start),
                  year_end = GREATEST(vehicle_engine_fitment.year_end, EXCLUDED.year_end)`,
-            [app.model_id, app.engine_id]
+            [app.model_id, app.engine_id, yearStart, yearEnd]
         );
     }
 };
