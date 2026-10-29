@@ -92,20 +92,41 @@ router.get('/power-search/parts', protect, hasPermission(['parts:view', 'pos:use
         // engine_id also matches applications linked to any model that uses that engine
         // (via vehicle_engine_fitment), so engine-only fitments surface correctly.
         const whereClauses = [];
+        let exclusionWhereClause = '';
         if (engineId) {
             const ep = ph(engineId);
-            whereClauses.push(`(a.engine_id = ${ep} OR (a.model_id IS NOT NULL AND a.model_id IN (
+            // Fixes F11 / H19: An application with an explicit different engine_id must NEVER match via vehicle_engine_fitment.
+            whereClauses.push(`(a.engine_id = ${ep} OR (a.engine_id IS NULL AND a.model_id IS NOT NULL AND a.model_id IN (
                 SELECT vef.model_id FROM vehicle_engine_fitment vef WHERE vef.engine_id = ${ep}
             )))`);
         }
         if (modelId) whereClauses.push(`a.model_id = ${ph(modelId)}`);
         if (makeId)  whereClauses.push(`a.make_id  = ${ph(makeId)}`);
 
-        let yearWhereClause = '';
+        const exChecks = [
+            `par_ex.part_id = pa.part_id`,
+            `par_ex.effect = 'exclude'`,
+            `par_ex.is_active = TRUE`,
+        ];
+        if (makeId) exChecks.push(`(a_ex.make_id IS NULL OR a_ex.make_id = ${ph(makeId)})`);
+        if (modelId) exChecks.push(`(a_ex.model_id IS NULL OR a_ex.model_id = ${ph(modelId)})`);
+        if (engineId) exChecks.push(`(a_ex.engine_id IS NULL OR a_ex.engine_id = ${ph(engineId)})`);
+        if (year) {
+            const exYp = ph(year);
+            exChecks.push(`(par_ex.year_start IS NULL OR par_ex.year_start <= ${exYp}) AND (par_ex.year_end IS NULL OR par_ex.year_end >= ${exYp})`);
+        }
+        exclusionWhereClause = `NOT EXISTS (
+            SELECT 1 FROM part_application_rule par_ex
+            JOIN application a_ex ON a_ex.application_id = par_ex.application_id
+            WHERE ${exChecks.join(' AND ')}
+        )`;
+
+        let yearWhereClause = `WHERE ${exclusionWhereClause}`;
         if (year) {
             const yp = ph(year);
             yearWhereClause = `WHERE (pa.year_start IS NULL OR pa.year_start <= ${yp})
-              AND (pa.year_end IS NULL OR pa.year_end >= ${yp})`;
+              AND (pa.year_end IS NULL OR pa.year_end >= ${yp})
+              AND ${exclusionWhereClause}`;
         }
 
         const universalStatusClause =

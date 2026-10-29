@@ -583,6 +583,255 @@ CREATE INDEX IF NOT EXISTS idx_vehicle_engine_model_id ON public.vehicle_engine 
 CREATE INDEX IF NOT EXISTS idx_part_application_part_id ON public.part_application (part_id);
 CREATE INDEX IF NOT EXISTS idx_part_application_application_id ON public.part_application (application_id);
 
+CREATE TABLE IF NOT EXISTS public.vehicle_chassis (
+    chassis_id serial PRIMARY KEY,
+    model_id integer REFERENCES public.vehicle_model(model_id) ON DELETE RESTRICT,
+    chassis_code character varying(100) NOT NULL,
+    identity_key text NOT NULL,
+    generation character varying(100),
+    year_start integer,
+    year_end integer,
+    market character varying(50),
+    identity_status text NOT NULL DEFAULT 'legacy_unverified',
+    row_version integer NOT NULL DEFAULT 1,
+    created_at timestamptz NOT NULL DEFAULT NOW(),
+    updated_at timestamptz NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.fitment_taxonomy_meta (
+    singleton_id boolean PRIMARY KEY DEFAULT TRUE CHECK (singleton_id = TRUE),
+    taxonomy_version bigint NOT NULL DEFAULT 1,
+    updated_at timestamptz NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.fitment_claim (
+    claim_id serial PRIMARY KEY,
+    part_id integer NOT NULL REFERENCES public.part(part_id) ON DELETE CASCADE,
+    application_id integer REFERENCES public.application(application_id) ON DELETE SET NULL,
+    source_type text NOT NULL DEFAULT 'legacy_migration',
+    raw_text text,
+    normalized_text text,
+    clause_text text,
+    clause_span jsonb,
+    parser_mode text NOT NULL DEFAULT 'legacy',
+    claim_effect text NOT NULL DEFAULT 'include',
+    approval_status text NOT NULL DEFAULT 'legacy_unverified',
+    evidence_status text NOT NULL DEFAULT 'legacy_unverified',
+    confidence_label text,
+    field_provenance jsonb NOT NULL DEFAULT '{}'::jsonb,
+    unresolved_dimensions jsonb NOT NULL DEFAULT '[]'::jsonb,
+    created_by integer REFERENCES public.employee(employee_id) ON DELETE SET NULL,
+    reviewed_by integer REFERENCES public.employee(employee_id) ON DELETE SET NULL,
+    reviewed_at timestamptz,
+    review_reason text,
+    row_version integer NOT NULL DEFAULT 1,
+    created_at timestamptz NOT NULL DEFAULT NOW(),
+    updated_at timestamptz NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.part_application_rule (
+    rule_id serial PRIMARY KEY,
+    part_id integer NOT NULL REFERENCES public.part(part_id) ON DELETE CASCADE,
+    application_id integer NOT NULL REFERENCES public.application(application_id) ON DELETE CASCADE,
+    claim_id integer REFERENCES public.fitment_claim(claim_id) ON DELETE SET NULL,
+    effect text NOT NULL DEFAULT 'include',
+    make_mode text NOT NULL DEFAULT 'specified',
+    model_mode text NOT NULL DEFAULT 'not_supplied',
+    chassis_mode text NOT NULL DEFAULT 'not_supplied',
+    engine_mode text NOT NULL DEFAULT 'not_supplied',
+    year_start smallint,
+    year_end smallint,
+    year_mode text NOT NULL DEFAULT 'not_supplied',
+    market text,
+    market_mode text NOT NULL DEFAULT 'not_supplied',
+    variant_descriptor text,
+    variant_mode text NOT NULL DEFAULT 'not_supplied',
+    position text,
+    position_mode text NOT NULL DEFAULT 'not_supplied',
+    drivetrain text,
+    drivetrain_mode text NOT NULL DEFAULT 'not_supplied',
+    transmission text,
+    transmission_mode text NOT NULL DEFAULT 'not_supplied',
+    fuel_type_qualifier text,
+    fuel_mode text NOT NULL DEFAULT 'not_supplied',
+    displacement_liters_qualifier numeric(3,1),
+    displacement_mode text NOT NULL DEFAULT 'not_supplied',
+    generation text,
+    generation_mode text NOT NULL DEFAULT 'not_supplied',
+    condition_json jsonb NOT NULL DEFAULT '{}'::jsonb,
+    notes text,
+    approval_status text NOT NULL DEFAULT 'legacy_unverified',
+    evidence_status text NOT NULL DEFAULT 'legacy_unverified',
+    is_active boolean NOT NULL DEFAULT TRUE,
+    row_version integer NOT NULL DEFAULT 1,
+    created_by integer REFERENCES public.employee(employee_id) ON DELETE SET NULL,
+    updated_by integer REFERENCES public.employee(employee_id) ON DELETE SET NULL,
+    created_at timestamptz NOT NULL DEFAULT NOW(),
+    updated_at timestamptz NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.fitment_audit (
+    audit_id bigserial PRIMARY KEY,
+    entity_type text NOT NULL,
+    entity_id bigint NOT NULL,
+    action text NOT NULL,
+    actor_id integer REFERENCES public.employee(employee_id) ON DELETE SET NULL,
+    reason text,
+    before_state jsonb,
+    after_state jsonb,
+    metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+    created_at timestamptz NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.fitment_research_job (
+    job_id serial PRIMARY KEY,
+    part_id integer REFERENCES public.part(part_id) ON DELETE SET NULL,
+    query_text text NOT NULL,
+    search_scope jsonb NOT NULL DEFAULT '{}'::jsonb,
+    status text NOT NULL DEFAULT 'queued',
+    provider text NOT NULL DEFAULT 'evidence_capture',
+    allowed_domains jsonb NOT NULL DEFAULT '[]'::jsonb,
+    result_summary jsonb NOT NULL DEFAULT '{}'::jsonb,
+    error_message text,
+    requested_by integer REFERENCES public.employee(employee_id) ON DELETE SET NULL,
+    started_at timestamptz,
+    completed_at timestamptz,
+    created_at timestamptz NOT NULL DEFAULT NOW(),
+    updated_at timestamptz NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.fitment_evidence (
+    evidence_id serial PRIMARY KEY,
+    research_job_id integer REFERENCES public.fitment_research_job(job_id) ON DELETE SET NULL,
+    part_id integer REFERENCES public.part(part_id) ON DELETE SET NULL,
+    source_type text NOT NULL DEFAULT 'web_catalog',
+    source_url text,
+    source_domain text,
+    source_title text,
+    quoted_span text NOT NULL,
+    retrieved_at timestamptz NOT NULL DEFAULT NOW(),
+    trust_tier text NOT NULL DEFAULT 'tier_3_unverified_web',
+    approval_status text NOT NULL DEFAULT 'needs_review',
+    evidence_status text NOT NULL DEFAULT 'sourced_suggestion',
+    extracted_claim jsonb NOT NULL DEFAULT '{}'::jsonb,
+    reviewer_id integer REFERENCES public.employee(employee_id) ON DELETE SET NULL,
+    reviewed_at timestamptz,
+    review_reason text,
+    row_version integer NOT NULL DEFAULT 1,
+    created_by integer REFERENCES public.employee(employee_id) ON DELETE SET NULL,
+    created_at timestamptz NOT NULL DEFAULT NOW(),
+    updated_at timestamptz NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.fitment_claim_evidence (
+    claim_id integer NOT NULL REFERENCES public.fitment_claim(claim_id) ON DELETE CASCADE,
+    evidence_id integer NOT NULL REFERENCES public.fitment_evidence(evidence_id) ON DELETE CASCADE,
+    relation_type text NOT NULL DEFAULT 'supports',
+    created_at timestamptz NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (claim_id, evidence_id)
+);
+
+CREATE TABLE IF NOT EXISTS public.fitment_review (
+    review_id serial PRIMARY KEY,
+    part_id integer REFERENCES public.part(part_id) ON DELETE CASCADE,
+    raw_text text NOT NULL,
+    normalized_text text NOT NULL,
+    text_hash text NOT NULL,
+    source_type text NOT NULL DEFAULT 'text_import',
+    status text NOT NULL DEFAULT 'open',
+    taxonomy_version bigint NOT NULL DEFAULT 1,
+    parser_metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+    row_version integer NOT NULL DEFAULT 1,
+    created_by integer REFERENCES public.employee(employee_id) ON DELETE SET NULL,
+    updated_by integer REFERENCES public.employee(employee_id) ON DELETE SET NULL,
+    created_at timestamptz NOT NULL DEFAULT NOW(),
+    updated_at timestamptz NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.fitment_review_candidate (
+    candidate_id serial PRIMARY KEY,
+    review_id integer NOT NULL REFERENCES public.fitment_review(review_id) ON DELETE CASCADE,
+    interpretation_key text NOT NULL,
+    alternative_group_id text,
+    clause_index integer NOT NULL DEFAULT 0,
+    clause_text text,
+    clause_span jsonb,
+    source_origin text NOT NULL DEFAULT 'local',
+    effect text NOT NULL DEFAULT 'include',
+    candidate_payload jsonb NOT NULL,
+    identity_modes jsonb NOT NULL DEFAULT '{}'::jsonb,
+    qualifiers jsonb NOT NULL DEFAULT '{}'::jsonb,
+    field_provenance jsonb NOT NULL DEFAULT '{}'::jsonb,
+    unresolved_dimensions jsonb NOT NULL DEFAULT '[]'::jsonb,
+    collision_candidates jsonb NOT NULL DEFAULT '[]'::jsonb,
+    confidence_label text NOT NULL DEFAULT 'low',
+    ui_badge text NOT NULL DEFAULT 'Needs review',
+    disposition text NOT NULL DEFAULT 'pending',
+    preselected boolean NOT NULL DEFAULT FALSE,
+    already_linked boolean NOT NULL DEFAULT FALSE,
+    existing_rule_id integer REFERENCES public.part_application_rule(rule_id) ON DELETE SET NULL,
+    existing_part_app_id integer REFERENCES public.part_application(part_app_id) ON DELETE SET NULL,
+    dismissed_reason text,
+    edited_payload jsonb,
+    row_version integer NOT NULL DEFAULT 1,
+    updated_by integer REFERENCES public.employee(employee_id) ON DELETE SET NULL,
+    created_at timestamptz NOT NULL DEFAULT NOW(),
+    updated_at timestamptz NOT NULL DEFAULT NOW(),
+    UNIQUE (review_id, interpretation_key)
+);
+
+CREATE TABLE IF NOT EXISTS public.fitment_idempotency (
+    idempotency_id bigserial PRIMARY KEY,
+    actor_scope text NOT NULL,
+    endpoint_scope text NOT NULL,
+    idempotency_key text NOT NULL,
+    request_hash text NOT NULL,
+    response_status integer NOT NULL,
+    response_body jsonb NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT NOW(),
+    expires_at timestamptz NOT NULL DEFAULT (NOW() + INTERVAL '24 hours'),
+    UNIQUE (actor_scope, endpoint_scope, idempotency_key)
+);
+
+CREATE TABLE IF NOT EXISTS public.fitment_correction (
+    correction_id serial PRIMARY KEY,
+    part_id integer REFERENCES public.part(part_id) ON DELETE SET NULL,
+    review_id integer REFERENCES public.fitment_review(review_id) ON DELETE SET NULL,
+    candidate_id integer REFERENCES public.fitment_review_candidate(candidate_id) ON DELETE SET NULL,
+    raw_clause_text text NOT NULL,
+    original_extraction jsonb NOT NULL DEFAULT '{}'::jsonb,
+    corrected_extraction jsonb NOT NULL DEFAULT '{}'::jsonb,
+    correction_type text NOT NULL DEFAULT 'parser_extraction_fix',
+    promote_to_alias boolean NOT NULL DEFAULT FALSE,
+    promoted_alias_type text,
+    promoted_alias_id integer,
+    status text NOT NULL DEFAULT 'recorded',
+    reason text,
+    created_by integer REFERENCES public.employee(employee_id) ON DELETE SET NULL,
+    reviewed_by integer REFERENCES public.employee(employee_id) ON DELETE SET NULL,
+    reviewed_at timestamptz,
+    created_at timestamptz NOT NULL DEFAULT NOW(),
+    updated_at timestamptz NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.fitment_identity_mapping (
+    mapping_id serial PRIMARY KEY,
+    dimension text NOT NULL,
+    scope_key text NOT NULL DEFAULT 'global',
+    identity_key text NOT NULL,
+    source_id integer NOT NULL,
+    source_label text NOT NULL,
+    canonical_id integer,
+    disposition text NOT NULL DEFAULT 'preserve',
+    reference_counts jsonb NOT NULL DEFAULT '{}'::jsonb,
+    notes text,
+    reviewed_by integer REFERENCES public.employee(employee_id) ON DELETE SET NULL,
+    reviewed_at timestamptz,
+    created_at timestamptz NOT NULL DEFAULT NOW(),
+    updated_at timestamptz NOT NULL DEFAULT NOW(),
+    UNIQUE (dimension, scope_key, source_id)
+);
+
 -- Goods receipts
 CREATE INDEX IF NOT EXISTS idx_grn_line_grn_id ON public.goods_receipt_line (grn_id);
 CREATE INDEX IF NOT EXISTS idx_grn_line_part_id ON public.goods_receipt_line (part_id);

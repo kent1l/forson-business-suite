@@ -166,9 +166,10 @@ const PartForm = ({ part, initialValues = null, uppercaseText = false, brands, g
 
     // helper to display an application label
     const labelForApp = (app) => {
-        const label = [app?.make, app?.model, app?.engine].filter(Boolean).join(' ');
+        const prefix = app?.effect === 'exclude' ? 'EXCLUDES: ' : '';
+        const label = [app?.make, app?.model, app?.chassis ? `[${app.chassis}]` : null, app?.engine].filter(Boolean).join(' ');
         const years = app?.year_start || app?.year_end ? ` (${app.year_start || ''}–${app.year_end || ''})` : '';
-        return label + years;
+        return prefix + label + years;
     };
 
     const [isAppManagerOpen, setIsAppManagerOpen] = useState(false);
@@ -188,15 +189,23 @@ const PartForm = ({ part, initialValues = null, uppercaseText = false, brands, g
 
     useEffect(() => { fetchSelectedApps(); }, [fetchSelectedApps]);
 
+    const getStagedAppKey = (app) => {
+        if (app?.application_id) {
+            return `id:${app.application_id}:${app.year_start || ''}:${app.year_end || ''}:${app.effect || 'include'}`;
+        }
+        return `staged:${app?.make_id || app?.make || ''}:${app?.model_id || app?.model || ''}:${app?.chassis_id || app?.chassis || ''}:${app?.engine_id || app?.engine || ''}:${app?.year_start || ''}:${app?.year_end || ''}:${app?.effect || 'include'}`;
+    };
+
     const addApplication = (app) => {
-        if (!app || !app.application_id) return;
+        if (!app || (!app.application_id && !(app.make_id || app.make) && !(app.model_id || app.model))) return;
+        const nextKey = getStagedAppKey(app);
         setSelectedApps(prev => {
-            if (prev.find(a => String(a.application_id) === String(app.application_id))) return prev;
-            return [...prev, app];
+            if (prev.find(a => getStagedAppKey(a) === nextKey)) return prev;
+            return [...prev, { ...app, _staged_key: nextKey }];
         });
     };
 
-    const removeApplication = (id) => setSelectedApps(prev => prev.filter(a => a.application_id !== id));
+    const removeApplication = (idOrKey) => setSelectedApps(prev => prev.filter(a => (a._staged_key || a.application_id) !== idOrKey));
 
     const [taxRates, setTaxRates] = useState([]);
     const [isBrandModalOpen, setIsBrandModalOpen] = useState(false);
@@ -476,12 +485,15 @@ const PartForm = ({ part, initialValues = null, uppercaseText = false, brands, g
                         </div>
                         <div className="mt-2">
                             <div className="flex flex-wrap items-center gap-2">
-                                {selectedApps.slice(0, 6).map(app => (
-                                    <div key={app.application_id} className="inline-flex items-center space-x-2 bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-full px-3 py-1 text-xs text-gray-800 dark:text-slate-200">
-                                        <span className="truncate max-w-[16rem]">{labelForApp(app)}</span>
-                                        <button type="button" onClick={() => removeApplication(app.application_id)} className="text-gray-400 dark:text-slate-500 hover:text-danger-600 dark:hover:text-danger-400 ml-1">{'\u00d7'}</button>
-                                    </div>
-                                ))}
+                                {selectedApps.slice(0, 6).map(app => {
+                                    const pillKey = app._staged_key || app.application_id;
+                                    return (
+                                        <div key={pillKey} className={`inline-flex items-center space-x-2 border rounded-full px-3 py-1 text-xs ${app.effect === 'exclude' ? 'bg-danger-50 dark:bg-danger-950/30 border-danger-200 dark:border-danger-800 text-danger-800 dark:text-danger-200' : 'bg-gray-50 dark:bg-slate-900 border-gray-200 dark:border-slate-700 text-gray-800 dark:text-slate-200'}`}>
+                                            <span className="truncate max-w-[16rem]">{labelForApp(app)}</span>
+                                            <button type="button" onClick={() => removeApplication(pillKey)} className="text-gray-400 dark:text-slate-500 hover:text-danger-600 dark:hover:text-danger-400 ml-1" aria-label={`Remove ${labelForApp(app)}`}>{'\u00d7'}</button>
+                                        </div>
+                                    );
+                                })}
                                 {selectedApps.length > 6 && (
                                     <div className="inline-flex items-center text-xs text-gray-500 dark:text-slate-400">+{selectedApps.length - 6} more</div>
                                 )}

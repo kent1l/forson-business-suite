@@ -6,8 +6,9 @@ import Icon from '../components/ui/Icon';
 import { ICONS } from '../constants';
 import PaginationControls from '../components/ui/PaginationControls';
 import SortableHeader from '../components/ui/SortableHeader';
-import { useAuth } from '../contexts/AuthContext'; // <-- NEW: Import useAuth
+import { useAuth } from '../contexts/AuthContext';
 import ApplicationCascadeForm from '../components/applications/ApplicationCascadeForm';
+import { formatApplicationScopeBadge } from '../utils/engineCodeFormat';
 
 const ApplicationsPage = () => {
     const { hasPermission } = useAuth(); // <-- NEW: Use the auth context
@@ -103,7 +104,10 @@ const ApplicationsPage = () => {
 
     const handleSave = async (appData) => {
         const promise = currentApp
-            ? api.put(`/applications/${currentApp.application_id}`, appData)
+            ? api.put(`/applications/${currentApp.application_id}`, {
+                ...appData,
+                expected_version: currentApp.row_version,
+            })
             : api.post('/applications', appData);
 
         toast.promise(promise, {
@@ -129,7 +133,7 @@ const ApplicationsPage = () => {
             </div>
             <div className="bg-white p-6 rounded-xl border border-gray-200">
                 {loading && <p>Loading applications...</p>}
-                {error && <p className="text-red-500">{error}</p>}
+                {error && <p role="alert" aria-live="polite" className="text-red-500">{error}</p>}
                 {!loading && !error && (
                     <>
                     <div className="overflow-x-auto">
@@ -138,26 +142,37 @@ const ApplicationsPage = () => {
                                 <tr>
                                     <SortableHeader column="make" sortConfig={sortConfig} onSort={handleSort}>Make</SortableHeader>
                                     <SortableHeader column="model" sortConfig={sortConfig} onSort={handleSort}>Model</SortableHeader>
+                                    <th className="p-3 text-sm font-semibold text-gray-600">Chassis</th>
                                     <SortableHeader column="engine" sortConfig={sortConfig} onSort={handleSort}>Engine</SortableHeader>
+                                    <th className="p-3 text-sm font-semibold text-gray-600">Scope</th>
                                     <th className="p-3 text-sm font-semibold text-gray-600 text-right">Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                {applications.map(app => (
-                                    <tr key={app.application_id} className="border-b hover:bg-gray-50">
-                                        <td className="p-3 text-sm font-medium text-gray-800">{app.make}</td>
-                                        <td className="p-3 text-sm">{app.model}</td>
-                                        <td className="p-3 text-sm">{app.engine}</td>
-                                        <td className="p-3 text-sm text-right">
-                                            {hasPermission('applications:edit') && (
-                                                <>
-                                                    <button onClick={() => handleEdit(app)} className="text-blue-600 hover:text-blue-800 mr-4"><Icon path={ICONS.edit} className="h-5 w-5"/></button>
-                                                    <button onClick={() => handleDelete(app.application_id)} className="text-red-600 hover:text-red-800"><Icon path={ICONS.trash} className="h-5 w-5"/></button>
-                                                </>
-                                            )}
-                                        </td>
-                                    </tr>
-                                ))}
+                                {applications.map(app => {
+                                    const badge = formatApplicationScopeBadge(app);
+                                    return (
+                                        <tr key={app.application_id} className="border-b hover:bg-gray-50">
+                                            <td className="p-3 text-sm font-medium text-gray-800">{app.make}</td>
+                                            <td className="p-3 text-sm">{app.model}</td>
+                                            <td className="p-3 text-sm font-mono text-gray-600">{app.chassis || '—'}</td>
+                                            <td className="p-3 text-sm">{app.engine || '—'}</td>
+                                            <td className="p-3 text-sm">
+                                                <span className="text-xs px-2 py-0.5 rounded bg-gray-100 text-gray-700 font-medium">
+                                                    {badge}
+                                                </span>
+                                            </td>
+                                            <td className="p-3 text-sm text-right">
+                                                {hasPermission('applications:edit') && (
+                                                    <>
+                                                        <button onClick={() => handleEdit(app)} className="text-blue-600 hover:text-blue-800 mr-4" title="Edit application"><Icon path={ICONS.edit} className="h-5 w-5"/></button>
+                                                        <button onClick={() => handleDelete(app.application_id)} className="text-red-600 hover:text-red-800" title="Delete application"><Icon path={ICONS.trash} className="h-5 w-5"/></button>
+                                                    </>
+                                                )}
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
                             </tbody>
                         </table>
                     </div>

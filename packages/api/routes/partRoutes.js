@@ -9,6 +9,8 @@ const { normalizeText, normalizePartNumber, normalizeUom } = require('../helpers
 const { parsePaginationQuery, paginatedResponse } = require('../helpers/pagination');
 const { withYearTokens } = require('../helpers/vehicleFitmentSearch');
 const { generatePartDecisionToken, verifyPartDecisionToken } = require('../helpers/partDecisionToken');
+const { validateNoClientVerificationFlags, deriveIdentityAndQualifierModes } = require('../helpers/fitmentRuleSchema');
+const applicationRoutes = require('./applicationRoutes');
 const JevGateService = require('../services/jevGateService');
 const router = express.Router();
 const jevGates = new JevGateService({ db, meiliClient });
@@ -144,36 +146,152 @@ const manageBarcodes = async (client, barcodes, partId) => {
     }
 };
 
-// Add staged fitments while preserving existing links and their year ranges.
+// Add staged fitments while preserving existing links and their year ranges, enforcing full identity/parent validation.
 const manageApplications = async (client, applications, partId) => {
     if (!Array.isArray(applications) || applications.length === 0) return;
     const seen = new Set();
     for (const application of applications) {
-        const applicationId = application?.application_id;
+        if (!application || typeof application !== 'object') {
+            const err = new Error('Invalid application entry');
+            err.statusCode = 422;
+            throw err;
+        }
+        const flagCheck = validateNoClientVerificationFlags(application);
+        if (!flagCheck.valid) {
+            const err = new Error(`Forbidden client verification fields: ${flagCheck.offendingKeys.join(', ')}`);
+            err.statusCode = 422;
+            err.code = 'CLIENT_VERIFICATION_REJECTED';
+            throw err;
+        }
+
+        let applicationId = application.application_id != null ? Number(application.application_id) : null;
+        const hasIdentityFields =
+            application.make_id != null ||
+            application.make != null ||
+            application.model_id != null ||
+            application.model != null ||
+            application.engine_id != null ||
+            application.engine != null ||
+            application.chassis_id != null ||
+            application.chassis != null;
+
+        let appMeta = null;
+        if (hasIdentityFields || applicationId == null) {
+            const resolved = await applicationRoutes.resolveAndFindOrCreateApplication(client, {
+                ...application,
+                derive_model_engine: false,
+            });
+            if (applicationId != null && Number(applicationId) !== Number(resolved.application_id)) {
+                const err = new Error(`Supplied application_id ${applicationId} conflicts with resolved vehicle identity`);
+                err.statusCode = 422;
+                err.code = 'IDENTITY_MISMATCH';
+                throw err;
+            }
+            applicationId = resolved.application_id;
+            appMeta = {
+                make_id: resolved.resolvedMakeId,
+                model_id: resolved.resolvedModelId,
+                chassis_id: resolved.resolvedChassisId,
+                engine_id: resolved.resolvedEngineId,
+            };
+        } else {
+            if (!Number.isInteger(applicationId) || applicationId <= 0) {
+                const err = new Error('Invalid application_id');
+                err.statusCode = 422;
+                err.code = 'INVALID_APPLICATION_ID';
+                throw err;
+            }
+            const { rows } = await client.query(
+                'SELECT application_id, make_id, model_id, chassis_id, engine_id FROM application WHERE application_id = $1',
+                [applicationId]
+            );
+            if (!rows.length) {
+                const err = new Error(`application_id ${applicationId} not found`);
+                err.statusCode = 422;
+                err.code = 'APPLICATION_NOT_FOUND';
+                throw err;
+            }
+            appMeta = rows[0];
+        }
+
         if (!applicationId || seen.has(String(applicationId))) continue;
         seen.add(String(applicationId));
-        const yearStart = application.year_start || null;
-        const yearEnd = application.year_end || null;
-        await client.query(
+
+        const yearStart = application.year_start != null && application.year_start !== '' ? Number(application.year_start) : null;
+        const yearEnd = application.year_end != null && application.year_end !== '' ? Number(application.year_end) : null;
+        if ((yearStart !== null && !Number.isInteger(yearStart)) || (yearEnd !== null && !Number.isInteger(yearEnd)) || (yearStart !== null && yearEnd !== null && yearStart > yearEnd)) {
+            const err = new Error('Invalid year_start / year_end range on application');
+            err.statusCode = 422;
+            err.code = 'INVALID_YEAR_RANGE';
+            throw err;
+        }
+
+        const insPa = await client.query(
             `INSERT INTO part_application (part_id, application_id, year_start, year_end)
              VALUES ($1, $2, $3, $4)
-             ON CONFLICT (part_id, application_id) DO NOTHING`,
+             ON CONFLICT (part_id, application_id) DO NOTHING
+             RETURNING *`,
             [partId, applicationId, yearStart, yearEnd]
         );
-        const { rows } = await client.query(
-            'SELECT model_id, engine_id FROM application WHERE application_id = $1',
-            [applicationId]
-        );
-        const app = rows[0];
-        if (!app || !app.model_id || !app.engine_id) continue;
-        await client.query(
-            `INSERT INTO vehicle_engine_fitment (model_id, engine_id, year_start, year_end)
-             VALUES ($1, $2, $3, $4)
-             ON CONFLICT (model_id, engine_id) DO UPDATE SET
-                 year_start = LEAST(vehicle_engine_fitment.year_start, EXCLUDED.year_start),
-                 year_end = GREATEST(vehicle_engine_fitment.year_end, EXCLUDED.year_end)`,
-            [app.model_id, app.engine_id, yearStart, yearEnd]
-        );
+
+        if (insPa.rows.length > 0) {
+            const paRow = insPa.rows[0];
+            const modes = deriveIdentityAndQualifierModes({
+                ...application,
+                make_id: appMeta.make_id,
+                model_id: appMeta.model_id,
+                chassis_id: appMeta.chassis_id,
+                engine_id: appMeta.engine_id,
+                year_start: yearStart,
+                year_end: yearEnd,
+            });
+            const claimRes = await client.query(
+                `INSERT INTO fitment_claim (
+                   part_id, application_id, source_type, parser_mode, claim_effect,
+                   approval_status, evidence_status
+                 ) VALUES ($1, $2, 'part_form', 'manual', 'include', 'needs_review', 'user_declared')
+                 RETURNING claim_id`,
+                [partId, applicationId]
+            );
+            const claimId = claimRes.rows[0].claim_id;
+            const ruleRes = await client.query(
+                `INSERT INTO part_application_rule (
+                   part_id, application_id, claim_id, effect,
+                   make_mode, model_mode, chassis_mode, engine_mode,
+                   year_start, year_end, year_mode,
+                   approval_status, evidence_status
+                 ) VALUES ($1, $2, $3, 'include', $4, $5, $6, $7, $8, $9, $10, 'needs_review', 'user_declared')
+                 ON CONFLICT DO NOTHING
+                 RETURNING rule_id`,
+                [
+                    partId,
+                    applicationId,
+                    claimId,
+                    modes.make_mode,
+                    modes.model_mode,
+                    modes.chassis_mode,
+                    modes.engine_mode,
+                    yearStart,
+                    yearEnd,
+                    modes.year_mode,
+                ]
+            );
+            const ruleId = ruleRes.rows[0]?.rule_id || null;
+            await client.query(
+                'UPDATE part_application SET legacy_claim_id = $1, legacy_rule_id = $2 WHERE part_app_id = $3',
+                [claimId, ruleId, paRow.part_app_id]
+            );
+
+            if (appMeta.model_id && appMeta.engine_id) {
+                await applicationRoutes.deriveVehicleEngineFitment(
+                    client,
+                    appMeta.model_id,
+                    appMeta.engine_id,
+                    yearStart,
+                    yearEnd
+                );
+            }
+        }
     }
 };
 
@@ -563,6 +681,9 @@ router.get('/parts/:id/tags', protect, hasPermission('parts:view'), async (req, 
 });
 
 router.post('/parts', protect, hasPermission('parts:create'), async (req, res) => {
+    if (Array.isArray(req.body?.applications) && req.body.applications.length > 0 && !userHasPermission(req, 'applications:edit')) {
+        return res.status(403).json({ message: 'Linking vehicle applications requires applications:edit permission.' });
+    }
     const confirmation = req.body?.jev_confirmation;
     let duplicate = null;
 
@@ -647,8 +768,12 @@ router.post('/parts', protect, hasPermission('parts:create'), async (req, res) =
         if (err.code === '23505' && err.constraint === 'part_barcode_barcode_key') {
             return res.status(400).json({ error: 'This barcode is already assigned to another item.' });
         }
+        const status = err.status || err.statusCode;
+        if (status) {
+            return res.status(status).json({ code: err.code || 'VALIDATION_ERROR', message: err.message });
+        }
         console.error(`[${req.method} ${req.url}] Internal Error:`, err);
-        res.status(err.statusCode || 500).json({ message: err.statusCode ? err.message : 'Internal Server Error' });
+        res.status(500).json({ message: 'Internal Server Error' });
     } finally {
         client.release();
     }
@@ -657,6 +782,9 @@ router.post('/parts', protect, hasPermission('parts:create'), async (req, res) =
 router.post('/purchase-orders/:id/lines/:lineId/catalog', protect, hasPermission('goods_receipt:create'), async (req, res) => {
     if (!userHasPermission(req, 'parts:create')) {
         return res.status(403).json({ message: 'Creating a catalog part requires parts:create permission.' });
+    }
+    if (Array.isArray(req.body?.applications) && req.body.applications.length > 0 && !userHasPermission(req, 'applications:edit')) {
+        return res.status(403).json({ message: 'Linking vehicle applications requires applications:edit permission.' });
     }
 
     const poId = Number(req.params.id);
@@ -813,9 +941,16 @@ router.post('/purchase-orders/:id/lines/:lineId/catalog', protect, hasPermission
         });
     } catch (err) {
         await client.query('ROLLBACK');
+        const status = err.status || err.statusCode;
+        if (status) {
+            return res.status(status).json({
+                code: err.code || 'VALIDATION_ERROR',
+                message: err.message,
+            });
+        }
         console.error(`[${req.method} ${req.url}] Internal Error:`, err);
-        return res.status(err.statusCode || 500).json({
-            message: err.statusCode ? err.message : 'Could not catalog purchase-order line.',
+        return res.status(500).json({
+            message: 'Could not catalog purchase-order line.',
         });
     } finally {
         client.release();
@@ -830,6 +965,9 @@ router.put('/parts/bulk-update', protect, hasPermission('parts:edit'), async (re
 });
 
 router.put('/parts/:id', protect, hasPermission(['parts:edit', 'goods_receipt:create', 'goods_receipt:edit']), async (req, res) => {
+    if (Array.isArray(req.body?.applications) && req.body.applications.length > 0 && !userHasPermission(req, 'applications:edit')) {
+        return res.status(403).json({ message: 'Linking vehicle applications requires applications:edit permission.' });
+    }
     const { id } = req.params;
     const { tags, barcodes, modified_by, part_numbers_string, applications, ...partData } = req.body;
     partData.detail = normalizeText(partData.detail);
@@ -895,6 +1033,10 @@ router.put('/parts/:id', protect, hasPermission(['parts:edit', 'goods_receipt:cr
         await client.query('ROLLBACK');
         if (err.code === '23505' && err.constraint === 'part_barcode_barcode_key') {
             return res.status(400).json({ error: 'This barcode is already assigned to another item.' });
+        }
+        const status = err.status || err.statusCode;
+        if (status) {
+            return res.status(status).json({ code: err.code || 'VALIDATION_ERROR', message: err.message });
         }
         console.error(`[${req.method} ${req.url}] Internal Error:`, err);
         res.status(500).json({ message: 'Internal Server Error' });

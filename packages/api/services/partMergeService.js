@@ -769,8 +769,43 @@ class PartMergeService {
             counts.part_numbers = result.rows[0].reassigned_count;
         }
         
-        // Merge part_application
+        // Merge part_application and part_application_rule / fitment_claim (F16)
         if (rules.mergeApplications) {
+            // Reassign fitment_claim rows from merged parts to keepPartId
+            await client.query(`
+                UPDATE fitment_claim
+                SET part_id = $1, updated_at = NOW()
+                WHERE part_id = ANY($2)
+            `, [keepPartId, mergePartIds]);
+
+            // Retire duplicate part_application_rule rows that already exist on keepPartId with identical semantic scope
+            await client.query(`
+                UPDATE part_application_rule src_r
+                SET is_active = FALSE, updated_at = NOW()
+                WHERE src_r.part_id = ANY($2)
+                  AND src_r.is_active = TRUE
+                  AND EXISTS (
+                      SELECT 1
+                      FROM part_application_rule keep_r
+                      WHERE keep_r.part_id = $1
+                        AND keep_r.is_active = TRUE
+                        AND keep_r.application_id = src_r.application_id
+                        AND keep_r.effect = src_r.effect
+                        AND keep_r.year_start IS NOT DISTINCT FROM src_r.year_start
+                        AND keep_r.year_end IS NOT DISTINCT FROM src_r.year_end
+                        AND keep_r.market IS NOT DISTINCT FROM src_r.market
+                        AND keep_r.variant_descriptor IS NOT DISTINCT FROM src_r.variant_descriptor
+                        AND keep_r.position IS NOT DISTINCT FROM src_r.position
+                  )
+            `, [keepPartId, mergePartIds]);
+
+            // Move remaining distinct part_application_rule rows (preserving narrower year/qualifier rules and exclusions)
+            await client.query(`
+                UPDATE part_application_rule
+                SET part_id = $1, updated_at = NOW()
+                WHERE part_id = ANY($2) AND is_active = TRUE
+            `, [keepPartId, mergePartIds]);
+
             // Remove links already represented on the keep part before changing
             // their part_id, otherwise the immediate unique constraint fires.
             await client.query(`

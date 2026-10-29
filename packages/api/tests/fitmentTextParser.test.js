@@ -202,15 +202,37 @@ describe('parseFitmentText - dimensions', () => {
 });
 
 describe('parseFitmentText - clauses and carry-forward', () => {
-    test('a second clause inherits make, years and engine context', () => {
+    test('a second clause inherits make and explicitly-scoped years without bleeding engine/fuel specs (F01 / B02 / B03)', () => {
         const r = parse('Hilux 2005-2015 2.5L diesel, also Fortuner same years');
         const models = r.fitments.map(f => f.model).sort();
         expect(models).toEqual(['Fortuner', 'Hilux']);
-        for (const row of r.fitments) {
-            expect(row.year_start).toBe(2005);
-            expect(row.year_end).toBe(2015);
-            expect(row.fuel_type).toBe('diesel');
-        }
+        const hilux = r.fitments.find(f => f.model === 'Hilux');
+        const fortuner = r.fitments.find(f => f.model === 'Fortuner');
+        expect(hilux.year_start).toBe(2005);
+        expect(hilux.year_end).toBe(2015);
+        expect(hilux.fuel_type).toBe('diesel');
+        expect(fortuner.year_start).toBe(2005);
+        expect(fortuner.year_end).toBe(2015);
+        expect(fortuner.fuel_type).toBeNull();
+        expect(fortuner.engine_id).toBeNull();
+
+        const noCarry = parse('Toyota Hilux 2005-2015 2.5L diesel, Fortuner');
+        const fortNoCarry = noCarry.fitments.find(f => f.model === 'Fortuner');
+        expect(fortNoCarry.make_id).toBe(1);
+        expect(fortNoCarry.year_start).toBeNull();
+        expect(fortNoCarry.fuel_type).toBeNull();
+        expect(fortNoCarry.engine_id).toBeNull();
+    });
+
+    test('supports paired model/engine clauses (B10) and exclusion clauses (B11)', () => {
+        const paired = parse('Hilux 2KD-FTV / Fortuner 1KD-FTV');
+        expect(paired.fitments).toHaveLength(2);
+        expect(paired.fitments.find(f => f.model === 'Hilux').engine).toBe('2KD-FTV');
+        expect(paired.fitments.find(f => f.model === 'Fortuner').engine).toBe('1KD-FTV');
+
+        const excl = parse('Toyota Hilux except 2010');
+        expect(excl.fitments.some(f => f.effect === 'include' && f.model === 'Hilux')).toBe(true);
+        expect(excl.fitments.some(f => f.effect === 'exclude' && f.year_start === 2010 && f.year_end === 2010)).toBe(true);
     });
 
     test('resolves the make from the model when only the model is named', () => {

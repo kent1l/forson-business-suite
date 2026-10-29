@@ -7,36 +7,52 @@ import Modal from '../components/ui/Modal';
 import ApplicationSearchCombobox from '../components/applications/ApplicationSearchCombobox';
 import ApplicationCascadeForm from '../components/applications/ApplicationCascadeForm';
 import { useAuth } from '../contexts/AuthContext';
-import { groupFitmentsForDisplay, formatFitmentGroup } from '../utils/engineCodeFormat';
+import {
+    groupFitmentsForDisplay,
+    formatFitmentGroup,
+    formatApplicationScopeBadge,
+    formatQualifierSummary,
+} from '../utils/engineCodeFormat';
 
 const CONFIDENCE_BADGE = {
+    exact: 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300',
     high: 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300',
     medium: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300',
-    low: 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300'
+    low: 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300',
+    unresolved: 'bg-gray-200 text-gray-800 dark:bg-slate-700 dark:text-slate-200',
+};
+
+const STATUS_BADGE = {
+    'Confirmed compatible': 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300',
+    'Sourced suggestion': 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300',
+    'Needs review': 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300',
+    'Needs details': 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300',
+    'Unresolved': 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300',
+    'Already linked': 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300',
+    'Excluded': 'bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300',
 };
 
 const describeCandidate = (c) => {
-    const parts = [c.make, c.model, c.engine].filter(Boolean);
+    const prefix = c.effect === 'exclude' ? 'EXCLUDES: ' : '';
+    const parts = [c.make, c.model, c.chassis ? `[${c.chassis}]` : null, c.engine].filter(Boolean);
     const base = parts.length ? parts.join(' ') : '(unspecified vehicle)';
     const years = (c.year_start || c.year_end)
         ? ` (${[c.year_start, c.year_end].filter(Boolean).join('-')})`
         : '';
-    return base + years;
+    const quals = formatQualifierSummary(c);
+    return `${prefix}${base}${years}${quals ? ` [${quals}]` : ''}`;
 };
 
-// Phase 5: staff describe a fitment in plain text and get back structured,
-// editable candidate rows to review before anything is saved. The parse
-// endpoint only proposes -- nothing is written until "Save Selected" commits
-// each accepted row through the normal /applications + link endpoints below,
-// which independently re-validate any id the AI claimed to have matched.
 export const DescribeFitmentPanel = ({ partId, onCommitted, onStage }) => {
     const [text, setText] = useState('');
     const [parsing, setParsing] = useState(false);
     const [parseError, setParseError] = useState('');
     const [notes, setNotes] = useState('');
     const [candidates, setCandidates] = useState(null); // null = not parsed yet
+    const [reviewId, setReviewId] = useState(null);
     const [parseSource, setParseSource] = useState(null); // 'local' | 'hybrid' | 'ai'
     const [editingIndex, setEditingIndex] = useState(null);
+    const [promoteAliasOnEdit, setPromoteAliasOnEdit] = useState(false);
     const [saving, setSaving] = useState(false);
     const [saveErrors, setSaveErrors] = useState({});
     const parseRequest = useRef(0);
@@ -47,41 +63,51 @@ export const DescribeFitmentPanel = ({ partId, onCommitted, onStage }) => {
         setParsing(true);
         setParseError('');
         try {
-            const { data } = await api.post('/applications/parse-fitment-text', { text: value });
+            const { data } = await api.post('/applications/parse-fitment-text', {
+                text: value,
+                part_id: partId ?? undefined,
+            });
             if (request !== parseRequest.current) return;
-            // Keep each row's originally typed text so that if the reviewer
-            // resolves it by hand we can record what it meant (see
-            // recordAliasFromEdit).
-            const withMeta = (data.fitments || []).map(f => ({
-                ...f,
-                selected: true,
-                year_start: f.year_start ?? '',
-                year_end: f.year_end ?? '',
-                _rawMake: f.make_id ? null : f.make,
-                _rawModel: f.model_id ? null : f.model,
-                _rawEngine: f.engine_id ? null : f.engine,
-            }));
+            const rawList = data.candidates || data.fitments || [];
+            const withMeta = rawList
+                .filter(f => f.disposition !== 'dismissed')
+                .map(f => {
+                    const isAlreadyLinked = Boolean(f.already_linked || f.disposition === 'already_linked');
+                    const isUnresolved = f.confidence_label === 'unresolved' || (!f.make_id && !f.model_id && !f.engine_id && !f.chassis_id);
+                    const defaultSelected = f.preselected !== undefined
+                        ? Boolean(f.preselected)
+                        : (!isAlreadyLinked && !isUnresolved && f.confidence === 'high' && !f.alternative_group_id);
+                    return {
+                        ...f,
+                        selected: defaultSelected,
+                        year_start: f.year_start ?? '',
+                        year_end: f.year_end ?? '',
+                        _rawMake: f.make_id ? null : f.make,
+                        _rawModel: f.model_id ? null : f.model,
+                        _rawEngine: f.engine_id ? null : f.engine,
+                    };
+                });
             setCandidates(withMeta);
+            setReviewId(data.review_id || null);
             setNotes(data.notes || '');
-            setParseSource(data.source || 'ai');
+            setParseSource(data.source || 'local');
             setSaveErrors({});
         } catch (error) {
             if (request !== parseRequest.current) return;
             setParseError(error.response?.data?.error || error.response?.data?.message || error.message);
             setCandidates(null);
+            setReviewId(null);
             setParseSource(null);
         } finally {
             if (request === parseRequest.current) setParsing(false);
         }
-    }, [text]);
+    }, [text, partId]);
 
-    // Keep suggestions current while the operator types, with a short debounce
-    // and request sequencing so a slow earlier parse can never overwrite newer
-    // input. The explicit button remains useful for retrying immediately.
     useEffect(() => {
         if (text.trim().length < 3) {
             parseRequest.current += 1;
             setCandidates(null);
+            setReviewId(null);
             return undefined;
         }
         const timer = setTimeout(() => handleParse(text), 600);
@@ -92,60 +118,102 @@ export const DescribeFitmentPanel = ({ partId, onCommitted, onStage }) => {
         setCandidates(prev => prev.map((c, i) => i === idx ? { ...c, ...patch } : c));
     };
 
-    const removeCandidate = (idx) => {
+    const removeCandidate = async (idx) => {
+        const target = candidates?.[idx];
         setCandidates(prev => prev.filter((_, i) => i !== idx));
+        if (reviewId && target) {
+            try {
+                await api.patch(`/applications/fitment-reviews/${reviewId}`, {
+                    action: 'dismiss_candidate',
+                    candidate_id: target.candidate_id,
+                    interpretation_key: target.interpretation_key,
+                    disposition: 'dismissed',
+                    reason: 'Dismissed in review panel',
+                });
+            } catch {
+                // Non-blocking review dismissal persistence
+            }
+        }
     };
 
-    // The learning loop (PRD-FBS-FIT-002 §8.3): when a reviewer resolves text the
-    // parser could not match, record what that text meant. The next time anyone
-    // types it, the deterministic parser resolves it locally and no AI call is
-    // needed at all. Recorded only on an explicit edit -- never inferred from a
-    // silent save -- and a failure here must never block the fitment itself.
-    const recordAliasFromEdit = async (original, payload) => {
+    const recordCorrectionAndOptionalAlias = async (original, payload, shouldPromoteAlias) => {
+        try {
+            await api.post('/applications/fitment-corrections', {
+                part_id: partId ?? null,
+                review_id: reviewId ?? null,
+                candidate_id: original.candidate_id ?? null,
+                raw_text: original.clause_text || text,
+                original: {
+                    make: original.make,
+                    model: original.model,
+                    engine: original.engine,
+                },
+                corrected: {
+                    make_id: payload.make_id ?? null,
+                    model_id: payload.model_id ?? null,
+                    engine_id: payload.engine_id ?? null,
+                },
+                promote_to_alias: Boolean(shouldPromoteAlias),
+            });
+        } catch {
+            // Non-blocking correction logging
+        }
+
+        if (!shouldPromoteAlias) return;
+
         const learnings = [
-            { raw: original._rawMake, key: 'make_id', id: payload.make_id },
-            { raw: original._rawModel, key: 'model_id', id: payload.model_id },
-            { raw: original._rawEngine, key: 'engine_id', id: payload.engine_id },
+            { raw: original._rawMake, type: 'make', id: payload.make_id },
+            { raw: original._rawModel, type: 'model', id: payload.model_id, make_id: payload.make_id },
+            { raw: original._rawEngine, type: 'engine', id: payload.engine_id },
         ];
-        for (const { raw, key, id } of learnings) {
+        for (const { raw, type, id, make_id } of learnings) {
             if (!raw || !id) continue;
             try {
-                await api.post('/applications/fitment-alias', { alias_text: raw, [key]: id });
+                await api.post('/applications/fitment-alias', {
+                    type,
+                    target_id: id,
+                    make_id: make_id ?? undefined,
+                    alias_text: raw,
+                });
             } catch {
-                // A duplicate or a collision with a canonical name is expected
-                // and harmless; the fitment save is what matters.
+                // Non-atomic phrases or collisions are rejected by the server; fitment edit still succeeds
             }
         }
     };
 
     const handleEditSave = (idx, payload) => {
         const original = candidates[idx];
-        recordAliasFromEdit(original, payload);
-        // ApplicationCascadeForm's payload uses undefined for unset fields;
-        // normalize those back to null/'' so the candidate row stays consistent.
+        recordCorrectionAndOptionalAlias(original, payload, promoteAliasOnEdit);
         updateCandidate(idx, {
             make_id: payload.make_id ?? null,
             make: payload.make ?? null,
             model_id: payload.model_id ?? null,
             model: payload.model ?? null,
+            chassis_id: payload.chassis_id ?? original.chassis_id ?? null,
+            chassis: payload.chassis ?? original.chassis ?? null,
             engine_id: payload.engine_id ?? null,
             engine: payload.engine ?? null,
             displacement_liters: payload.displacement_liters ?? null,
             fuel_type: payload.fuel_type ?? null,
-            confidence: 'high' // user-confirmed via the cascading form
+            confidence: 'high',
+            confidence_label: 'high',
+            ui_badge: 'Needs review',
+            selected: true,
         });
         setEditingIndex(null);
+        setPromoteAliasOnEdit(false);
     };
 
-    const selectedCount = (candidates || []).filter(c => c.selected).length;
+    const selectedCount = (candidates || []).filter(c => c.selected && !c.already_linked).length;
 
     const handleSaveSelected = async () => {
         if (!candidates) return;
         setSaving(true);
         const errors = {};
+        const batchIdemSeed = `${partId || 'stage'}-${Date.now()}`;
         for (let i = 0; i < candidates.length; i++) {
             const c = candidates[i];
-            if (!c.selected) continue;
+            if (!c.selected || c.already_linked) continue;
             try {
                 if (c.year_start && c.year_end && Number(c.year_start) > Number(c.year_end)) {
                     throw new Error('Start year must not be after end year.');
@@ -155,16 +223,33 @@ export const DescribeFitmentPanel = ({ partId, onCommitted, onStage }) => {
                     make: c.make_id ? undefined : (c.make ?? undefined),
                     model_id: c.model_id ?? undefined,
                     model: c.model_id ? undefined : (c.model ?? undefined),
+                    chassis_id: c.chassis_id ?? undefined,
+                    chassis: c.chassis_id ? undefined : (c.chassis ?? undefined),
                     engine_id: c.engine_id ?? undefined,
                     engine: c.engine_id ? undefined : (c.engine ?? undefined),
                     displacement_liters: c.displacement_liters ?? undefined,
-                    fuel_type: c.fuel_type ?? undefined
+                    fuel_type: c.fuel_type ?? undefined,
                 });
-                const fitment = { ...app, make: c.make, model: c.model, engine: c.engine, year_start: c.year_start || null, year_end: c.year_end || null };
+                const fitment = {
+                    ...app,
+                    make: app.make ?? c.make,
+                    model: app.model ?? c.model,
+                    chassis: app.chassis ?? c.chassis ?? null,
+                    engine: app.engine ?? c.engine,
+                    year_start: c.year_start || null,
+                    year_end: c.year_end || null,
+                    effect: c.effect || 'include',
+                    market: c.market || null,
+                    variant: c.variant || null,
+                    position: c.position || null,
+                    drivetrain: c.drivetrain || null,
+                };
                 if (onStage) {
                     onStage(fitment);
                 } else {
-                    await api.post(`/parts/${partId}/applications`, fitment);
+                    await api.post(`/parts/${partId}/applications`, fitment, {
+                        headers: { 'Idempotency-Key': `${batchIdemSeed}-${i}` },
+                    });
                 }
             } catch (error) {
                 errors[i] = error.response?.data?.message || error.message;
@@ -174,12 +259,12 @@ export const DescribeFitmentPanel = ({ partId, onCommitted, onStage }) => {
         setSaveErrors(errors);
         if (Object.keys(errors).length === 0) {
             setCandidates(null);
+            setReviewId(null);
             setText('');
             setNotes('');
             setParseSource(null);
             onCommitted();
         } else {
-            // Keep only the rows that failed so staff can retry/fix just those.
             setCandidates(prev => prev.filter((_, i) => errors[i] !== undefined).map(c => ({ ...c, selected: true })));
             onCommitted();
         }
@@ -214,7 +299,7 @@ export const DescribeFitmentPanel = ({ partId, onCommitted, onStage }) => {
                     {parsing ? 'Updating suggestions…' : 'Parse Description'}
                 </button>
             </div>
-            {parseError && <p className="text-sm text-danger-600 dark:text-danger-400 mt-2">{parseError}</p>}
+            {parseError && <p role="alert" aria-live="polite" className="text-sm text-danger-600 dark:text-danger-400 mt-2">{parseError}</p>}
 
             {candidates && (
                 <div className="mt-3 space-y-2">
@@ -230,36 +315,52 @@ export const DescribeFitmentPanel = ({ partId, onCommitted, onStage }) => {
                     {notes && <p className="text-xs text-amber-700 dark:text-amber-400 italic">{notes}</p>}
                     {candidates.length === 0 && <p className="text-sm text-gray-500 dark:text-slate-400">No fitments recognized in that text.</p>}
                     {candidates.map((c, idx) => (
-                        <div key={idx} className="flex items-start gap-2 p-2 border border-gray-200 dark:border-slate-700 rounded-lg">
+                        <div key={idx} className={`flex items-start gap-2 p-2 border rounded-lg ${c.effect === 'exclude' ? 'border-danger-200 dark:border-danger-900/60 bg-danger-50/30 dark:bg-danger-950/20' : 'border-gray-200 dark:border-slate-700'}`}>
                             <input
+                                id={`fitment-candidate-${idx}`}
                                 type="checkbox"
                                 checked={c.selected}
+                                disabled={c.already_linked}
                                 onChange={(e) => updateCandidate(idx, { selected: e.target.checked })}
-                                className="mt-1"
+                                className="mt-1 disabled:opacity-50"
                             />
                             <div className="flex-1 min-w-0">
                                 <div className="flex items-center gap-2 flex-wrap">
-                                    <span className="text-sm font-medium text-gray-900 dark:text-slate-100">{describeCandidate(c)}</span>
-                                    <span className={`text-xs px-1.5 py-0.5 rounded ${CONFIDENCE_BADGE[c.confidence] || CONFIDENCE_BADGE.low}`}>{c.confidence}</span>
+                                    <label htmlFor={`fitment-candidate-${idx}`} className="text-sm font-medium text-gray-900 dark:text-slate-100 cursor-pointer">
+                                        {describeCandidate(c)}
+                                    </label>
+                                    {c.effect === 'exclude' && (
+                                        <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-danger-100 text-danger-800 dark:bg-danger-900/50 dark:text-danger-300">
+                                            Excluded
+                                        </span>
+                                    )}
+                                    {c.ui_badge && (
+                                        <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${STATUS_BADGE[c.ui_badge] || CONFIDENCE_BADGE.low}`}>
+                                            {c.ui_badge}
+                                        </span>
+                                    )}
+                                    <span className={`text-xs px-1.5 py-0.5 rounded ${CONFIDENCE_BADGE[c.confidence] || CONFIDENCE_BADGE.low}`}>
+                                        Confidence: {c.confidence}
+                                    </span>
                                     {!c.make_id && c.make && <span className="text-xs text-gray-500 dark:text-slate-400">(new make)</span>}
                                     {!c.model_id && c.model && <span className="text-xs text-gray-500 dark:text-slate-400">(new model)</span>}
                                     {!c.engine_id && c.engine && <span className="text-xs text-gray-500 dark:text-slate-400">(new engine)</span>}
                                 </div>
                                 <div className="flex items-center gap-2 mt-1">
                                     <input
-                                        type="number" placeholder="Year start" value={c.year_start}
+                                        type="number" placeholder="Year start" aria-label={`Year start for candidate ${idx + 1}`} value={c.year_start}
                                         onChange={(e) => updateCandidate(idx, { year_start: e.target.value })}
                                         className="w-24 px-2 py-1 border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 font-mono rounded text-xs"
                                     />
                                     <input
-                                        type="number" placeholder="Year end" value={c.year_end}
+                                        type="number" placeholder="Year end" aria-label={`Year end for candidate ${idx + 1}`} value={c.year_end}
                                         onChange={(e) => updateCandidate(idx, { year_end: e.target.value })}
                                         className="w-24 px-2 py-1 border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 font-mono rounded text-xs"
                                     />
                                     <button type="button" onClick={() => setEditingIndex(idx)} className="text-primary-600 dark:text-primary-400 hover:text-primary-700 text-xs font-medium">Edit</button>
                                     <button type="button" onClick={() => removeCandidate(idx)} className="text-danger-600 dark:text-danger-400 hover:text-danger-700 text-xs font-medium">Remove</button>
                                 </div>
-                                {saveErrors[idx] && <p className="text-xs text-danger-600 dark:text-danger-400 mt-1">{saveErrors[idx]}</p>}
+                                {saveErrors[idx] && <p role="alert" aria-live="polite" className="text-xs text-danger-600 dark:text-danger-400 mt-1">{saveErrors[idx]}</p>}
                             </div>
                         </div>
                     ))}
@@ -278,14 +379,27 @@ export const DescribeFitmentPanel = ({ partId, onCommitted, onStage }) => {
                 </div>
             )}
 
-            <Modal isOpen={editingIndex !== null} onClose={() => setEditingIndex(null)} title="Edit Parsed Fitment">
+            <Modal isOpen={editingIndex !== null} onClose={() => { setEditingIndex(null); setPromoteAliasOnEdit(false); }} title="Edit Parsed Fitment">
                 {editingIndex !== null && (
-                    <ApplicationCascadeForm
-                        submitLabel="Apply"
-                        application={candidates[editingIndex]}
-                        onCancel={() => setEditingIndex(null)}
-                        onSave={(payload) => handleEditSave(editingIndex, payload)}
-                    />
+                    <div className="space-y-3">
+                        <div className="flex items-center gap-2 p-2 bg-gray-50 dark:bg-slate-800/60 border border-gray-200 dark:border-slate-700 rounded-lg">
+                            <input
+                                id="promote-alias-checkbox"
+                                type="checkbox"
+                                checked={promoteAliasOnEdit}
+                                onChange={(e) => setPromoteAliasOnEdit(e.target.checked)}
+                            />
+                            <label htmlFor="promote-alias-checkbox" className="text-xs text-gray-700 dark:text-slate-300 cursor-pointer">
+                                Save atomic synonym as a global catalog alias (only for single-vehicle synonyms)
+                            </label>
+                        </div>
+                        <ApplicationCascadeForm
+                            submitLabel="Apply"
+                            application={candidates[editingIndex]}
+                            onCancel={() => { setEditingIndex(null); setPromoteAliasOnEdit(false); }}
+                            onSave={(payload) => handleEditSave(editingIndex, payload)}
+                        />
+                    </div>
                 )}
             </Modal>
         </div>
@@ -466,12 +580,15 @@ const PartApplicationManager = ({ part, onCancel }) => {
     const handleSaveYears = async (partAppId, years) => {
         if (!canEdit) return;
         try {
-            await api.put(`/part-applications/${partAppId}`, years);
+            await api.put(`/part-applications/${partAppId}`, {
+                ...years,
+                expected_rule_version: currentLink?.row_version,
+            });
             setIsEditModalOpen(false);
             await refetchData();
         } catch (error) {
             console.error(error);
-            alert('Failed to update year range.');
+            alert('Failed to update year range: ' + (error.response?.data?.message || error.message));
         }
     };
 
@@ -502,9 +619,26 @@ const PartApplicationManager = ({ part, onCancel }) => {
                     {displayGroups.map((group, groupIdx) => (
                         group.fitments.length === 1 ? (
                             <li key={group.fitments[0].part_app_id} className="text-sm flex justify-between items-center py-2 text-gray-900 dark:text-slate-100">
-                                <div>
-                                    <span className="font-medium">{group.fitments[0].make} {group.fitments[0].model} {group.fitments[0].engine ? `(${group.fitments[0].engine})` : ''}</span>
-                                    <span className="text-xs text-gray-500 dark:text-slate-400 font-mono ml-2">{formatYearRange(group.fitments[0].year_start, group.fitments[0].year_end)}</span>
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span className="font-medium">
+                                        {group.fitments[0].make} {group.fitments[0].model}
+                                        {group.fitments[0].chassis ? ` [${group.fitments[0].chassis}]` : ''}
+                                        {group.fitments[0].engine ? ` (${group.fitments[0].engine})` : ''}
+                                    </span>
+                                    <span className="text-xs text-gray-500 dark:text-slate-400 font-mono">{formatYearRange(group.fitments[0].year_start, group.fitments[0].year_end)}</span>
+                                    {group.fitments[0].effect === 'exclude' && (
+                                        <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-danger-100 text-danger-800 dark:bg-danger-900/50 dark:text-danger-300">
+                                            Excluded
+                                        </span>
+                                    )}
+                                    {formatQualifierSummary(group.fitments[0]) && (
+                                        <span className="text-xs text-gray-500 dark:text-slate-400">
+                                            [{formatQualifierSummary(group.fitments[0])}]
+                                        </span>
+                                    )}
+                                    <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${STATUS_BADGE[formatApplicationScopeBadge(group.fitments[0])] || CONFIDENCE_BADGE.low}`}>
+                                        {formatApplicationScopeBadge(group.fitments[0])}
+                                    </span>
                                 </div>
                                 {canEdit && (
                                     <div className="flex items-center space-x-3">
@@ -514,20 +648,24 @@ const PartApplicationManager = ({ part, onCancel }) => {
                                 )}
                             </li>
                         ) : (
-                            // Several engines share this vehicle and year range, so the
-                            // header shows them in the shorthand staff write by hand
-                            // ("4D55/6"). Each engine is still its own row underneath
-                            // with its own controls -- the compression is display only,
-                            // and every engine remains individually linked and
-                            // individually removable.
                             <li key={`group-${groupIdx}`} className="py-2 text-gray-900 dark:text-slate-100">
-                                <div className="text-sm font-medium" title={group.engineCodes.join(', ')}>
-                                    {formatFitmentGroup(group)}
+                                <div className="text-sm font-medium flex items-center gap-1.5 flex-wrap" title={group.engineCodes.join(', ')}>
+                                    <span>{formatFitmentGroup(group)}</span>
+                                    {group.effect === 'exclude' && (
+                                        <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-danger-100 text-danger-800 dark:bg-danger-900/50 dark:text-danger-300">
+                                            Excluded
+                                        </span>
+                                    )}
                                 </div>
                                 <ul className="mt-1 ml-3 space-y-1 border-l border-gray-200 dark:border-slate-700 pl-3">
                                     {group.fitments.map(app => (
                                         <li key={app.part_app_id} className="flex justify-between items-center text-xs text-gray-600 dark:text-slate-300">
-                                            <span className="font-mono">{app.engine || '—'}</span>
+                                            <div className="flex items-center gap-1.5">
+                                                <span className="font-mono">{app.engine || '—'}</span>
+                                                <span className={`text-[11px] px-1 py-0.5 rounded font-medium ${STATUS_BADGE[formatApplicationScopeBadge(app)] || CONFIDENCE_BADGE.low}`}>
+                                                    {formatApplicationScopeBadge(app)}
+                                                </span>
+                                            </div>
                                             {canEdit && (
                                                 <div className="flex items-center space-x-2">
                                                     <button onClick={() => handleEditLink(app)} className="text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 p-1" title="Edit Years"><Icon path={ICONS.edit} className="h-3.5 w-3.5"/></button>

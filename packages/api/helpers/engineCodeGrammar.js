@@ -129,10 +129,66 @@ function hasVariantSuffix(token) {
     return /-[A-Z0-9]{1,5}$/i.test(String(token || '').trim());
 }
 
+const STRIP_PREFIX_RE = /^(?:engine|eng\.?|motor|code)\s*[:-]?\s*/i;
+const VALID_CHAR_RE = /^[A-Z0-9-]+$/;
+
+const TWO_PART_PATTERNS = [
+    /^([0-9]{1,2}[A-Z]{1,3})[- ]?([A-Z0-9]{1,5})$/,
+    /^([A-Z]{1,3}[0-9]{1,2}[A-Z]?)[- ]?([A-Z0-9]{1,5})$/,
+];
+const SINGLE_BLOCK_PATTERNS = [
+    /^[0-9][A-Z][0-9]{1,2}[A-Z]?$/,
+    /^[A-Z]{1,3}[0-9]{2,3}[A-Z]{0,4}$/,
+    /^[0-9]{1,2}[A-Z]{1,3}$/,
+    /^[A-Z]{1,4}[0-9]{1,2}$/,
+];
+
+function canonicalizeEngineCode(raw) {
+    if (raw === null || raw === undefined) return { canonical: null, valid: true };
+    let s = String(raw).trim();
+    if (!s) return { canonical: null, valid: true };
+
+    s = s.replace(STRIP_PREFIX_RE, '').trim().toUpperCase();
+    s = s.replace(/[–—_./]+/g, '-').replace(/\s+/g, ' ');
+
+    if (s.length < 2 || s.length > 20) {
+        return { canonical: s, valid: false, reason: 'Engine code must be 2–20 characters.' };
+    }
+
+    for (const re of TWO_PART_PATTERNS) {
+        const m = s.match(re);
+        if (m) {
+            const candidate = `${m[1]}-${m[2]}`;
+            const compact = candidate.replace(/-/g, '');
+            if (SINGLE_BLOCK_PATTERNS.some((sb) => sb.test(compact)) && !s.includes('-') && !s.includes(' ')) {
+                return { canonical: compact, valid: true };
+            }
+            return { canonical: candidate, valid: true };
+        }
+    }
+
+    const compact = s.replace(/[-\s]+/g, '');
+    if (SINGLE_BLOCK_PATTERNS.some((re) => re.test(compact))) {
+        return { canonical: compact, valid: true };
+    }
+
+    const normalized = s.replace(/\s+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+    if (VALID_CHAR_RE.test(normalized) && /[A-Z]/.test(normalized) && /[0-9]/.test(normalized)) {
+        return { canonical: normalized, valid: true };
+    }
+
+    return {
+        canonical: normalized,
+        valid: false,
+        reason: 'Expected an engine code like "1KD-FTV", "4D56", "4JJ1-TCX", or "L15A".',
+    };
+}
+
 module.exports = {
     ENGINE_TOKEN_RE,
     lookupKey,
     normalizeAlias,
     expandSlashToken,
     hasVariantSuffix,
+    canonicalizeEngineCode,
 };
