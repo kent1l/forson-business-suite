@@ -2,22 +2,22 @@
 
 > Forson Business Suite | Date: 2026-10-29
 > Planning branch observed: `vehicle-fitment-fixes-and-improvements`
-> Status: Design handoff only. Phase 0 investigation is mandatory and not complete. No application changes, migrations, runtime tests, commits, or deployment performed for this plan.
+> Status: Phase 0 investigation/design completed on 2026-10-29; see the [evidence and implementation contracts](./vehicle-fitment-phase0/README.md). Read-only development DB audit, offline parser checks and disposable real API/SQL fixtures executed. No application changes, migrations, commits or deployment.
 > Related history: [Fitment parsing, linking and display](./2026-09-10_fitment-parsing-linking-display.md). Its historical completion claims must be rechecked; this plan does not reset or certify earlier work.
 
 ## 0. Status at a Glance
 
 | Phase | Scope | Status |
 |---|---|---|
-| 0 | Actual code/database investigation, reproducible baseline, decisions and revised implementation contracts | Not started |
-| 1 | Canonical identity, scoped relationships and safe migration | Not started; design depends on Phase 0 |
-| 2 | Clause-aware extraction, grounded resolution and candidate reconciliation | Not started; design depends on Phase 0 |
+| 0 | Actual code/database investigation, reproducible baseline, decisions and revised implementation contracts | Done: audit/mapping, baseline, decisions and contracts; 19 disposable API/SQL scenarios, 21 executable acceptance groups (3pass/18fail). Later-phase implementation and deeper verification pending. See [investigation](./vehicle-fitment-phase0/README.md) |
+| 1 | Canonical identity, scoped relationships and safe migration | Not started; selected contracts in linked Phase 0 investigation |
+| 2 | Clause-aware extraction, grounded resolution and candidate reconciliation | Not started; selected contracts in linked Phase 0 investigation |
 | 3 | Review experience, authoritative save validation and reusable corrections | Not started |
 | 4 | Selective sourced research and evidence registry | Not started |
 | 5 | Integrated verification, measured improvement and staged rollout | Not started |
 | Deferred | Production embeddings and mandatory additional AI judgment layer | Explicitly deferred; see section 10 |
 
-Documentation publication is not Phase 0 completion. All schema/table and API proposals below are provisional unless identified as current repository references. The implementer must investigate alternatives, document findings and choose the smallest maintainable change that satisfies the business rules. Do not mechanically create every conceptual entity proposed in discussion.
+The linked investigation is authoritative for current Phase 0 observations and selected technical contracts; later-phase prose here remains requirements. Documentation publication is not Phase 0 completion. All schema/table and API proposals below are provisional unless identified as current repository references. The implementer must investigate alternatives, document findings and choose the smallest maintainable change that satisfies the business rules. Do not mechanically create every conceptual entity proposed in discussion.
 
 ## 1. For a New Session or Agent Picking This Up
 
@@ -64,6 +64,8 @@ Discovery starting points, not an exhaustive dependency map:
 No live database connection, migration execution, runtime parser reproduction, API test, browser test or remote shell execution was available through this authoring session's project tools. Previous concerns about grounding, inheritance and reconciliation are investigation hypotheses, not newly verified defects. Do not copy historical test counts or database counts as current evidence.
 
 ## 4. Phase 0 — Mandatory Investigation and Design Gate
+
+Phase 0 execution record: [vehicle-fitment-phase0/README.md](./vehicle-fitment-phase0/README.md), including F01–F18, D01–D09, captured SQL/results, exact current parser outputs and the outstanding gate checklist. Phase0 investigation/design is complete; target implementation has not started. Red acceptance cases and deeper subchecks are tracked explicitly in the investigation.
 
 ### 4.1 Investigation scope
 
@@ -234,3 +236,4 @@ Candidate verification commands from current root instructions, to confirm again
 | Date | Change |
 |---|---|
 | 2026-10-29 | Created investigation-first handoff consolidating resolver accuracy, semantic deduplication, scoped vehicle/engine relationships, review safeguards, evidence reuse and selective research. Phase 0 must select and document the actual implementation against current code and database before later phases begin. |
+| 2026-10-29 | Investigated Phase 0 against local development PostgreSQL and actual parser/validator/merge functions; linked evidence, complete preserving identity mapping, design contracts, measured baselines, 19 disposable API/SQL reproductions (including pool starvation and staged-link authorization bypass) and explicit later-phase verification limits; completed Phase0 discovery/design without application implementation. |

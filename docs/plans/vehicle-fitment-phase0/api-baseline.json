@@ -1,0 +1,374 @@
+{
+  "baseline": "e09e7bf",
+  "environment": {
+    "database": "fitment_phase0_1793287523268_7773d2",
+    "version": "PostgreSQL 15.18 (Debian 15.18-1.pgdg12+1) on x86_64-pc-linux-gnu, compiled by gcc (Debian 12.2.0-14+deb12u1) 12.2.0, 64-bit",
+    "schema": "development schema-only dump",
+    "schema_sha256": "fe6c8b2c6f3046ced25dfedc5004c985fe04963eb035c018d7184aae19042e49",
+    "data": "synthetic fixture only",
+    "providers": "disabled",
+    "workers": "not started"
+  },
+  "results": [
+    {
+      "id": "H01",
+      "scenario": "Existing model ID with conflicting supplied label",
+      "status": 201,
+      "actual": {
+        "application_id": 3,
+        "make_id": 1,
+        "model_id": 11,
+        "engine_id": null,
+        "make": "Toyota",
+        "model": "Hilux",
+        "engine": null
+      },
+      "target": "422 ID/name mismatch; no identity write"
+    },
+    {
+      "id": "H02",
+      "scenario": "Model-only versus derived-make representation",
+      "status": 201,
+      "actual": {
+        "application_id": 4,
+        "make_id": null,
+        "model_id": 12,
+        "engine_id": null,
+        "make": null,
+        "model": "Fortuner",
+        "engine": null
+      },
+      "equivalent_row_count": 2,
+      "target": "One canonical identity with derived parent, not two specificity representations"
+    },
+    {
+      "id": "H03",
+      "scenario": "Duplicate link with changed years still derives association",
+      "first": {
+        "status": 201,
+        "body": {
+          "part_app_id": 1,
+          "part_id": 1,
+          "application_id": 1,
+          "year_start": 2005,
+          "year_end": 2010
+        }
+      },
+      "retry": {
+        "status": 201,
+        "body": "",
+        "text": ""
+      },
+      "links": [
+        {
+          "application_id": 1,
+          "year_start": 2005,
+          "year_end": 2010
+        }
+      ],
+      "association": [
+        {
+          "model_id": 11,
+          "engine_id": 101,
+          "year_start": 1990,
+          "year_end": 2020
+        }
+      ],
+      "target": "Explicit existing/conflict outcome; no knowledge widening on no-op link"
+    },
+    {
+      "id": "H04",
+      "scenario": "20 concurrent identical engine-only application creations",
+      "statuses": [
+        201,
+        500,
+        201,
+        201,
+        201,
+        201,
+        201,
+        201,
+        201,
+        201,
+        201,
+        201,
+        201,
+        201,
+        201,
+        201,
+        201,
+        201,
+        201,
+        201
+      ],
+      "rows": 1,
+      "target": "One row; all calls saved/existing with deterministic status, no 500"
+    },
+    {
+      "id": "H06",
+      "scenario": "Parts-only user dedicated link route",
+      "status": 403,
+      "target": "403"
+    },
+    {
+      "id": "H07",
+      "scenario": "Parts-only user staged part creation",
+      "status": 201,
+      "part_id": 2,
+      "links": [
+        {
+          "application_id": 2
+        }
+      ],
+      "target": "403 and zero part/link writes"
+    },
+    {
+      "id": "H08",
+      "scenario": "Whole application phrase learned as model alias",
+      "status": 201,
+      "aliases": [
+        {
+          "alias_text": "TOYOTA HILUX 2005 DIESEL",
+          "model_id": 11,
+          "source": "learned"
+        }
+      ],
+      "target": "422: phrase is correction, not identity synonym"
+    },
+    {
+      "id": "H09",
+      "scenario": "Mismatched make/model parent",
+      "status": 400,
+      "target": "400 or422; no row"
+    },
+    {
+      "id": "H10",
+      "scenario": "Reversed link years",
+      "status": 400,
+      "target": "400 or422; no mutation"
+    },
+    {
+      "id": "H11",
+      "scenario": "Local engine-only API without provider",
+      "status": 200,
+      "actual": {
+        "fitments": [
+          {
+            "make": null,
+            "make_id": null,
+            "model": null,
+            "model_id": null,
+            "engine": "TEST1",
+            "engine_id": 101,
+            "displacement_liters": 2.5,
+            "fuel_type": "diesel",
+            "year_start": null,
+            "year_end": null,
+            "confidence": "high",
+            "source": "local"
+          }
+        ],
+        "notes": "",
+        "source": "local",
+        "ai_used": false
+      },
+      "target": "Engine-only, no fabricated vehicle, no provider call"
+    },
+    {
+      "id": "H12",
+      "scenario": "Chassis-only request without irrelevant engine",
+      "status": 400,
+      "actual": {
+        "message": "At least one of make, model, or engine is required"
+      },
+      "target": "Chassis claim retained; currently schema has no chassis dimension"
+    },
+    {
+      "id": "H13",
+      "scenario": "Make-only claim approval/unknown scope visibility",
+      "status": 201,
+      "actual": {
+        "application_id": 7,
+        "make_id": 1,
+        "model_id": null,
+        "engine_id": null,
+        "make": "Toyota",
+        "model": null,
+        "engine": null
+      },
+      "target": "Review-only make claim; absent dimensions not unrestricted"
+    },
+    {
+      "id": "H14",
+      "scenario": "Version token and verification flags on existing link update",
+      "status": 200,
+      "actual": {
+        "part_app_id": 1,
+        "part_id": 1,
+        "application_id": 1,
+        "year_start": 2006,
+        "year_end": 2010
+      },
+      "target": "409 stale /400 unknown client-owned verification flags; no update"
+    },
+    {
+      "id": "H15",
+      "scenario": "Review/dismissal persistence endpoint",
+      "status": 404,
+      "actual": {},
+      "target": "Versioned review API; current route absent"
+    },
+    {
+      "id": "H16",
+      "scenario": "Research disabled/manual recovery endpoint",
+      "status": 404,
+      "actual": {},
+      "target": "Explicit503/manual fallback; current route absent"
+    },
+    {
+      "id": "H17",
+      "scenario": "Separate correction endpoint",
+      "status": 404,
+      "actual": {},
+      "target": "Reviewable correction without alias side effect; current route absent"
+    },
+    {
+      "id": "H18",
+      "scenario": "Actual search and catalog shapes",
+      "application_document": {
+        "application_id": 1,
+        "make_id": 1,
+        "model_id": 11,
+        "engine_id": 101,
+        "make": "Toyota",
+        "model": "Hilux",
+        "engine": "TEST1",
+        "label": "Toyota Hilux TEST1"
+      },
+      "catalog": [
+        {
+          "part_id": 1,
+          "applications": "Toyota Hilux TEST1"
+        }
+      ],
+      "target": "Canonical facts with qualifier/evidence status; flattened text discovery cannot confirm compatibility"
+    },
+    {
+      "id": "H19",
+      "scenario": "Search predicate fixture setup",
+      "actual": [
+        {
+          "rows": 1
+        }
+      ],
+      "target": "Explicit different engine must not match via model association; real exposure count in audit.json"
+    },
+    {
+      "id": "H05",
+      "scenario": "20 concurrent identical links",
+      "statuses": [
+        "timeout",
+        "timeout",
+        "timeout",
+        "timeout",
+        "timeout",
+        "timeout",
+        "timeout",
+        "timeout",
+        "timeout",
+        "timeout",
+        "timeout",
+        "timeout",
+        "timeout",
+        "timeout",
+        "timeout",
+        "timeout",
+        "timeout",
+        "timeout",
+        "timeout",
+        "timeout"
+      ],
+      "pool_activity": [
+        {
+          "state": "idle",
+          "wait_event_type": "Client",
+          "wait_event": "ClientRead",
+          "query": "COMMIT"
+        },
+        {
+          "state": "idle",
+          "wait_event_type": "Client",
+          "wait_event": "ClientRead",
+          "query": "COMMIT"
+        },
+        {
+          "state": "idle",
+          "wait_event_type": "Client",
+          "wait_event": "ClientRead",
+          "query": "COMMIT"
+        },
+        {
+          "state": "idle",
+          "wait_event_type": "Client",
+          "wait_event": "ClientRead",
+          "query": "COMMIT"
+        },
+        {
+          "state": "idle",
+          "wait_event_type": "Client",
+          "wait_event": "ClientRead",
+          "query": "COMMIT"
+        },
+        {
+          "state": "idle",
+          "wait_event_type": "Client",
+          "wait_event": "ClientRead",
+          "query": "COMMIT"
+        },
+        {
+          "state": "idle",
+          "wait_event_type": "Client",
+          "wait_event": "ClientRead",
+          "query": "COMMIT"
+        },
+        {
+          "state": "idle",
+          "wait_event_type": "Client",
+          "wait_event": "ClientRead",
+          "query": "COMMIT"
+        },
+        {
+          "state": "idle",
+          "wait_event_type": "Client",
+          "wait_event": "ClientRead",
+          "query": "COMMIT"
+        },
+        {
+          "state": "idle",
+          "wait_event_type": "Client",
+          "wait_event": "ClientRead",
+          "query": "COMMIT"
+        }
+      ],
+      "empty_bodies": 0,
+      "rows": 1,
+      "target": "One link and explicit saved/existing result for every call; no pool starvation"
+    }
+  ],
+  "counts": {
+    "applications": 6,
+    "links": 2,
+    "outbox": 4
+  },
+  "fixture_log_tail": [
+    "hasPermission invoked: required=applications:edit method=POST url=/api/parts/1/applications authHeaderPresent=true userPresent=true",
+    "Permission allowed for POST /api/parts/1/applications user=fixture_editor permissions=applications:edit",
+    "Authenticated user: username=unknown permission_level=undefined permissions=applications:view,applications:edit,parts:create,parts:edit,parts:view",
+    "hasPermission invoked: required=applications:edit method=POST url=/api/parts/1/applications authHeaderPresent=true userPresent=true",
+    "Permission allowed for POST /api/parts/1/applications user=fixture_editor permissions=applications:edit",
+    "Authenticated user: username=unknown permission_level=undefined permissions=applications:view,applications:edit,parts:create,parts:edit,parts:view",
+    "hasPermission invoked: required=applications:edit method=POST url=/api/parts/1/applications authHeaderPresent=true userPresent=true",
+    "Permission allowed for POST /api/parts/1/applications user=fixture_editor permissions=applications:edit"
+  ],
+  "cleanup": "owned disposable database dropped"
+}

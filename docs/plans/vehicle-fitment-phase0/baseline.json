@@ -1,0 +1,421 @@
+{
+  "fixture": "Synthetic identifiers; no compatibility evidence",
+  "results": [
+    {
+      "id": "B01",
+      "input": "TOYOTA HILUX, FORTUNER, HI-ACE",
+      "actual": {
+        "fitments": [
+          {
+            "make": "Toyota",
+            "make_id": 1,
+            "model": "Hilux",
+            "model_id": 11,
+            "engine": null,
+            "engine_id": null,
+            "displacement_liters": null,
+            "fuel_type": null,
+            "year_start": null,
+            "year_end": null,
+            "confidence": "high",
+            "source": "local"
+          },
+          {
+            "make": "Toyota",
+            "make_id": 1,
+            "model": "Fortuner",
+            "model_id": 12,
+            "engine": null,
+            "engine_id": null,
+            "displacement_liters": null,
+            "fuel_type": null,
+            "year_start": null,
+            "year_end": null,
+            "confidence": "high",
+            "source": "local"
+          },
+          {
+            "make": "Toyota",
+            "make_id": 1,
+            "model": "Hiace",
+            "model_id": 13,
+            "engine": null,
+            "engine_id": null,
+            "displacement_liters": null,
+            "fuel_type": null,
+            "year_start": null,
+            "year_end": null,
+            "confidence": "high",
+            "source": "local"
+          }
+        ],
+        "residue": [],
+        "unresolvedClauses": [],
+        "fullyResolved": true,
+        "safeForLocalOnly": false
+      },
+      "target_passes": true
+    },
+    {
+      "id": "B02",
+      "input": "Toyota Hilux 2005-2015 2.5L diesel, Fortuner",
+      "actual": {
+        "fitments": [
+          {
+            "make": "Toyota",
+            "make_id": 1,
+            "model": "Hilux",
+            "model_id": 11,
+            "engine": "TEST1",
+            "engine_id": 101,
+            "displacement_liters": 2.5,
+            "fuel_type": "diesel",
+            "year_start": 2005,
+            "year_end": 2015,
+            "confidence": "medium",
+            "source": "local"
+          },
+          {
+            "make": "Toyota",
+            "make_id": 1,
+            "model": "Fortuner",
+            "model_id": 12,
+            "engine": "TEST1",
+            "engine_id": 101,
+            "displacement_liters": 2.5,
+            "fuel_type": "diesel",
+            "year_start": 2005,
+            "year_end": 2015,
+            "confidence": "medium",
+            "source": "local"
+          }
+        ],
+        "residue": [],
+        "unresolvedClauses": [],
+        "fullyResolved": false,
+        "safeForLocalOnly": false
+      },
+      "target_passes": false,
+      "difference": "Expected values to be strictly equal:\n\n2005 !== null\n"
+    },
+    {
+      "id": "B03",
+      "input": "Toyota Hilux 2005-2015 2.5L diesel, Fortuner same years",
+      "actual": {
+        "fitments": [
+          {
+            "make": "Toyota",
+            "make_id": 1,
+            "model": "Hilux",
+            "model_id": 11,
+            "engine": "TEST1",
+            "engine_id": 101,
+            "displacement_liters": 2.5,
+            "fuel_type": "diesel",
+            "year_start": 2005,
+            "year_end": 2015,
+            "confidence": "medium",
+            "source": "local"
+          },
+          {
+            "make": "Toyota",
+            "make_id": 1,
+            "model": "Fortuner",
+            "model_id": 12,
+            "engine": "TEST1",
+            "engine_id": 101,
+            "displacement_liters": 2.5,
+            "fuel_type": "diesel",
+            "year_start": 2005,
+            "year_end": 2015,
+            "confidence": "medium",
+            "source": "local"
+          }
+        ],
+        "residue": [],
+        "unresolvedClauses": [],
+        "fullyResolved": false,
+        "safeForLocalOnly": false
+      },
+      "target_passes": false,
+      "difference": "Expected values to be strictly equal:\n\n101 !== null\n"
+    },
+    {
+      "id": "B04",
+      "input": "TEST1, TEST2",
+      "actual": {
+        "fitments": [
+          {
+            "make": null,
+            "make_id": null,
+            "model": null,
+            "model_id": null,
+            "engine": "TEST1",
+            "engine_id": 101,
+            "displacement_liters": 2.5,
+            "fuel_type": "diesel",
+            "year_start": null,
+            "year_end": null,
+            "confidence": "high",
+            "source": "local"
+          },
+          {
+            "make": null,
+            "make_id": null,
+            "model": null,
+            "model_id": null,
+            "engine": "TEST2",
+            "engine_id": 102,
+            "displacement_liters": 3,
+            "fuel_type": "diesel",
+            "year_start": null,
+            "year_end": null,
+            "confidence": "high",
+            "source": "local"
+          }
+        ],
+        "residue": [],
+        "unresolvedClauses": [],
+        "fullyResolved": true,
+        "safeForLocalOnly": true
+      },
+      "target_passes": true
+    },
+    {
+      "id": "B05",
+      "input": "Repeated local text",
+      "actual": {
+        "fitments": [
+          {
+            "make": "Toyota",
+            "make_id": 1,
+            "model": "Hilux",
+            "model_id": 11,
+            "engine": null,
+            "engine_id": null,
+            "displacement_liters": null,
+            "fuel_type": null,
+            "year_start": null,
+            "year_end": null,
+            "confidence": "high",
+            "source": "local"
+          }
+        ],
+        "residue": [],
+        "unresolvedClauses": [],
+        "fullyResolved": true,
+        "safeForLocalOnly": false
+      },
+      "target_passes": true
+    },
+    {
+      "id": "B06",
+      "input": "Same interpretation, AI omitted make id",
+      "actual": [
+        {
+          "make": "Toyota",
+          "make_id": 1,
+          "model": "Hilux",
+          "model_id": 11,
+          "engine": null,
+          "engine_id": null,
+          "displacement_liters": null,
+          "fuel_type": null,
+          "year_start": null,
+          "year_end": null,
+          "confidence": "high",
+          "source": "local"
+        },
+        {
+          "make": "Toyota",
+          "make_id": null,
+          "model": "Hilux",
+          "model_id": 11,
+          "engine": null,
+          "engine_id": null,
+          "displacement_liters": null,
+          "fuel_type": null,
+          "year_start": null,
+          "year_end": null,
+          "confidence": "high",
+          "source": "ai"
+        }
+      ],
+      "target_passes": false,
+      "difference": "Expected values to be strictly equal:\n\n2 !== 1\n"
+    },
+    {
+      "id": "B07",
+      "input": "Same IDs/year, contradictory fuel/qualifier",
+      "actual": [
+        {
+          "make": "Toyota",
+          "make_id": 1,
+          "model": "Hilux",
+          "model_id": 11,
+          "engine": null,
+          "engine_id": null,
+          "displacement_liters": null,
+          "fuel_type": null,
+          "year_start": null,
+          "year_end": null,
+          "confidence": "high",
+          "source": "local"
+        }
+      ],
+      "target_passes": false,
+      "difference": "Expected values to be strictly equal:\n\n1 !== 2\n"
+    },
+    {
+      "id": "B08",
+      "input": "Valid but wrong ID/name",
+      "actual": {
+        "fitments": [
+          {
+            "make": "Toyota",
+            "make_id": 1,
+            "model": "Fortuner",
+            "model_id": 11,
+            "engine": null,
+            "engine_id": null,
+            "displacement_liters": null,
+            "fuel_type": null,
+            "year_start": null,
+            "year_end": null,
+            "confidence": "high"
+          }
+        ],
+        "notes": ""
+      },
+      "target_passes": false,
+      "difference": "The expression evaluated to a falsy value:\n\n  assert.ok(r.fitments[0].model_id!==11 || r.fitments[0].confidence!=='high')\n"
+    },
+    {
+      "id": "B09",
+      "input": "Shortlist residue excludes recognized clause",
+      "actual": {
+        "makes": [
+          {
+            "make_id": 2,
+            "make_name": "Other"
+          }
+        ],
+        "models": [],
+        "engines": []
+      },
+      "target_passes": false,
+      "difference": "The expression evaluated to a falsy value:\n\n  assert.ok(r.models.some(m=>m.model_id===11))\n"
+    },
+    {
+      "id": "B10",
+      "input": "Paired models and engines in one clause",
+      "actual": {
+        "fitments": [
+          {
+            "make": "Toyota",
+            "make_id": 1,
+            "model": "Fortuner",
+            "model_id": 12,
+            "engine": "TEST1",
+            "engine_id": 101,
+            "displacement_liters": 2.5,
+            "fuel_type": "diesel",
+            "year_start": null,
+            "year_end": null,
+            "confidence": "low",
+            "source": "local"
+          },
+          {
+            "make": "Toyota",
+            "make_id": 1,
+            "model": "Fortuner",
+            "model_id": 12,
+            "engine": "TEST2",
+            "engine_id": 102,
+            "displacement_liters": 3,
+            "fuel_type": "diesel",
+            "year_start": null,
+            "year_end": null,
+            "confidence": "low",
+            "source": "local"
+          },
+          {
+            "make": "Toyota",
+            "make_id": 1,
+            "model": "Hilux",
+            "model_id": 11,
+            "engine": "TEST1",
+            "engine_id": 101,
+            "displacement_liters": 2.5,
+            "fuel_type": "diesel",
+            "year_start": null,
+            "year_end": null,
+            "confidence": "low",
+            "source": "local"
+          },
+          {
+            "make": "Toyota",
+            "make_id": 1,
+            "model": "Hilux",
+            "model_id": 11,
+            "engine": "TEST2",
+            "engine_id": 102,
+            "displacement_liters": 3,
+            "fuel_type": "diesel",
+            "year_start": null,
+            "year_end": null,
+            "confidence": "low",
+            "source": "local"
+          }
+        ],
+        "residue": [
+          "/"
+        ],
+        "unresolvedClauses": [
+          "Hilux TEST1 / Fortuner TEST2"
+        ],
+        "fullyResolved": false,
+        "safeForLocalOnly": false
+      },
+      "target_passes": false,
+      "difference": "Expected values to be strictly equal:\n\n4 !== 2\n"
+    },
+    {
+      "id": "B11",
+      "input": "Toyota Hilux except 2010",
+      "actual": {
+        "fitments": [
+          {
+            "make": "Toyota",
+            "make_id": 1,
+            "model": "Hilux",
+            "model_id": 11,
+            "engine": null,
+            "engine_id": null,
+            "displacement_liters": null,
+            "fuel_type": null,
+            "year_start": 2010,
+            "year_end": 2010,
+            "confidence": "low",
+            "source": "local"
+          }
+        ],
+        "residue": [
+          "except"
+        ],
+        "unresolvedClauses": [
+          "Toyota Hilux except 2010"
+        ],
+        "fullyResolved": false,
+        "safeForLocalOnly": false
+      },
+      "target_passes": false,
+      "difference": "The expression evaluated to a falsy value:\n\n  assert.ok(r.fitments.some(f=>f.effect==='exclude'&&f.year_start===2010))\n"
+    }
+  ],
+  "summary": {
+    "cases": 11,
+    "target_pass": 3,
+    "target_fail": 8
+  }
+}
