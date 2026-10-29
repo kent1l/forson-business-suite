@@ -9,11 +9,12 @@
 
 | Phase | Scope | Status |
 |---|---|---|
-| 0 | Actual code/database investigation, reproducible baseline, decisions and revised implementation contracts | Done: audit/mapping, baseline, decisions and contracts; 19 disposable API/SQL scenarios, 21 executable acceptance groups (3pass/18fail). Later-phase implementation and deeper verification pending. See [investigation](./vehicle-fitment-phase0/README.md) |
+| 0 | Actual code/database investigation, reproducible baseline, decisions and revised implementation contracts | Done: audit/mapping, baseline, decisions and contracts; 19 disposable API/SQL scenarios and 21 executable acceptance groups (10 integration oracles plus 11 parser baseline cases; 3 pass / 18 fail). Later-phase implementation and deeper verification pending. See [investigation](./vehicle-fitment-phase0/README.md) |
+| 0.5 | Standalone hardening: code-only fixes independent of v2 schema (section 4.4) | Not started |
 | 1 | Canonical identity, scoped relationships and safe migration | Not started; selected contracts in linked Phase 0 investigation |
 | 2 | Clause-aware extraction, grounded resolution and candidate reconciliation | Not started; selected contracts in linked Phase 0 investigation |
 | 3 | Review experience, authoritative save validation and reusable corrections | Not started |
-| 4 | Selective sourced research and evidence registry | Not started |
+| 4 | Selective sourced research and evidence registry (conditional: start only after Phases 1–3 show measured value, see section 8) | Not started |
 | 5 | Integrated verification, measured improvement and staged rollout | Not started |
 | Deferred | Production embeddings and mandatory additional AI judgment layer | Explicitly deferred; see section 10 |
 
@@ -61,7 +62,9 @@ Discovery starting points, not an exhaustive dependency map:
 - `database/initial_schema.sql`, `database/migrations/`
 - Existing taxonomy index, engine grammar, model pools, JEV integration, application display/search helpers and newly changed part-creation flow: locate through current tools.
 
-No live database connection, migration execution, runtime parser reproduction, API test, browser test or remote shell execution was available through this authoring session's project tools. Previous concerns about grounding, inheritance and reconciliation are investigation hypotheses, not newly verified defects. Do not copy historical test counts or database counts as current evidence.
+> Superseded (see Phase 0 investigation): the original authoring session had no live database, runtime reproduction or API test access. Phase 0 later obtained these against the development database and disposable fixtures; findings F01–F18 are now verified observations. Browser and provider checks remain unrun.
+
+Original authoring-time note: previous concerns about grounding, inheritance and reconciliation are investigation hypotheses, not newly verified defects. Do not copy historical test counts or database counts as current evidence.
 
 ## 4. Phase 0 — Mandatory Investigation and Design Gate
 
@@ -106,6 +109,19 @@ Required Phase 0 outputs:
 Do not begin application/schema implementation until those outputs are documented and mandatory behavior is covered by executable acceptance cases. Phase 0 may add documentation and isolated reproducibility/test artifacts, but must not mutate production or silently clean live data. Run potentially destructive tests only in a disposable database.
 
 The implementing agent may decide ordinary implementation details after recording evidence. Obtain owner approval before broadening scope, destructive/irreversible data changes, semantic reinterpretation of legacy fitments, material recurring paid services, or weakening the safeguards here. If blocked, continue independent discovery and report the exact missing prerequisite; do not claim complete investigation.
+
+### 4.4 Phase 0.5 — Standalone hardening (code-only, no v2 schema)
+
+Verified Phase 0 defects that need no new tables and should ship ahead of the v2 work, each with a regression test taken from the Phase 0 baseline:
+- F18: release/avoid post-commit pool acquisition in link saves (use the transaction client for the outbox).
+- F09: enforce `applications:edit` on staged part-create, purchase-line catalog and bulk link writers; reject atomically.
+- F10: duplicate/no-op link saves return an explicit existing outcome and do not widen `vehicle_engine_fitment` years.
+- F06: validate ID/name/parent agreement on application writes.
+- F11: engine search must not match through a model association when the application names a different engine.
+- F01: stop carrying years/displacement/fuel across clauses unless wording establishes scope.
+- F12: reject whole-phrase global alias learning.
+
+Constraints: development environment only. **No record fixing here**: the Toyota Hiace (14/29), Isuzu D-Max (23/81) and engine 1NRFE/1NR-FE (11/15) mappings, and any legacy data change, are owner-run on an authorized environment after rehearsal, never in dev. Code fixes must handle the duplicates safely (unresolved choice, no guessed ID) rather than clean them. Exit: the relevant Phase 0 baseline cases turn green without schema changes; run the full API tests and `graphify update .`.
 
 ## 5. Phase 1 — Canonical Identities and Scoped Relationships
 
@@ -165,6 +181,8 @@ Server revalidates every save path, not just parser callers: identity, relations
 Exit: API contract and authorization tests, retry/race tests and real browser review prove safeguards cannot be bypassed through direct calls or alternate entry points.
 
 ## 8. Phase 4 — Selective Research and Evidence Registry
+
+Conditional: begin only after Phases 1–3 are verified and the acceptance corpus shows that unresolved terms or unsupported relationships remain a material staff burden. Phases 1–3 must not depend on it. Internet search is for unknown identifiable terms (for example an unlearned model or engine name): it returns cited, staff-reviewed suggestions only. It never creates taxonomy, aliases or compatibility automatically.
 
 Research only after local resolution for unknown identifiable terms, unsupported relationships, material conflicts, unclear restrictions or exact branded part-number application verification. Formatting uncertainty goes to extraction; missing vehicle identifiers go to staff. Keep research off every keystroke and the checkout critical path.
 
