@@ -524,17 +524,7 @@ async function resolveAndFindOrCreateApplication(client, payload = {}) {
     }
   }
 
-  // Only derive vehicle_engine_fitment when explicitly confirmed or non-conflicting
-  if (resolvedModelId && resolvedEngineId && payload.derive_model_engine !== false) {
-    await deriveVehicleEngineFitment(
-      client,
-      resolvedModelId,
-      resolvedEngineId,
-      payload.year_start ?? null,
-      payload.year_end ?? null
-    );
-  }
-
+  // Identity entry is not approval of a vehicle-engine relationship.
   const viewRes = await client.query(
     'SELECT * FROM application_view WHERE application_id = $1',
     [applicationId]
@@ -899,8 +889,7 @@ router.put('/applications/:id', protect, hasPermission('applications:edit'), asy
       return res.status(404).json({ message: 'Application not found' });
     }
     if (
-      req.body?.expected_version != null &&
-      Number(req.body.expected_version) !== Number(current.rows[0].row_version)
+      Number(req.body?.expected_version) !== Number(current.rows[0].row_version)
     ) {
       await client.query('ROLLBACK');
       return res.status(409).json({
@@ -961,9 +950,6 @@ router.put('/applications/:id', protect, hasPermission('applications:edit'), asy
       [resolvedMakeId, resolvedModelId, resolvedEngineId, resolvedChassisId, id]
     );
 
-    if (resolvedModelId && resolvedEngineId) {
-      await deriveVehicleEngineFitment(client, resolvedModelId, resolvedEngineId);
-    }
 
     const view = await client.query(
       'SELECT * FROM application_view WHERE application_id = $1',
@@ -981,6 +967,7 @@ router.put('/applications/:id', protect, hasPermission('applications:edit'), asy
         ...(err.details || {}),
       });
     }
+    if (err.code === '55000') return res.status(409).json({code:'APPLICATION_IN_USE',message:'This application has fitment history. Create a separate application and review its links instead.'});
     console.error('Error updating application:', err.message);
     res.status(500).send('Server Error');
   } finally {
@@ -999,6 +986,7 @@ router.delete('/applications/:id', protect, hasPermission('applications:edit'), 
     taxonomyIndex.invalidate();
     res.json({ message: 'Application deleted successfully' });
   } catch (err) {
+    if (err.code === '55000') return res.status(409).json({code:'APPLICATION_IN_USE',message:'This application has fitment history and cannot be deleted.'});
     if (err.code === '23503') {
       return res.status(400).json({ message: 'Cannot delete this application because it is linked to one or more parts.' });
     }
@@ -1024,6 +1012,11 @@ router.post('/applications/:id/merge', protect, hasPermission('applications:edit
   try {
     await client.query('BEGIN');
 
+    const history = await client.query('SELECT 1 FROM fitment_claim WHERE application_id=ANY($1::int[]) UNION ALL SELECT 1 FROM part_application_rule WHERE application_id=ANY($1::int[]) LIMIT 1',[[sourceId,targetId]]);
+    if (history.rows.length) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({code:'APPLICATION_IN_USE',message:'Applications with fitment history require claim-by-claim review; automatic identity merging is unavailable.'});
+    }
     const checkRes = await client.query(
       'SELECT application_id FROM application WHERE application_id = ANY($1::int[])',
       [[sourceId, targetId]]

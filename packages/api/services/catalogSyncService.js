@@ -1,3 +1,4 @@
+const { fitmentRulesSql } = require('../helpers/fitmentDocumentSql');
 const db = require('../db');
 const { activeAliasCondition } = require('../helpers/partNumberSoftDelete');
 
@@ -41,6 +42,8 @@ const CATALOG_SELECT = `
            LEFT JOIN vehicle_model vmd ON a.model_id = vmd.model_id
            LEFT JOIN engine veng ON a.engine_id = veng.engine_id
           WHERE pa.part_id = pv.part_id) AS applications,
+        ${fitmentRulesSql()} AS fitment_rules,
+        2 AS fitment_schema_version,
         'discovery_only'::text AS applications_status,
         FALSE AS fitment_confirmation
     FROM public.parts_view AS pv
@@ -52,6 +55,8 @@ const shapeRow = (row) => ({
     barcodes: row.barcodes || [],
     part_numbers: row.part_numbers || '',
     applications: row.applications || '',
+    fitment_rules: row.fitment_rules || [],
+    fitment_schema_version: 2,
     applications_status: 'discovery_only',
     fitment_confirmation: false,
 });

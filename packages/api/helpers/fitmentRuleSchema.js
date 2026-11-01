@@ -4,6 +4,8 @@ const { z } = require('zod');
 const { lookupKey } = require('./engineCodeGrammar');
 
 const SCOPE_MODES = ['specified', 'unrestricted', 'not_supplied', 'unknown', 'not_applicable'];
+const MODE_FIELDS = ['make', 'model', 'chassis', 'engine', 'year', 'market', 'variant', 'position', 'drivetrain', 'transmission', 'fuel', 'displacement', 'generation'];
+const RULE_FIELDS = ['effect', ...MODE_FIELDS.map(k => `${k}_mode`), 'year_start', 'year_end', 'market', 'variant_descriptor', 'position', 'drivetrain', 'transmission', 'fuel_type_qualifier', 'displacement_liters_qualifier', 'generation'];
 const EFFECTS = ['include', 'exclude'];
 const FUEL_TYPES = ['diesel', 'gasoline', 'hybrid', 'electric', 'lpg', 'other'];
 const APPROVAL_STATUSES = ['draft', 'needs_review', 'approved', 'rejected', 'superseded', 'legacy_unverified'];
@@ -277,6 +279,8 @@ function computeInterpretationKey(row = {}) {
 
 module.exports = {
   SCOPE_MODES,
+  MODE_FIELDS,
+  RULE_FIELDS,
   EFFECTS,
   FUEL_TYPES,
   APPROVAL_STATUSES,

@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import api from '../../api';
+import { fitmentSavePayload } from '../../utils/engineCodeFormat';
 import toast from 'react-hot-toast';
 import Modal from '../ui/Modal';
 import Combobox from '../ui/Combobox';
@@ -189,15 +190,10 @@ const PartForm = ({ part, initialValues = null, uppercaseText = false, brands, g
 
     useEffect(() => { fetchSelectedApps(); }, [fetchSelectedApps]);
 
-    const getStagedAppKey = (app) => {
-        if (app?.application_id) {
-            return `id:${app.application_id}:${app.year_start || ''}:${app.year_end || ''}:${app.effect || 'include'}`;
-        }
-        return `staged:${app?.make_id || app?.make || ''}:${app?.model_id || app?.model || ''}:${app?.chassis_id || app?.chassis || ''}:${app?.engine_id || app?.engine || ''}:${app?.year_start || ''}:${app?.year_end || ''}:${app?.effect || 'include'}`;
-    };
+    const getStagedAppKey = app => JSON.stringify(fitmentSavePayload(app));
 
     const addApplication = (app) => {
-        if (!app || (!app.application_id && !(app.make_id || app.make) && !(app.model_id || app.model))) return;
+        if (!app || (!app.application_id && !(app.make_id || app.make) && !(app.model_id || app.model) && !(app.engine_id || app.engine) && !(app.chassis_id || app.chassis))) return;
         const nextKey = getStagedAppKey(app);
         setSelectedApps(prev => {
             if (prev.find(a => getStagedAppKey(a) === nextKey)) return prev;
@@ -258,7 +254,7 @@ const PartForm = ({ part, initialValues = null, uppercaseText = false, brands, g
         const normalizedMeasurementUnit = isBulkEdit
             ? (formData.measurement_unit ? normalizeUom(formData.measurement_unit, '') : '')
             : normalizeUom(formData.measurement_unit);
-        onSave({ ...formData, measurement_unit: normalizedMeasurementUnit, tags, barcodes, applications: selectedApps }); // include linked applications
+        onSave({ ...formData, measurement_unit: normalizedMeasurementUnit, tags, barcodes, applications: selectedApps.filter(app => app._staged_key).map(app => ({ ...fitmentSavePayload(app,app.review_id,app.expected_version) })) }); // include linked applications
     }, [formData, isBulkEdit, tags, barcodes, selectedApps, onSave]);
 
     const handleChange = (e) => {

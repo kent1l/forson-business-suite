@@ -1,3 +1,4 @@
+const { fitmentRulesSql } = require('../helpers/fitmentDocumentSql');
 const express = require('express');
 const db = require('../db');
 const { protect, hasPermission, userHasPermission } = require('../middleware/authMiddleware');
@@ -19,6 +20,7 @@ const getPartDataForMeili = async (client, partId) => {
     const query = `
         SELECT
             pv.*,
+            ${fitmentRulesSql()} AS fitment_rules,
             p.reorder_point,
             p.warning_quantity,
             p.measurement_unit,
@@ -59,6 +61,9 @@ const getPartDataForMeili = async (client, partId) => {
         ...part,
         // display_name is already provided by parts_view
         applications: part.applications_array || [],
+        fitment_rules: part.fitment_rules || [],
+        fitment_schema_version: 2,
+        fitment_confirmation: false,
         // Flatten applications (+ fitment years, so a literal year text-matches) into
         // a single searchable string for Meilisearch.
         searchable_applications: withYearTokens(baseSearchableApplications, part.application_year_ranges || []),

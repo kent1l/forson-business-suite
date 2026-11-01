@@ -1,5 +1,7 @@
 # Vehicle fitment Phase 0 investigation
 
+> Current implementation/verification: [2026-11-01 completion record](./completion-2026-11-01.md). The investigation and baseline JSON below describe historical observations; do not treat them or the historical completion claims as a fresh test run.
+
 Date: 2026-10-29. Baseline commit: e09e7bf. Phase 0 investigation/design complete; see the evidence and acceptance limits below. Read-only development audit and disposable synthetic API reproductions completed. No application implementation or business-data changes.
 
 ## Findings ledger

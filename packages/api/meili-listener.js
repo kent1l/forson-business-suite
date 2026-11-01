@@ -1,3 +1,4 @@
+const { fitmentRulesSql } = require('./helpers/fitmentDocumentSql');
 const db = require('./db');
 const { syncPartWithMeili, removePartFromMeili } = require('./meilisearch');
 const { activeAliasCondition } = require('./helpers/partNumberSoftDelete');
@@ -41,6 +42,7 @@ const startMeiliListener = async () => {
           const { rows } = await db.query(
             `SELECT
                 pv.part_id,
+                ${fitmentRulesSql()} AS fitment_rules,
                 pv.display_name,
                 pv.internal_sku,
                 pv.brand_name,
@@ -86,6 +88,9 @@ const startMeiliListener = async () => {
               part_numbers: row.part_numbers || [],
               tags: row.tags || [],
               applications: row.applications || [],
+              fitment_rules: row.fitment_rules || [],
+              fitment_schema_version: 2,
+              fitment_confirmation: false,
               searchable_applications: withYearTokens(baseStr, yearRanges),
             };
           });

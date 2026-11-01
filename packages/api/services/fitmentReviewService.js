@@ -4,7 +4,6 @@ const crypto = require('crypto');
 const dns = require('dns').promises;
 const net = require('net');
 const db = require('../db');
-const taxonomyIndex = require('../helpers/vehicleTaxonomyIndex');
 const {
   deriveIdentityAndQualifierModes,
   computeInterpretationKey,
@@ -36,23 +35,25 @@ function mergeFitmentCandidates(localRows, aiRows) {
   const makeIdByName = new Map();
   const modelIdByName = new Map();
   const engineIdByCode = new Map();
+  const rememberUnique = (map, key, value) => {
+    if (!map.has(key)) map.set(key,value);
+    else if (map.get(key) !== value) map.set(key,null);
+  };
 
   for (const r of allInput) {
     if (r.model_id != null && r.make_id != null) {
-      makeIdByModelId.set(Number(r.model_id), Number(r.make_id));
+      rememberUnique(makeIdByModelId,Number(r.model_id),Number(r.make_id));
       if (r.make) makeNameByModelId.set(Number(r.model_id), r.make);
     }
     if (r.make_id != null && r.make) {
-      makeIdByName.set(nKey(r.make), Number(r.make_id));
+      rememberUnique(makeIdByName,nKey(r.make),Number(r.make_id));
     }
     if (r.model_id != null && r.model) {
-      modelIdByName.set(`${r.make_id ?? ''}:${nKey(r.model)}`, Number(r.model_id));
-      if (!modelIdByName.has(`:${nKey(r.model)}`)) {
-        modelIdByName.set(`:${nKey(r.model)}`, Number(r.model_id));
-      }
+      rememberUnique(modelIdByName,`${r.make_id ?? ''}:${nKey(r.model)}`,Number(r.model_id));
+      rememberUnique(modelIdByName,`:${nKey(r.model)}`,Number(r.model_id));
     }
     if (r.engine_id != null && r.engine) {
-      engineIdByCode.set(cKey(r.engine), Number(r.engine_id));
+      rememberUnique(engineIdByCode,cKey(r.engine),Number(r.engine_id));
     }
   }
 
@@ -71,7 +72,7 @@ function mergeFitmentCandidates(localRows, aiRows) {
       const scoped = modelIdByName.get(`${copy.make_id ?? ''}:${nKey(copy.model)}`);
       const unscoped = modelIdByName.get(`:${nKey(copy.model)}`);
       if (scoped != null) copy.model_id = scoped;
-      else if (unscoped != null) copy.model_id = unscoped;
+      else if (copy.make_id == null && unscoped != null) copy.model_id = unscoped;
     }
     if (copy.engine_id == null && copy.engine && engineIdByCode.has(cKey(copy.engine))) {
       copy.engine_id = engineIdByCode.get(cKey(copy.engine));
@@ -79,29 +80,14 @@ function mergeFitmentCandidates(localRows, aiRows) {
     return copy;
   };
 
-  const keyOf = (r) => [
-    r.effect || 'include',
-    r.make_id ?? nKey(r.make),
-    r.model_id ?? nKey(r.model),
-    r.chassis_id ?? cKey(r.chassis),
-    r.engine_id ?? cKey(r.engine),
-    r.year_start ?? '',
-    r.year_end ?? '',
-    nKey(r.fuel_type),
-    r.displacement_liters ?? '',
-    nKey(r.market),
-    nKey(r.variant),
-    nKey(r.position),
-    nKey(r.drivetrain),
-    nKey(r.transmission),
-    nKey(r.generation),
-  ].join('|');
-
+  const keyOf = (r) => computeInterpretationKey(r);
   const vehicleAnchorKey = (r) => [
     r.make_id ?? nKey(r.make),
     r.model_id ?? nKey(r.model),
     r.year_start ?? '',
     r.year_end ?? '',
+    r.clause_index ?? r.clause_text ?? '',
+    r.effect || 'include',
   ].join('|');
 
   const map = new Map();
@@ -126,6 +112,8 @@ function mergeFitmentCandidates(localRows, aiRows) {
       merged.engine_id = existing.engine_id ?? r.engine_id ?? null;
       merged.engine = existing.engine ?? r.engine ?? null;
       merged._origin = 'merged';
+      merged.source_clauses = [...(existing.source_clauses || [existing.raw_span || existing.clause_text].filter(Boolean)), ...(r.source_clauses || [r.raw_span || r.clause_text].filter(Boolean))];
+      merged.field_provenance = { ...r.field_provenance, ...existing.field_provenance };
       map.set(k, merged);
     }
   }
@@ -149,6 +137,21 @@ function mergeFitmentCandidates(localRows, aiRows) {
     }
   }
 
+  // A corrected AI reading can change the model itself. Reconcile by the
+  // original clause as well as by vehicle identity; uncertain local readings
+  // cannot be bulk-added alongside a conflicting reading of that same text.
+  for (const local of out.filter(r => r._origin === 'local' && ['low','medium'].includes(r.confidence))) {
+    const clause = String(local.clause_text || local.raw_span || '').trim();
+    if (!clause) continue;
+    for (const alternative of out.filter(r => r._origin === 'ai')) {
+      const span = String(alternative.clause_text || alternative.raw_span || '').trim();
+      if (!span || span !== clause || keyOf(local) === keyOf(alternative)) continue;
+      const group = local.alternative_group_id || `alt_clause_${sha256(clause).slice(0,12)}`;
+      local.alternative_group_id = group;
+      alternative.alternative_group_id = group;
+    }
+  }
+
   return out;
 }
 
@@ -164,10 +167,11 @@ async function validateEvidenceUrl(rawUrl, allowedDomains = []) {
   } catch (_e) {
     return { ok: false, code: 'INVALID_EVIDENCE_URL', message: 'Invalid URL format' };
   }
-  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
-    return { ok: false, code: 'UNSUPPORTED_URL_PROTOCOL', message: 'Only http/https evidence URLs are permitted' };
+  if (parsed.protocol !== 'https:') {
+    return { ok: false, code: 'UNSUPPORTED_URL_PROTOCOL', message: 'Only HTTPS evidence URLs are permitted' };
   }
-  const hostname = parsed.hostname.toLowerCase();
+  if (parsed.username || parsed.password || (parsed.port && parsed.port !== '443')) return {ok:false,code:'INVALID_EVIDENCE_URL',message:'Credentials and non-HTTPS ports are forbidden'};
+  const hostname = parsed.hostname.toLowerCase().replace(/^\[|\]$/g,'').replace(/\.$/,'');
   if (
     hostname === 'localhost' ||
     hostname.endsWith('.local') ||
@@ -185,11 +189,15 @@ async function validateEvidenceUrl(rawUrl, allowedDomains = []) {
       if (parts[0] === 0) return true;
       if (parts[0] === 169 && parts[1] === 254) return true;
       if (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) return true;
-      if (parts[0] === 192 && parts[1] === 168) return true;
+      if (parts[0] === 192 && (parts[1] === 168 || parts[1] === 0)) return true;
+      if (parts[0] >= 224 || parts[0] === 100 && parts[1] >= 64 && parts[1] <= 127 || parts[0] === 198 && [18,19,51].includes(parts[1]) || parts[0] === 203 && parts[1] === 0) return true;
       return false;
     }
     if (net.isIPv6(ip)) {
       const norm = ip.toLowerCase();
+      // Public IPv6 evidence addresses must be global unicast. This also rejects
+      // IPv4-mapped, translation, multicast and unspecified address forms.
+      if (!/^[23][0-9a-f]{3}:/.test(norm) || norm.startsWith('2001:db8:')) return true;
       if (norm === '::1' || norm === '::' || norm.startsWith('fe80:') || norm.startsWith('fc') || norm.startsWith('fd')) {
         return true;
       }
@@ -209,8 +217,8 @@ async function validateEvidenceUrl(rawUrl, allowedDomains = []) {
           return { ok: false, code: 'SSRF_BLOCKED_DNS_IP', message: 'Hostname resolves to a private or loopback IP' };
         }
       }
-    } catch (_dnsErr) {
-      // Allow offline test domains (e.g. catalog.example.com) as metadata-only references when no outbound fetch is performed
+    } catch {
+      return { ok:false,code:'EVIDENCE_DNS_UNAVAILABLE',message:'Could not validate public evidence hostname' };
     }
   }
 
@@ -248,24 +256,27 @@ async function createOrUpdateReviewSession({
   try {
     await client.query('BEGIN');
 
+    await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', [`review:${userId}:${numericPartId}:${textHash}`]);
     // 1. Check for existing open review session for (part_id, text_hash)
     const existingRevRes = await client.query(
       `SELECT review_id, row_version
        FROM fitment_review
        WHERE part_id IS NOT DISTINCT FROM $1
          AND text_hash = $2
-         AND status = 'open'
+         AND status = 'open' AND created_by IS NOT DISTINCT FROM $3
        ORDER BY review_id DESC
        LIMIT 1
        FOR UPDATE`,
-      [numericPartId, textHash]
+      [numericPartId, textHash, userId]
     );
 
     let reviewId;
+    let reviewVersion = 1;
     const existingCandidatesByKey = new Map();
 
     if (existingRevRes.rows.length > 0) {
       reviewId = existingRevRes.rows[0].review_id;
+      reviewVersion = Number(existingRevRes.rows[0].row_version) + 1;
       await client.query(
         `UPDATE fitment_review
          SET taxonomy_version = $1,
@@ -298,11 +309,11 @@ async function createOrUpdateReviewSession({
     const existingLinks = [];
     if (numericPartId !== null) {
       const linksRes = await client.query(
-        `SELECT pa.part_app_id, pa.application_id, pa.year_start, pa.year_end, pa.legacy_rule_id,
-                a.make_id, a.model_id, a.chassis_id, a.engine_id
-         FROM part_application pa
-         JOIN application a ON a.application_id = pa.application_id
-         WHERE pa.part_id = $1`,
+        `SELECT r.*, r.variant_descriptor AS variant,
+                a.make_id,a.model_id,a.chassis_id,a.engine_id,pa.part_app_id
+         FROM part_application_rule r JOIN application a USING(application_id)
+         LEFT JOIN part_application pa ON pa.part_id=r.part_id AND pa.application_id=r.application_id
+         WHERE r.part_id=$1 AND r.is_active=TRUE`,
         [numericPartId]
       );
       existingLinks.push(...linksRes.rows);
@@ -311,7 +322,7 @@ async function createOrUpdateReviewSession({
     const candidatesOut = [];
 
     for (let idx = 0; idx < fitments.length; idx++) {
-      const f = fitments[idx];
+      const f = { ...fitments[idx], raw_text: rawText };
       const interpKey = computeInterpretationKey(f);
       const modes = deriveIdentityAndQualifierModes(f);
 
@@ -321,16 +332,11 @@ async function createOrUpdateReviewSession({
       if (f.engine && f.engine_id == null) unresolvedDims.push('engine');
       if (f.chassis && f.chassis_id == null) unresolvedDims.push('chassis');
       if (f.ambiguous_model_collision) unresolvedDims.push('model_collision');
+      if (f.ambiguous_engine_collision) unresolvedDims.push('engine_collision');
+      if (f.uncertain_pairing) unresolvedDims.push('pairing');
 
-      const matchedExisting = existingLinks.find((lnk) =>
-        (lnk.make_id ?? null) === (f.make_id ?? null) &&
-        (lnk.model_id ?? null) === (f.model_id ?? null) &&
-        (lnk.engine_id ?? null) === (f.engine_id ?? null) &&
-        (lnk.year_start ?? null) === (f.year_start ?? null) &&
-        (lnk.year_end ?? null) === (f.year_end ?? null)
-      );
-
-      const alreadyLinked = Boolean(matchedExisting) && (f.effect || 'include') === 'include';
+      const matchedExisting = existingLinks.find(lnk => computeInterpretationKey(lnk) === interpKey);
+      const alreadyLinked = Boolean(matchedExisting);
 
       let confidenceLabel = ['exact', 'high', 'medium', 'low'].includes(f.confidence) ? f.confidence : 'low';
       if (unresolvedDims.length > 0 || (f.make_id == null && f.model_id == null && f.engine_id == null && f.chassis_id == null)) {
@@ -438,7 +444,7 @@ async function createOrUpdateReviewSession({
           disposition,
           preselected,
           alreadyLinked,
-          matchedExisting ? matchedExisting.legacy_rule_id : null,
+          matchedExisting ? matchedExisting.rule_id : null,
           matchedExisting ? matchedExisting.part_app_id : null,
           userId,
         ]
@@ -460,13 +466,15 @@ async function createOrUpdateReviewSession({
         qualifiers: candRow.qualifiers,
         unresolved_dimensions: candRow.unresolved_dimensions,
         collision_candidates: candRow.collision_candidates,
-        ...f,
+        ...(candRow.edited_payload || f),
+        dismissed_reason: candRow.dismissed_reason,
       });
     }
 
     await client.query('COMMIT');
     return {
       review_id: reviewId,
+      review_version: reviewVersion,
       taxonomy_version: taxonomyVersion,
       candidates: candidatesOut,
     };
@@ -519,8 +527,11 @@ async function patchReviewSession(reviewId, body = {}, userId = null) {
     }
 
     const revRow = revRes.rows[0];
+    if (revRow.created_by != null && Number(revRow.created_by) !== Number(userId)) {
+      throw Object.assign(new Error('Fitment review session not found'), {status:404});
+    }
     const expectedVersion = body.review_version ?? body.expected_version ?? null;
-    if (expectedVersion !== null && Number(expectedVersion) !== Number(revRow.row_version)) {
+    if (expectedVersion == null || Number(expectedVersion) !== Number(revRow.row_version)) {
       const err = new Error(`Expected review_version ${expectedVersion} does not match current ${revRow.row_version}`);
       err.status = 409;
       err.code = 'STALE_REVIEW';
@@ -563,7 +574,7 @@ async function patchReviewSession(reviewId, body = {}, userId = null) {
         review_id: numReviewId,
         review_version: Number(revRow.row_version) + 1,
         candidates: allCandsRes.rows.map((c) => ({
-          ...(c.candidate_payload || {}),
+          ...(c.edited_payload || c.candidate_payload || {}),
           candidate_id: c.candidate_id,
           review_id: c.review_id,
           interpretation_key: c.interpretation_key,
@@ -600,6 +611,8 @@ async function patchReviewSession(reviewId, body = {}, userId = null) {
       );
     }
 
+    if (!candidateId && !interpKey) throw Object.assign(new Error('candidate_id or interpretation_key is required'), {status:400});
+    if (!targetCandRes.rows.length) throw Object.assign(new Error('Candidate not found'), {status:404});
     let updatedCandidate = null;
     if (targetCandRes.rows.length > 0) {
       const target = targetCandRes.rows[0];
@@ -619,6 +632,14 @@ async function patchReviewSession(reviewId, body = {}, userId = null) {
         }
       }
 
+      if (body.edited_payload) {
+        const { normalizeRule } = require('./fitmentLinkService');
+        const applications = require('../routes/applicationRoutes');
+        normalizeRule(body.edited_payload);
+        const resolved = await applications.resolveAndFindOrCreateApplication(client, { ...body.edited_payload, derive_model_engine: false });
+        const canonical = (await client.query('SELECT make,model,engine,chassis,make_id,model_id,engine_id,chassis_id FROM application_view WHERE application_id=$1', [resolved.application_id])).rows[0];
+        body.edited_payload = { ...body.edited_payload, ...canonical, raw_text: revRow.raw_text, raw_span:target.clause_text || revRow.raw_text, field_provenance: { ...target.field_provenance, manual_correction: 'reviewed_identity' } };
+      }
       const nextPreselected = nextDisposition === 'dismissed' ? false : Boolean(body.preselected);
 
       const upd = await client.query(
@@ -627,6 +648,7 @@ async function patchReviewSession(reviewId, body = {}, userId = null) {
              preselected = $2,
              dismissed_reason = COALESCE($3, dismissed_reason),
              edited_payload = COALESCE($4::jsonb, edited_payload),
+             unresolved_dimensions = CASE WHEN $4::jsonb IS NOT NULL THEN '[]'::jsonb ELSE unresolved_dimensions END,
              row_version = row_version + 1,
              updated_by = COALESCE($5, updated_by),
              updated_at = NOW()
@@ -673,7 +695,7 @@ async function patchReviewSession(reviewId, body = {}, userId = null) {
       review_version: Number(revRow.row_version) + (updatedCandidate ? 1 : 0),
       updated_candidate: updatedCandidate,
       candidates: allCandsRes.rows.map((c) => ({
-        ...(c.candidate_payload || {}),
+        ...(c.edited_payload || c.candidate_payload || {}),
         candidate_id: c.candidate_id,
         review_id: c.review_id,
         interpretation_key: c.interpretation_key,
@@ -719,7 +741,7 @@ async function createResearchJob(body = {}, userId = null) {
     queryText = String(body.candidate_id).trim();
   }
 
-  const providersDisabled = process.env.JEV_ENABLED === 'false' || body.simulate_outage === true;
+  const providersDisabled = true; // Paid/live research is gated; manual evidence capture is independent.
   if (providersDisabled && !body.evidence && !body.allow_offline_capture) {
     const err = new Error('External research providers are disabled; manual fitment entry remains available');
     err.status = 503;
@@ -739,10 +761,8 @@ async function createResearchJob(body = {}, userId = null) {
     throw err;
   }
 
-  const index = await taxonomyIndex.getIndex();
-  const { parseFitmentText } = require('../helpers/fitmentTextParser');
-  const parsed = parseFitmentText(queryText, index);
-  const hasFitments = parsed.fitments.length > 0;
+  const parsed = { fitments: [] };
+  const hasFitments = false;
 
   const client = await db.getClient();
   try {
@@ -766,20 +786,7 @@ async function createResearchJob(body = {}, userId = null) {
     const job = jobRes.rows[0];
 
     const evidenceItems = [];
-    const rawEvidenceList = Array.isArray(body.evidence) && body.evidence.length > 0
-      ? body.evidence
-      : (hasFitments || body.source_url)
-        ? [
-            {
-              source_type: body.source_type || 'web_catalog',
-              source_url: body.source_url || null,
-              source_title: body.source_title || `Research query: ${queryText.slice(0, 80)}`,
-              quoted_span: body.quoted_span || queryText,
-              trust_tier: body.trust_tier || 'tier_3_unverified_web',
-              extracted_claim: { fitments: parsed.fitments },
-            },
-          ]
-        : [];
+    const rawEvidenceList = Array.isArray(body.evidence) ? body.evidence.slice(0,10) : [];
 
     let unlicensedPassagePersisted = false;
     for (const item of rawEvidenceList) {
@@ -798,14 +805,15 @@ async function createResearchJob(body = {}, userId = null) {
           continue;
         }
       }
-      const boundedSpan = String(item.quoted_span || queryText).slice(0, 280);
+      const boundedSpan = item.rights_policy === 'permitted_excerpt' ? String(item.quoted_span || '').slice(0,280) : '';
+      if (item.expires_at && !Number.isFinite(Date.parse(item.expires_at))) throw Object.assign(new Error('Invalid evidence expiry'),{status:422});
       const evRes = await client.query(
         `INSERT INTO fitment_evidence (
            research_job_id, part_id, source_type, source_url, source_domain, source_title,
-           quoted_span, trust_tier, approval_status, evidence_status, extracted_claim, created_by
+           quoted_span, trust_tier, approval_status, evidence_status, extracted_claim, created_by,claim_type,rights_policy,assessment,expires_at
          ) VALUES (
            $1, $2, $3, $4, $5, $6,
-           $7, $8, 'needs_review', 'sourced_suggestion', $9::jsonb, $10
+           $7, $8, 'needs_review', 'sourced_suggestion', $9::jsonb, $10,$11,$12,$13,$14
          )
          RETURNING *`,
         [
@@ -817,8 +825,12 @@ async function createResearchJob(body = {}, userId = null) {
           item.source_title || null,
           boundedSpan,
           item.trust_tier || 'tier_3_unverified_web',
-          JSON.stringify(item.extracted_claim || { fitments: parsed.fitments }),
+          JSON.stringify(item.extracted_claim || {}),
           userId,
+          item.claim_type || 'unclassified',
+          item.rights_policy || 'metadata_only',
+          ['supported','contradicted','insufficient'].includes(item.assessment) ? item.assessment : 'insufficient',
+          item.expires_at || null,
         ]
       );
       evidenceItems.push({
@@ -830,7 +842,7 @@ async function createResearchJob(body = {}, userId = null) {
     await client.query('COMMIT');
     return {
       job_id: job.job_id,
-      status: hasFitments ? 'completed' : 'insufficient',
+      status: 'completed',
       outcome: hasFitments ? 'candidates_found' : 'insufficient',
       no_result: hasFitments ? null : 'insufficient',
       query_text: job.query_text,

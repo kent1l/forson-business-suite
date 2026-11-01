@@ -1,0 +1,15 @@
+<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"></head><body class="p-4"><div id="root"></div><script type="module">
+import React from 'react';
+import {createRoot} from 'react-dom/client';
+import {AuthProvider} from '../../src/contexts/AuthContext.jsx';
+import PartApplicationManager, {DescribeFitmentPanel} from '../../src/pages/PartApplicationManager.jsx';
+import '../../src/index.css';
+const root=createRoot(document.getElementById('root'));
+window.mountFitment=(mode='review')=>{
+const permissions=['applications:view','applications:edit','applications:approve'];
+localStorage.setItem('userSession',JSON.stringify({token:'browser-fixture',user:{employee_id:1,permission_level_id:1,permissions},permissions}));
+root.render(React.createElement(AuthProvider,{key:mode},mode==='manager'
+  ? React.createElement(PartApplicationManager,{part:{part_id:1},onCancel:()=>{}})
+  : React.createElement(DescribeFitmentPanel,{partId:1,onCommitted:()=>{},onStage:mode==='stage' ? row=>{window.stagedFitment=row;} : undefined})));
+};
+</script></body></html>

@@ -336,7 +336,8 @@ function buildRows(parsed, index) {
           }
         }
 
-        const engineList = engineRows.length ? engineRows : [null];
+        const engineCollision = engineRows.length > new Set(engineRows.map(e => lookupKey(e.engine_code))).size;
+        const engineList = engineRows.length && !engineCollision ? engineRows : [null];
 
         for (const engineRow of engineList) {
           const resolvedMake = makeRow || (modelRow ? index.makesById.get(modelRow.make_id) : null);
@@ -350,6 +351,7 @@ function buildRows(parsed, index) {
               modelRow: modelConflicts ? null : modelRow,
               engineRow,
               engineInferred,
+              engineCollision,
             })
           );
         }
@@ -380,7 +382,7 @@ function pickSingle(hit, predicate) {
   return candidates[0];
 }
 
-function assembleRow({ parsed, makeHit, modelHit, engineHit, makeRow, modelRow, engineRow, engineInferred }) {
+function assembleRow({ parsed, makeHit, modelHit, engineHit, makeRow, modelRow, engineRow, engineInferred, engineCollision }) {
   const displacement =
     parsed.displacement != null
       ? parsed.displacement
@@ -417,7 +419,9 @@ function assembleRow({ parsed, makeHit, modelHit, engineHit, makeRow, modelRow, 
     year_start: yearStart,
     year_end: yearEnd,
     effect: parsed.effect || 'include',
-    confidence,
+    confidence: engineCollision ? 'low' : confidence,
+    ambiguous_engine_collision: Boolean(engineCollision),
+    collision_candidates: engineCollision ? engineHit.matches.map(e=>({engine_id:e.engine_id,engine:e.engine_code})) : [],
     source: 'local',
   };
 }
@@ -472,6 +476,35 @@ function parseFitmentText(text, index) {
 
   let carried = { makes: [], models: [], yearStart: null, yearEnd: null, displacement: null, fuel: null };
 
+  let clauseIndex = 0;
+  let sourceCursor = 0;
+  const appendClause = (parsed, rawClause) => {
+    const start = clean.indexOf(rawClause, sourceCursor);
+    const offset = start >= 0 ? start : clean.indexOf(rawClause);
+    const span = { start: offset, end: offset + rawClause.length };
+    sourceCursor = Math.max(sourceCursor, span.end);
+    const built = buildRows(parsed, index);
+    for (const row of built) {
+      row.clause_index = clauseIndex;
+      row.clause_text = rawClause;
+      row.raw_text = clean;
+      row.raw_span = rawClause;
+      row.clause_span = span;
+      row.field_provenance = {};
+      for (const dim of ['make','model','engine','year_start','year_end','fuel_type','displacement_liters']) {
+        if (row[dim] == null) continue;
+        const literal = String(row[dim]).toLowerCase();
+        row.field_provenance[dim] = rawClause.toLowerCase().includes(literal) ? 'explicit_text' :
+          ['make','year_start','year_end'].includes(dim) ? 'contextual_resolution' : 'unresolved_inference';
+      }
+      if (parsed.models.length > 1 && parsed.engines.length > 1) {
+        row.uncertain_pairing = true;
+        row.confidence = 'low';
+      }
+      rows.push(row);
+    }
+    clauseIndex += 1;
+  };
   for (const rawClause of clauses) {
     // Check if clause has an inline exclusion ("Toyota Hilux except 2010")
     const exMatch = EXCLUSION_SPLIT_RE.exec(rawClause);
@@ -484,7 +517,7 @@ function parseFitmentText(text, index) {
         if (!posParsed.makes.length && carried.makes.length && posParsed.models.length) {
           posParsed.makes = carried.makes;
         }
-        rows.push(...buildRows(posParsed, index));
+        appendClause(posParsed, beforeEx);
         if (posParsed.residue.length) {
           residue.push(...posParsed.residue);
           unresolvedClauses.push(beforeEx);
@@ -507,7 +540,7 @@ function parseFitmentText(text, index) {
         if (!negParsed.models.length && carried.models.length) {
           negParsed.models = carried.models;
         }
-        rows.push(...buildRows(negParsed, index));
+        appendClause(negParsed, afterEx);
         if (negParsed.residue.length) {
           residue.push(...negParsed.residue);
           unresolvedClauses.push(afterEx);
@@ -548,7 +581,7 @@ function parseFitmentText(text, index) {
       continue;
     }
 
-    rows.push(...buildRows(parsed, index));
+    appendClause(parsed, rawClause);
 
     if (parsed.residue.length) {
       residue.push(...parsed.residue);
@@ -606,25 +639,14 @@ function parseFitmentText(text, index) {
 }
 
 function dedupeRows(rows) {
-  const seen = new Set();
-  const out = [];
+  const { computeInterpretationKey } = require('./fitmentRuleSchema');
+  const byKey = new Map();
   for (const row of rows) {
-    const key = [
-      row.effect || 'include',
-      row.make_id,
-      row.model_id,
-      row.engine_id,
-      row.make,
-      row.model,
-      row.engine,
-      row.year_start,
-      row.year_end,
-    ].join('|');
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push(row);
+    const key = computeInterpretationKey(row);
+    if (!byKey.has(key)) byKey.set(key, { ...row, source_clauses: [] });
+    byKey.get(key).source_clauses.push({ text: row.clause_text, span: row.clause_span, provenance: row.field_provenance });
   }
-  return out;
+  return [...byKey.values()];
 }
 
 /**

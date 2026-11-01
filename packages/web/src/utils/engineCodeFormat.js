@@ -79,7 +79,10 @@ export function formatQualifierSummary(row = {}) {
   if (row.drivetrain) parts.push(row.drivetrain);
   if (row.transmission) parts.push(row.transmission);
   if (row.market) parts.push(row.market);
-  if (row.variant) parts.push(row.variant);
+  if (row.variant || row.variant_descriptor) parts.push(row.variant || row.variant_descriptor);
+  if (row.generation) parts.push(`Generation: ${row.generation}`);
+  if (row.fuel_type_qualifier || row.fuel_type) parts.push(row.fuel_type_qualifier || row.fuel_type);
+  if (row.displacement_liters_qualifier || row.displacement_liters) parts.push(`${row.displacement_liters_qualifier || row.displacement_liters}L`);
   return parts.join(' · ');
 }
 
@@ -93,7 +96,7 @@ export function formatApplicationScopeBadge(row = {}) {
     if (row.ui_badge === 'Sourced suggestion') return { label: 'Sourced suggestion', tone: 'blue' };
     return { label: row.ui_badge, tone: 'amber' };
   }
-  if (row.approval_status === 'approved' || row.evidence_status === 'sourced_verified') {
+  if (row.approval_status === 'approved' && row.evidence_status === 'sourced_verified' && row.evidence_current !== false) {
     return { label: 'Verified', tone: 'emerald' };
   }
   if (row.evidence_status === 'sourced_suggestion') {
@@ -126,7 +129,9 @@ export function groupApplicationsForDisplay(applications = []) {
       make.toLowerCase(),
       model.toLowerCase(),
       chassis.toLowerCase(),
-      qualifierSummary.toLowerCase(),
+      qualifierSummary,
+      app.year_start ?? '',app.year_end ?? '',app.approval_status || '',app.evidence_status || '',
+      ...['make','model','chassis','engine','year','market','variant','position','drivetrain','transmission','fuel','displacement','generation'].map(k=>app[`${k}_mode`] || ''),
     ].join('|');
 
     if (!groups.has(key)) {
@@ -325,7 +330,7 @@ export function groupFitmentsForDisplay(fitments) {
             fitment.model || '',
             fitment.effect === 'exclude' ? 'exclude' : 'include',
             formatQualifierSummary(fitment),
-            fitment.engine_mode || '',
+            ...['make','model','chassis','engine','year','market','variant','position','drivetrain','transmission','fuel','displacement','generation'].map(k=>fitment[`${k}_mode`] || ''),
             fitment.approval_status || '',
             fitment.evidence_status || '',
             fitment.year_start ?? '',
@@ -371,4 +376,12 @@ export function formatFitmentGroup(group) {
         .filter(Boolean)
         .join(' ')
         .trim();
+}
+
+// Submit only claim fields. Response-owned approval flags never travel back as input.
+export function fitmentSavePayload(candidate, reviewId, reviewVersion) {
+  const fields = ['application_id','make_id','make','model_id','model','chassis_id','chassis','engine_id','engine','year_start','year_end','effect','fuel_type','displacement_liters','market','variant','position','drivetrain','transmission','generation'];
+  const payload = Object.fromEntries(fields.filter(k => candidate[k] !== undefined).map(k => [k, candidate[k] === '' ? null : candidate[k]]));
+  if (reviewId && candidate.candidate_id) Object.assign(payload, { review_id:reviewId,candidate_id:candidate.candidate_id,expected_version:reviewVersion });
+  return payload;
 }

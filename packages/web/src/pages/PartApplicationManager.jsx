@@ -1,17 +1,20 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import api from '../api';
+import { createUuid } from '../utils/createUuid';
 import Icon from '../components/ui/Icon';
 import InfoTip from '../components/ui/InfoTip';
 import { ICONS } from '../constants';
 import Modal from '../components/ui/Modal';
 import ApplicationSearchCombobox from '../components/applications/ApplicationSearchCombobox';
 import ApplicationCascadeForm from '../components/applications/ApplicationCascadeForm';
+import FitmentEvidenceReview from '../components/applications/FitmentEvidenceReview';
 import { useAuth } from '../contexts/AuthContext';
 import {
     groupFitmentsForDisplay,
     formatFitmentGroup,
     formatApplicationScopeBadge,
     formatQualifierSummary,
+    fitmentSavePayload,
 } from '../utils/engineCodeFormat';
 
 const CONFIDENCE_BADGE = {
@@ -50,6 +53,8 @@ export const DescribeFitmentPanel = ({ partId, onCommitted, onStage }) => {
     const [notes, setNotes] = useState('');
     const [candidates, setCandidates] = useState(null); // null = not parsed yet
     const [reviewId, setReviewId] = useState(null);
+    const [reviewVersion, setReviewVersion] = useState(null);
+    const saveKeys = useRef(new Map());
     const [parseSource, setParseSource] = useState(null); // 'local' | 'hybrid' | 'ai'
     const [editingIndex, setEditingIndex] = useState(null);
     const [promoteAliasOnEdit, setPromoteAliasOnEdit] = useState(false);
@@ -80,6 +85,8 @@ export const DescribeFitmentPanel = ({ partId, onCommitted, onStage }) => {
                     return {
                         ...f,
                         selected: defaultSelected,
+                        _reviewYearStart: f.year_start ?? '',
+                        _reviewYearEnd: f.year_end ?? '',
                         year_start: f.year_start ?? '',
                         year_end: f.year_end ?? '',
                         _rawMake: f.make_id ? null : f.make,
@@ -89,6 +96,7 @@ export const DescribeFitmentPanel = ({ partId, onCommitted, onStage }) => {
                 });
             setCandidates(withMeta);
             setReviewId(data.review_id || null);
+            setReviewVersion(data.review_version);
             setNotes(data.notes || '');
             setParseSource(data.source || 'local');
             setSaveErrors({});
@@ -115,7 +123,8 @@ export const DescribeFitmentPanel = ({ partId, onCommitted, onStage }) => {
     }, [text, handleParse]);
 
     const updateCandidate = (idx, patch) => {
-        setCandidates(prev => prev.map((c, i) => i === idx ? { ...c, ...patch } : c));
+        setCandidates(prev => prev.map((c, i) => i === idx ? { ...c, ...patch } :
+            (patch.selected && prev[idx].alternative_group_id && c.alternative_group_id === prev[idx].alternative_group_id ? { ...c, selected: false } : c)));
     };
 
     const removeCandidate = async (idx) => {
@@ -123,15 +132,18 @@ export const DescribeFitmentPanel = ({ partId, onCommitted, onStage }) => {
         setCandidates(prev => prev.filter((_, i) => i !== idx));
         if (reviewId && target) {
             try {
-                await api.patch(`/applications/fitment-reviews/${reviewId}`, {
+                const { data } = await api.patch(`/applications/fitment-reviews/${reviewId}`, {
+                    expected_version: reviewVersion,
                     action: 'dismiss_candidate',
                     candidate_id: target.candidate_id,
                     interpretation_key: target.interpretation_key,
                     disposition: 'dismissed',
                     reason: 'Dismissed in review panel',
                 });
-            } catch {
-                // Non-blocking review dismissal persistence
+                setReviewVersion(data.review_version);
+            } catch (error) {
+                setParseError(error.response?.data?.message || 'Could not save dismissal. Parse again before saving.');
+                setCandidates(null);
             }
         }
     };
@@ -181,10 +193,9 @@ export const DescribeFitmentPanel = ({ partId, onCommitted, onStage }) => {
         }
     };
 
-    const handleEditSave = (idx, payload) => {
+    const handleEditSave = async (idx, payload) => {
         const original = candidates[idx];
-        recordCorrectionAndOptionalAlias(original, payload, promoteAliasOnEdit);
-        updateCandidate(idx, {
+        const patch = {
             make_id: payload.make_id ?? null,
             make: payload.make ?? null,
             model_id: payload.model_id ?? null,
@@ -199,18 +210,39 @@ export const DescribeFitmentPanel = ({ partId, onCommitted, onStage }) => {
             confidence_label: 'high',
             ui_badge: 'Needs review',
             selected: true,
-        });
+        };
+        try {
+            if (reviewId) {
+                const { data } = await api.patch(`/applications/fitment-reviews/${reviewId}`, {
+                    expected_version: reviewVersion, candidate_id: original.candidate_id,
+                    action: 'update_candidate', disposition: 'edited',
+                    edited_payload: { ...original, ...patch, year_start: original.year_start || null, year_end: original.year_end || null },
+                    reason: 'Identity corrected by reviewer',
+                });
+                setReviewVersion(data.review_version);
+            }
+            await recordCorrectionAndOptionalAlias(original, payload, promoteAliasOnEdit);
+            updateCandidate(idx, patch);
+        } catch (error) {
+            setParseError(error.response?.data?.message || error.message);
+            return;
+        }
         setEditingIndex(null);
         setPromoteAliasOnEdit(false);
     };
 
     const selectedCount = (candidates || []).filter(c => c.selected && !c.already_linked).length;
 
+    const saveKey = payload => {
+        const fingerprint = JSON.stringify(payload);
+        if (!saveKeys.current.has(fingerprint)) saveKeys.current.set(fingerprint, createUuid());
+        return saveKeys.current.get(fingerprint);
+    };
     const handleSaveSelected = async () => {
         if (!candidates) return;
         setSaving(true);
         const errors = {};
-        const batchIdemSeed = `${partId || 'stage'}-${Date.now()}`;
+        let activeVersion = reviewVersion;
         for (let i = 0; i < candidates.length; i++) {
             const c = candidates[i];
             if (!c.selected || c.already_linked) continue;
@@ -218,37 +250,21 @@ export const DescribeFitmentPanel = ({ partId, onCommitted, onStage }) => {
                 if (c.year_start && c.year_end && Number(c.year_start) > Number(c.year_end)) {
                     throw new Error('Start year must not be after end year.');
                 }
-                const { data: app } = await api.post('/applications', {
-                    make_id: c.make_id ?? undefined,
-                    make: c.make_id ? undefined : (c.make ?? undefined),
-                    model_id: c.model_id ?? undefined,
-                    model: c.model_id ? undefined : (c.model ?? undefined),
-                    chassis_id: c.chassis_id ?? undefined,
-                    chassis: c.chassis_id ? undefined : (c.chassis ?? undefined),
-                    engine_id: c.engine_id ?? undefined,
-                    engine: c.engine_id ? undefined : (c.engine ?? undefined),
-                    displacement_liters: c.displacement_liters ?? undefined,
-                    fuel_type: c.fuel_type ?? undefined,
-                });
-                const fitment = {
-                    ...app,
-                    make: app.make ?? c.make,
-                    model: app.model ?? c.model,
-                    chassis: app.chassis ?? c.chassis ?? null,
-                    engine: app.engine ?? c.engine,
-                    year_start: c.year_start || null,
-                    year_end: c.year_end || null,
-                    effect: c.effect || 'include',
-                    market: c.market || null,
-                    variant: c.variant || null,
-                    position: c.position || null,
-                    drivetrain: c.drivetrain || null,
-                };
+                if (reviewId && (String(c.year_start) !== String(c._reviewYearStart) || String(c.year_end) !== String(c._reviewYearEnd))) {
+                    const { data } = await api.patch(`/applications/fitment-reviews/${reviewId}`, {
+                        expected_version: activeVersion, candidate_id: c.candidate_id,
+                        disposition: 'edited', edited_payload: fitmentSavePayload(c), reason: 'Year restriction corrected by reviewer',
+                    });
+                    activeVersion = data.review_version;
+                    setReviewVersion(activeVersion);
+                    updateCandidate(i, { _reviewYearStart: c.year_start, _reviewYearEnd: c.year_end });
+                }
+                const fitment = fitmentSavePayload(c, reviewId, activeVersion);
                 if (onStage) {
-                    onStage(fitment);
+                    onStage({ ...fitment, approval_status: 'needs_review' });
                 } else {
                     await api.post(`/parts/${partId}/applications`, fitment, {
-                        headers: { 'Idempotency-Key': `${batchIdemSeed}-${i}` },
+                        headers: { 'Idempotency-Key': saveKey(fitment) },
                     });
                 }
             } catch (error) {
@@ -265,7 +281,7 @@ export const DescribeFitmentPanel = ({ partId, onCommitted, onStage }) => {
             setParseSource(null);
             onCommitted();
         } else {
-            setCandidates(prev => prev.filter((_, i) => errors[i] !== undefined).map(c => ({ ...c, selected: true })));
+            setCandidates(prev => prev.map((c, i) => errors[i] !== undefined ? c : { ...c, selected: false, already_linked: c.selected || c.already_linked }));
             onCommitted();
         }
     };
@@ -281,10 +297,10 @@ export const DescribeFitmentPanel = ({ partId, onCommitted, onStage }) => {
                     for wording that cannot be matched. Review the results before adding them.
                 </InfoTip>
             </h4>
-            {onStage && <p className="text-xs text-gray-500 dark:text-slate-400 mb-2">Adding a fitment can create catalog entries. Save the part to link the selected fitments.</p>}
+            {onStage && <p className="text-xs text-gray-500 dark:text-slate-400 mb-2">Review the identified applications, then save the part to link them. Missing specifications remain unspecified.</p>}
             <textarea
                 value={text}
-                onChange={(e) => setText(e.target.value)}
+                onChange={(e) => { parseRequest.current += 1; setText(e.target.value); setCandidates(null); setReviewId(null); }}
                 rows={2}
                 placeholder="e.g. Fits Toyota Hilux 2005-2015 2.5L & 3.0L Diesel, also fits Fortuner same years"
                 className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
@@ -320,7 +336,7 @@ export const DescribeFitmentPanel = ({ partId, onCommitted, onStage }) => {
                                 id={`fitment-candidate-${idx}`}
                                 type="checkbox"
                                 checked={c.selected}
-                                disabled={c.already_linked}
+                                disabled={c.already_linked || c.confidence_label === 'unresolved'}
                                 onChange={(e) => updateCandidate(idx, { selected: e.target.checked })}
                                 className="mt-1 disabled:opacity-50"
                             />
@@ -342,10 +358,13 @@ export const DescribeFitmentPanel = ({ partId, onCommitted, onStage }) => {
                                     <span className={`text-xs px-1.5 py-0.5 rounded ${CONFIDENCE_BADGE[c.confidence] || CONFIDENCE_BADGE.low}`}>
                                         Confidence: {c.confidence}
                                     </span>
-                                    {!c.make_id && c.make && <span className="text-xs text-gray-500 dark:text-slate-400">(new make)</span>}
-                                    {!c.model_id && c.model && <span className="text-xs text-gray-500 dark:text-slate-400">(new model)</span>}
-                                    {!c.engine_id && c.engine && <span className="text-xs text-gray-500 dark:text-slate-400">(new engine)</span>}
+                                    {!c.make_id && c.make && <span className="text-xs text-gray-500 dark:text-slate-400">(unresolved make)</span>}
+                                    {!c.model_id && c.model && <span className="text-xs text-gray-500 dark:text-slate-400">(unresolved model)</span>}
+                                    {!c.engine_id && c.engine && <span className="text-xs text-gray-500 dark:text-slate-400">(unresolved engine)</span>}
                                 </div>
+                                {c.raw_span || c.clause_text ? <p className="text-xs text-gray-500 mt-1">Source: {c.raw_span || c.clause_text}</p> : null}
+                                <p className="text-xs text-gray-500 mt-1">Not supplied: {['engine','chassis','market','position','transmission','generation'].filter(k => !c[k]).join(', ') || 'None'}. Identification does not verify compatibility.</p>
+                                {c.alternative_group_id && <p className="text-xs text-amber-700 mt-1">Choose one interpretation of this clause.</p>}
                                 <div className="flex items-center gap-2 mt-1">
                                     <input
                                         type="number" placeholder="Year start" aria-label={`Year start for candidate ${idx + 1}`} value={c.year_start}
@@ -360,6 +379,11 @@ export const DescribeFitmentPanel = ({ partId, onCommitted, onStage }) => {
                                     <button type="button" onClick={() => setEditingIndex(idx)} className="text-primary-600 dark:text-primary-400 hover:text-primary-700 text-xs font-medium">Edit</button>
                                     <button type="button" onClick={() => removeCandidate(idx)} className="text-danger-600 dark:text-danger-400 hover:text-danger-700 text-xs font-medium">Remove</button>
                                 </div>
+                                <details className="text-xs text-gray-500 mt-1"><summary>Review details</summary>
+                                    <p>{c.reasoning || c.rationale || 'Review the identification against the source before linking.'}</p>
+                                    {Object.entries(c.field_provenance || {}).map(([field, source]) => <p key={field}>{field.replaceAll('_', ' ')}: {typeof source === 'string' ? source.replaceAll('_', ' ') : 'See source clause'}</p>)}
+                                    {c.unresolved_dimensions?.length > 0 && <p>Unresolved: {c.unresolved_dimensions.join(', ')}</p>}
+                                </details>
                                 {saveErrors[idx] && <p role="alert" aria-live="polite" className="text-xs text-danger-600 dark:text-danger-400 mt-1">{saveErrors[idx]}</p>}
                             </div>
                         </div>
@@ -390,7 +414,7 @@ export const DescribeFitmentPanel = ({ partId, onCommitted, onStage }) => {
                                 onChange={(e) => setPromoteAliasOnEdit(e.target.checked)}
                             />
                             <label htmlFor="promote-alias-checkbox" className="text-xs text-gray-700 dark:text-slate-300 cursor-pointer">
-                                Save atomic synonym as a global catalog alias (only for single-vehicle synonyms)
+                                Submit atomic synonym for alias review
                             </label>
                         </div>
                         <ApplicationCascadeForm
@@ -492,6 +516,7 @@ const PartApplicationManager = ({ part, onCancel }) => {
     const [loading, setLoading] = useState(true);
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
     const [currentLink, setCurrentLink] = useState(null);
+    const [evidenceRule, setEvidenceRule] = useState(null);
     const [selectedApp, setSelectedApp] = useState(null);
     const [yearStart, setYearStart] = useState('');
     const [yearEnd, setYearEnd] = useState('');
@@ -560,10 +585,10 @@ const PartApplicationManager = ({ part, onCancel }) => {
         }
     };
     
-    const handleUnlinkApp = async (applicationId) => {
+    const handleUnlinkApp = async (app) => {
         if (!canEdit) return;
         try {
-            await api.delete(`/parts/${part.part_id}/applications/${applicationId}`);
+            await api.delete(`/parts/${part.part_id}/application-rules/${app.rule_id}`, { data: { expected_version: app.row_version } });
             await refetchData();
         } catch (err) {
             alert('Failed to unlink application.');
@@ -577,10 +602,10 @@ const PartApplicationManager = ({ part, onCancel }) => {
         setIsEditModalOpen(true);
     };
 
-    const handleSaveYears = async (partAppId, years) => {
+    const handleSaveYears = async (_partAppId, years) => {
         if (!canEdit) return;
         try {
-            await api.put(`/part-applications/${partAppId}`, {
+            await api.put(`/parts/${part.part_id}/application-rules/${currentLink.rule_id}`, {
                 ...years,
                 expected_rule_version: currentLink?.row_version,
             });
@@ -607,6 +632,9 @@ const PartApplicationManager = ({ part, onCancel }) => {
 
     return (
         <div className="space-y-4">
+            <Modal isOpen={Boolean(evidenceRule)} onClose={() => setEvidenceRule(null)} title="Review Fitment Evidence" maxWidth="max-w-2xl">
+                {evidenceRule && <FitmentEvidenceReview partId={part.part_id} rule={evidenceRule} onChanged={refetchData} />}
+            </Modal>
             <h3 className="text-md font-medium text-gray-800 dark:text-slate-100 mb-2 flex items-center gap-1">
                 Linked Applications
                 <InfoTip label="Application">
@@ -618,7 +646,7 @@ const PartApplicationManager = ({ part, onCancel }) => {
                 <ul className="bg-gray-50 dark:bg-slate-900/50 border border-gray-200 dark:border-slate-700 p-3 rounded-lg mb-4 h-36 overflow-y-auto divide-y divide-gray-100 dark:divide-slate-700/60">
                     {displayGroups.map((group, groupIdx) => (
                         group.fitments.length === 1 ? (
-                            <li key={group.fitments[0].part_app_id} className="text-sm flex justify-between items-center py-2 text-gray-900 dark:text-slate-100">
+                            <li key={group.fitments[0].rule_id} className="text-sm flex justify-between items-center py-2 text-gray-900 dark:text-slate-100">
                                 <div className="flex items-center gap-1.5 flex-wrap">
                                     <span className="font-medium">
                                         {group.fitments[0].make} {group.fitments[0].model}
@@ -642,8 +670,9 @@ const PartApplicationManager = ({ part, onCancel }) => {
                                 </div>
                                 {canEdit && (
                                     <div className="flex items-center space-x-3">
+                                        <button onClick={() => setEvidenceRule(group.fitments[0])} className="text-xs underline">Evidence</button>
                                         <button onClick={() => handleEditLink(group.fitments[0])} className="text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 p-1" title="Edit Years"><Icon path={ICONS.edit} className="h-4 w-4"/></button>
-                                        <button onClick={() => handleUnlinkApp(group.fitments[0].application_id)} className="text-danger-600 dark:text-danger-400 hover:text-danger-700 dark:hover:text-danger-300 p-1" title="Unlink"><Icon path={ICONS.trash} className="h-4 w-4"/></button>
+                                        <button onClick={() => handleUnlinkApp(group.fitments[0])} className="text-danger-600 dark:text-danger-400 hover:text-danger-700 dark:hover:text-danger-300 p-1" title="Unlink"><Icon path={ICONS.trash} className="h-4 w-4"/></button>
                                     </div>
                                 )}
                             </li>
@@ -659,7 +688,7 @@ const PartApplicationManager = ({ part, onCancel }) => {
                                 </div>
                                 <ul className="mt-1 ml-3 space-y-1 border-l border-gray-200 dark:border-slate-700 pl-3">
                                     {group.fitments.map(app => (
-                                        <li key={app.part_app_id} className="flex justify-between items-center text-xs text-gray-600 dark:text-slate-300">
+                                        <li key={app.rule_id} className="flex justify-between items-center text-xs text-gray-600 dark:text-slate-300">
                                             <div className="flex items-center gap-1.5">
                                                 <span className="font-mono">{app.engine || '—'}</span>
                                                 <span className={`text-[11px] px-1 py-0.5 rounded font-medium ${STATUS_BADGE[formatApplicationScopeBadge(app).label] || CONFIDENCE_BADGE.low}`}>
@@ -668,8 +697,9 @@ const PartApplicationManager = ({ part, onCancel }) => {
                                             </div>
                                             {canEdit && (
                                                 <div className="flex items-center space-x-2">
+                                                    <button onClick={() => setEvidenceRule(app)} className="text-xs underline">Evidence</button>
                                                     <button onClick={() => handleEditLink(app)} className="text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 p-1" title="Edit Years"><Icon path={ICONS.edit} className="h-3.5 w-3.5"/></button>
-                                                    <button onClick={() => handleUnlinkApp(app.application_id)} className="text-danger-600 dark:text-danger-400 hover:text-danger-700 dark:hover:text-danger-300 p-1" title="Unlink"><Icon path={ICONS.trash} className="h-3.5 w-3.5"/></button>
+                                                    <button onClick={() => handleUnlinkApp(app)} className="text-danger-600 dark:text-danger-400 hover:text-danger-700 dark:hover:text-danger-300 p-1" title="Unlink"><Icon path={ICONS.trash} className="h-3.5 w-3.5"/></button>
                                                 </div>
                                             )}
                                         </li>
@@ -688,7 +718,7 @@ const PartApplicationManager = ({ part, onCancel }) => {
                         Link New Application
                         <InfoTip label="Year Start / Year End">
                             Optionally limit the fitment to specific model years (e.g., 2010-2015). Leave both
-                            blank if the fitment applies to all years of that vehicle.
+                            blank when the source does not specify years.
                         </InfoTip>
                     </label>
                     <div className="grid grid-cols-1 gap-2">

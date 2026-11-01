@@ -152,7 +152,7 @@ function evaluateSingleRule(rule, query = {}) {
   }
 
   // Approval status check: if requireApproved is set on query and rule is not approved
-  if (rule.approval_status !== 'approved' || rule.evidence_status !== 'sourced_verified') {
+  if (rule.approval_status !== 'approved' || rule.evidence_status !== 'sourced_verified' || rule.evidence_current === false) {
     reasons.push('compatibility_not_verified');
   }
 

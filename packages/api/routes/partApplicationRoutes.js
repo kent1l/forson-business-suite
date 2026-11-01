@@ -1,6 +1,7 @@
 'use strict';
 
 const express = require('express');
+const { currentEvidenceSql } = require('../helpers/fitmentDocumentSql');
 const db = require('../db');
 const router = express.Router();
 const { protect, hasPermission } = require('../middleware/authMiddleware');
@@ -13,10 +14,16 @@ const vehicleFitmentParserAI = require('../services/ai/features/vehicleFitmentPa
 const {
   validateNoClientVerificationFlags,
   validateAtomicAliasText,
-  deriveIdentityAndQualifierModes,
 } = require('../helpers/fitmentRuleSchema');
 const fitmentReviewService = require('../services/fitmentReviewService');
 const { saveFitmentLink, normalizeRule, RULE_FIELDS, fail } = require('../services/fitmentLinkService');
+
+router.get('/parts/:partId/fitment-evidence', protect, hasPermission('applications:view'), async (req,res) => {
+  try {
+    const {rows}=await db.query('SELECT * FROM fitment_evidence WHERE part_id=$1 ORDER BY evidence_id DESC LIMIT 100',[req.params.partId]);
+    res.json(rows);
+  } catch(err) { res.status(500).json({message:'Could not load evidence'}); }
+});
 
 // GET /api/parts/:partId/applications
 router.get('/parts/:partId/applications', protect, hasPermission('applications:view'), async (req, res) => {
@@ -24,6 +31,7 @@ router.get('/parts/:partId/applications', protect, hasPermission('applications:v
   try {
     const query = `
       SELECT par.*, par.row_version, pa.part_app_id,
+        ${currentEvidenceSql('par')} AS evidence_current,
         av.make,av.model,av.engine,av.chassis,av.make_id,av.model_id,av.engine_id,av.chassis_id,
         par.variant_descriptor AS variant,
         par.fuel_type_qualifier AS fuel_type,par.displacement_liters_qualifier AS displacement_liters,
@@ -112,7 +120,8 @@ router.put('/part-applications/:partAppId', protect, hasPermission('applications
     }
 
     const current = currentRes.rows[0];
-    const currentVersion = Number(current.rule_row_version ?? current.row_version ?? 1);
+    const lockedRule = current.legacy_rule_id ? (await client.query('SELECT * FROM part_application_rule WHERE rule_id=$1 FOR UPDATE', [current.legacy_rule_id])).rows[0] : null;
+    const currentVersion = Number(lockedRule?.row_version ?? current.row_version ?? 1);
 
     if (expectedVersion == null || Number(expectedVersion) !== currentVersion) {
       await client.query('ROLLBACK');
@@ -162,12 +171,14 @@ router.put('/part-applications/:partAppId', protect, hasPermission('applications
          SET year_start = $1,
              year_end = $2,
              year_mode = CASE WHEN $1 IS NOT NULL OR $2 IS NOT NULL THEN 'specified' ELSE 'not_supplied' END,
+             approval_status = 'needs_review', evidence_status = 'user_declared',
              updated_by = COALESCE($3, updated_by)
          WHERE rule_id = $4`,
         [rawYS, rawYE, req.user?.employee_id || null, updatedRow.legacy_rule_id]
       );
     }
 
+    if (lockedRule) await client.query("INSERT INTO fitment_audit(entity_type,entity_id,action,actor_id,before_state,after_state) VALUES ('part_application_rule',$1,'legacy_year_edit',$2,$3::jsonb,$4::jsonb)", [lockedRule.rule_id,req.user.employee_id,JSON.stringify(lockedRule),JSON.stringify({year_start:rawYS,year_end:rawYE})]);
     syncOutboxQueued = await enqueuePartUpsert(partIdForSync, { source: 'part_application_update' }, client);
 
     await client.query('COMMIT');
@@ -228,7 +239,11 @@ router.put('/parts/:partId/application-rules/:ruleId', protect, hasPermission('a
       });
     }
 
-    const next = normalizeRule({ ...cur, ...body, approval_status: undefined, evidence_status: undefined });
+    const next = normalizeRule({ ...cur, ...body,
+      variant_descriptor: body.variant !== undefined ? body.variant : cur.variant_descriptor,
+      fuel_type_qualifier: body.fuel_type !== undefined ? body.fuel_type : cur.fuel_type_qualifier,
+      displacement_liters_qualifier: body.displacement_liters !== undefined ? body.displacement_liters : cur.displacement_liters_qualifier,
+      approval_status: undefined, evidence_status: undefined });
     const cols = RULE_FIELDS.filter(k => !['make_mode','model_mode','chassis_mode','engine_mode'].includes(k));
     const upd = await client.query(`UPDATE part_application_rule SET ${cols.map((k,i) => `${k}=$${i+1}`).join(',')}, approval_status='needs_review',evidence_status='user_declared',updated_by=$${cols.length+1} WHERE rule_id=$${cols.length+2} RETURNING *`, [...cols.map(k=>next[k] ?? null),req.user.employee_id,ruleId]);
     await client.query(`UPDATE part_application SET year_start=$1,year_end=$2 WHERE legacy_rule_id=$3`, [next.year_start,next.year_end,ruleId]);
@@ -244,94 +259,38 @@ router.put('/parts/:partId/application-rules/:ruleId', protect, hasPermission('a
   }
 });
 
-// DELETE /api/part-applications/:partAppId
-router.delete('/part-applications/:partAppId', protect, hasPermission('applications:edit'), async (req, res) => {
-  const { partAppId } = req.params;
+// Remove one alternative without dropping other restrictions for the identity.
+router.delete('/parts/:partId/application-rules/:ruleId', protect, hasPermission('applications:edit'), async (req, res) => {
   const client = await db.getClient();
-  let partIdForSync = null;
-  let syncOutboxQueued = false;
-
   try {
     await client.query('BEGIN');
-    const findPart = await client.query(
-      'SELECT part_id, legacy_rule_id FROM part_application WHERE part_app_id = $1 FOR UPDATE',
-      [partAppId]
-    );
-    if (findPart.rows.length === 0) {
-      await client.query('ROLLBACK');
-      return res.status(404).json({ message: 'Part application link not found.' });
-    }
-    partIdForSync = findPart.rows[0].part_id;
-    const ruleId = findPart.rows[0].legacy_rule_id;
-
-    await client.query('DELETE FROM part_application WHERE part_app_id = $1', [partAppId]);
-    if (ruleId) {
-      await client.query(
-        'UPDATE part_application_rule SET is_active = FALSE WHERE rule_id = $1',
-        [ruleId]
-      );
-    }
-
-    syncOutboxQueued = await enqueuePartUpsert(partIdForSync, { source: 'part_application_delete' }, client);
+    const { partId, ruleId } = req.params;
+    await client.query('SELECT part_id FROM part WHERE part_id=$1 FOR UPDATE', [partId]);
+    const cur = (await client.query('SELECT * FROM part_application_rule WHERE rule_id=$1 AND part_id=$2 AND is_active=TRUE FOR UPDATE', [ruleId, partId])).rows[0];
+    if (!cur) throw fail('NOT_FOUND', 'Rule not found', 404);
+    if (Number(req.body?.expected_version) !== Number(cur.row_version)) throw fail('STALE_RULE', 'Rule changed; refresh before removing it', 409);
+    await client.query('UPDATE part_application_rule SET is_active=FALSE,updated_by=$2 WHERE rule_id=$1', [ruleId, req.user.employee_id]);
+    const replacement = (await client.query("SELECT * FROM part_application_rule WHERE part_id=$1 AND application_id=$2 AND effect='include' AND is_active=TRUE ORDER BY rule_id LIMIT 1", [partId, cur.application_id])).rows[0];
+    if (replacement) await client.query('UPDATE part_application SET legacy_rule_id=$1,legacy_claim_id=$2,year_start=$3,year_end=$4 WHERE part_id=$5 AND application_id=$6', [replacement.rule_id,replacement.claim_id,replacement.year_start,replacement.year_end,partId,cur.application_id]);
+    else await client.query('DELETE FROM part_application WHERE part_id=$1 AND application_id=$2', [partId,cur.application_id]);
+    await client.query("INSERT INTO fitment_audit(entity_type,entity_id,action,actor_id,before_state) VALUES ('part_application_rule',$1,'removed',$2,$3::jsonb)", [ruleId,req.user.employee_id,JSON.stringify(cur)]);
+    await enqueuePartUpsert(partId, { source: 'fitment_rule_removed' }, client);
     await client.query('COMMIT');
+    res.json({ outcome: 'removed' });
   } catch (err) {
     await client.query('ROLLBACK');
-    console.error('Error deleting part application:', err.message);
-    return res.status(500).send('Server Error');
-  } finally {
-    client.release();
-  }
-
-  if (!syncOutboxQueued && partIdForSync && process.env.DISABLE_MEILI_OUTBOX_WORKER !== 'true') {
-    try {
-      await syncPartWithMeili(partIdForSync);
-    } catch (meiliErr) {
-      console.warn('Meili sync fallback failed:', meiliErr.message);
-    }
-  }
-  return res.json({ message: 'Application unlinked from part.' });
+    res.status(err.status || 500).json({ code: err.code, message: err.message });
+  } finally { client.release(); }
 });
 
-// DELETE /api/parts/:partId/applications/:appId
-router.delete('/parts/:partId/applications/:appId', protect, hasPermission('applications:edit'), async (req, res) => {
-  const { partId, appId } = req.params;
-  const client = await db.getClient();
-  let syncOutboxQueued = false;
-
-  try {
-    await client.query('BEGIN');
-    const deleteOp = await client.query(
-      'DELETE FROM part_application WHERE part_id = $1 AND application_id = $2 RETURNING legacy_rule_id',
-      [partId, appId]
-    );
-    if (deleteOp.rowCount === 0) {
-      await client.query('ROLLBACK');
-      return res.status(404).json({ message: 'Application link not found.' });
-    }
-    const ruleId = deleteOp.rows[0]?.legacy_rule_id;
-    if (ruleId) {
-      await client.query('UPDATE part_application_rule SET is_active = FALSE WHERE rule_id = $1', [ruleId]);
-    }
-    syncOutboxQueued = await enqueuePartUpsert(partId, { source: 'partApplicationRoutes.delete' }, client);
-    await client.query('COMMIT');
-  } catch (err) {
-    await client.query('ROLLBACK');
-    console.error('Error deleting application link:', err.message);
-    return res.status(500).send('Server Error');
-  } finally {
-    client.release();
-  }
-
-  if (!syncOutboxQueued && process.env.DISABLE_MEILI_OUTBOX_WORKER !== 'true') {
-    try {
-      await syncPartWithMeili(partId);
-    } catch (meiliErr) {
-      console.warn('Meili sync fallback failed:', meiliErr.message);
-    }
-  }
-
-  return res.json({ message: 'Application link deleted successfully.' });
+// Legacy deletes identify only a discovery projection and cannot select a
+// particular effect/restriction/version. Require the reviewed rule contract.
+const requireRuleDelete = (_req,res) => res.status(409).json({
+  code:'RULE_SELECTION_REQUIRED',
+  message:'Refresh the application manager and remove the selected rule with its current version.',
 });
+router.delete('/part-applications/:partAppId',protect,hasPermission('applications:edit'),requireRuleDelete);
+router.delete('/parts/:partId/applications/:appId',protect,hasPermission('applications:edit'),requireRuleDelete);
 
 /**
  * Merge deterministic parser candidates with AI fallback candidates.
@@ -624,50 +583,22 @@ router.get('/applications/fitment-research/:jobId', protect, hasPermission('appl
   }
 });
 
-// POST /api/applications/fitment-evidence/:evidenceId/approval
-router.post(
-  '/applications/fitment-evidence/:evidenceId/approval',
-  protect,
-  hasPermission('applications:approve'),
-  async (req, res) => {
-    const evidenceId = Number(req.params.evidenceId);
-    const { decision = 'approved', reason = null } = req.body || {};
-    if (!Number.isInteger(evidenceId) || evidenceId <= 0) {
-      return res.status(400).json({ message: 'Invalid evidenceId' });
-    }
-    if (!['approved', 'rejected'].includes(decision)) {
-      return res.status(400).json({ message: 'decision must be approved or rejected' });
-    }
-    try {
-      const evStatus = decision === 'approved' ? 'sourced_verified' : 'rejected';
-      const { rows } = await db.query(
-        `UPDATE fitment_evidence
-         SET approval_status = $1,
-             evidence_status = $2,
-             reviewer_id = $3,
-             reviewed_at = NOW(),
-             review_reason = $4,
-             row_version = row_version + 1,
-             updated_at = NOW()
-         WHERE evidence_id = $5
-         RETURNING *`,
-        [decision, evStatus, req.user?.employee_id || null, reason, evidenceId]
-      );
-      if (!rows.length) {
-        return res.status(404).json({ message: 'Evidence item not found' });
-      }
-      await db.query(
-        `INSERT INTO fitment_audit (entity_type, entity_id, action, actor_id, reason, after_state)
-         VALUES ('fitment_evidence', $1, $2, $3, $4, $5::jsonb)`,
-        [evidenceId, `evidence_${decision}`, req.user?.employee_id || null, reason, JSON.stringify(rows[0])]
-      );
-      return res.json(rows[0]);
-    } catch (err) {
-      console.error('Error approving fitment evidence:', err.message);
-      return res.status(500).send('Server Error');
-    }
-  }
-);
+// Evidence approval and part compatibility approval are distinct, audited operations.
+const evidenceService = require('../services/fitmentEvidenceService');
+const reviewTransaction = operation => async (req,res) => {
+  const client=await db.getClient();
+  try {
+    await client.query('BEGIN');
+    const result=await operation(client,req);
+    await client.query('COMMIT');
+    res.json(result);
+  } catch(err) {
+    await client.query('ROLLBACK');
+    res.status(err.status || 500).json({code:err.code || 'SERVER_ERROR',message:err.message});
+  } finally { client.release(); }
+};
+router.post('/applications/fitment-evidence/:evidenceId/approval',protect,hasPermission('applications:approve'),reviewTransaction((client,req)=>evidenceService.reviewEvidence(client,req.params.evidenceId,req.body || {},req.user.employee_id)));
+router.post('/parts/:partId/application-rules/:ruleId/approval',protect,hasPermission('applications:approve'),reviewTransaction((client,req)=>evidenceService.reviewRule(client,req.params.partId,req.params.ruleId,req.body || {},req.user.employee_id)));
 
 // POST /api/applications/fitment-corrections
 router.post('/applications/fitment-corrections', protect, hasPermission('applications:edit'), async (req, res) => {
@@ -688,7 +619,7 @@ router.post('/applications/fitment-alias', protect, hasPermission('applications:
   const body = req.body || {};
   const alias_text = body.alias_text;
   const alias_kind = body.alias_kind || 'canonical_synonym';
-  const require_approval = Boolean(body.require_approval);
+
 
   // Support both { type, target_id, alias_text } and legacy { alias_text, make_id, model_id, engine_id }
   let type = body.type;
@@ -744,7 +675,7 @@ router.post('/applications/fitment-alias', protect, hasPermission('applications:
       return res.status(409).json({ code: 'CANONICAL_NAME_COLLISION', message: 'That text is already a canonical taxonomy name.' });
     }
 
-    const status = require_approval ? 'pending_review' : 'approved';
+    const status = 'pending_review';
     let row = null;
 
     if (type === 'make') {
@@ -766,6 +697,7 @@ router.post('/applications/fitment-alias', protect, hasPermission('applications:
       if (!mLookup.rows.length) {
         return res.status(404).json({ message: 'Target taxonomy row not found.' });
       }
+      if (resolvedMakeId && Number(resolvedMakeId) !== Number(mLookup.rows[0].make_id)) return res.status(422).json({code:'IDENTITY_MISMATCH',message:'Alias make does not match model parent'});
       if (!resolvedMakeId) {
         resolvedMakeId = mLookup.rows[0].make_id;
       }

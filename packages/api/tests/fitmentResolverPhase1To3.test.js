@@ -15,6 +15,7 @@ const {
 const {
     _validateResult,
 } = require('../services/ai/features/vehicleFitmentParserAI');
+const { normalizeRule } = require('../services/fitmentLinkService');
 
 describe('Phase 1-3 Fitment Resolver Unit & Contract Tests', () => {
     describe('fitmentRuleSchema', () => {
@@ -208,6 +209,53 @@ describe('Phase 1-3 Fitment Resolver Unit & Contract Tests', () => {
             expect(validated.fitments[0].engine_id).toBeNull();
             expect(validated.fitments[0].fuel_type).toBeNull(); // F17: never defaults to 'other'
             expect(validated.fitments[0].confidence).toBe('low');
+        });
+    });
+
+    describe('completion regressions', () => {
+        test('conflicting local and AI model readings of the same clause are alternatives', () => {
+            const rows = mergeFitmentCandidates(
+                [{ make_id:1, model_id:10, model:'Hilux', confidence:'low', clause_text:'unclear vehicle phrase' }],
+                [{ make_id:1, model_id:11, model:'Fortuner', confidence:'high', raw_span:'unclear vehicle phrase' }]
+            );
+            expect(rows).toHaveLength(2);
+            expect(rows[0].alternative_group_id).toBeTruthy();
+            expect(rows[0].alternative_group_id).toBe(rows[1].alternative_group_id);
+        });
+        const verified = { rule_id: 1, effect: 'include', engine_id: 100, approval_status: 'approved', evidence_status: 'sourced_verified' };
+        test.each([
+            ['market', 'PH'], ['variant', 'Turbo'], ['position', 'Front'], ['drivetrain', '4WD'],
+            ['transmission', 'Manual'], ['generation', 'Gen 2'], ['fuel_type', 'diesel'], ['displacement_liters', 2.5],
+        ])('unknown rule qualifier %s cannot confirm a more specific query', (field, value) => {
+            expect(evaluateFitmentRules([verified], { engine_id: 100, [field]: value }).status).toBe('needs_details');
+        });
+        test('an overlapping year range does not confirm the entire requested range', () => {
+            expect(evaluateFitmentRules([{ ...verified, year_start: 2010, year_end: 2015 }], { engine_id: 100, year_start: 2012, year_end: 2020 }).status).toBe('needs_details');
+        });
+        test('staff entry and missing approval metadata never establish sourced compatibility', () => {
+            for (const rule of [{ engine_id: 100 }, { ...verified, evidence_status: 'user_declared' }]) {
+                expect(evaluateFitmentRules([rule], { engine_id: 100 }).status).toBe('needs_details');
+            }
+        });
+        test('generation and displacement restrictions are AND conditions', () => {
+            expect(evaluateFitmentRules([{ ...verified, generation: 'Gen 2', displacement_liters_qualifier: 2.5 }], { engine_id: 100, generation: 'Gen 2' }).status).toBe('needs_details');
+            expect(evaluateFitmentRules([{ ...verified, generation: 'Gen 2' }], { engine_id: 100, generation: 'Gen 1' }).status).toBe('conflict');
+        });
+        test('scope modes and meaningful punctuation remain separate proposal identities', () => {
+            const row = { engine_id: 100 };
+            expect(computeInterpretationKey(row)).not.toBe(computeInterpretationKey({ ...row, market_mode: 'unrestricted' }));
+            expect(computeInterpretationKey({ ...row, variant: 'A/B' })).not.toBe(computeInterpretationKey({ ...row, variant: 'AB' }));
+        });
+        test.each(['engine', 'market', 'position', 'transmission', 'fuel', 'displacement', 'generation'])('all unrestricted %s inputs require a separate approval operation', field => {
+            expect(() => normalizeRule({ engine_id: 100, [`${field}_mode`]: 'unrestricted' })).toThrow(/evidence approval/);
+        });
+        test('normal saves preserve all qualifiers and reject precision loss', () => {
+            const rule = normalizeRule({ engine_id: 100, market: 'PH', variant: 'Turbo', position: 'Front', transmission: 'Manual', generation: 'Gen 2', displacement_liters: 2.5, fuel_type: 'diesel' });
+            expect(rule).toMatchObject({ market: 'PH', variant_descriptor: 'Turbo', position: 'Front', transmission: 'Manual', generation: 'Gen 2', displacement_liters_qualifier: 2.5, fuel_mode: 'specified' });
+            expect(() => normalizeRule({ displacement_liters: 2.55 })).toThrow(/decimal/);
+        });
+        test.each(['http://example.com', 'https://user:pass@example.com', 'https://[::ffff:127.0.0.1]/', 'https://100.64.0.1/', 'https://224.0.0.1/'])('evidence metadata rejects unsafe URL %s without fetching it', async url => {
+            expect((await validateEvidenceUrl(url)).ok).toBe(false);
         });
     });
 });

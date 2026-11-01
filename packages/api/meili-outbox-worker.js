@@ -1,3 +1,4 @@
+const { fitmentRulesSql } = require('./helpers/fitmentDocumentSql');
 const db = require('./db');
 const { syncPartWithMeili, removePartFromMeili } = require('./meilisearch');
 const { normalizePartData } = require('./helpers/normalizePart');
@@ -33,6 +34,7 @@ const loadPartDocs = async (partIds) => {
   const query = `
     SELECT
       pv.*,
+      ${fitmentRulesSql()} AS fitment_rules,
       (SELECT ARRAY_AGG(
         CONCAT(vmk.make_name, ' ', vmd.model_name, COALESCE(CONCAT(' ', veng.engine_code), ''))
       )
@@ -59,6 +61,9 @@ const loadPartDocs = async (partIds) => {
       ...part,
       // display_name is provided natively by parts_view
       applications: part.applications_array || [],
+      fitment_rules: part.fitment_rules || [],
+      fitment_schema_version: 2,
+      fitment_confirmation: false,
       searchable_applications: withYearTokens(baseSearchableApplications, part.application_year_ranges || []),
       tags: part.tags_array || [],
       normalized_internal_sku: normalizedFields.normalized_internal_sku,

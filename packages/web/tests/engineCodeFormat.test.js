@@ -8,6 +8,9 @@ import {
   compressEngineCodes,
   groupFitmentsForDisplay,
   formatFitmentGroup,
+  groupApplicationsForDisplay,
+  formatApplicationScopeBadge,
+  fitmentSavePayload,
 } from '../src/utils/engineCodeFormat.js';
 
 // Half of the round-trip guard from PRD-FBS-FIT-002 §9.3. The other half runs in
@@ -119,4 +122,22 @@ test('keeps exclusions, qualifiers and evidence separate when grouping fitments'
   assert.equal(groups[1].effect, 'exclude');
   assert.match(formatFitmentGroup(groups[2]), /\[KUN26\]/);
   assert.ok(groups.every(group => group.fitments.length === 1));
+});
+
+test('display never unions disjoint years or qualifier scope modes', () => {
+  const base = { make: 'Toyota', model: 'Hilux', engine: '1KD-FTV', year_start: 2005, year_end: 2010 };
+  const rows = [base, { ...base, year_start: 2015, year_end: 2020 }, { ...base, market_mode: 'unrestricted' }, { ...base, generation: 'Gen 2' }];
+  assert.equal(groupApplicationsForDisplay(rows).length, 4);
+  assert.equal(groupFitmentsForDisplay(rows).length, 4);
+});
+
+test('verification badge requires both compatibility approval and sourced verification', () => {
+  assert.notEqual(formatApplicationScopeBadge({ approval_status: 'approved', evidence_status: 'user_declared' }).label, 'Verified');
+  assert.notEqual(formatApplicationScopeBadge({ approval_status: 'needs_review', evidence_status: 'sourced_verified' }).label, 'Verified');
+  assert.equal(formatApplicationScopeBadge({ approval_status: 'approved', evidence_status: 'sourced_verified' }).label, 'Verified');
+});
+
+test('save payload preserves restrictions and review tokens without sending response approval fields', () => {
+  const payload = fitmentSavePayload({ application_id: 1, candidate_id: 5, effect: 'exclude', position: 'Front', transmission: 'Manual', generation: 'Gen 2', year_start: '', approval_status: 'approved', evidence_status: 'sourced_verified' }, 3, 7);
+  assert.deepEqual(payload, { application_id: 1, effect: 'exclude', position: 'Front', transmission: 'Manual', generation: 'Gen 2', year_start: null, review_id: 3, candidate_id: 5, expected_version: 7 });
 });
