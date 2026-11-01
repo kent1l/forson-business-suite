@@ -7,6 +7,8 @@ const { protect, hasPermission } = require('../middleware/authMiddleware');
 const { parsePaginationQuery, paginatedResponse } = require('../helpers/pagination');
 const { canonicalizeEngineCode, lookupKey } = require('../helpers/engineCodeGrammar');
 const taxonomyIndex = require('../helpers/vehicleTaxonomyIndex');
+const { enqueuePartUpsert } = require('../services/meiliOutboxService');
+const { COMBINATION_FIELDS, normalizeCombination } = require('../helpers/vehicleCombination');
 const {
   nameKey,
   validateNoClientVerificationFlags,
@@ -416,34 +418,23 @@ async function deriveVehicleEngineFitment(client, modelId, engineId, yearStart =
   );
 }
 
-async function findApplication(client, makeId, modelId, engineId, chassisId = null) {
-  const { rows } = await client.query(
-    `SELECT application_id
-     FROM application
-     WHERE make_id IS NOT DISTINCT FROM $1
-       AND model_id IS NOT DISTINCT FROM $2
-       AND engine_id IS NOT DISTINCT FROM $3
-       AND chassis_id IS NOT DISTINCT FROM $4
-     ORDER BY application_id ASC
-     LIMIT 1`,
-    [makeId ?? null, modelId ?? null, engineId ?? null, chassisId ?? null]
-  );
-  return rows.length ? rows[0].application_id : null;
+async function findApplication(client, makeId, modelId, engineId, chassisId = null, combination = {}, excludeId = null) {
+  const fields = ['make_id', 'model_id', 'engine_id', 'chassis_id', ...COMBINATION_FIELDS];
+  const values = [makeId ?? null, modelId ?? null, engineId ?? null, chassisId ?? null, ...COMBINATION_FIELDS.map(k => combination[k] ?? null)];
+  const clauses = fields.map((key, i) => {
+    const text = ['market','variant_descriptor','drivetrain','transmission','generation'].includes(key);
+    return text ? `lower(btrim(${key})) IS NOT DISTINCT FROM lower(btrim($${i + 1}::text))` : `${key} IS NOT DISTINCT FROM $${i + 1}`;
+  });
+  if (excludeId != null) { values.push(excludeId); clauses.push(`application_id<>$${values.length}`); }
+  const { rows } = await client.query(`SELECT application_id FROM application WHERE ${clauses.join(' AND ')} LIMIT 1`, values);
+  return rows[0]?.application_id ?? null;
 }
 
 function enrichApplicationRow(row) {
   if (!row) return row;
-  const modes = deriveIdentityAndQualifierModes(row);
-  const isMakeOnly = row.make_id != null && row.model_id == null && row.engine_id == null && row.chassis_id == null;
-  const isChassisOnlyWithoutModel = row.chassis_id != null && row.model_id == null;
-  const approvalStatus = (isMakeOnly || isChassisOnlyWithoutModel || row.identity_status === 'needs_review')
-    ? 'needs_review'
-    : (row.approval_status || (row.identity_status === 'verified' ? 'approved' : 'needs_review'));
-  return {
-    ...row,
-    approval_status: approvalStatus,
-    identity_modes: modes.identity_modes,
-  };
+  const { approval_status: _approval, evidence_status: _evidence, ...classification } = row;
+  return { ...classification, variant: row.variant_descriptor, identity_modes: deriveIdentityAndQualifierModes(row).identity_modes };
+
 }
 
 /**
@@ -452,6 +443,7 @@ function enrichApplicationRow(row) {
  * identical ID/name/parent validation (`H01`, `H02`, `H04`, `H12`, `H13`, `A13`–`A15`).
  */
 async function resolveAndFindOrCreateApplication(client, payload = {}) {
+  const combination = normalizeCombination(payload);
   const flagCheck = validateNoClientVerificationFlags(payload);
   if (!flagCheck.valid) {
     throw httpError(
@@ -495,7 +487,7 @@ async function resolveAndFindOrCreateApplication(client, payload = {}) {
     throw httpError(400, 'EMPTY_APPLICATION_SCOPE', 'At least one of make, model, chassis, or engine is required');
   }
 
-  let applicationId = await findApplication(client, resolvedMakeId, resolvedModelId, resolvedEngineId, resolvedChassisId);
+  let applicationId = await findApplication(client, resolvedMakeId, resolvedModelId, resolvedEngineId, resolvedChassisId, combination);
   let created = false;
 
   if (!applicationId) {
@@ -506,10 +498,10 @@ async function resolveAndFindOrCreateApplication(client, payload = {}) {
     await client.query('SAVEPOINT sp_create_application');
     try {
       const ins = await client.query(
-        `INSERT INTO application (make_id, model_id, engine_id, chassis_id, identity_status)
-         VALUES ($1, $2, $3, $4, $5)
+        `INSERT INTO application (make_id, model_id, engine_id, chassis_id, identity_status, ${COMBINATION_FIELDS.join(',')})
+         VALUES (${Array.from({length:5+COMBINATION_FIELDS.length}, (_,i)=>`$${i+1}`).join(',')})
          RETURNING application_id`,
-        [resolvedMakeId, resolvedModelId, resolvedEngineId, resolvedChassisId, initialStatus]
+        [resolvedMakeId, resolvedModelId, resolvedEngineId, resolvedChassisId, initialStatus, ...COMBINATION_FIELDS.map(k => combination[k])]
       );
       await client.query('RELEASE SAVEPOINT sp_create_application');
       applicationId = ins.rows[0].application_id;
@@ -517,7 +509,7 @@ async function resolveAndFindOrCreateApplication(client, payload = {}) {
     } catch (err) {
       await client.query('ROLLBACK TO SAVEPOINT sp_create_application');
       if (err.code === '23505') {
-        applicationId = await findApplication(client, resolvedMakeId, resolvedModelId, resolvedEngineId, resolvedChassisId);
+        applicationId = await findApplication(client, resolvedMakeId, resolvedModelId, resolvedEngineId, resolvedChassisId, combination);
       } else {
         throw err;
       }
@@ -552,7 +544,7 @@ router.get('/applications', protect, hasPermission('applications:view'), async (
     if (search && String(search).trim()) {
       params.push(`%${String(search).trim()}%`);
       whereClauses.push(
-        `(av.make ILIKE $${params.length} OR av.model ILIKE $${params.length} OR COALESCE(av.engine, '') ILIKE $${params.length} OR COALESCE(av.chassis, '') ILIKE $${params.length})`
+        `(av.make ILIKE $${params.length} OR av.model ILIKE $${params.length} OR COALESCE(av.engine, '') ILIKE $${params.length} OR COALESCE(av.chassis, '') ILIKE $${params.length} OR concat_ws(' ',av.market,av.variant_descriptor,av.drivetrain,av.transmission,av.generation,av.year_start,av.year_end) ILIKE $${params.length})`
       );
     }
     if (make) {
@@ -571,30 +563,9 @@ router.get('/applications', protect, hasPermission('applications:view'), async (
     else if (sortBy === 'model') orderBy = `ORDER BY av.model ${dir} NULLS LAST`;
     else if (sortBy === 'engine') orderBy = `ORDER BY av.engine ${dir} NULLS LAST`;
 
-    const baseQuery = `
-      SELECT
-        av.application_id,
-        av.make,
-        av.model,
-        av.engine,
-        av.make_id,
-        av.model_id,
-        av.engine_id,
-        av.displacement_liters,
-        av.fuel_type,
-        av.chassis_id,
-        av.chassis,
-        av.identity_status,
-        av.approval_status,
-        av.row_version,
-        COUNT(pa.part_id)::int AS linked_parts_count
-      FROM application_view av
-      LEFT JOIN part_application pa ON av.application_id = pa.application_id
-      ${whereSql}
-      GROUP BY av.application_id, av.make, av.model, av.engine, av.make_id, av.model_id, av.engine_id,
-               av.displacement_liters, av.fuel_type, av.chassis_id, av.chassis, av.identity_status, av.approval_status, av.row_version
-      ${orderBy}
-    `;
+    const baseQuery = `SELECT av.*,
+      (SELECT COUNT(*)::int FROM part_application pa WHERE pa.application_id=av.application_id) AS linked_parts_count
+      FROM application_view av ${whereSql} ${orderBy}`;
 
     if (!paginated) {
       const { rows } = await db.query(baseQuery, params);
@@ -881,7 +852,7 @@ router.put('/applications/:id', protect, hasPermission('applications:edit'), asy
   try {
     await client.query('BEGIN');
     const current = await client.query(
-      'SELECT application_id, row_version FROM application WHERE application_id = $1 FOR UPDATE',
+      'SELECT * FROM application WHERE application_id = $1 FOR UPDATE',
       [id]
     );
     if (!current.rows.length) {
@@ -926,29 +897,28 @@ router.put('/applications/:id', protect, hasPermission('applications:edit'), asy
       return res.status(400).json({ message: 'At least one of make, model, chassis, or engine is required' });
     }
 
-    const duplicate = await client.query(
-      `SELECT application_id
-       FROM application
-       WHERE make_id IS NOT DISTINCT FROM $1
-         AND model_id IS NOT DISTINCT FROM $2
-         AND engine_id IS NOT DISTINCT FROM $3
-         AND chassis_id IS NOT DISTINCT FROM $4
-         AND application_id <> $5
-       LIMIT 1`,
-      [resolvedMakeId, resolvedModelId, resolvedEngineId, resolvedChassisId, id]
-    );
-    if (duplicate.rows.length) {
-      await client.query('ROLLBACK');
-      return res.status(409).json({
-        message: 'An application with this Make, Model, Chassis, and Engine already exists.',
-        existing_application_id: duplicate.rows[0].application_id,
-      });
+    const combined = { ...current.rows[0], ...req.body };
+    for (const [alias, field] of [['variant','variant_descriptor'],['fuel_type','fuel_type_qualifier'],['displacement_liters','displacement_liters_qualifier']]) {
+      if (Object.hasOwn(req.body, alias)) combined[field] = req.body[alias];
     }
-
-    await client.query(
-      'UPDATE application SET make_id = $1, model_id = $2, engine_id = $3, chassis_id = $4 WHERE application_id = $5',
-      [resolvedMakeId, resolvedModelId, resolvedEngineId, resolvedChassisId, id]
-    );
+    const combination = normalizeCombination(combined);
+    const duplicate = await findApplication(client, resolvedMakeId, resolvedModelId, resolvedEngineId, resolvedChassisId, combination, id);
+    if (duplicate) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ message: 'This vehicle combination already exists.', existing_application_id: duplicate });
+    }
+    const values = [resolvedMakeId,resolvedModelId,resolvedEngineId,resolvedChassisId,...COMBINATION_FIELDS.map(k=>combination[k]),id];
+    await client.query(`UPDATE application SET make_id=$1,model_id=$2,engine_id=$3,chassis_id=$4,
+      ${COMBINATION_FIELDS.map((k,i)=>`${k}=$${i+5}`).join(',')} WHERE application_id=$${values.length}`, values);
+    await client.query(`UPDATE part_application_rule SET
+      make_mode=CASE WHEN $2::int IS NULL THEN 'not_supplied' ELSE 'specified' END,
+      model_mode=CASE WHEN $3::int IS NULL THEN 'not_supplied' ELSE 'specified' END,
+      engine_mode=CASE WHEN $4::int IS NULL THEN 'not_supplied' ELSE 'specified' END,
+      chassis_mode=CASE WHEN $5::int IS NULL THEN 'not_supplied' ELSE 'specified' END
+      WHERE application_id=$1`, [id,resolvedMakeId,resolvedModelId,resolvedEngineId,resolvedChassisId]);
+    // Queue all linked parts so catalog/search reflects edits to a shared classification.
+    const linkedParts = await client.query('SELECT part_id FROM part_application WHERE application_id=$1', [id]);
+    for (const { part_id } of linkedParts.rows) await enqueuePartUpsert(part_id, { source: 'vehicle_combination_edit' }, client);
 
 
     const view = await client.query(
@@ -967,7 +937,7 @@ router.put('/applications/:id', protect, hasPermission('applications:edit'), asy
         ...(err.details || {}),
       });
     }
-    if (err.code === '55000') return res.status(409).json({code:'APPLICATION_IN_USE',message:'This application has fitment history. Create a separate application and review its links instead.'});
+    if (err.code === '23505') return res.status(409).json({code:'DUPLICATE_COMBINATION',message:'This vehicle combination already exists.'});
     console.error('Error updating application:', err.message);
     res.status(500).send('Server Error');
   } finally {
@@ -986,7 +956,7 @@ router.delete('/applications/:id', protect, hasPermission('applications:edit'), 
     taxonomyIndex.invalidate();
     res.json({ message: 'Application deleted successfully' });
   } catch (err) {
-    if (err.code === '55000') return res.status(409).json({code:'APPLICATION_IN_USE',message:'This application has fitment history and cannot be deleted.'});
+    if (err.code === '55000') return res.status(409).json({code:'APPLICATION_IN_USE',message:'Unlink this vehicle combination from its parts before deleting it.'});
     if (err.code === '23503') {
       return res.status(400).json({ message: 'Cannot delete this application because it is linked to one or more parts.' });
     }
@@ -1015,7 +985,7 @@ router.post('/applications/:id/merge', protect, hasPermission('applications:edit
     const history = await client.query('SELECT 1 FROM fitment_claim WHERE application_id=ANY($1::int[]) UNION ALL SELECT 1 FROM part_application_rule WHERE application_id=ANY($1::int[]) LIMIT 1',[[sourceId,targetId]]);
     if (history.rows.length) {
       await client.query('ROLLBACK');
-      return res.status(409).json({code:'APPLICATION_IN_USE',message:'Applications with fitment history require claim-by-claim review; automatic identity merging is unavailable.'});
+      return res.status(409).json({code:'APPLICATION_IN_USE',message:'Unlink these combinations before merging them to preserve their distinct part links.'});
     }
     const checkRes = await client.query(
       'SELECT application_id FROM application WHERE application_id = ANY($1::int[])',

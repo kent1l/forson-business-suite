@@ -1,5 +1,7 @@
 # Vehicle Fitment — Investigation-First Resolver and Relationship Integrity Plan
 
+> Superseded requirement (2026-11-01): the owner requested reusable vehicle classifications and direct part links without evidence storage or approval. See [the direct-link implementation record](./2026-11-01_vehicle-combinations-direct-links.md). Earlier evidence/review requirements below are historical.
+
 > Forson Business Suite | Date: 2026-10-29
 > Planning branch observed: `vehicle-fitment-fixes-and-improvements`
 > Status (2026-11-01): Local implementation completed, including follow-up integrity fixes, evidence review UI and disposable PostgreSQL/browser verification. External research activation and production rollout remain gated. The full API suite has two finance failures also reproduced on the starting revision. See [completion and verification record](./vehicle-fitment-phase0/completion-2026-11-01.md) for current evidence; earlier completion counts below are historical, not the current gate.

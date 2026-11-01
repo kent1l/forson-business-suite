@@ -198,7 +198,8 @@ function deriveIdentityAndQualifierModes(row = {}) {
   const transmission = normStr(row.transmission);
   const generation = normStr(row.generation);
   const fuel_type_qualifier = row.fuel_type_qualifier ?? row.fuel_type ?? null;
-  const displacement_liters_qualifier = row.displacement_liters_qualifier ?? row.displacement_liters ?? null;
+  const rawDisplacement = row.displacement_liters_qualifier ?? row.displacement_liters;
+  const displacement_liters_qualifier = rawDisplacement === '' ? null : rawDisplacement ?? null;
 
   return {
     make_mode,

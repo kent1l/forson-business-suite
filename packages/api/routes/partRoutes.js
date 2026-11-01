@@ -1,4 +1,4 @@
-const { fitmentRulesSql } = require('../helpers/fitmentDocumentSql');
+const { fitmentRulesSql, fitmentLabelsSql, fitmentYearRangesSql } = require('../helpers/fitmentDocumentSql');
 const express = require('express');
 const db = require('../db');
 const { protect, hasPermission, userHasPermission } = require('../middleware/authMiddleware');
@@ -32,15 +32,8 @@ const getPartDataForMeili = async (client, partId) => {
             p.low_stock_warning,
             (SELECT ARRAY_AGG(pb.barcode) FROM part_barcode pb WHERE pb.part_id = pv.part_id) as barcodes,
             (SELECT STRING_AGG(pn.part_number, '; ') FROM part_number pn WHERE pn.part_id = pv.part_id AND ${activeAliasCondition('pn')}) as part_numbers,
-                        (SELECT ARRAY_AGG(
-                                CONCAT(vmk.make_name, ' ', vmd.model_name, COALESCE(CONCAT(' ', veng.engine_code), ''))
-                        ) FROM part_application pa
-                            JOIN application a ON pa.application_id = a.application_id
-                            LEFT JOIN vehicle_make vmk ON a.make_id = vmk.make_id
-                            LEFT JOIN vehicle_model vmd ON a.model_id = vmd.model_id
-                            LEFT JOIN engine veng ON a.engine_id = veng.engine_id
-                        WHERE pa.part_id = pv.part_id) AS applications_array,
-            (SELECT ARRAY_AGG(ARRAY[pa.year_start, pa.year_end]) FROM part_application pa WHERE pa.part_id = pv.part_id) AS application_year_ranges,
+                        ${fitmentLabelsSql('pv',true)} AS applications_array,
+            ${fitmentYearRangesSql()} AS application_year_ranges,
             (SELECT ARRAY_AGG(t.tag_name) FROM tag t JOIN part_tag pt ON t.tag_id = pt.tag_id WHERE pt.part_id = pv.part_id) AS tags_array
         FROM public.parts_view AS pv
         JOIN public.part p ON pv.part_id = p.part_id
@@ -62,7 +55,7 @@ const getPartDataForMeili = async (client, partId) => {
         // display_name is already provided by parts_view
         applications: part.applications_array || [],
         fitment_rules: part.fitment_rules || [],
-        fitment_schema_version: 2,
+        fitment_schema_version: 3,
         fitment_confirmation: false,
         // Flatten applications (+ fitment years, so a literal year text-matches) into
         // a single searchable string for Meilisearch.
@@ -155,7 +148,7 @@ const manageApplications = async (client, applications, partId, actorId) => {
     if (!Array.isArray(applications)) return;
     for (const application of applications) {
         if (!application || typeof application !== 'object') throw Object.assign(new Error('Invalid application entry'), {statusCode:422});
-        await saveFitmentLink(client, partId, application, actorId, 'part_form');
+        await saveFitmentLink(client, partId, application, actorId);
     }
 };
 

@@ -8,7 +8,7 @@ import PaginationControls from '../components/ui/PaginationControls';
 import SortableHeader from '../components/ui/SortableHeader';
 import { useAuth } from '../contexts/AuthContext';
 import ApplicationCascadeForm from '../components/applications/ApplicationCascadeForm';
-import { formatApplicationScopeBadge } from '../utils/engineCodeFormat';
+import { formatQualifierSummary, formatYearRange } from '../utils/engineCodeFormat';
 
 const ApplicationsPage = () => {
     const { hasPermission } = useAuth(); // <-- NEW: Use the auth context
@@ -124,10 +124,10 @@ const ApplicationsPage = () => {
     return (
         <div>
             <div className="flex justify-between items-center mb-6">
-                <h1 className="text-2xl font-semibold text-gray-800">Vehicle Applications</h1>
+                <h1 className="text-2xl font-semibold text-gray-800">Vehicle Combinations</h1>
                 {hasPermission('applications:edit') && (
                     <button onClick={handleAdd} className="bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-blue-700 transition">
-                        Add Application
+                        Add Combination
                     </button>
                 )}
             </div>
@@ -144,13 +144,13 @@ const ApplicationsPage = () => {
                                     <SortableHeader column="model" sortConfig={sortConfig} onSort={handleSort}>Model</SortableHeader>
                                     <th className="p-3 text-sm font-semibold text-gray-600">Chassis</th>
                                     <SortableHeader column="engine" sortConfig={sortConfig} onSort={handleSort}>Engine</SortableHeader>
-                                    <th className="p-3 text-sm font-semibold text-gray-600">Scope</th>
+                                    <th className="p-3 text-sm font-semibold text-gray-600">Classification</th>
                                     <th className="p-3 text-sm font-semibold text-gray-600 text-right">Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {applications.map(app => {
-                                    const badge = formatApplicationScopeBadge(app);
+                                    const details = [formatYearRange(app.year_start,app.year_end), formatQualifierSummary(app)].filter(Boolean).join(' · ');
                                     return (
                                         <tr key={app.application_id} className="border-b hover:bg-gray-50">
                                             <td className="p-3 text-sm font-medium text-gray-800">{app.make}</td>
@@ -159,7 +159,7 @@ const ApplicationsPage = () => {
                                             <td className="p-3 text-sm">{app.engine || '—'}</td>
                                             <td className="p-3 text-sm">
                                                 <span className="text-xs px-2 py-0.5 rounded bg-gray-100 text-gray-700 font-medium">
-                                                    {badge}
+                                                    {details || '—'}
                                                 </span>
                                             </td>
                                             <td className="p-3 text-sm text-right">
@@ -189,7 +189,7 @@ const ApplicationsPage = () => {
                     </>
                 )}
             </div>
-            <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={currentApp ? 'Edit Application' : 'Add New Application'}>
+            <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={currentApp ? 'Edit Vehicle Combination' : 'Add Vehicle Combination'}>
                 <ApplicationCascadeForm application={currentApp} onSave={handleSave} onCancel={() => setIsModalOpen(false)} />
             </Modal>
         </div>

@@ -2,16 +2,10 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Combobox } from '@headlessui/react';
 import api from '../../api';
 
-// Shared Make -> Model -> Engine cascading picker with case-insensitive
-// existing-match detection ("Create new X" only offered when nothing matches).
-// Used both by the vehicle taxonomy admin screen (ApplicationsPage) and by the
-// day-to-day "link a fitment to this part" flow (PartApplicationManager), so
-// staff get the same safe, dedupe-aware entry experience everywhere instead of
-// the taxonomy screen having a better one than the part-editing flow.
-//
-// Engine is global master data (not scoped to a model), so this also supports
-// an "engine only" mode for the common real-world case of a part that fits any
-// vehicle using a given engine code, independent of make/model.
+const DETAIL_FIELDS = ['chassis_id','chassis','year_start','year_end','market','variant','drivetrain','transmission','generation','displacement_liters','fuel_type'];
+const detailValues = app => Object.fromEntries(DETAIL_FIELDS.map(k => [k, app?.[k] ?? (k === 'variant' ? app?.variant_descriptor : undefined) ?? '']));
+
+// Reusable, partial vehicle classifications. Any entered identity is sufficient.
 const ApplicationCascadeForm = ({ application, onSave, onCancel, submitLabel = 'Save' }) => {
     const [engineOnly, setEngineOnly] = useState(false);
     const [makes, setMakes] = useState([]);
@@ -34,35 +28,22 @@ const ApplicationCascadeForm = ({ application, onSave, onCancel, submitLabel = '
         model_name: '',
         engine_name: '',
         displacement_liters: '',
-        fuel_type: ''
+        fuel_type: '',
+        ...detailValues(application)
     });
-    // Tracks the engine's specs as loaded, so we only PUT /engines/:id when the
-    // user actually changed them for an *existing* engine (creating a new one
-    // sends displacement/fuel_type along with the create payload instead).
-    const [originalEngineSpecs, setOriginalEngineSpecs] = useState(null);
-
-    const initialFormData = useMemo(() => {
-        if (application) {
-            return {
-                make_id: application.make_id || '',
-                model_id: application.model_id || '',
-                engine_id: application.engine_id || '',
-                make_name: application.make || '',
-                model_name: application.model || '',
-                engine_name: application.engine || ''
-            };
-        }
-        return { make_id: '', model_id: '', engine_id: '', make_name: '', model_name: '', engine_name: '' };
-    }, [application]);
+    const initialFormData = useMemo(() => ({
+        make_id: application?.make_id || '', model_id: application?.model_id || '', engine_id: application?.engine_id || '',
+        make_name: application?.make || '', model_name: application?.model || '', engine_name: application?.engine || '',
+        ...detailValues(application),
+    }), [application]);
 
     const isFormDirty = useMemo(() => JSON.stringify(formData) !== JSON.stringify(initialFormData), [formData, initialFormData]);
     const isFormElement = (element) => element && (element.tagName === 'INPUT' || element.tagName === 'TEXTAREA' || element.tagName === 'SELECT');
 
     // Global engine list, used in "engine only" mode.
     useEffect(() => {
-        if (!engineOnly) return;
         api.get('/engines').then(res => setEngines(res.data)).catch(err => console.error('Failed to fetch engines:', err));
-    }, [engineOnly]);
+    }, []);
 
     useEffect(() => {
         api.get('/makes').then(res => setMakes(res.data)).catch(err => console.error('Failed to fetch makes:', err));
@@ -71,7 +52,6 @@ const ApplicationCascadeForm = ({ application, onSave, onCancel, submitLabel = '
     useEffect(() => {
         if (!application) return;
         setEngineOnly(!application.make_id && !application.model_id && !!application.engine_id);
-        setOriginalEngineSpecs(null);
         setFormData({
             make_id: application.make_id || '',
             model_id: application.model_id || '',
@@ -80,7 +60,8 @@ const ApplicationCascadeForm = ({ application, onSave, onCancel, submitLabel = '
             model_name: application.model || '',
             engine_name: application.engine || '',
             displacement_liters: '',
-            fuel_type: ''
+            fuel_type: '',
+            ...detailValues(application)
         });
         if (application.make_id) {
             setSelectedMake({ make_id: application.make_id, make_name: application.make });
@@ -109,9 +90,9 @@ const ApplicationCascadeForm = ({ application, onSave, onCancel, submitLabel = '
         }
     };
 
-    const fetchEngines = async (modelId) => {
+    const fetchEngines = async () => {
         try {
-            const response = await api.get(`/models/${modelId}/engines`);
+            const response = await api.get('/engines');
             setEngines(response.data);
         } catch (error) {
             console.error('Failed to fetch engines:', error);
@@ -128,15 +109,14 @@ const ApplicationCascadeForm = ({ application, onSave, onCancel, submitLabel = '
         setModelQuery('');
         setEngineQuery('');
         setModels([]);
-        setOriginalEngineSpecs(null);
-        setFormData({ make_id: '', model_id: '', engine_id: '', make_name: '', model_name: '', engine_name: '', displacement_liters: '', fuel_type: '' });
+        setFormData({ make_id: '', model_id: '', engine_id: '', make_name: '', model_name: '', engine_name: '', displacement_liters: '', fuel_type: '', ...detailValues(null) });
     };
 
     const handleMakeSelect = async (make) => {
         if (!make) return;
         if (make.make_id) {
             setSelectedMake(make);
-            setFormData(prev => ({ ...prev, make_id: String(make.make_id), make_name: make.make_name, model_id: '', model_name: '', engine_id: '', engine_name: '' }));
+            setFormData(prev => ({ ...prev, make_id: String(make.make_id), make_name: make.make_name, model_id: '', model_name: '', chassis_id: '', chassis: '', engine_id: '', engine_name: '' }));
             setModels([]);
             setEngines([]);
             await fetchModels(make.make_id);
@@ -144,7 +124,7 @@ const ApplicationCascadeForm = ({ application, onSave, onCancel, submitLabel = '
         }
         if (make.make_name) {
             setSelectedMake({ make_name: make.make_name });
-            setFormData(prev => ({ ...prev, make_id: '', make_name: make.make_name, model_id: '', model_name: '', engine_id: '', engine_name: '' }));
+            setFormData(prev => ({ ...prev, make_id: '', make_name: make.make_name, model_id: '', model_name: '', chassis_id: '', chassis: '', engine_id: '', engine_name: '' }));
             setModels([]);
             setEngines([]);
         }
@@ -153,7 +133,7 @@ const ApplicationCascadeForm = ({ application, onSave, onCancel, submitLabel = '
     const handleMakeInput = (val) => {
         setMakeQuery(val);
         setSelectedMake(null);
-        setFormData(prev => ({ ...prev, make_id: '', make_name: val, model_id: '', model_name: '', engine_id: '', engine_name: '' }));
+        setFormData(prev => ({ ...prev, make_id: '', make_name: val, model_id: '', model_name: '', chassis_id: '', chassis: '', engine_id: '', engine_name: '' }));
         setModels([]);
         setEngines([]);
     };
@@ -162,14 +142,14 @@ const ApplicationCascadeForm = ({ application, onSave, onCancel, submitLabel = '
         if (!model) return;
         if (model.model_id) {
             setSelectedModel(model);
-            setFormData(prev => ({ ...prev, model_id: String(model.model_id), model_name: model.model_name, engine_id: '', engine_name: '' }));
+            setFormData(prev => ({ ...prev, model_id: String(model.model_id), model_name: model.model_name, chassis_id: '', chassis: '', engine_id: '', engine_name: '' }));
             setEngines([]);
             await fetchEngines(model.model_id);
             return;
         }
         if (model.model_name) {
             setSelectedModel({ model_name: model.model_name });
-            setFormData(prev => ({ ...prev, model_id: '', model_name: model.model_name, engine_id: '', engine_name: '' }));
+            setFormData(prev => ({ ...prev, model_id: '', model_name: model.model_name, chassis_id: '', chassis: '', engine_id: '', engine_name: '' }));
             setEngines([]);
         }
     };
@@ -177,7 +157,7 @@ const ApplicationCascadeForm = ({ application, onSave, onCancel, submitLabel = '
     const handleModelInput = (val) => {
         setModelQuery(val);
         setSelectedModel(null);
-        setFormData(prev => ({ ...prev, model_id: '', model_name: val, engine_id: '', engine_name: '' }));
+        setFormData(prev => ({ ...prev, model_id: '', model_name: val, chassis_id: '', chassis: '', engine_id: '', engine_name: '' }));
         setEngines([]);
     };
 
@@ -189,13 +169,11 @@ const ApplicationCascadeForm = ({ application, onSave, onCancel, submitLabel = '
                 displacement_liters: engine.displacement_liters != null ? String(engine.displacement_liters) : '',
                 fuel_type: engine.fuel_type || ''
             };
-            setOriginalEngineSpecs(specs);
             setFormData(prev => ({ ...prev, engine_id: String(engine.engine_id), engine_name: engine.engine_code, ...specs }));
             return;
         }
         if (engine.engine_code) {
             setSelectedEngine({ engine_code: engine.engine_code });
-            setOriginalEngineSpecs(null);
             setFormData(prev => ({ ...prev, engine_id: '', engine_name: engine.engine_code }));
         }
     };
@@ -203,59 +181,30 @@ const ApplicationCascadeForm = ({ application, onSave, onCancel, submitLabel = '
     const handleEngineInput = (val) => {
         setEngineQuery(val);
         setSelectedEngine(null);
-        setOriginalEngineSpecs(null);
         setFormData(prev => ({ ...prev, engine_id: '', engine_name: val }));
     };
 
     const handleSubmit = useCallback(async (e) => {
         if (e) e.preventDefault();
 
-        // Editing an existing engine's specs is a deliberate separate action from
-        // linking a fitment -- save it via PUT /engines/:id first if changed.
-        if (formData.engine_id && originalEngineSpecs) {
-            const changed = formData.displacement_liters !== originalEngineSpecs.displacement_liters
-                || formData.fuel_type !== originalEngineSpecs.fuel_type;
-            if (changed) {
-                try {
-                    await api.put(`/engines/${formData.engine_id}`, {
-                        displacement_liters: formData.displacement_liters ? Number(formData.displacement_liters) : null,
-                        fuel_type: formData.fuel_type || null
-                    });
-                } catch (err) {
-                    alert('Failed to update engine specs: ' + (err.response?.data?.message || err.message));
-                    return;
-                }
-            }
+        const payload = {
+            make_id: formData.make_id ? Number(formData.make_id) : undefined,
+            model_id: formData.model_id ? Number(formData.model_id) : undefined,
+            engine_id: formData.engine_id ? Number(formData.engine_id) : undefined,
+            make: formData.make_name || undefined, model: formData.model_name || undefined,
+            engine: formData.engine_name || undefined,
+            ...Object.fromEntries(DETAIL_FIELDS.map(k => [k, formData[k] === '' ? null : formData[k]])),
+        };
+        if (!(payload.make_id || payload.make || payload.model_id || payload.model || payload.engine_id || payload.engine || payload.chassis_id || payload.chassis)) {
+            alert('Enter a make, model, chassis or engine.');
+            return;
         }
-
-        const engineExtras = !formData.engine_id
-            ? {
-                displacement_liters: formData.displacement_liters ? Number(formData.displacement_liters) : undefined,
-                fuel_type: formData.fuel_type || undefined
-            }
-            : {};
-
-        const payload = engineOnly
-            ? {
-                make_id: undefined,
-                model_id: undefined,
-                make: undefined,
-                model: undefined,
-                engine_id: formData.engine_id ? Number(formData.engine_id) : undefined,
-                engine: formData.engine_name || undefined,
-                ...engineExtras
-            }
-            : {
-                make_id: formData.make_id ? Number(formData.make_id) : undefined,
-                model_id: formData.model_id ? Number(formData.model_id) : undefined,
-                engine_id: formData.engine_id ? Number(formData.engine_id) : undefined,
-                make: formData.make_name || undefined,
-                model: formData.model_name || undefined,
-                engine: formData.engine_name || undefined,
-                ...engineExtras
-            };
+        if (payload.year_start && payload.year_end && Number(payload.year_start) > Number(payload.year_end)) {
+            alert('Start year must not be after end year.');
+            return;
+        }
         onSave(payload);
-    }, [engineOnly, formData, onSave, originalEngineSpecs]);
+    }, [formData, onSave]);
 
     useEffect(() => {
         const handleKeyDown = (e) => {
@@ -284,13 +233,13 @@ const ApplicationCascadeForm = ({ application, onSave, onCancel, submitLabel = '
         <form onSubmit={handleSubmit} className="space-y-4">
             <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-slate-300">
                 <input type="checkbox" checked={engineOnly} onChange={(e) => toggleEngineOnly(e.target.checked)} />
-                Engine only (fits any vehicle with this engine)
+                Engine only
             </label>
 
             {!engineOnly && (
                 <>
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Make</label>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Make (optional)</label>
                         <Combobox value={selectedMake} onChange={handleMakeSelect} nullable>
                             <div className="relative">
                                 <Combobox.Input
@@ -300,7 +249,6 @@ const ApplicationCascadeForm = ({ application, onSave, onCancel, submitLabel = '
                                     onFocus={() => setShowMakeOptions(true)}
                                     onBlur={() => setTimeout(() => setShowMakeOptions(false), 150)}
                                     placeholder="Type or select make"
-                                    required
                                 />
                                 {(showMakeOptions || makeQuery !== '') && (
                                     <Combobox.Options className={optionsClass}>
@@ -316,7 +264,7 @@ const ApplicationCascadeForm = ({ application, onSave, onCancel, submitLabel = '
                         </Combobox>
                     </div>
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Model</label>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Model (optional)</label>
                         <Combobox value={selectedModel} onChange={handleModelSelect} nullable>
                             <div className="relative">
                                 <Combobox.Input
@@ -326,7 +274,6 @@ const ApplicationCascadeForm = ({ application, onSave, onCancel, submitLabel = '
                                     onFocus={() => setShowModelOptions(true)}
                                     onBlur={() => setTimeout(() => setShowModelOptions(false), 150)}
                                     placeholder="Type or select model"
-                                    required
                                     disabled={!(formData.make_id || (formData.make_name && formData.make_name.trim() !== ''))}
                                 />
                                 {(showModelOptions || modelQuery !== '') && (formData.make_id || (formData.make_name && formData.make_name.trim() !== '')) && (
@@ -357,9 +304,8 @@ const ApplicationCascadeForm = ({ application, onSave, onCancel, submitLabel = '
                             onBlur={() => setTimeout(() => setShowEngineOptions(false), 150)}
                             placeholder="Type or select engine code (e.g. 4D56)"
                             required={engineOnly}
-                            disabled={!engineOnly && !(formData.model_id || (formData.model_name && formData.model_name.trim() !== ''))}
                         />
-                        {(showEngineOptions || engineQuery !== '') && (engineOnly || formData.model_id || (formData.model_name && formData.model_name.trim() !== '')) && (
+                        {(showEngineOptions || engineQuery !== '') && true && (
                             <Combobox.Options className={optionsClass}>
                                 {engines.filter(en => en.engine_code.toLowerCase().includes(engineQuery.toLowerCase())).map(en => (
                                     <Combobox.Option key={en.engine_id} value={en} className={optionClass}>{en.engine_code}</Combobox.Option>
@@ -373,7 +319,7 @@ const ApplicationCascadeForm = ({ application, onSave, onCancel, submitLabel = '
                 </Combobox>
             </div>
 
-            {formData.engine_name && formData.engine_name.trim() !== '' && (
+            {(
                 <div className="grid grid-cols-2 gap-2">
                     <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Displacement (L)</label>
@@ -397,13 +343,31 @@ const ApplicationCascadeForm = ({ application, onSave, onCancel, submitLabel = '
                             <option value="diesel">Diesel</option>
                             <option value="gasoline">Gasoline</option>
                             <option value="hybrid">Hybrid</option>
-                            <option value="mild_hybrid">Mild Hybrid</option>
+                            <option value="lpg">LPG</option>
                             <option value="electric">Electric</option>
                             <option value="other">Other</option>
                         </select>
                     </div>
                 </div>
             )}
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {[
+                    ['chassis', 'Chassis code', 'e.g. KDH200'], ['generation', 'Generation', 'e.g. 2nd generation'],
+                    ['year_start', 'Start year', 'e.g. 2010'], ['year_end', 'End year', 'e.g. 2015'],
+                    ['variant', 'Variant / trim', 'e.g. GL'], ['market', 'Market', 'e.g. Philippines'],
+                    ['drivetrain', 'Drivetrain', 'e.g. 2WD or 4WD'], ['transmission', 'Transmission', 'e.g. Manual'],
+                ].map(([key, label, placeholder]) => (
+                    <label key={key} className="text-sm text-gray-700 dark:text-slate-300">
+                        {label} (optional)
+                        <input className={inputClass} type={key.startsWith('year_') ? 'number' : 'text'}
+                            min={key.startsWith('year_') ? 1900 : undefined} max={key.startsWith('year_') ? 2100 : undefined}
+                            value={formData[key] ?? ''} placeholder={placeholder}
+                            onChange={e => setFormData(prev => ({ ...prev, [key]: e.target.value, ...(key === 'chassis' ? { chassis_id: '' } : {}) }))} />
+                    </label>
+                ))}
+            </div>
+            <p className="text-xs text-gray-500">Enter the details you know. You can save a partial combination and add more details later.</p>
 
             <div className="mt-6 flex justify-end space-x-3 pt-4 border-t border-gray-200 dark:border-slate-700">
                 <button type="button" onClick={onCancel} className="px-4 py-2 bg-gray-100 dark:bg-slate-700 text-gray-700 dark:text-slate-200 rounded-lg hover:bg-gray-200 dark:hover:bg-slate-600 text-sm font-medium transition-colors">Cancel</button>

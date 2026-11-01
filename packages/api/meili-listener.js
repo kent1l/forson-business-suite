@@ -1,4 +1,4 @@
-const { fitmentRulesSql } = require('./helpers/fitmentDocumentSql');
+const { fitmentRulesSql, fitmentLabelsSql, fitmentYearRangesSql } = require('./helpers/fitmentDocumentSql');
 const db = require('./db');
 const { syncPartWithMeili, removePartFromMeili } = require('./meilisearch');
 const { activeAliasCondition } = require('./helpers/partNumberSoftDelete');
@@ -60,13 +60,8 @@ const startMeiliListener = async () => {
                 -- Full make/model/engine string per application row, without year tokens.
                 -- Year tokens are added in JS via withYearTokens() for consistency with
                 -- the other 3 Meili sync sites (outbox worker, partRoutes, partApplicationRoutes).
-                (SELECT COALESCE(json_agg(concat_ws(' ', COALESCE(av.make,''), COALESCE(av.model,''), COALESCE(av.engine,''))), '[]'::json)
-                   FROM part_application pa
-                   JOIN application_view av ON av.application_id = pa.application_id
-                   WHERE pa.part_id = pv.part_id) AS searchable_applications_base,
-                (SELECT COALESCE(json_agg(ARRAY[pa.year_start, pa.year_end]), '[]'::json)
-                   FROM part_application pa
-                   WHERE pa.part_id = pv.part_id) AS application_year_ranges
+                ${fitmentLabelsSql('pv',true)} AS searchable_applications_base,
+                ${fitmentYearRangesSql()} AS application_year_ranges
              FROM public.parts_view pv
              WHERE pv.part_id = ANY($1::int[])`,
             [upserts]
@@ -89,7 +84,7 @@ const startMeiliListener = async () => {
               tags: row.tags || [],
               applications: row.applications || [],
               fitment_rules: row.fitment_rules || [],
-              fitment_schema_version: 2,
+              fitment_schema_version: 3,
               fitment_confirmation: false,
               searchable_applications: withYearTokens(baseStr, yearRanges),
             };

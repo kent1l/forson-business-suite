@@ -1,12 +1,12 @@
 'use strict';
 
 /**
- * Tri-state vehicle fitment matcher.
+ * Vehicle classification matcher for direct part links.
  * States:
  *  - 'confirmed': Rule(s) positively match all queried dimensions and require no unprovided vehicle details.
  *  - 'needs_details': Rule(s) match the known dimensions, but either the rule is narrower than the query
  *                     (requires engine/year/qualifier not supplied in query) or the rule is broader with
- *                     mode 'not_supplied' / 'unknown' (not verified as 'unrestricted') or unapproved.
+ *                     mode 'not_supplied' / 'unknown' (not classified as 'unrestricted').
  *  - 'conflict': An explicit exclusion rule matches, or a rule for the same make/model explicitly specifies
  *                a conflicting engine, year range, chassis, or fuel/qualifier.
  *  - 'no_match': No rule applies to the queried make/model/chassis/engine.
@@ -151,11 +151,6 @@ function evaluateSingleRule(rule, query = {}) {
     return { state: 'needs_details', reasons: ['potential_exclusion_needs_details', ...reasons] };
   }
 
-  // Approval status check: if requireApproved is set on query and rule is not approved
-  if (rule.approval_status !== 'approved' || rule.evidence_status !== 'sourced_verified' || rule.evidence_current === false) {
-    reasons.push('compatibility_not_verified');
-  }
-
   if (reasons.length > 0) {
     return { state: 'needs_details', reasons };
   }
@@ -213,19 +208,9 @@ function evaluateFitmentRules(rules = [], query = {}) {
         matchedRules: confirmed.map((c) => c.rule),
       };
     }
-    // Unverified legacy rules cannot produce a confirmed_compatible status when verification is checked
-    const hasVerifiedOrApproved = confirmed.some(c => c.rule.approval_status === 'approved' && c.rule.evidence_status === 'sourced_verified');
-    if (!hasVerifiedOrApproved) {
-      return {
-        state: 'needs_details',
-        status: 'needs_details',
-        reasons: ['legacy_unverified_rule'],
-        matchedRules: confirmed.map((c) => c.rule),
-      };
-    }
     return {
       state: 'confirmed',
-      status: 'confirmed_compatible',
+      status: 'linked',
       reasons: [],
       matchedRules: confirmed.map((c) => c.rule),
     };

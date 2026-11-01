@@ -254,7 +254,7 @@ const PartForm = ({ part, initialValues = null, uppercaseText = false, brands, g
         const normalizedMeasurementUnit = isBulkEdit
             ? (formData.measurement_unit ? normalizeUom(formData.measurement_unit, '') : '')
             : normalizeUom(formData.measurement_unit);
-        onSave({ ...formData, measurement_unit: normalizedMeasurementUnit, tags, barcodes, applications: selectedApps.filter(app => app._staged_key).map(app => ({ ...fitmentSavePayload(app,app.review_id,app.expected_version) })) }); // include linked applications
+        onSave({ ...formData, measurement_unit: normalizedMeasurementUnit, tags, barcodes, applications: selectedApps.filter(app => app._staged_key).map(app => ({ ...fitmentSavePayload(app) })) }); // include linked applications
     }, [formData, isBulkEdit, tags, barcodes, selectedApps, onSave]);
 
     const handleChange = (e) => {

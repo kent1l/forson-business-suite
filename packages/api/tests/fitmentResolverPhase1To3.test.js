@@ -80,14 +80,14 @@ describe('Phase 1-3 Fitment Resolver Unit & Contract Tests', () => {
             drivetrain_mode: 'not_supplied',
         };
 
-        test('returns confirmed_compatible when all specified dimensions match', () => {
+        test('returns linked when all specified dimensions match', () => {
             const res = evaluateFitmentRules([baseRule], {
                 make_id: 1,
                 model_id: 10,
                 engine_id: 100,
                 year: 2018,
             });
-            expect(res.status).toBe('confirmed_compatible');
+            expect(res.status).toBe('linked');
             expect(res.state).toBe('confirmed');
         });
 
@@ -133,7 +133,7 @@ describe('Phase 1-3 Fitment Resolver Unit & Contract Tests', () => {
                 engine_id: 100,
                 year: 2019,
             });
-            expect(res2019.status).toBe('confirmed_compatible');
+            expect(res2019.status).toBe('linked');
         });
 
         test('buildPowerSearchVehiclePredicate builds parameterized SQL with exclusion guard', () => {
@@ -232,9 +232,9 @@ describe('Phase 1-3 Fitment Resolver Unit & Contract Tests', () => {
         test('an overlapping year range does not confirm the entire requested range', () => {
             expect(evaluateFitmentRules([{ ...verified, year_start: 2010, year_end: 2015 }], { engine_id: 100, year_start: 2012, year_end: 2020 }).status).toBe('needs_details');
         });
-        test('staff entry and missing approval metadata never establish sourced compatibility', () => {
+        test('staff links are immediately usable regardless of old approval metadata', () => {
             for (const rule of [{ engine_id: 100 }, { ...verified, evidence_status: 'user_declared' }]) {
-                expect(evaluateFitmentRules([rule], { engine_id: 100 }).status).toBe('needs_details');
+                expect(evaluateFitmentRules([rule], { engine_id: 100 }).status).toBe('linked');
             }
         });
         test('generation and displacement restrictions are AND conditions', () => {
@@ -246,8 +246,8 @@ describe('Phase 1-3 Fitment Resolver Unit & Contract Tests', () => {
             expect(computeInterpretationKey(row)).not.toBe(computeInterpretationKey({ ...row, market_mode: 'unrestricted' }));
             expect(computeInterpretationKey({ ...row, variant: 'A/B' })).not.toBe(computeInterpretationKey({ ...row, variant: 'AB' }));
         });
-        test.each(['engine', 'market', 'position', 'transmission', 'fuel', 'displacement', 'generation'])('all unrestricted %s inputs require a separate approval operation', field => {
-            expect(() => normalizeRule({ engine_id: 100, [`${field}_mode`]: 'unrestricted' })).toThrow(/evidence approval/);
+        test.each(['engine', 'market', 'position', 'transmission', 'fuel', 'displacement', 'generation'])('optional %s scope does not require approval', field => {
+            expect(() => normalizeRule({ engine_id: 100, [`${field}_mode`]: 'unrestricted' })).not.toThrow();
         });
         test('normal saves preserve all qualifiers and reject precision loss', () => {
             const rule = normalizeRule({ engine_id: 100, market: 'PH', variant: 'Turbo', position: 'Front', transmission: 'Manual', generation: 'Gen 2', displacement_liters: 2.5, fuel_type: 'diesel' });

@@ -6,7 +6,7 @@ import PartApplicationManager, {DescribeFitmentPanel} from '../../src/pages/Part
 import '../../src/index.css';
 const root=createRoot(document.getElementById('root'));
 window.mountFitment=(mode='review')=>{
-const permissions=['applications:view','applications:edit','applications:approve'];
+const permissions=['applications:view','applications:edit'];
 localStorage.setItem('userSession',JSON.stringify({token:'browser-fixture',user:{employee_id:1,permission_level_id:1,permissions},permissions}));
 root.render(React.createElement(AuthProvider,{key:mode},mode==='manager'
   ? React.createElement(PartApplicationManager,{part:{part_id:1},onCancel:()=>{}})

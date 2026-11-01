@@ -1,5 +1,7 @@
 # Vehicle fitment — completion and verification record
 
+> Superseded requirement (2026-11-01): the owner requested reusable vehicle classifications and direct part links without evidence storage or approval. See [the direct-link implementation record](../2026-11-01_vehicle-combinations-direct-links.md). Earlier evidence/review requirements below are historical.
+
 > Development follow-up: `20261101_01_fitment_review_integrity.sql` is now applied and checksum-verified on local `forson_business_suite`. Its absence caused HTTP 500 when opening the edit-part/application-manager modals. Read-only authenticated checks for parts 6643 and 1783 now return HTTP 200 through both backend and frontend proxy. The implementation-session verification below remains historical; production migration/deployment is still pending.
 
 Date: 2026-11-01. Parent: [evidence-aware resolver plan](../2026-10-29_vehicle-fitment-evidence-aware-resolver.md).

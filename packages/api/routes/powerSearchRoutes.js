@@ -1,4 +1,4 @@
-const { currentEvidenceSql } = require('../helpers/fitmentDocumentSql');
+const { effectiveRuleColumns } = require('../helpers/fitmentDocumentSql');
 const { evaluateFitmentRules } = require('../helpers/fitmentMatcher');
 const express = require('express');
 const db = require('../db');
@@ -109,12 +109,12 @@ router.get('/power-search/parts', protect, hasPermission(['parts:view', 'pos:use
                 if (value) { params.push(value); checks.push(`(a.${column} IS NULL OR a.${column}=$${params.length})`); }
             }
             // SQL retrieves coherent candidates; the shared evaluator handles unknown
-            // qualifiers, evidence and exclusions before returning a fitment status.
+            // classification details and exclusions before returning a fitment status.
             const candidates = await db.query(`SELECT DISTINCT r.part_id FROM part_application_rule r JOIN application a USING(application_id) WHERE ${checks.join(' AND ')}`,params);
             const ids = candidates.rows.map(r=>r.part_id);
             const universals=(await db.query('SELECT part_id FROM part WHERE is_universal=TRUE')).rows;
             const allIds=[...new Set([...ids,...universals.map(r=>r.part_id)])];
-            const rules = allIds.length ? (await db.query(`SELECT r.*,a.make_id,a.model_id,a.chassis_id,a.engine_id,${currentEvidenceSql()} AS evidence_current FROM part_application_rule r JOIN application a USING(application_id) WHERE r.part_id=ANY($1::int[]) AND r.is_active=TRUE`,[allIds])).rows : [];
+            const rules = allIds.length ? (await db.query(`SELECT r.*,a.make_id,a.model_id,a.chassis_id,a.engine_id,${effectiveRuleColumns()} FROM part_application_rule r JOIN application a USING(application_id) WHERE r.part_id=ANY($1::int[]) AND r.is_active=TRUE`,[allIds])).rows : [];
             const byPart = new Map();
             for (const rule of rules) { if (!byPart.has(rule.part_id)) byPart.set(rule.part_id,[]); byPart.get(rule.part_id).push(rule); }
             vehiclePartIds=[];
@@ -131,7 +131,7 @@ router.get('/power-search/parts', protect, hasPermission(['parts:view', 'pos:use
                 const result = evaluateFitmentRules(exclusions,vehicleQuery);
                 if (result.status !== 'excluded') {
                     if (!vehiclePartIds.includes(part_id)) vehiclePartIds.push(part_id);
-                    vehicleAssessments.set(part_id,{status:'needs_details',reasons:['universal_declaration_requires_evidence',...result.reasons]});
+                    vehicleAssessments.set(part_id,{status:'linked',reasons:['universal_part']});
                 }
             }
         }
@@ -304,7 +304,7 @@ router.get('/power-search/parts', protect, hasPermission(['parts:view', 'pos:use
                 ...p,
                 display_name: p.display_name || '',
                 applications: formattedApps,
-                fitment: vehicleAssessments.get(id) || { status: 'discovery_only', reasons: [] }
+                fitment: vehicleAssessments.get(id) || { status: 'linked', reasons: [] }
             };
         }).filter(Boolean);
 

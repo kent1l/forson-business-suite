@@ -25,21 +25,11 @@ const retryAsync = async (fn, { attempts = 4, baseDelay = 200 } = {}) => {
 
 const index = () => meiliClient.index('applications');
 
-// Shape helper for a row of application_view (includes chassis & verification statuses per H18 / A21)
-const toDoc = (row) => ({
-  application_id: row.application_id,
-  make_id: row.make_id,
-  model_id: row.model_id,
-  chassis_id: row.chassis_id ?? null,
-  engine_id: row.engine_id,
-  make: row.make || '',
-  model: row.model || '',
-  chassis: row.chassis || '',
-  engine: row.engine || '',
-  identity_status: row.identity_status || 'legacy_unverified',
-  approval_status: row.approval_status || (row.identity_status === 'verified' ? 'approved' : 'needs_review'),
-  evidence_status: row.evidence_status || 'legacy_unverified',
-  label: [row.make, row.model, row.chassis, row.engine].filter(Boolean).join(' ')
+// Include the full reusable classification in every application index writer.
+const toDoc = ({ approval_status: _approval, evidence_status: _evidence, ...row }) => ({
+  ...row,
+  variant: row.variant_descriptor,
+  label: [row.make,row.model,row.chassis,row.engine,row.year_start,row.year_end,row.market,row.variant_descriptor,row.drivetrain,row.transmission,row.generation].filter(Boolean).join(' '),
 });
 
 const syncApplications = async (docs) => {

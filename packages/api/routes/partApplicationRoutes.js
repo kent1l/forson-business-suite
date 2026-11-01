@@ -1,7 +1,7 @@
 'use strict';
 
 const express = require('express');
-const { currentEvidenceSql } = require('../helpers/fitmentDocumentSql');
+const { effectiveRuleColumns } = require('../helpers/fitmentDocumentSql');
 const db = require('../db');
 const router = express.Router();
 const { protect, hasPermission } = require('../middleware/authMiddleware');
@@ -15,26 +15,23 @@ const {
   validateNoClientVerificationFlags,
   validateAtomicAliasText,
 } = require('../helpers/fitmentRuleSchema');
-const fitmentReviewService = require('../services/fitmentReviewService');
+const { createHash } = require('node:crypto');
 const { saveFitmentLink, normalizeRule, RULE_FIELDS, fail } = require('../services/fitmentLinkService');
 
-router.get('/parts/:partId/fitment-evidence', protect, hasPermission('applications:view'), async (req,res) => {
-  try {
-    const {rows}=await db.query('SELECT * FROM fitment_evidence WHERE part_id=$1 ORDER BY evidence_id DESC LIMIT 100',[req.params.partId]);
-    res.json(rows);
-  } catch(err) { res.status(500).json({message:'Could not load evidence'}); }
-});
+// Retained history tables are archival; the active workflow never stores evidence.
+const retiredReview = (_req, res) => res.status(410).json({ code: 'FITMENT_REVIEW_RETIRED', message: 'Link vehicle combinations directly; evidence and approval are no longer used.' });
+router.get('/parts/:partId/fitment-evidence', protect, hasPermission('applications:view'), retiredReview);
 
 // GET /api/parts/:partId/applications
 router.get('/parts/:partId/applications', protect, hasPermission('applications:view'), async (req, res) => {
   const { partId } = req.params;
   try {
     const query = `
-      SELECT par.*, par.row_version, pa.part_app_id,
-        ${currentEvidenceSql('par')} AS evidence_current,
+      SELECT par.*, par.row_version, pa.part_app_id,par.year_start AS link_year_start,par.year_end AS link_year_end,
+        ${effectiveRuleColumns('par','av')},
         av.make,av.model,av.engine,av.chassis,av.make_id,av.model_id,av.engine_id,av.chassis_id,
-        par.variant_descriptor AS variant,
-        par.fuel_type_qualifier AS fuel_type,par.displacement_liters_qualifier AS displacement_liters,
+        COALESCE(par.variant_descriptor,av.variant_descriptor) AS variant,
+        COALESCE(par.fuel_type_qualifier,av.fuel_type) AS fuel_type,COALESCE(par.displacement_liters_qualifier,av.displacement_liters) AS displacement_liters,
         COALESCE(vm.display_shorthand,FALSE) AS display_shorthand
       FROM part_application_rule par
       JOIN application_view av ON av.application_id=par.application_id
@@ -43,7 +40,7 @@ router.get('/parts/:partId/applications', protect, hasPermission('applications:v
       WHERE par.part_id=$1 AND par.is_active=TRUE
       ORDER BY av.make,av.model,av.engine,par.year_start,par.rule_id`;
     const { rows } = await db.query(query, [partId]);
-    res.json(rows);
+    res.json(rows.map(({ approval_status: _approval, evidence_status: _evidence, claim_id: _claim, ...row }) => row));
   } catch (err) {
     console.error('Error fetching part applications:', err.message);
     res.status(500).send('Server Error');
@@ -60,7 +57,7 @@ router.post('/parts/:partId/applications', protect, hasPermission('applications:
   // Hash the whole payload, including restrictions and the review token.
   const canonicalJson = value => Array.isArray(value) ? value.map(canonicalJson)
     : value && typeof value === 'object' ? Object.fromEntries(Object.keys(value).sort().map(k => [k, canonicalJson(value[k])])) : value;
-  const hash = fitmentReviewService.sha256(JSON.stringify(canonicalJson(body)));
+  const hash = createHash('sha256').update(JSON.stringify(canonicalJson(body))).digest('hex');
   const client = await db.getClient();
   try {
     await client.query('BEGIN');
@@ -171,7 +168,7 @@ router.put('/part-applications/:partAppId', protect, hasPermission('applications
          SET year_start = $1,
              year_end = $2,
              year_mode = CASE WHEN $1 IS NOT NULL OR $2 IS NOT NULL THEN 'specified' ELSE 'not_supplied' END,
-             approval_status = 'needs_review', evidence_status = 'user_declared',
+             approval_status = NULL, evidence_status = NULL,
              updated_by = COALESCE($3, updated_by)
          WHERE rule_id = $4`,
         [rawYS, rawYE, req.user?.employee_id || null, updatedRow.legacy_rule_id]
@@ -245,7 +242,7 @@ router.put('/parts/:partId/application-rules/:ruleId', protect, hasPermission('a
       displacement_liters_qualifier: body.displacement_liters !== undefined ? body.displacement_liters : cur.displacement_liters_qualifier,
       approval_status: undefined, evidence_status: undefined });
     const cols = RULE_FIELDS.filter(k => !['make_mode','model_mode','chassis_mode','engine_mode'].includes(k));
-    const upd = await client.query(`UPDATE part_application_rule SET ${cols.map((k,i) => `${k}=$${i+1}`).join(',')}, approval_status='needs_review',evidence_status='user_declared',updated_by=$${cols.length+1} WHERE rule_id=$${cols.length+2} RETURNING *`, [...cols.map(k=>next[k] ?? null),req.user.employee_id,ruleId]);
+    const upd = await client.query(`UPDATE part_application_rule SET ${cols.map((k,i) => `${k}=$${i+1}`).join(',')}, approval_status=NULL,evidence_status=NULL,updated_by=$${cols.length+1} WHERE rule_id=$${cols.length+2} RETURNING *`, [...cols.map(k=>next[k] ?? null),req.user.employee_id,ruleId]);
     await client.query(`UPDATE part_application SET year_start=$1,year_end=$2 WHERE legacy_rule_id=$3`, [next.year_start,next.year_end,ruleId]);
     await client.query(`INSERT INTO fitment_audit(entity_type,entity_id,action,actor_id,before_state,after_state) VALUES ('part_application_rule',$1,'edited',$2,$3::jsonb,$4::jsonb)`, [ruleId,req.user.employee_id,JSON.stringify(cur),JSON.stringify(upd.rows[0])]);
     await enqueuePartUpsert(partId, { source: 'part_application_rule_update' }, client);
@@ -459,36 +456,12 @@ router.post('/applications/parse-fitment-text', protect, hasPermission('applicat
       }
     }
 
-    let reviewSession = null;
-    try {
-      reviewSession = await fitmentReviewService.createOrUpdateReviewSession({
-        partId: req.body?.part_id ?? null,
-        rawText,
-        fitments,
-        residue,
-        source,
-        taxonomyVersion: index.taxonomyVersion || 1,
-        userId: req.user?.employee_id || null,
-      });
-    } catch (revErr) {
-      console.error('[parse-fitment-text] Review persistence failed:', revErr.message);
-      return res.status(503).json({ code: 'REVIEW_UNAVAILABLE', message: 'Review could not be saved; retry or use manual entry' });
-    }
+    // Parsing is a transient entry aid. Only selected combinations/links are saved.
+    const candidates = fitments.map(f => ({ ...f,
+      ui_badge: f.confidence_label === 'unresolved' ? 'Choose vehicle' : 'Ready to link',
+    }));
+    return res.json({ fitments: candidates, candidates, residue, source, ai_used: aiUsed });
 
-    const finalFitments = reviewSession
-      ? reviewSession.candidates.filter((c) => c.disposition !== 'dismissed')
-      : fitments;
-
-    return res.json({
-      fitments: finalFitments,
-      residue,
-      source,
-      ai_used: aiUsed,
-      review_id: reviewSession ? reviewSession.review_id : null,
-      review_version: reviewSession?.review_version,
-      taxonomy_version: index.taxonomyVersion || 1,
-      candidates: reviewSession ? reviewSession.candidates : fitments,
-    });
   } catch (err) {
     console.error('Error parsing fitment text:', err.message);
     res.status(500).send('Server Error');
@@ -530,89 +503,13 @@ router.get('/applications/display-dictionary', protect, hasPermission('applicati
   }
 });
 
-// PATCH /api/applications/fitment-reviews/:reviewId
-router.patch('/applications/fitment-reviews/:reviewId', protect, hasPermission('applications:edit'), async (req, res) => {
-  try {
-    const result = await fitmentReviewService.patchReviewSession(
-      req.params.reviewId,
-      req.body || {},
-      req.user?.employee_id || null
-    );
-    return res.json(result);
-  } catch (err) {
-    if (err.status) {
-      return res.status(err.status).json({
-        code: err.code || 'REVIEW_ERROR',
-        message: err.message,
-      });
-    }
-    console.error('Error patching fitment review session:', err.message);
-    return res.status(500).send('Server Error');
-  }
-});
-
-// POST /api/applications/fitment-research
-router.post('/applications/fitment-research', protect, hasPermission('applications:edit'), async (req, res) => {
-  try {
-    const job = await fitmentReviewService.createResearchJob(req.body || {}, req.user?.employee_id || null);
-    return res.status(201).json(job);
-  } catch (err) {
-    if (err.status) {
-      return res.status(err.status).json({
-        code: err.code || 'RESEARCH_ERROR',
-        message: err.message,
-        ...(err.details || {}),
-      });
-    }
-    console.error('Error creating fitment research job:', err.message);
-    return res.status(500).send('Server Error');
-  }
-});
-
-// GET /api/applications/fitment-research/:jobId
-router.get('/applications/fitment-research/:jobId', protect, hasPermission('applications:view'), async (req, res) => {
-  try {
-    const job = await fitmentReviewService.getResearchJob(req.params.jobId);
-    return res.json(job);
-  } catch (err) {
-    if (err.status) {
-      return res.status(err.status).json({ message: err.message });
-    }
-    console.error('Error fetching fitment research job:', err.message);
-    return res.status(500).send('Server Error');
-  }
-});
-
-// Evidence approval and part compatibility approval are distinct, audited operations.
-const evidenceService = require('../services/fitmentEvidenceService');
-const reviewTransaction = operation => async (req,res) => {
-  const client=await db.getClient();
-  try {
-    await client.query('BEGIN');
-    const result=await operation(client,req);
-    await client.query('COMMIT');
-    res.json(result);
-  } catch(err) {
-    await client.query('ROLLBACK');
-    res.status(err.status || 500).json({code:err.code || 'SERVER_ERROR',message:err.message});
-  } finally { client.release(); }
-};
-router.post('/applications/fitment-evidence/:evidenceId/approval',protect,hasPermission('applications:approve'),reviewTransaction((client,req)=>evidenceService.reviewEvidence(client,req.params.evidenceId,req.body || {},req.user.employee_id)));
-router.post('/parts/:partId/application-rules/:ruleId/approval',protect,hasPermission('applications:approve'),reviewTransaction((client,req)=>evidenceService.reviewRule(client,req.params.partId,req.params.ruleId,req.body || {},req.user.employee_id)));
-
-// POST /api/applications/fitment-corrections
-router.post('/applications/fitment-corrections', protect, hasPermission('applications:edit'), async (req, res) => {
-  try {
-    const row = await fitmentReviewService.createCorrection(req.body || {}, req.user?.employee_id || null);
-    return res.status(201).json(row);
-  } catch (err) {
-    if (err.status) {
-      return res.status(err.status).json({ message: err.message });
-    }
-    console.error('Error recording fitment correction:', err.message);
-    return res.status(500).send('Server Error');
-  }
-});
+// Obsolete clients receive an explicit response instead of creating new review/evidence rows.
+router.patch('/applications/fitment-reviews/:reviewId', protect, hasPermission('applications:edit'), retiredReview);
+router.post('/applications/fitment-research', protect, hasPermission('applications:edit'), retiredReview);
+router.get('/applications/fitment-research/:jobId', protect, hasPermission('applications:view'), retiredReview);
+router.post('/applications/fitment-evidence/:evidenceId/approval', protect, hasPermission('applications:edit'), retiredReview);
+router.post('/parts/:partId/application-rules/:ruleId/approval', protect, hasPermission('applications:edit'), retiredReview);
+router.post('/applications/fitment-corrections', protect, hasPermission('applications:edit'), retiredReview);
 
 // POST /api/applications/fitment-alias
 router.post('/applications/fitment-alias', protect, hasPermission('applications:edit'), async (req, res) => {

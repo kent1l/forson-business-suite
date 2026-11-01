@@ -1,4 +1,4 @@
-const { fitmentRulesSql } = require('./helpers/fitmentDocumentSql');
+const { fitmentRulesSql, fitmentLabelsSql, fitmentYearRangesSql } = require('./helpers/fitmentDocumentSql');
 const db = require('./db');
 const { syncPartWithMeili, removePartFromMeili } = require('./meilisearch');
 const { normalizePartData } = require('./helpers/normalizePart');
@@ -35,16 +35,8 @@ const loadPartDocs = async (partIds) => {
     SELECT
       pv.*,
       ${fitmentRulesSql()} AS fitment_rules,
-      (SELECT ARRAY_AGG(
-        CONCAT(vmk.make_name, ' ', vmd.model_name, COALESCE(CONCAT(' ', veng.engine_code), ''))
-      )
-      FROM part_application pa
-      JOIN application a ON pa.application_id = a.application_id
-      LEFT JOIN vehicle_make vmk ON a.make_id = vmk.make_id
-      LEFT JOIN vehicle_model vmd ON a.model_id = vmd.model_id
-      LEFT JOIN engine veng ON a.engine_id = veng.engine_id
-      WHERE pa.part_id = pv.part_id) AS applications_array,
-      (SELECT ARRAY_AGG(ARRAY[pa.year_start, pa.year_end]) FROM part_application pa WHERE pa.part_id = pv.part_id) AS application_year_ranges,
+      ${fitmentLabelsSql('pv',true)} AS applications_array,
+      ${fitmentYearRangesSql()} AS application_year_ranges,
       (SELECT ARRAY_AGG(t.tag_name) FROM tag t JOIN part_tag pt ON t.tag_id = pt.tag_id WHERE pt.part_id = pv.part_id) AS tags_array
     FROM public.parts_view AS pv
     WHERE pv.part_id = ANY($1::int[])
@@ -62,7 +54,7 @@ const loadPartDocs = async (partIds) => {
       // display_name is provided natively by parts_view
       applications: part.applications_array || [],
       fitment_rules: part.fitment_rules || [],
-      fitment_schema_version: 2,
+      fitment_schema_version: 3,
       fitment_confirmation: false,
       searchable_applications: withYearTokens(baseSearchableApplications, part.application_year_ranges || []),
       tags: part.tags_array || [],
