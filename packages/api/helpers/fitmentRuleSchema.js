@@ -246,12 +246,13 @@ function computeInterpretationKey(row = {}) {
   const ye = row.year_end ?? '';
   const fuel = row.fuel_type_qualifier ?? row.fuel_type ?? '';
   const disp = row.displacement_liters_qualifier ?? row.displacement_liters ?? '';
-  const market = nameKey(row.market);
-  const variant = nameKey(row.variant_descriptor ?? row.variant);
-  const position = nameKey(row.position);
-  const drivetrain = nameKey(row.drivetrain);
-  const transmission = nameKey(row.transmission);
-  const generation = nameKey(row.generation);
+  const qualifierKey = value => String(value ?? '').trim();
+  const market = qualifierKey(row.market);
+  const variant = qualifierKey(row.variant_descriptor ?? row.variant);
+  const position = qualifierKey(row.position);
+  const drivetrain = qualifierKey(row.drivetrain);
+  const transmission = qualifierKey(row.transmission);
+  const generation = qualifierKey(row.generation);
 
   return [
     effect,
@@ -269,7 +270,9 @@ function computeInterpretationKey(row = {}) {
     drivetrain,
     transmission,
     generation,
-  ].join('|');
+    ...Object.values(deriveIdentityAndQualifierModes(row).identity_modes),
+    ...['year','market','variant','position','drivetrain','transmission','fuel','displacement','generation'].map(k => row[`${k}_mode`] || deriveIdentityAndQualifierModes(row)[`${k}_mode`]),
+  ].map(v => encodeURIComponent(String(v))).join('|');
 }
 
 module.exports = {

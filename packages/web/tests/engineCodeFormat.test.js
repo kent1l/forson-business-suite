@@ -102,3 +102,21 @@ test('formats single-year and open-ended ranges', () => {
   ]);
   assert.equal(formatFitmentGroup(open), 'Toyota Hilux 4D56 (2015+)');
 });
+
+test('keeps exclusions, qualifiers and evidence separate when grouping fitments', () => {
+  const base = { make: 'Toyota', model: 'Hilux', engine: '1KD-FTV', year_start: 2005, year_end: 2015 };
+  const rows = [
+    base,
+    { ...base, effect: 'exclude' },
+    { ...base, chassis: 'KUN26' },
+    { ...base, position: 'Front' },
+    { ...base, approval_status: 'approved' },
+    { ...base, evidence_status: 'sourced_suggestion' },
+    { ...base, engine: null, engine_mode: 'unrestricted' },
+  ];
+  const groups = groupFitmentsForDisplay(rows);
+  assert.equal(groups.length, rows.length);
+  assert.equal(groups[1].effect, 'exclude');
+  assert.match(formatFitmentGroup(groups[2]), /\[KUN26\]/);
+  assert.ok(groups.every(group => group.fitments.length === 1));
+});

@@ -16,54 +16,24 @@ const {
   deriveIdentityAndQualifierModes,
 } = require('../helpers/fitmentRuleSchema');
 const fitmentReviewService = require('../services/fitmentReviewService');
-const applicationRoutes = require('./applicationRoutes');
+const { saveFitmentLink, normalizeRule, RULE_FIELDS, fail } = require('../services/fitmentLinkService');
 
 // GET /api/parts/:partId/applications
 router.get('/parts/:partId/applications', protect, hasPermission('applications:view'), async (req, res) => {
   const { partId } = req.params;
   try {
     const query = `
-      SELECT
-        pa.part_app_id,
-        pa.part_id,
-        pa.application_id,
-        pa.year_start,
-        pa.year_end,
-        pa.row_version,
-        pa.legacy_rule_id AS rule_id,
-        pa.legacy_claim_id AS claim_id,
-        av.make,
-        av.model,
-        av.engine,
-        av.make_id,
-        av.model_id,
-        av.engine_id,
-        av.chassis_id,
-        av.chassis,
-        av.displacement_liters,
-        av.fuel_type,
-        COALESCE(vm.display_shorthand, false) AS display_shorthand,
-        COALESCE(par.effect, 'include') AS effect,
-        COALESCE(par.approval_status, av.approval_status, 'legacy_unverified') AS approval_status,
-        COALESCE(par.evidence_status, 'legacy_unverified') AS evidence_status,
-        par.make_mode,
-        par.model_mode,
-        par.chassis_mode,
-        par.engine_mode,
-        par.year_mode,
-        par.market,
+      SELECT par.*, par.row_version, pa.part_app_id,
+        av.make,av.model,av.engine,av.chassis,av.make_id,av.model_id,av.engine_id,av.chassis_id,
         par.variant_descriptor AS variant,
-        par.position,
-        par.drivetrain,
-        par.transmission,
-        par.generation
-      FROM part_application pa
-      JOIN application_view av ON pa.application_id = av.application_id
-      LEFT JOIN vehicle_model vm ON vm.model_id = av.model_id
-      LEFT JOIN part_application_rule par ON par.rule_id = pa.legacy_rule_id
-      WHERE pa.part_id = $1
-      ORDER BY av.make, av.model, av.engine, pa.year_start;
-    `;
+        par.fuel_type_qualifier AS fuel_type,par.displacement_liters_qualifier AS displacement_liters,
+        COALESCE(vm.display_shorthand,FALSE) AS display_shorthand
+      FROM part_application_rule par
+      JOIN application_view av ON av.application_id=par.application_id
+      LEFT JOIN part_application pa ON pa.part_id=par.part_id AND pa.application_id=par.application_id
+      LEFT JOIN vehicle_model vm ON vm.model_id=av.model_id
+      WHERE par.part_id=$1 AND par.is_active=TRUE
+      ORDER BY av.make,av.model,av.engine,par.year_start,par.rule_id`;
     const { rows } = await db.query(query, [partId]);
     res.json(rows);
   } catch (err) {
@@ -76,300 +46,40 @@ router.get('/parts/:partId/applications', protect, hasPermission('applications:v
 router.post('/parts/:partId/applications', protect, hasPermission('applications:edit'), async (req, res) => {
   const { partId } = req.params;
   const body = req.body || {};
-
-  const flagCheck = validateNoClientVerificationFlags(body);
-  if (!flagCheck.valid) {
-    return res.status(422).json({
-      code: 'CLIENT_VERIFICATION_REJECTED',
-      message: `Forbidden client verification fields: ${flagCheck.offendingKeys.join(', ')}`,
-      client_verification_rejected: true,
-    });
-  }
-
-  const rawYS = body.year_start !== undefined && body.year_start !== null && body.year_start !== '' ? Number(body.year_start) : null;
-  const rawYE = body.year_end !== undefined && body.year_end !== null && body.year_end !== '' ? Number(body.year_end) : null;
-  if ((rawYS !== null && !Number.isInteger(rawYS)) || (rawYE !== null && !Number.isInteger(rawYE))) {
-    return res.status(400).json({ message: 'year_start and year_end must be integers' });
-  }
-  if (rawYS !== null && rawYE !== null && rawYS > rawYE) {
-    return res.status(400).json({ message: 'year_start cannot be greater than year_end' });
-  }
-
-  const idempotencyKey = req.get('Idempotency-Key') || body.idempotency_key || null;
-  const actorScope = `emp:${req.user?.employee_id || 'anon'}`;
-  const endpointScope = `POST:/parts/${partId}/applications`;
-  const requestHash = idempotencyKey
-    ? fitmentReviewService.sha256(JSON.stringify({
-        partId: Number(partId),
-        application_id: body.application_id ?? null,
-        make_id: body.make_id ?? null,
-        model_id: body.model_id ?? null,
-        chassis_id: body.chassis_id ?? null,
-        engine_id: body.engine_id ?? null,
-        year_start: rawYS,
-        year_end: rawYE,
-        effect: body.effect || 'include',
-      }))
-    : null;
-
+  const key = req.get('Idempotency-Key') || body.idempotency_key;
+  const scope = `POST:/parts/${partId}/applications`;
+  const actor = `emp:${req.user.employee_id}`;
+  // Hash the whole payload, including restrictions and the review token.
+  const canonicalJson = value => Array.isArray(value) ? value.map(canonicalJson)
+    : value && typeof value === 'object' ? Object.fromEntries(Object.keys(value).sort().map(k => [k, canonicalJson(value[k])])) : value;
+  const hash = fitmentReviewService.sha256(JSON.stringify(canonicalJson(body)));
   const client = await db.getClient();
-  let syncOutboxQueued = false;
-  let responseStatus = 201;
-  let responseBody = null;
-
   try {
     await client.query('BEGIN');
-
-    if (idempotencyKey) {
-      const idemRes = await client.query(
-        `SELECT response_status, response_body, request_hash
-         FROM fitment_idempotency
-         WHERE actor_scope = $1 AND endpoint_scope = $2 AND idempotency_key = $3
-           AND expires_at > NOW()
-         LIMIT 1`,
-        [actorScope, endpointScope, String(idempotencyKey)]
-      );
-      if (idemRes.rows.length > 0) {
-        if (idemRes.rows[0].request_hash !== requestHash) {
-          await client.query('ROLLBACK');
-          return res.status(409).json({
-            code: 'IDEMPOTENCY_KEY_CONFLICT',
-            message: 'Idempotency-Key was already used with a different request payload',
-          });
-        }
+    if (key) {
+      // Serialize identical keys before reading the ledger, including expired keys.
+      await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', [`${actor}:${scope}:${key}`]);
+      const previous = (await client.query('SELECT * FROM fitment_idempotency WHERE actor_scope=$1 AND endpoint_scope=$2 AND idempotency_key=$3 AND expires_at>NOW()', [actor, scope, key])).rows[0];
+      if (previous) {
+        if (previous.request_hash !== hash) throw fail('IDEMPOTENCY_CONFLICT', 'Idempotency key already used with a different payload', 409);
         await client.query('COMMIT');
-        return res.status(idemRes.rows[0].response_status).json({
-          ...idemRes.rows[0].response_body,
-          replayed: true,
-        });
+        return res.status(previous.response_status).json({ ...previous.response_body, replayed: true });
       }
     }
-
-    let resolvedApplicationId = body.application_id != null ? Number(body.application_id) : null;
-    let appRow = null;
-
-    if (resolvedApplicationId != null) {
-      if (!Number.isInteger(resolvedApplicationId) || resolvedApplicationId <= 0) {
-        await client.query('ROLLBACK');
-        return res.status(422).json({ code: 'INVALID_APPLICATION_ID', message: 'Invalid application_id' });
-      }
-      const appLookup = await client.query(
-        'SELECT application_id, make_id, model_id, chassis_id, engine_id FROM application WHERE application_id = $1',
-        [resolvedApplicationId]
-      );
-      if (!appLookup.rows.length) {
-        await client.query('ROLLBACK');
-        return res.status(422).json({ code: 'APPLICATION_NOT_FOUND', message: 'application_id not found' });
-      }
-      appRow = appLookup.rows[0];
-    } else {
-      const resolvedApp = await applicationRoutes.resolveAndFindOrCreateApplication(client, {
-        ...body,
-        derive_model_engine: false,
-      });
-      resolvedApplicationId = resolvedApp.application_id;
-      appRow = {
-        application_id: resolvedApp.application_id,
-        make_id: resolvedApp.resolvedMakeId,
-        model_id: resolvedApp.resolvedModelId,
-        chassis_id: resolvedApp.resolvedChassisId,
-        engine_id: resolvedApp.resolvedEngineId,
-      };
-    }
-
-    const insertRes = await client.query(
-      `INSERT INTO part_application (part_id, application_id, year_start, year_end)
-       VALUES ($1, $2, $3, $4)
-       ON CONFLICT (part_id, application_id) DO NOTHING
-       RETURNING *`,
-      [partId, resolvedApplicationId, rawYS, rawYE]
-    );
-
-    if (insertRes.rows.length > 0) {
-      const newPa = insertRes.rows[0];
-      const modes = deriveIdentityAndQualifierModes({
-        ...body,
-        make_id: appRow.make_id,
-        model_id: appRow.model_id,
-        chassis_id: appRow.chassis_id,
-        engine_id: appRow.engine_id,
-        year_start: rawYS,
-        year_end: rawYE,
-      });
-
-      const claimRes = await client.query(
-        `INSERT INTO fitment_claim (
-           part_id, application_id, source_type, parser_mode, claim_effect,
-           approval_status, evidence_status, created_by
-         ) VALUES ($1, $2, 'manual_ui', 'manual', $3, 'needs_review', 'user_declared', $4)
-         RETURNING claim_id`,
-        [partId, resolvedApplicationId, body.effect === 'exclude' ? 'exclude' : 'include', req.user?.employee_id || null]
-      );
-      const claimId = claimRes.rows[0].claim_id;
-
-      await client.query('SAVEPOINT sp_insert_rule');
-      let ruleId = null;
-      try {
-        const ruleRes = await client.query(
-          `INSERT INTO part_application_rule (
-             part_id, application_id, claim_id, effect,
-             make_mode, model_mode, chassis_mode, engine_mode,
-             year_start, year_end, year_mode,
-             market, market_mode, variant_descriptor, variant_mode,
-             position, position_mode, drivetrain, drivetrain_mode,
-             transmission, transmission_mode, fuel_type_qualifier, fuel_mode,
-             displacement_liters_qualifier, displacement_mode, generation, generation_mode,
-             approval_status, evidence_status, created_by, updated_by
-           ) VALUES (
-             $1, $2, $3, $4,
-             $5, $6, $7, $8,
-             $9, $10, $11,
-             $12, $13, $14, $15,
-             $16, $17, $18, $19,
-             $20, $21, $22, $23,
-             $24, $25, $26, $27,
-             'needs_review', 'user_declared', $28, $28
-           )
-           ON CONFLICT DO NOTHING
-           RETURNING rule_id`,
-          [
-            partId,
-            resolvedApplicationId,
-            claimId,
-            body.effect === 'exclude' ? 'exclude' : 'include',
-            modes.make_mode,
-            modes.model_mode,
-            modes.chassis_mode,
-            modes.engine_mode,
-            rawYS,
-            rawYE,
-            modes.year_mode,
-            modes.market,
-            modes.market_mode,
-            modes.variant_descriptor,
-            modes.variant_mode,
-            modes.position,
-            modes.position_mode,
-            modes.drivetrain,
-            modes.drivetrain_mode,
-            modes.transmission,
-            modes.transmission_mode,
-            modes.fuel_type_qualifier,
-            modes.fuel_mode,
-            modes.displacement_liters_qualifier,
-            modes.displacement_mode,
-            modes.generation,
-            modes.generation_mode,
-            req.user?.employee_id || null,
-          ]
-        );
-        await client.query('RELEASE SAVEPOINT sp_insert_rule');
-        if (ruleRes.rows.length > 0) ruleId = ruleRes.rows[0].rule_id;
-      } catch (_ruleErr) {
-        await client.query('ROLLBACK TO SAVEPOINT sp_insert_rule');
-      }
-
-      if (!ruleId) {
-        const existingRule = await client.query(
-          `SELECT rule_id FROM part_application_rule
-           WHERE part_id = $1 AND application_id = $2 AND is_active = TRUE
-           ORDER BY rule_id ASC LIMIT 1`,
-          [partId, resolvedApplicationId]
-        );
-        if (existingRule.rows.length > 0) ruleId = existingRule.rows[0].rule_id;
-      }
-
-      await client.query(
-        `UPDATE part_application
-         SET legacy_claim_id = $1, legacy_rule_id = $2
-         WHERE part_app_id = $3`,
-        [claimId, ruleId, newPa.part_app_id]
-      );
-
-      // Only derive vehicle_engine_fitment on newly inserted inclusion links (Fixes F10 / H03)
-      if (appRow.model_id && appRow.engine_id && body.effect !== 'exclude') {
-        await applicationRoutes.deriveVehicleEngineFitment(
-          client,
-          appRow.model_id,
-          appRow.engine_id,
-          rawYS,
-          rawYE
-        );
-      }
-
-      // Pass transactional client to enqueuePartUpsert so we never starve the connection pool (Fixes F18 / H05)
-      syncOutboxQueued = await enqueuePartUpsert(partId, { source: 'part_application_add' }, client);
-
-      responseStatus = 201;
-      responseBody = {
-        ...newPa,
-        legacy_claim_id: claimId,
-        legacy_rule_id: ruleId,
-        rule_id: ruleId,
-        outcome: 'saved',
-        existing: false,
-      };
-    } else {
-      // Duplicate link: do NOT widen vehicle_engine_fitment years; return deterministic existing row (H03 / A12)
-      const existingPaRes = await client.query(
-        `SELECT * FROM part_application
-         WHERE part_id = $1 AND application_id = $2
-         LIMIT 1`,
-        [partId, resolvedApplicationId]
-      );
-      const existingPa = existingPaRes.rows[0] || {
-        part_id: Number(partId),
-        application_id: resolvedApplicationId,
-        year_start: rawYS,
-        year_end: rawYE,
-      };
-      responseStatus = 200;
-      responseBody = {
-        ...existingPa,
-        rule_id: existingPa.legacy_rule_id || null,
-        outcome: 'existing',
-        existing: true,
-      };
-    }
-
-    if (idempotencyKey && responseBody) {
-      await client.query(
-        `INSERT INTO fitment_idempotency
-           (actor_scope, endpoint_scope, idempotency_key, request_hash, response_status, response_body)
-         VALUES ($1, $2, $3, $4, $5, $6::jsonb)
-         ON CONFLICT (actor_scope, endpoint_scope, idempotency_key) DO NOTHING`,
-        [actorScope, endpointScope, String(idempotencyKey), requestHash, responseStatus, JSON.stringify(responseBody)]
-      );
-    }
-
+    const result = await saveFitmentLink(client, partId, body, req.user.employee_id);
+    const status = result.existing ? 200 : 201;
+    if (!result.existing) await enqueuePartUpsert(partId, { source: 'part_application_add' }, client);
+    if (key) await client.query(`INSERT INTO fitment_idempotency(actor_scope,endpoint_scope,idempotency_key,request_hash,response_status,response_body)
+      VALUES ($1,$2,$3,$4,$5,$6::jsonb) ON CONFLICT(actor_scope,endpoint_scope,idempotency_key) DO UPDATE SET request_hash=EXCLUDED.request_hash,response_status=EXCLUDED.response_status,response_body=EXCLUDED.response_body,expires_at=EXCLUDED.expires_at`, [actor, scope, key, hash, status, JSON.stringify(result)]);
     await client.query('COMMIT');
+    return res.status(status).json(result);
   } catch (err) {
     await client.query('ROLLBACK');
-    if (err.status) {
-      return res.status(err.status).json({
-        code: err.code || 'VALIDATION_ERROR',
-        message: err.message,
-        ...(err.details || {}),
-      });
-    }
-    console.error('Error adding part application:', err.message);
-    return res.status(500).send('Server Error');
+    if (!err.status) console.error('Error linking fitment:', err.message);
+    return res.status(err.status || 500).json({ code: err.code || 'SERVER_ERROR', message: err.status ? err.message : 'Unable to save fitment' });
   } finally {
     client.release();
   }
-
-  if (responseStatus === 201) {
-    taxonomyIndex.invalidate();
-    if (!syncOutboxQueued && process.env.DISABLE_MEILI_OUTBOX_WORKER !== 'true') {
-      try {
-        await syncPartWithMeili(partId);
-      } catch (meiliErr) {
-        console.warn('Meili sync fallback failed:', meiliErr.message);
-      }
-    }
-  }
-
-  return res.status(responseStatus).json(responseBody);
 });
 
 // PUT /api/part-applications/:partAppId
@@ -404,7 +114,7 @@ router.put('/part-applications/:partAppId', protect, hasPermission('applications
     const current = currentRes.rows[0];
     const currentVersion = Number(current.rule_row_version ?? current.row_version ?? 1);
 
-    if (expectedVersion !== null && Number(expectedVersion) !== currentVersion) {
+    if (expectedVersion == null || Number(expectedVersion) !== currentVersion) {
       await client.query('ROLLBACK');
       return res.status(409).json({
         code: 'STALE_RULE',
@@ -458,20 +168,6 @@ router.put('/part-applications/:partAppId', protect, hasPermission('applications
       );
     }
 
-    const appRes = await client.query(
-      'SELECT model_id, engine_id FROM application WHERE application_id = $1',
-      [updatedRow.application_id]
-    );
-    if (appRes.rows.length && appRes.rows[0].model_id && appRes.rows[0].engine_id) {
-      await applicationRoutes.deriveVehicleEngineFitment(
-        client,
-        appRes.rows[0].model_id,
-        appRes.rows[0].engine_id,
-        rawYS,
-        rawYE
-      );
-    }
-
     syncOutboxQueued = await enqueuePartUpsert(partIdForSync, { source: 'part_application_update' }, client);
 
     await client.query('COMMIT');
@@ -514,7 +210,7 @@ router.put('/parts/:partId/application-rules/:ruleId', protect, hasPermission('a
       return res.status(404).json({ message: 'Fitment rule not found' });
     }
     const cur = curRes.rows[0];
-    if (expectedVersion !== null && Number(expectedVersion) !== Number(cur.row_version)) {
+    if (expectedVersion == null || Number(expectedVersion) !== Number(cur.row_version)) {
       await client.query('ROLLBACK');
       return res.status(409).json({
         code: 'STALE_RULE',
@@ -532,39 +228,17 @@ router.put('/parts/:partId/application-rules/:ruleId', protect, hasPermission('a
       });
     }
 
-    const upd = await client.query(
-      `UPDATE part_application_rule
-       SET year_start = COALESCE($1, year_start),
-           year_end = COALESCE($2, year_end),
-           market = COALESCE($3, market),
-           variant_descriptor = COALESCE($4, variant_descriptor),
-           position = COALESCE($5, position),
-           drivetrain = COALESCE($6, drivetrain),
-           transmission = COALESCE($7, transmission),
-           notes = COALESCE($8, notes),
-           updated_by = COALESCE($9, updated_by)
-       WHERE rule_id = $10
-       RETURNING *`,
-      [
-        body.year_start !== undefined ? body.year_start : null,
-        body.year_end !== undefined ? body.year_end : null,
-        body.market !== undefined ? body.market : null,
-        body.variant !== undefined ? body.variant : null,
-        body.position !== undefined ? body.position : null,
-        body.drivetrain !== undefined ? body.drivetrain : null,
-        body.transmission !== undefined ? body.transmission : null,
-        body.notes !== undefined ? body.notes : null,
-        req.user?.employee_id || null,
-        ruleId,
-      ]
-    );
+    const next = normalizeRule({ ...cur, ...body, approval_status: undefined, evidence_status: undefined });
+    const cols = RULE_FIELDS.filter(k => !['make_mode','model_mode','chassis_mode','engine_mode'].includes(k));
+    const upd = await client.query(`UPDATE part_application_rule SET ${cols.map((k,i) => `${k}=$${i+1}`).join(',')}, approval_status='needs_review',evidence_status='user_declared',updated_by=$${cols.length+1} WHERE rule_id=$${cols.length+2} RETURNING *`, [...cols.map(k=>next[k] ?? null),req.user.employee_id,ruleId]);
+    await client.query(`UPDATE part_application SET year_start=$1,year_end=$2 WHERE legacy_rule_id=$3`, [next.year_start,next.year_end,ruleId]);
+    await client.query(`INSERT INTO fitment_audit(entity_type,entity_id,action,actor_id,before_state,after_state) VALUES ('part_application_rule',$1,'edited',$2,$3::jsonb,$4::jsonb)`, [ruleId,req.user.employee_id,JSON.stringify(cur),JSON.stringify(upd.rows[0])]);
     await enqueuePartUpsert(partId, { source: 'part_application_rule_update' }, client);
     await client.query('COMMIT');
     return res.json(upd.rows[0]);
   } catch (err) {
     await client.query('ROLLBACK');
-    console.error('Error updating part application rule:', err.message);
-    return res.status(500).send('Server Error');
+    return res.status(err.status || (err.code === '23505' ? 409 : 422)).json({ code: err.code || 'INVALID_RULE', message: err.message });
   } finally {
     client.release();
   }
@@ -838,7 +512,8 @@ router.post('/applications/parse-fitment-text', protect, hasPermission('applicat
         userId: req.user?.employee_id || null,
       });
     } catch (revErr) {
-      console.warn('[parse-fitment-text] Review session persistence skipped:', revErr.message);
+      console.error('[parse-fitment-text] Review persistence failed:', revErr.message);
+      return res.status(503).json({ code: 'REVIEW_UNAVAILABLE', message: 'Review could not be saved; retry or use manual entry' });
     }
 
     const finalFitments = reviewSession
@@ -851,6 +526,7 @@ router.post('/applications/parse-fitment-text', protect, hasPermission('applicat
       source,
       ai_used: aiUsed,
       review_id: reviewSession ? reviewSession.review_id : null,
+      review_version: reviewSession?.review_version,
       taxonomy_version: index.taxonomyVersion || 1,
       candidates: reviewSession ? reviewSession.candidates : fitments,
     });

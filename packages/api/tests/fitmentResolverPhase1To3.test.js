@@ -63,6 +63,7 @@ describe('Phase 1-3 Fitment Resolver Unit & Contract Tests', () => {
             rule_id: 101,
             effect: 'include',
             approval_status: 'approved',
+            evidence_status: 'sourced_verified',
             make_id: 1,
             model_id: 10,
             chassis_id: null,

@@ -636,8 +636,8 @@ const PartApplicationManager = ({ part, onCancel }) => {
                                             [{formatQualifierSummary(group.fitments[0])}]
                                         </span>
                                     )}
-                                    <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${STATUS_BADGE[formatApplicationScopeBadge(group.fitments[0])] || CONFIDENCE_BADGE.low}`}>
-                                        {formatApplicationScopeBadge(group.fitments[0])}
+                                    <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${STATUS_BADGE[formatApplicationScopeBadge(group.fitments[0]).label] || CONFIDENCE_BADGE.low}`}>
+                                        {formatApplicationScopeBadge(group.fitments[0]).label}
                                     </span>
                                 </div>
                                 {canEdit && (
@@ -662,8 +662,8 @@ const PartApplicationManager = ({ part, onCancel }) => {
                                         <li key={app.part_app_id} className="flex justify-between items-center text-xs text-gray-600 dark:text-slate-300">
                                             <div className="flex items-center gap-1.5">
                                                 <span className="font-mono">{app.engine || '—'}</span>
-                                                <span className={`text-[11px] px-1 py-0.5 rounded font-medium ${STATUS_BADGE[formatApplicationScopeBadge(app)] || CONFIDENCE_BADGE.low}`}>
-                                                    {formatApplicationScopeBadge(app)}
+                                                <span className={`text-[11px] px-1 py-0.5 rounded font-medium ${STATUS_BADGE[formatApplicationScopeBadge(app).label] || CONFIDENCE_BADGE.low}`}>
+                                                    {formatApplicationScopeBadge(app).label}
                                                 </span>
                                             </div>
                                             {canEdit && (

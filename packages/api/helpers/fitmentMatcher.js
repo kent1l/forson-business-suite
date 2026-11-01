@@ -24,7 +24,8 @@ function yearMatchesRule(queryYear, queryYearStart, queryYearEnd, ruleYearStart,
   const rEnd = ruleYearEnd != null ? Number(ruleYearEnd) : 2100;
   const effQStart = qStart ?? qEnd;
   const effQEnd = qEnd ?? qStart;
-  return effQStart <= rEnd && effQEnd >= rStart;
+  if (effQStart > rEnd || effQEnd < rStart) return false;
+  return effQStart >= rStart && effQEnd <= rEnd ? true : 'partial';
 }
 
 /**
@@ -51,7 +52,7 @@ function evaluateSingleRule(rule, query = {}) {
     if (makeMode !== 'unrestricted') {
       reasons.push('make_not_supplied_on_rule');
     }
-  } else if (rule.make_id != null && query.make_id == null && query.model_id == null && query.chassis_id == null && query.engine_id == null) {
+  } else if (rule.make_id != null && query.make_id == null && query.model_id == null && query.chassis_id == null) {
     reasons.push('make_not_supplied_in_query');
   }
 
@@ -96,6 +97,7 @@ function evaluateSingleRule(rule, query = {}) {
   const hasQueryYear = query.year != null || query.year_start != null || query.year_end != null;
   if (hasRuleYear && hasQueryYear) {
     const ym = yearMatchesRule(query.year, query.year_start, query.year_end, rule.year_start, rule.year_end);
+    if (ym === 'partial') reasons.push('year_range_partially_covered');
     if (ym === false) {
       return { state: 'conflict', reasons: ['year_out_of_range'] };
     }
@@ -108,11 +110,13 @@ function evaluateSingleRule(rule, query = {}) {
   }
 
   // 6. Check Fuel qualifier
-  const ruleFuel = rule.fuel_type_qualifier || rule.fuel_type || null;
+  const ruleFuel = rule.fuel_type_qualifier ?? rule.fuel_type ?? null;
   if (ruleFuel && query.fuel_type) {
     if (normalizeStr(ruleFuel) !== normalizeStr(query.fuel_type)) {
       return { state: 'conflict', reasons: ['fuel_type_conflict'] };
     }
+  } else if (!ruleFuel && query.fuel_type && rule.fuel_mode !== 'unrestricted') {
+    reasons.push('fuel_type_not_supplied_on_rule');
   } else if (ruleFuel && !query.fuel_type) {
     reasons.push('fuel_type_required_by_rule');
   }
@@ -124,13 +128,17 @@ function evaluateSingleRule(rule, query = {}) {
     ['position', rule.position, query.position],
     ['drivetrain', rule.drivetrain, query.drivetrain],
     ['transmission', rule.transmission, query.transmission],
+    ['generation', rule.generation, query.generation],
+    ['displacement', rule.displacement_liters_qualifier ?? rule.displacement_liters, query.displacement_liters],
   ];
   for (const [name, rVal, qVal] of qualifierPairs) {
-    if (rVal && qVal) {
-      if (normalizeStr(rVal) !== normalizeStr(qVal)) {
+    if (rVal != null && rVal !== '' && qVal != null && qVal !== '') {
+      if (String(rVal).trim().toLowerCase() !== String(qVal).trim().toLowerCase()) {
         return { state: 'conflict', reasons: [`${name}_conflict`] };
       }
-    } else if (rVal && !qVal) {
+    } else if ((rVal == null || rVal === '') && qVal != null && qVal !== '' && rule[`${name}_mode`] !== 'unrestricted') {
+      reasons.push(`${name}_not_supplied_on_rule`);
+    } else if (rVal != null && rVal !== '' && (qVal == null || qVal === '')) {
       reasons.push(`${name}_required_by_rule`);
     }
   }
@@ -144,8 +152,8 @@ function evaluateSingleRule(rule, query = {}) {
   }
 
   // Approval status check: if requireApproved is set on query and rule is not approved
-  if (query.require_approved && rule.approval_status && rule.approval_status !== 'approved') {
-    reasons.push(`rule_status_${rule.approval_status}`);
+  if (rule.approval_status !== 'approved' || rule.evidence_status !== 'sourced_verified') {
+    reasons.push('compatibility_not_verified');
   }
 
   if (reasons.length > 0) {
@@ -206,11 +214,7 @@ function evaluateFitmentRules(rules = [], query = {}) {
       };
     }
     // Unverified legacy rules cannot produce a confirmed_compatible status when verification is checked
-    const hasVerifiedOrApproved = confirmed.some(
-      (c) =>
-        (!c.rule.approval_status && !c.rule.evidence_status) ||
-        (c.rule.approval_status === 'approved' && c.rule.evidence_status !== 'legacy_unverified')
-    );
+    const hasVerifiedOrApproved = confirmed.some(c => c.rule.approval_status === 'approved' && c.rule.evidence_status === 'sourced_verified');
     if (!hasVerifiedOrApproved) {
       return {
         state: 'needs_details',
