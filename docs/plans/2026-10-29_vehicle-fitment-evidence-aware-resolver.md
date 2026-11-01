@@ -257,3 +257,14 @@ Candidate verification commands from current root instructions, to confirm again
 | 2026-10-29 | Investigated Phase 0 against local development PostgreSQL and actual parser/validator/merge functions; linked evidence, complete preserving identity mapping, design contracts, measured baselines, 19 disposable API/SQL reproductions (including pool starvation and staged-link authorization bypass) and explicit later-phase verification limits; completed Phase0 discovery/design without application implementation. |
 
 | 2026-11-01 | Completed shared rule saves, review concurrency/provenance, restriction-safe display and staging, conservative search/evidence matching, source/compatibility approval UI, claim-preserving merge/undo and application-history safeguards. Added `20261101_01_fitment_review_integrity.sql`, repeatable disposable DB/browser checks and the [completion record](./vehicle-fitment-phase0/completion-2026-11-01.md). External research and production rollout remain gated; no business database migration or deployment performed. |
+
+## 13. Development Database Follow-up — Modal HTTP 500s
+
+The new code was running against development without `20261101_01_fitment_review_integrity.sql`. The shared applications query depended on the absent `fitment_rule_source` table, `vehicle_model.display_shorthand`, and evidence claim/expiry columns. Applied only that additive migration to the confirmed running development database (`forson_business_suite`) through the normal runner, then verified its recorded checksum:
+
+```bash
+docker exec forson_backend_dev node scripts/migrate.js up --from 20261101_01_fitment_review_integrity.sql --to 20261101_01_fitment_review_integrity.sql
+docker exec forson_backend_dev node scripts/migrate.js verify --from 20261101_01_fitment_review_integrity.sql --to 20261101_01_fitment_review_integrity.sql
+```
+
+Result: one migration applied (84 ms); checksums verified. Read-only authenticated GET requests for parts **6643** and **1783** returned **HTTP 200** through both the running backend and frontend Vite proxy. No application source change was required. Earlier statements that the integrity migration was applied only to disposable fixtures describe the implementation session before this follow-up; development is now migrated. Production rollout remains gated.

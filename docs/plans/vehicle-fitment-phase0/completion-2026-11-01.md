@@ -1,5 +1,7 @@
 # Vehicle fitment — completion and verification record
 
+> Development follow-up: `20261101_01_fitment_review_integrity.sql` is now applied and checksum-verified on local `forson_business_suite`. Its absence caused HTTP 500 when opening the edit-part/application-manager modals. Read-only authenticated checks for parts 6643 and 1783 now return HTTP 200 through both backend and frontend proxy. The implementation-session verification below remains historical; production migration/deployment is still pending.
+
 Date: 2026-11-01. Parent: [evidence-aware resolver plan](../2026-10-29_vehicle-fitment-evidence-aware-resolver.md).
 
 ## Status at a Glance
@@ -8,7 +10,7 @@ Date: 2026-11-01. Parent: [evidence-aware resolver plan](../2026-10-29_vehicle-f
 |---|---|
 | 0 | Done previously. Historical read-only investigation and red baselines remain in this directory. |
 | 0.5 | Done locally. Shared link writers preserve restrictions, enforce permissions, avoid post-commit pool acquisition and never derive vehicle-engine facts from link saves. |
-| 1 | Done locally. Original four migrations retained; one additive integrity migration rehearsed twice on each disposable fixture. No business database changes. |
+| 1 | Done locally. Original four migrations retained; integrity migration rehearsed twice on disposable fixtures and subsequently applied/checksum-verified on development to fix modal HTTP 500s. Production unchanged. |
 | 2 | Done locally. Clause spans/provenance, collision safety, semantic deduplication, mutually exclusive interpretations and review persistence covered by focused tests. |
 | 3 | Done locally. Transactional rules, concurrency/idempotency, versioned edits, safe staging/display, manual evidence review and separate source/compatibility approvals implemented. |
 | 4 | Manual evidence registry implemented. Live/paid research deliberately gated; manual entry works without providers. |
@@ -121,3 +123,4 @@ Rollback should keep additive history tables and data. Pause fitment editing and
 | Date | Change |
 |---|---|
 | 2026-11-01 | Verified the earlier completion claims against source, completed remaining integrity/UI/consumer work and recorded reproducible local evidence and the remaining operational gates. |
+| 2026-11-01 | Development follow-up: applied the previously pending `20261101_01_fitment_review_integrity.sql` using a targeted migration window and verified its checksum. Both `/api/parts/6643/applications` and `/api/parts/1783/applications` return HTTP 200 via backend and Vite proxy. No application source change or production deployment was needed. |
