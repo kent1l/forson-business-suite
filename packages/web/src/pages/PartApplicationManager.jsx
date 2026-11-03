@@ -36,13 +36,13 @@ const STATUS_BADGE = {
 
 const describeCandidate = (c) => {
     const prefix = c.effect === 'exclude' ? 'EXCLUDES: ' : '';
-    const parts = [c.make, c.model, c.chassis ? `[${c.chassis}]` : null, c.engine].filter(Boolean);
+    const parts = [c.make, c.model, c.engine, c.chassis ? `[${c.chassis}]` : null].filter(Boolean);
     const base = parts.length ? parts.join(' ') : '(unspecified vehicle)';
     const years = (c.year_start || c.year_end)
         ? ` (${[c.year_start, c.year_end].filter(Boolean).join('-')})`
         : '';
-    const quals = formatQualifierSummary(c);
-    return `${prefix}${base}${years}${quals ? ` [${quals}]` : ''}`;
+    const quals = formatQualifierSummary({ ...c, chassis: null, position: null });
+    return `${prefix}${c.position ? `${c.position} · ` : ''}${base}${years}${quals ? ` [${quals}]` : ''}`;
 };
 
 export const DescribeFitmentPanel = ({ partId, onCommitted, onStage }) => {
@@ -367,9 +367,10 @@ const PartApplicationManager = ({ part, onCancel }) => {
                             <li key={group.fitments[0].rule_id} className="text-sm flex justify-between items-center py-2 text-gray-900 dark:text-slate-100">
                                 <div className="flex items-center gap-1.5 flex-wrap">
                                     <span className="font-medium">
+                                        {group.fitments[0].position ? `${group.fitments[0].position} · ` : ''}
                                         {group.fitments[0].make} {group.fitments[0].model}
-                                        {group.fitments[0].chassis ? ` [${group.fitments[0].chassis}]` : ''}
                                         {group.fitments[0].engine ? ` (${group.fitments[0].engine})` : ''}
+                                        {group.fitments[0].chassis ? ` [${group.fitments[0].chassis}]` : ''}
                                     </span>
                                     <span className="text-xs text-gray-500 dark:text-slate-400 font-mono">{formatYearRange(group.fitments[0].year_start, group.fitments[0].year_end)}</span>
                                     {group.fitments[0].effect === 'exclude' && (
@@ -377,9 +378,9 @@ const PartApplicationManager = ({ part, onCancel }) => {
                                             Excluded
                                         </span>
                                     )}
-                                    {formatQualifierSummary(group.fitments[0]) && (
+                                    {formatQualifierSummary({ ...group.fitments[0], chassis: null, position: null }) && (
                                         <span className="text-xs text-gray-500 dark:text-slate-400">
-                                            [{formatQualifierSummary(group.fitments[0])}]
+                                            [{formatQualifierSummary({ ...group.fitments[0], chassis: null, position: null })}]
                                         </span>
                                     )}
                                     <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${STATUS_BADGE[formatApplicationScopeBadge(group.fitments[0]).label] || CONFIDENCE_BADGE.low}`}>

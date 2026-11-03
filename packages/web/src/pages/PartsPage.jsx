@@ -13,7 +13,7 @@ import SortableHeader from '../components/ui/SortableHeader';
 import { useAuth } from '../contexts/AuthContext';
 import PartNumberManager from './PartNumberManager';
 import PartApplicationManager from './PartApplicationManager';
-import { formatApplicationText } from '../helpers/applicationTextHelper';
+import PartFitmentText from '../components/parts/PartFitmentText';
 import { sortData } from '../utils/sortData';
 import usePartDuplicateResolution from '../hooks/usePartDuplicateResolution';
 
@@ -321,7 +321,7 @@ const PartsPage = ({ user, onNavigate }) => {
                     </div>
                 )}
                 <div className="overflow-x-auto">
-                    <table className="w-full text-left table-fixed">
+                    <table className="w-full min-w-[1100px] text-left table-fixed">
                         <colgroup>
                             <col className="w-10" />
                             <col className="w-36" />
@@ -346,7 +346,7 @@ const PartsPage = ({ user, onNavigate }) => {
                                     <td className="p-3"><input type="checkbox" checked={selectedParts.includes(part.part_id)} onChange={() => handleSelectPart(part.part_id)} className="rounded border-gray-300 dark:border-slate-600 text-primary-600" /></td>
                                     <td className="p-3 text-sm font-mono text-gray-900 dark:text-slate-100 truncate">{part.internal_sku}</td>
                                     <td className="p-3 text-sm font-medium text-gray-900 dark:text-slate-100 truncate" title={part.display_name}>{part.display_name}</td>
-                                    <td className="p-3 text-sm text-gray-700 dark:text-slate-300 truncate" title={formatApplicationText(part.applications, { style: 'tableCell' })}>{formatApplicationText(part.applications, { style: 'tableCell' })}</td>
+                                    <td className="p-3 text-sm text-gray-700 dark:text-slate-300"><PartFitmentText part={part} /></td>
                                     <td className="p-3 text-sm">
                                         {part.barcodes && part.barcodes.length > 0 ? (
                                             <div className="flex items-center space-x-1">

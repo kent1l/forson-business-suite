@@ -3,6 +3,7 @@ import Icon from '../ui/Icon';
 import { ICONS } from '../../constants';
 import { summarizeApplicationModel } from '../../helpers/applicationModelSummary';
 import { formatQualifierSummary, formatYearRange } from '../../utils/engineCodeFormat';
+import { compareFitmentRows } from '../../utils/fitmentDisplayOrder';
 
 function SummaryList({ values, onExpand, label }) {
     return (
@@ -18,31 +19,31 @@ function SummaryList({ values, onExpand, label }) {
 }
 
 export default function ApplicationModelRow({ group, expanded, onToggle, canEdit, onEdit, onDelete }) {
-    const rows = group.combinations;
+    const rows = useMemo(() => [...group.combinations].sort(compareFitmentRows), [group.combinations]);
     const summary = useMemo(() => summarizeApplicationModel(rows), [rows]);
-    const name = [group.make, group.model].filter(Boolean).join(' ') || 'Partial vehicle';
+    const name = [group.make, group.model].filter(Boolean).join(' ') || [...new Set(rows.flatMap(row => [row.engine, row.chassis]).filter(Boolean))].join(', ');
     const detailsId = `combinations-${group.group_key}`;
     const expand = () => { if (!expanded) onToggle(); };
 
     return (
         <>
             <tr className={`border-b border-gray-100 align-top dark:border-slate-700 ${expanded ? 'bg-primary-50/40 dark:bg-slate-800' : 'hover:bg-gray-50/70 dark:hover:bg-slate-800/50'}`}>
-                <td className="p-4 text-sm text-gray-600 dark:text-slate-400">{group.make || 'Not specified'}</td>
+                <td className="p-4 text-sm text-gray-600 dark:text-slate-400">{group.make}</td>
                 <th scope="row" className="p-4 text-left">
                     <button type="button" onClick={onToggle} aria-expanded={expanded} aria-controls={detailsId} aria-label={`${expanded ? 'Hide' : 'Show'} combinations for ${name}`} className="group flex items-start gap-2 rounded text-left focus-visible:outline-2 focus-visible:outline-primary-500">
                         <Icon path={expanded ? ICONS.chevronUp : ICONS.chevronDown} className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
                         <span>
-                            <span className="block text-sm font-semibold text-gray-900 group-hover:text-primary-600 dark:text-slate-100">{group.model || 'Model not specified'}</span>
+                            <span className="block text-sm font-semibold text-gray-900 group-hover:text-primary-600 dark:text-slate-100">{group.model}</span>
                             <span className="mt-1 block text-xs font-normal text-gray-500 dark:text-slate-400">{rows.length} {rows.length === 1 ? 'combination' : 'combinations'}</span>
                         </span>
                     </button>
                 </th>
-                <td className="max-w-48 p-4 font-mono"><SummaryList values={summary.chassis} label={`chassis for ${name}`} onExpand={expand} /></td>
                 <td className="max-w-52 p-4">
                     <span title={summary.engines.join(', ')} className="break-words font-mono text-sm leading-6 text-gray-700 dark:text-slate-300">
                         {summary.engines.length <= 4 ? summary.engineText : <SummaryList values={summary.engines} label={`engines for ${name}`} onExpand={expand} />}
                     </span>
                 </td>
+                <td className="max-w-48 p-4 font-mono"><SummaryList values={summary.chassis} label={`chassis for ${name}`} onExpand={expand} /></td>
                 <td className="max-w-sm p-4">
                     <div className="flex flex-wrap gap-1.5">
                         {summary.classifications.slice(0, 3).map(({ label, values }) => (
@@ -52,7 +53,6 @@ export default function ApplicationModelRow({ group, expanded, onToggle, canEdit
                             </span>
                         ))}
                         {summary.classifications.length > 3 && <button type="button" onClick={expand} className="rounded-md px-2 py-1 text-xs font-semibold text-primary-600 hover:bg-primary-50">+{summary.classifications.length - 3} details</button>}
-                        {!summary.classifications.length && <span className="text-sm text-gray-500">Not specified</span>}
                     </div>
                 </td>
                 <td className="p-4 text-right">
@@ -71,14 +71,14 @@ export default function ApplicationModelRow({ group, expanded, onToggle, canEdit
                             </div>
                             <table className="w-full text-left text-sm">
                                 <thead className="text-xs text-gray-500 dark:text-slate-400"><tr>
-                                    <th className="px-4 py-3">Chassis</th><th className="px-4 py-3">Engine</th><th className="px-4 py-3">Years</th><th className="px-4 py-3">Classification</th><th className="px-4 py-3 text-right">{canEdit ? 'Actions' : 'Linked parts'}</th>
+                                    <th className="px-4 py-3">Engine</th><th className="px-4 py-3">Chassis</th><th className="px-4 py-3">Years</th><th className="px-4 py-3">Classification</th><th className="px-4 py-3 text-right">{canEdit ? 'Actions' : 'Linked parts'}</th>
                                 </tr></thead>
                                 <tbody>{rows.map(app => (
                                     <tr key={app.application_id} className="border-t border-gray-100 text-gray-700 dark:border-slate-700 dark:text-slate-300">
-                                        <td className="px-4 py-3 font-mono">{app.chassis || 'Not specified'}</td>
-                                        <td className="px-4 py-3 font-mono">{app.engine || 'Not specified'}</td>
-                                        <td className="whitespace-nowrap px-4 py-3">{formatYearRange(app.year_start, app.year_end) || 'Not specified'}</td>
-                                        <td className="px-4 py-3 text-xs leading-5">{formatQualifierSummary({ ...app, chassis: null }) || 'Not specified'}</td>
+                                        <td className="px-4 py-3 font-mono">{app.engine}</td>
+                                        <td className="px-4 py-3 font-mono">{app.chassis}</td>
+                                        <td className="whitespace-nowrap px-4 py-3">{formatYearRange(app.year_start, app.year_end)}</td>
+                                        <td className="px-4 py-3 text-xs leading-5">{formatQualifierSummary({ ...app, chassis: null })}</td>
                                         <td className="px-4 py-3 text-right">
                                             <div className="flex items-center justify-end gap-3">
                                                 <span className="whitespace-nowrap text-xs text-gray-500">{app.linked_parts_count || 0} linked</span>

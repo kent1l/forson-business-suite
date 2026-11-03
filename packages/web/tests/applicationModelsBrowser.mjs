@@ -44,7 +44,9 @@ try {
         await page.evaluate(() => window.mountApplications(true));
         await page.waitForSelector('button[aria-label="Show combinations for Isuzu Elf"]');
         assert.equal(await page.$$eval('table > tbody > tr', nodes => nodes.length), 1);
+        assert.deepEqual(await page.$$eval('table > thead > tr > th', nodes => nodes.slice(0, 4).map(node => node.textContent.trim())), ['Make', 'Model', 'Engine', 'Chassis']);
         assert.ok(await page.evaluate(() => document.body.textContent.includes('4BC2/E1')));
+        assert.ok(!(await page.evaluate(() => document.body.textContent)).includes('Not specified'));
         assert.ok(await page.evaluate(() => document.body.textContent.includes('1 model group')));
         await page.focus('button[aria-label="Show combinations for Isuzu Elf"]');
         await page.keyboard.press('Enter');
@@ -52,6 +54,7 @@ try {
         const entryText = await page.$eval('button[aria-label="Edit combination 2"]', button => button.closest('tr').textContent);
         assert.ok(entryText.includes('NPR') && entryText.includes('4BE1') && entryText.includes('Automatic'));
         assert.ok(!entryText.includes('Manual'));
+        assert.ok(!/not specified/i.test(await page.evaluate(() => document.body.textContent)));
         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
         if (width === 1280) await page.screenshot({ path: '/tmp/application-models-expanded.png', fullPage: true });
         await page.click('button[aria-label="Edit combination 2"]');

@@ -33,7 +33,7 @@ This is practical for browsing a catalog containing many combinations of the sam
 - Keep combinations without a model as individual partial entries, including make-only, engine-only and chassis-only records.
 - Paginate complete model groups in the API. Grouping an already paginated flat list would lose combinations or repeat a model on several pages.
 - Engine compression uses the existing safe display helper. Full codes remain available in the title and expanded panel; no compressed values are stored or submitted.
-- Unknown fields read “Not specified.” Disjoint year ranges remain separate ranges; they never become a wider continuous period.
+- Per the owner's follow-up, missing fields stay blank and are omitted from summary lists/chips. Disjoint year ranges remain separate ranges; they never become a wider continuous period.
 - Summary values describe recorded combinations, without asserting every possible cross-product of the displayed values.
 
 ## As Built
@@ -99,3 +99,5 @@ Deploy backend and frontend together so the page can request the grouped contrac
 | Date | Change |
 |---|---|
 | 2026-11-03 | Evaluated and implemented model grouping, verified API and UI contracts, and recorded the result. |
+| 2026-11-03 | Owner follow-up: omit unavailable details and missing-detail labels from summaries and expanded combinations. |
+| 2026-11-03 | Owner follow-up: show make/model/engine/chassis in that order, naturally sort expanded combinations, and prioritize year/generation/variant classification summaries. |

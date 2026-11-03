@@ -1,43 +1,42 @@
 import { compressEngineCodes, formatYearRange } from '../utils/engineCodeFormat.js';
+import { compareFitmentValues } from '../utils/fitmentDisplayOrder.js';
 
-const compare = (a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
-
-// Unknown values stay explicit: a missing qualifier never means "all".
+// Summaries include recorded values only; missing details add no placeholder.
 function valuesFor(rows, getValue) {
     const values = new Map();
     for (const row of rows) {
-        const value = String(getValue(row) || '').trim() || 'Not specified';
+        const value = String(getValue(row) || '').trim();
+        if (!value) continue;
         if (!values.has(value.toLowerCase())) values.set(value.toLowerCase(), value);
     }
-    return [...values.values()].sort(compare);
+    return [...values.values()].sort(compareFitmentValues);
 }
 
 export function summarizeApplicationModel(rows = []) {
     const chassis = valuesFor(rows, row => row.chassis);
     const engines = valuesFor(rows, row => row.engine);
-    const knownEngines = engines.filter(value => value !== 'Not specified');
-    const engineText = compressEngineCodes(knownEngines) || knownEngines.join(', ');
+    const engineText = compressEngineCodes(engines) || engines.join(', ');
     const classifications = [
         ['Years', row => formatYearRange(row.year_start, row.year_end)],
+        ['Generation', row => row.generation],
         ['Variant', row => row.variant || row.variant_descriptor],
         ['Drive', row => row.drivetrain],
         ['Transmission', row => row.transmission],
-        ['Market', row => row.market],
-        ['Generation', row => row.generation],
         ['Fuel', row => row.fuel_type_qualifier || row.fuel_type],
         ['Displacement', row => {
             const value = row.displacement_liters_qualifier || row.displacement_liters;
             return value ? `${value}L` : '';
         }],
+        ['Market', row => row.market],
     ].flatMap(([label, getValue]) => {
         const values = valuesFor(rows, getValue);
-        return values.every(value => value === 'Not specified') ? [] : [{ label, values }];
+        return values.length ? [{ label, values }] : [];
     });
 
     return {
         chassis,
         engines,
-        engineText: [engineText, engines.includes('Not specified') ? 'Not specified' : ''].filter(Boolean).join(', '),
+        engineText,
         classifications,
     };
 }

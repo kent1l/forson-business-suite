@@ -16,7 +16,7 @@ const ApplicationSearchCombobox = ({ value, onChange, placeholder = 'Search make
   const [loading, setLoading] = useState(false);
   const debTimer = useRef(null);
 
-  const labelFor = (app) => [app.make, app.model, app.chassis, app.engine, formatYearRange(app.year_start,app.year_end), formatQualifierSummary(app)].filter(Boolean).join(' · ');
+  const labelFor = (app) => [app.position, app.make, app.model, app.engine, app.chassis, formatYearRange(app.year_start,app.year_end), formatQualifierSummary({ ...app, chassis: null, position: null })].filter(Boolean).join(' · ');
 
   // Load initial data (recent/popular items) when empty
   const loadInitial = async () => {

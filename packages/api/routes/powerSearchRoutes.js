@@ -1,4 +1,4 @@
-const { effectiveRuleColumns } = require('../helpers/fitmentDocumentSql');
+const { effectiveRuleColumns, fitmentRulesSql } = require('../helpers/fitmentDocumentSql');
 const { evaluateFitmentRules } = require('../helpers/fitmentMatcher');
 const express = require('express');
 const db = require('../db');
@@ -194,6 +194,7 @@ router.get('/power-search/parts', protect, hasPermission(['parts:view', 'pos:use
         const query = `
             SELECT
                 p.part_id,
+                ${fitmentRulesSql('p')} AS fitment_rules,
                 p.internal_sku,
                 p.detail,
                 p.measurement_unit,

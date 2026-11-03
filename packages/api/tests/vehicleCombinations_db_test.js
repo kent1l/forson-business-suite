@@ -169,6 +169,19 @@ async function worker(){
   assert.ok(filtered.body.data[0].combinations.some(row=>row.transmission==='Manual'));
   assert.equal((await send('get','/applications?groupBy=model',{},2)).status,403);
  });
+ await test('search responses supply current structured fitments independently of index labels',async()=>{
+  const excluded=await link({application_id:2,effect:'exclude'});assert.ok([200,201].includes(excluded.status),JSON.stringify(excluded.body));
+  for(const url of ['/power-search/parts?keyword=fixture','/parts?search=fixture','/parts?search=fixture&paginated=1']){
+   const r=await send('get',url);assert.equal(r.status,200,JSON.stringify(r.body));
+   const part=(Array.isArray(r.body)?r.body:r.body.data).find(row=>row.part_id===1);assert.ok(part,url);
+   assert.ok(Array.isArray(part.fitment_rules));
+   assert.ok(part.fitment_rules.some(row=>row.application_id===manual.application_id&&row.transmission==='Manual'&&row.position==='Left'));
+   assert.ok(part.fitment_rules.some(row=>row.effect==='exclude'&&row.application_id===2));
+   const manualRule=part.fitment_rules.find(row=>row.application_id===manual.application_id&&row.position==='Left');
+   assert.equal(manualRule.year_start,2012);assert.equal(manualRule.engine,'TEST1');assert.equal(manualRule.model,'Hilux');
+   assert.ok(!part.fitment_rules.some(row=>row.position==='Rear'));
+  }
+ });
  let regression = null;
  if (process.argv.includes('--regression-jest')) {
    const run = spawnSync('npm', ['run','-w','packages/api','test','--','--runInBand',

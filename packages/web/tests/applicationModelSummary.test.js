@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { summarizeApplicationModel } from '../src/helpers/applicationModelSummary.js';
 
-test('model summary keeps discontinuous years and missing qualifiers explicit', () => {
+test('model summary keeps discontinuous years and omits missing qualifiers', () => {
     const rows = [
         { chassis: 'A', engine: '4D55', year_start: 1990, year_end: 1995, transmission: 'Manual' },
         { chassis: 'B', engine: '4D56', year_start: 2000, year_end: 2005 },
@@ -11,10 +11,10 @@ test('model summary keeps discontinuous years and missing qualifiers explicit', 
     const before = structuredClone(rows);
     const result = summarizeApplicationModel(rows);
     assert.deepEqual(result.chassis, ['A', 'B']);
-    assert.equal(result.engineText, '4D55/6, Not specified');
-    assert.deepEqual(result.engines, ['4D55', '4D56', 'Not specified']);
+    assert.equal(result.engineText, '4D55/6');
+    assert.deepEqual(result.engines, ['4D55', '4D56']);
     assert.deepEqual(result.classifications.find(item => item.label === 'Years').values, ["1990–'95", "2000–'05"]);
-    assert.deepEqual(result.classifications.find(item => item.label === 'Transmission').values, ['Manual', 'Not specified']);
+    assert.deepEqual(result.classifications.find(item => item.label === 'Transmission').values, ['Manual']);
     assert.deepEqual(rows, before);
 });
 

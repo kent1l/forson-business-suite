@@ -160,8 +160,8 @@ const ApplicationsPage = () => {
                                 <tr>
                                     <SortableHeader column="make" sortConfig={sortConfig} onSort={handleSort}>Make</SortableHeader>
                                     <SortableHeader column="model" sortConfig={sortConfig} onSort={handleSort}>Model</SortableHeader>
-                                    <th className="p-3 text-sm font-semibold text-gray-600 dark:text-slate-300">Chassis</th>
                                     <SortableHeader column="engine" sortConfig={sortConfig} onSort={handleSort}>Engine</SortableHeader>
+                                    <th className="p-3 text-sm font-semibold text-gray-600 dark:text-slate-300">Chassis</th>
                                     <th className="p-3 text-sm font-semibold text-gray-600 dark:text-slate-300">Classification</th>
                                     <th className="p-3 text-sm font-semibold text-gray-600 dark:text-slate-300 text-right">Combinations</th>
                                 </tr>

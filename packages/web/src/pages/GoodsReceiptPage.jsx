@@ -10,7 +10,7 @@ import Modal from '../components/ui/Modal';
 import { ICONS } from '../constants';
 import useDraft from '../hooks/useDraft';
 import useDeepLink from '../hooks/useDeepLink';
-import { formatApplicationText } from '../helpers/applicationTextHelper';
+import PartFitmentText from '../components/parts/PartFitmentText';
 import { enrichPartsArray } from '../helpers/applicationCache';
 import GoodsReceiptModals from '../components/ui/GoodsReceiptModals';
 import MathExpressionInput from '../components/ui/MathExpressionInput';
@@ -1614,12 +1614,12 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                                                     {...itemProps}
                                                     className={`px-4 py-2 cursor-pointer ${itemProps['aria-selected'] ? 'bg-primary-100 dark:bg-primary-900/30' : 'hover:bg-primary-50 dark:hover:bg-slate-700/60'}`}
                                                 >
-                                                    <div className="flex items-baseline justify-between">
-                                                        <div className="flex items-baseline space-x-2 flex-1 min-w-0">
+                                                    <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
+                                                        <div className="min-w-0 flex-1">
                                                             <div className="text-sm font-medium text-gray-800 dark:text-slate-100 truncate">{part.display_name}</div>
-                                                            {part.applications && <div className="text-xs text-gray-500 dark:text-slate-400 truncate">{formatApplicationText(part.applications, { style: 'searchSuggestion' })}</div>}
+                                                            <PartFitmentText part={part} />
                                                         </div>
-                                                        <div className="flex items-baseline space-x-2 ml-2 shrink-0">
+                                                        <div className="flex shrink-0 items-baseline gap-2 sm:ml-2">
                                                             <span className={`text-xs font-medium ${Number(part.stock_on_hand) > 0 ? 'text-gray-500 dark:text-slate-400' : 'text-danger-600 dark:text-danger-400'}`}>
                                                                 {Number(part.stock_on_hand) || 0} {part.measurement_unit || 'PC'} in stock
                                                             </span>

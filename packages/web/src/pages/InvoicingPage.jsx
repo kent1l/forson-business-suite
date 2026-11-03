@@ -19,7 +19,7 @@ import MathExpressionInput from '../components/ui/MathExpressionInput';
 import SavedSalesPanel from '../components/pos/SavedSalesPanel';
 import PhysicalDocumentControl from '../components/common/PhysicalDocumentControl';
 import { useSettings } from '../contexts/SettingsContext';
-import { formatApplicationText } from '../helpers/applicationTextHelper';
+import PartFitmentText from '../components/parts/PartFitmentText';
 import { enrichPartsArray } from '../helpers/applicationCache';
 import useTypeahead from '../hooks/useTypeahead';
 import useSavedSales from '../hooks/useSavedSales';
@@ -876,12 +876,12 @@ const InvoicingPage = ({ user, onNavigate, pageState }) => {
                                             const itemProps = getSearchItemProps(index);
                                             return (
                                                 <li key={part.part_id} {...itemProps} className={`px-4 py-3 cursor-pointer transition-colors ${itemProps['aria-selected'] ? 'bg-primary-100 dark:bg-primary-900/40' : 'hover:bg-primary-50 dark:hover:bg-slate-700/50'}`}>
-                                                    <div className="flex items-baseline justify-between">
-                                                        <div className="flex items-baseline space-x-2 flex-1 min-w-0">
+                                                    <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
+                                                        <div className="min-w-0 flex-1">
                                                             <div className="text-sm font-medium text-gray-900 dark:text-slate-100 truncate">{part.display_name}</div>
-                                                            {part.applications && <div className="text-xs text-gray-500 dark:text-slate-400 truncate">{formatApplicationText(part.applications, { style: 'searchSuggestion' })}</div>}
+                                                            <PartFitmentText part={part} />
                                                         </div>
-                                                        <div className="flex items-baseline space-x-2 ml-4 shrink-0">
+                                                        <div className="flex shrink-0 items-baseline gap-2 sm:ml-4">
                                                             <span className={`text-xs font-medium ${Number(part.stock_on_hand) > 0 ? 'text-gray-500 dark:text-slate-400' : 'text-danger-600 dark:text-danger-400'}`}>
                                                                 {Number(part.stock_on_hand) || 0} {part.measurement_unit || 'PC'} in stock
                                                             </span>

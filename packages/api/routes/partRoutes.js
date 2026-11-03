@@ -347,6 +347,7 @@ router.get('/parts', protect, hasPermission('parts:view'), async (req, res) => {
         const query = `
             SELECT
                 pv.*,
+                ${fitmentRulesSql('pv')} AS fitment_rules,
                 p.reorder_point,
                 p.warning_quantity,
                 p.measurement_unit,
