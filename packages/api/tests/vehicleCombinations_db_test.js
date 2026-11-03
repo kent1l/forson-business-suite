@@ -137,6 +137,38 @@ async function worker(){
   r=await send('delete',`/parts/1/application-rules/${selected.rule_id}`,{expected_version:selected.row_version});assert.equal(r.status,200,JSON.stringify(r.body));
   r=await send('get','/parts/1/applications');assert.ok(!r.body.some(r=>r.rule_id===selected.rule_id));assert.ok(r.body.some(r=>r.application_id===manual.application_id));
  });
+ await test('model groups page whole identities and retain exact combinations',async()=>{
+  // A model name reused by another make must remain a separate group.
+  await db.query(`INSERT INTO vehicle_model(model_id,make_id,model_name) VALUES(14,2,'Hilux');
+    INSERT INTO application(make_id,model_id,engine_id) VALUES(2,14,102),(NULL,NULL,101),(NULL,NULL,102) ON CONFLICT DO NOTHING;`);
+  const flat=await send('get','/applications');assert.equal(flat.status,200);assert.ok(Array.isArray(flat.body));
+  const expectedGroups=new Set(flat.body.map(row=>row.model_id?`model:${row.model_id}`:`application:${row.application_id}`));
+  const groups=[];
+  for(let page=1;page<=expectedGroups.size;page++){
+   const r=await send('get',`/applications?groupBy=model&paginated=1&pageSize=1&page=${page}&sortBy=model`);
+   assert.equal(r.status,200,JSON.stringify(r.body));assert.equal(r.body.total,expectedGroups.size);assert.equal(r.body.data.length,1);
+   groups.push(r.body.data[0]);
+  }
+  assert.equal(new Set(groups.map(g=>g.group_key)).size,expectedGroups.size);
+  assert.deepEqual(groups.flatMap(g=>g.combinations.map(r=>r.application_id)).sort((a,b)=>a-b),flat.body.map(r=>r.application_id).sort((a,b)=>a-b));
+  const hilux=groups.find(g=>g.group_key==='model:11');
+  assert.ok(hilux.combinations.some(row=>row.application_id===manual.application_id));
+  assert.ok(hilux.combinations.some(row=>row.application_id===automatic.application_id));
+  const saved=hilux.combinations.find(row=>row.application_id===manual.application_id);
+  assert.equal(saved.row_version,manual.row_version);assert.equal(saved.transmission,'Manual');assert.ok(saved.linked_parts_count>0);
+  assert.equal(saved.approval_status,undefined);assert.equal(saved.evidence_status,undefined);
+  assert.equal(groups.filter(g=>g.model==='Hilux').length,2);
+  assert.ok(groups.filter(g=>!g.model).every(g=>g.combinations.length===1));
+  for(const sortBy of ['make','model','engine']){
+   const url=`/applications?groupBy=model&paginated=1&pageSize=100&sortBy=${sortBy}&sortOrder=DESC`;
+   const first=await send('get',url),second=await send('get',url);
+   assert.equal(first.status,200);assert.deepEqual(first.body.data.map(g=>g.group_key),second.body.data.map(g=>g.group_key));
+  }
+  const filtered=await send('get','/applications?groupBy=model&paginated=1&search=Automatic');
+  assert.equal(filtered.status,200);assert.equal(filtered.body.total,1);
+  assert.ok(filtered.body.data[0].combinations.some(row=>row.transmission==='Manual'));
+  assert.equal((await send('get','/applications?groupBy=model',{},2)).status,403);
+ });
  let regression = null;
  if (process.argv.includes('--regression-jest')) {
    const run = spawnSync('npm', ['run','-w','packages/api','test','--','--runInBand',

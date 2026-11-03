@@ -1,17 +1,15 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import api from '../api';
 import toast from 'react-hot-toast';
 import Modal from '../components/ui/Modal';
-import Icon from '../components/ui/Icon';
-import { ICONS } from '../constants';
 import PaginationControls from '../components/ui/PaginationControls';
 import SortableHeader from '../components/ui/SortableHeader';
 import { useAuth } from '../contexts/AuthContext';
 import ApplicationCascadeForm from '../components/applications/ApplicationCascadeForm';
-import { formatQualifierSummary, formatYearRange } from '../utils/engineCodeFormat';
+import ApplicationModelRow from '../components/applications/ApplicationModelRow';
 
 const ApplicationsPage = () => {
-    const { hasPermission } = useAuth(); // <-- NEW: Use the auth context
+    const { hasPermission } = useAuth();
     const [applications, setApplications] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
@@ -21,8 +19,11 @@ const ApplicationsPage = () => {
     const [page, setPage] = useState(1);
     const [pageSize, setPageSize] = useState(25);
     const [total, setTotal] = useState(0);
+    const [expandedGroups, setExpandedGroups] = useState(new Set());
+    const requestId = useRef(0);
 
-    const fetchApplications = async () => {
+    const fetchApplications = useCallback(async () => {
+        const id = ++requestId.current;
         try {
             setError('');
             setLoading(true);
@@ -31,23 +32,32 @@ const ApplicationsPage = () => {
                     page,
                     pageSize,
                     paginated: 1,
+                    groupBy: 'model',
                     sortBy: sortConfig.key,
                     sortOrder: sortConfig.direction
                 }
             });
+            if (id !== requestId.current) return;
+            const lastPage = Math.max(1, Math.ceil((response.data?.total || 0) / pageSize));
+            if (page > lastPage) {
+                setPage(lastPage);
+                return;
+            }
             setApplications(response.data?.data || []);
             setTotal(response.data?.total || 0);
         } catch (error) {
+            if (id !== requestId.current) return;
             console.error('Failed to fetch applications:', error);
             setError('Failed to fetch applications.');
         } finally {
-            setLoading(false);
+            if (id === requestId.current) setLoading(false);
         }
-    };
+    }, [page, pageSize, sortConfig]);
 
     useEffect(() => {
         fetchApplications();
-    }, [page, pageSize, sortConfig]);
+        return () => { requestId.current += 1; };
+    }, [fetchApplications]);
 
     const handleSort = (key, direction) => {
         setSortConfig({ key, direction });
@@ -123,60 +133,63 @@ const ApplicationsPage = () => {
 
     return (
         <div>
-            <div className="flex justify-between items-center mb-6">
-                <h1 className="text-2xl font-semibold text-gray-800">Vehicle Combinations</h1>
+            <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
+                <div>
+                    <h1 className="text-2xl font-semibold text-gray-800 dark:text-slate-100">Vehicle Applications</h1>
+                    <p className="mt-1 text-sm text-gray-500 dark:text-slate-400">Browse by model. Keep every vehicle combination within reach.</p>
+                </div>
                 {hasPermission('applications:edit') && (
-                    <button onClick={handleAdd} className="bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-blue-700 transition">
+                    <button onClick={handleAdd} className="bg-primary-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-primary-700 transition">
                         Add Combination
                     </button>
                 )}
             </div>
-            <div className="bg-white p-6 rounded-xl border border-gray-200">
-                {loading && <p>Loading applications...</p>}
-                {error && <p role="alert" aria-live="polite" className="text-red-500">{error}</p>}
+            <div className="min-w-0 overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-slate-700 dark:bg-slate-900">
+                <div className="border-b border-gray-100 px-4 py-4 dark:border-slate-700 sm:px-6">
+                    <p className="text-sm font-semibold text-gray-800 dark:text-slate-200">Grouped by model</p>
+                    <p className="mt-1 text-xs leading-5 text-gray-500 dark:text-slate-400">Values summarize recorded combinations. Expand a model to see which details belong together.</p>
+                </div>
+                {loading && <p role="status" className="p-6 text-sm text-gray-500">Loading applications...</p>}
+                {error && <p role="alert" aria-live="polite" className="p-6 text-sm text-red-500">{error}</p>}
                 {!loading && !error && (
                     <>
                     <div className="overflow-x-auto">
-                        <table className="w-full text-left">
-                            <thead className="border-b">
+                        <table className="w-full min-w-[960px] text-left">
+                            <caption className="sr-only">Vehicle applications grouped by model. Expand a model to view its recorded combinations.</caption>
+                            <thead className="border-b border-gray-200 dark:border-slate-700">
                                 <tr>
                                     <SortableHeader column="make" sortConfig={sortConfig} onSort={handleSort}>Make</SortableHeader>
                                     <SortableHeader column="model" sortConfig={sortConfig} onSort={handleSort}>Model</SortableHeader>
-                                    <th className="p-3 text-sm font-semibold text-gray-600">Chassis</th>
+                                    <th className="p-3 text-sm font-semibold text-gray-600 dark:text-slate-300">Chassis</th>
                                     <SortableHeader column="engine" sortConfig={sortConfig} onSort={handleSort}>Engine</SortableHeader>
-                                    <th className="p-3 text-sm font-semibold text-gray-600">Classification</th>
-                                    <th className="p-3 text-sm font-semibold text-gray-600 text-right">Actions</th>
+                                    <th className="p-3 text-sm font-semibold text-gray-600 dark:text-slate-300">Classification</th>
+                                    <th className="p-3 text-sm font-semibold text-gray-600 dark:text-slate-300 text-right">Combinations</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                {applications.map(app => {
-                                    const details = [formatYearRange(app.year_start,app.year_end), formatQualifierSummary(app)].filter(Boolean).join(' · ');
-                                    return (
-                                        <tr key={app.application_id} className="border-b hover:bg-gray-50">
-                                            <td className="p-3 text-sm font-medium text-gray-800">{app.make}</td>
-                                            <td className="p-3 text-sm">{app.model}</td>
-                                            <td className="p-3 text-sm font-mono text-gray-600">{app.chassis || '—'}</td>
-                                            <td className="p-3 text-sm">{app.engine || '—'}</td>
-                                            <td className="p-3 text-sm">
-                                                <span className="text-xs px-2 py-0.5 rounded bg-gray-100 text-gray-700 font-medium">
-                                                    {details || '—'}
-                                                </span>
-                                            </td>
-                                            <td className="p-3 text-sm text-right">
-                                                {hasPermission('applications:edit') && (
-                                                    <>
-                                                        <button onClick={() => handleEdit(app)} className="text-blue-600 hover:text-blue-800 mr-4" title="Edit application"><Icon path={ICONS.edit} className="h-5 w-5"/></button>
-                                                        <button onClick={() => handleDelete(app.application_id)} className="text-red-600 hover:text-red-800" title="Delete application"><Icon path={ICONS.trash} className="h-5 w-5"/></button>
-                                                    </>
-                                                )}
-                                            </td>
-                                        </tr>
-                                    );
-                                })}
+                                {applications.length === 0 && <tr><td colSpan={6} className="p-10 text-center text-sm text-gray-500">No vehicle applications yet. Add a combination to get started.</td></tr>}
+                                {applications.map(group => (
+                                    <ApplicationModelRow
+                                        key={group.group_key}
+                                        group={group}
+                                        expanded={expandedGroups.has(group.group_key)}
+                                        onToggle={() => setExpandedGroups(previous => {
+                                            const next = new Set(previous);
+                                            if (next.has(group.group_key)) next.delete(group.group_key);
+                                            else next.add(group.group_key);
+                                            return next;
+                                        })}
+                                        canEdit={hasPermission('applications:edit')}
+                                        onEdit={handleEdit}
+                                        onDelete={handleDelete}
+                                    />
+                                ))}
                             </tbody>
                         </table>
                     </div>
                     <PaginationControls
+                        className="px-4 pb-4 sm:px-6"
+                        itemLabel={total === 1 ? 'model group' : 'model groups'}
                         page={page}
                         pageSize={pageSize}
                         total={total}

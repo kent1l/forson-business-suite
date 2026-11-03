@@ -558,6 +558,45 @@ router.get('/applications', protect, hasPermission('applications:view'), async (
 
     const whereSql = whereClauses.length > 0 ? 'WHERE ' + whereClauses.join(' AND ') : '';
     const dir = String(sortOrder).toUpperCase() === 'DESC' ? 'DESC' : 'ASC';
+
+    // Page model identities before loading their combinations. Grouping a page
+    // of flat rows would split models and silently omit their other variants.
+    if (req.query.groupBy === 'model') {
+      // Partial identities have no model to group by; keep each one visible.
+      const groupKey = alias => `CASE WHEN ${alias}.model_id IS NOT NULL
+        THEN 'model:' || ${alias}.model_id::text
+        ELSE 'application:' || ${alias}.application_id::text END`;
+      const matchedGroups = `SELECT ${groupKey('av')} AS group_key,
+        MIN(av.model_id) AS model_id, MIN(av.application_id) AS first_application_id,
+        MIN(av.make) AS make, MIN(av.model) AS model, MIN(av.engine) AS engine
+        FROM application_view av ${whereSql} GROUP BY 1`;
+      const sortColumn = ['make', 'model', 'engine'].includes(sortBy) ? sortBy : 'make';
+      const groupOrder = `${sortColumn} ${dir} NULLS LAST, make ASC NULLS LAST,
+        model ASC NULLS LAST, group_key ASC`;
+      const countRes = await db.query(`SELECT COUNT(*)::int AS total FROM (${matchedGroups}) groups`, params);
+      const total = countRes.rows[0]?.total || 0;
+      const pageClause = paginated ? `LIMIT $${params.length + 1} OFFSET $${params.length + 2}` : '';
+      const { rows } = await db.query(`WITH page_groups AS (
+        SELECT * FROM (${matchedGroups}) groups ORDER BY ${groupOrder} ${pageClause}
+      )
+      SELECT pg.*, combinations.rows AS combinations
+      FROM page_groups pg
+      CROSS JOIN LATERAL (
+        SELECT jsonb_agg(to_jsonb(av) || jsonb_build_object('linked_parts_count',
+          (SELECT COUNT(*)::int FROM part_application pa WHERE pa.application_id = av.application_id))
+          ORDER BY av.chassis NULLS LAST, av.engine NULLS LAST, av.application_id) AS rows
+        FROM application_view av
+        WHERE (pg.model_id IS NOT NULL AND av.model_id = pg.model_id)
+           OR (pg.model_id IS NULL AND av.application_id = pg.first_application_id)
+      ) combinations
+      ORDER BY ${groupOrder}`, paginated ? [...params, limit, offset] : params);
+      const data = rows.map(group => ({
+        ...group,
+        combinations: group.combinations.map(enrichApplicationRow),
+      }));
+      return res.json(paginated ? paginatedResponse({ data, page, pageSize, total }) : data);
+    }
+
     let orderBy = `ORDER BY av.make ${dir} NULLS LAST, av.model ${dir} NULLS LAST, av.engine ${dir} NULLS LAST`;
     if (sortBy === 'make') orderBy = `ORDER BY av.make ${dir} NULLS LAST`;
     else if (sortBy === 'model') orderBy = `ORDER BY av.model ${dir} NULLS LAST`;
