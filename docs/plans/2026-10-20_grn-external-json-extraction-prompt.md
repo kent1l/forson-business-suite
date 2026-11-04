@@ -48,6 +48,7 @@ The first non-whitespace character MUST be { and the last MUST be }. Include the
         "suggested_part_number": null,
         "suggested_description": null,
         "suggested_group": null,
+        "suggested_vehicle_applications": null,
         "reason": null,
         "sources": []
       }
@@ -91,6 +92,8 @@ INTERNET RESEARCH RULES
 - supporting_text must faithfully describe or briefly quote content actually inspected on that page and identify which suggestion it supports. Do not present search snippets, an unvisited link, or a guessed URL as verified evidence. Retain usable source URLs so a reviewer can independently inspect the research.
 - Explain the evidence or uncertainty briefly in reason. Do not invent URLs, quotes, visits, or numerical confidence scores. Do not claim fitment or interchangeability without separate explicit evidence.
 - If browsing is unavailable or no usable evidence can be inspected for an item, preserve its transcription, set enrichment.status to "unresolved", leave unsupported suggested fields null, and return sources: []. Explain the research limitation in reason. Never add placeholder or fabricated sources to fill the array. Do not fail the extraction merely because internet research failed.
+
+- VEHICLE APPLICATIONS: Search the internet (and use any applications printed on the document) for the vehicle fitments of each part, and write them as one plain-text string in enrichment.suggested_vehicle_applications, e.g. "Toyota Hilux 2KD-FTV 2005-2015; Mitsubishi L200 4D56 2006-2014". Separate combinations with semicolons; include make, model, engine code, chassis and year range when the evidence states them. List only fitments explicitly stated for this exact part number or product on an inspected page (cite the page in sources); never guess from the part category. Maximum 2000 characters. Use null when no fitment evidence was found. FBS parses this text into vehicle fitments only when it creates a new catalog part.
 
 EXTRACTION ISSUE RULES
 Report uncertainties and discrepancies as structured objects in extraction_issues:

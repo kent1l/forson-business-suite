@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import useTypeahead from '../hooks/useTypeahead';
 import api from '../api';
+import { fitmentSavePayload } from '../utils/engineCodeFormat';
 import toast from 'react-hot-toast';
 import SearchBar from '../components/SearchBar';
 import Icon from '../components/ui/Icon';
@@ -1139,6 +1140,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                 last_cost: row.confirmed_row?.cost_price ?? source.unit_cost ?? 0,
                 last_sale_price: row.confirmed_row?.sale_price ?? 0,
             },
+            vehicleApplicationsText: source.enrichment?.suggested_vehicle_applications || '',
         });
     };
 
@@ -1146,9 +1148,22 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
         if (!canCatalogParts || !importPartTarget || savingImportPart) return;
         setSavingImportPart(true);
         try {
+            // Reuse the vehicle fitment AI parser on the AI-extracted applications text.
+            let applications = partData.applications;
+            const fitmentText = importPartTarget.vehicleApplicationsText?.trim();
+            if (fitmentText && !applications?.length && hasPermission('applications:edit')) {
+                try {
+                    const { data } = await api.post('/applications/parse-fitment-text', { text: fitmentText.slice(0, 2000) });
+                    applications = (data.fitments || [])
+                        .filter(c => c.confidence_label !== 'unresolved' && !c.alternative_group_id)
+                        .map(fitmentSavePayload);
+                } catch {
+                    toast.error('Could not parse vehicle applications; part will be created without them.');
+                }
+            }
             const result = await executePartSave({
                 endpoint: '/parts',
-                payload: { ...partData, created_by: user.employee_id },
+                payload: { ...partData, ...(applications?.length ? { applications } : {}), created_by: user.employee_id },
                 brands,
                 groups,
             });

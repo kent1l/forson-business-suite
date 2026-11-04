@@ -61,6 +61,7 @@ const ENRICHMENT_ALLOWED_KEYS = new Set([
   'suggested_part_number',
   'suggested_description',
   'suggested_group',
+  'suggested_vehicle_applications',
   'reason',
   'sources',
 ]);
@@ -316,6 +317,7 @@ function validateEnrichment(enrichment, path) {
   const suggested_part_number = validateText(enrichment.suggested_part_number, { maxCodePoints: 255, path: `${path}.suggested_part_number` });
   const suggested_description = validateText(enrichment.suggested_description, { maxCodePoints: 2000, path: `${path}.suggested_description` });
   const suggested_group = validateText(enrichment.suggested_group, { maxCodePoints: 255, path: `${path}.suggested_group` });
+  const suggested_vehicle_applications = validateText(enrichment.suggested_vehicle_applications, { maxCodePoints: 2000, path: `${path}.suggested_vehicle_applications` });
   const reason = validateText(enrichment.reason, { maxCodePoints: 2000, path: `${path}.reason` });
 
   let sources = [];
@@ -375,6 +377,8 @@ function validateEnrichment(enrichment, path) {
     suggested_part_number: suggested_part_number ?? null,
     suggested_description: suggested_description ?? null,
     suggested_group: suggested_group ?? null,
+    // Optional extension: omitted when absent so legacy normalized payload hashes are unchanged.
+    ...(suggested_vehicle_applications != null ? { suggested_vehicle_applications } : {}),
     reason: reason ?? null,
     sources,
   };
