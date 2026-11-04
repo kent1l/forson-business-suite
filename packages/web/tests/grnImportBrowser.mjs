@@ -71,6 +71,8 @@ try {
           brand: 'TOYOTA',
           part_number: 'NEW-123',
           description: 'Air filter',
+          vehicle_applications: 'Toyota Hilux 2KD-FTV 2005-2015',
+          position: 'FRONT',
           item_group_hint: 'FILTERS',
           unit: 'PCS',
           quantity: '3.0000',
@@ -151,6 +153,10 @@ try {
       });
     }
 
+    if (path === '/api/applications/parse-fitment-text') return respond({ fitments: [
+      { make_id: 1, make: 'Toyota', model_id: 11, model: 'Hilux', engine_id: 101, engine: '2KD-FTV', year_start: 2005, year_end: 2015, confidence_label: 'high' },
+    ] });
+    if (/^\/api\/parts\/\d+\/applications$/.test(path)) return respond([]);
     if (path === '/api/suppliers') {
       return respond([{ supplier_id: 1, supplier_name: 'Toyota Genuine Parts' }]);
     }
@@ -363,9 +369,9 @@ try {
   assert.equal(tooltipVisible, true, 'Tooltip should be visible on hover and describe the Copy Prompt button');
   await page.evaluate(() => {
     window.__copiedClipboardText = null;
-    navigator.clipboard.writeText = async (text) => {
-      window.__copiedClipboardText = text;
-    };
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: {
+      writeText: async (text) => { window.__copiedClipboardText = text; },
+    } });
   });
   await copyPromptBtnHandle.click();
   await page.waitForFunction(() => Array.from(document.querySelectorAll('button')).some(b => b.textContent.includes('Copied!')));
@@ -514,6 +520,7 @@ try {
   await page.waitForSelector('input[name="detail"]');
   assert.equal(await page.$eval('input[name="detail"]', el => el.value), 'AIR FILTER');
   assert.equal(await page.$eval('textarea[name="part_numbers_string"]', el => el.value), 'NEW-123');
+  assert.ok(await page.evaluate(() => document.body.innerText.includes('Hilux')), 'Prefilled fitment should be visible before saving');
   await clickButton('Cancel');
   await page.waitForFunction(() => document.body.innerText.includes('Review Extracted Document'));
   assert.equal(createdParts.length, 0, 'Cancelling must not create a part');
@@ -527,6 +534,10 @@ try {
   await page.waitForFunction(() => Array.from(document.querySelectorAll('button')).some(button => button.textContent.trim() === 'Catalog air filter'));
   assert.equal(createdParts.length, 1);
   assert.equal(createdParts[0].detail, 'AIR FILTER');
+  assert.equal(createdParts[0].applications.length, 1);
+  assert.equal(createdParts[0].applications[0].model_id, 11);
+  assert.equal(createdParts[0].applications[0].position, 'FRONT');
+  assert.equal(createdParts[0].applications[0].year_start, 2005);
   assert.equal(Number(createdParts[0].brand_id), 1);
   assert.equal(Number(createdParts[0].group_id), 1);
   assert.equal(createdParts[0].measurement_unit, 'pcs');

@@ -41,6 +41,9 @@ router.get('/drafts/:type', protect, async (req, res) => {
             }
             res.json(row.draft_data);
         } else {
+            if (req.query?.meta === 'true') {
+                return res.json({ draft_id: null, slot, last_updated: null, data: null });
+            }
             res.status(404).json({ message: 'No draft found.' });
         }
     } catch (err) {

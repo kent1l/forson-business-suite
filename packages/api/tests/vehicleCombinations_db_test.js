@@ -51,11 +51,18 @@ async function worker(){
  const {manilaDateString}=require(path.join(root,'packages/api/helpers/manilaDate'));
  const app=express();app.use(express.json());app.use('/api',require(path.join(root,'packages/api/routes/applicationRoutes')));app.use('/api',require(path.join(root,'packages/api/routes/partApplicationRoutes')));app.use('/api',require(path.join(root,'packages/api/routes/partRoutes')).router);
  app.use('/api',require(path.join(root,'packages/api/routes/applicationSearchRoutes')));
+ app.use('/api',require(path.join(root,'packages/api/routes/draftRoutes')));
  const token=id=>jwt.sign({employee_id:id,login_date:manilaDateString()},process.env.JWT_SECRET,{expiresIn:'5m'});
  const send=(method,url,body={},id=1,key)=>{let r=request(app)[method]('/api'+url).set('Authorization','Bearer '+token(id));if(key)r=r.set('Idempotency-Key',key);return r.send(body).timeout({response:10000,deadline:15000});};
  const results=[];
  async function test(name,fn){try{await fn();results.push({name,status:'pass'});}catch(e){results.push({name,status:'fail',error:e.message});e.message+=' Logs: '+JSON.stringify(logs.slice(-4));throw e;}}
  const link=body=>send('post','/parts/1/applications',body);
+ await test('empty draft metadata is a successful null result and existing revisions stay intact',async()=>{
+  let r=await send('get','/drafts/goods-receipt?meta=true');assert.equal(r.status,200);assert.equal(r.body.data,null);assert.equal(r.body.last_updated,null);
+  assert.equal((await send('get','/drafts/goods-receipt')).status,404);
+  r=await send('post','/drafts/goods-receipt',{data:{lines:[{detail:'Fixture'}]},expected_revision:null});assert.equal(r.status,200,JSON.stringify(r.body));
+  r=await send('get','/drafts/goods-receipt?meta=true');assert.equal(r.status,200);assert.equal(r.body.data.lines[0].detail,'Fixture');assert.ok(r.body.last_updated);
+ });
  await test('direct link works for editor without approval permission and records no source',async()=>{
   const r=await link({application_id:1});assert.equal(r.status,201,JSON.stringify(r.body));assert.equal(r.body.claim_id,null);
   assert.equal(r.body.approval_status,null);assert.equal(r.body.evidence_status,null);
@@ -112,6 +119,25 @@ async function worker(){
   r=await send('get',`/parts/${id}/applications`);assert.equal(r.body.length,1);assert.equal(r.body[0].transmission,'Automatic');
   r=await send('put',`/parts/${id}`,{brand_id:1,group_id:1,detail:'Edited direct staged part',applications:[{engine_id:102}]});assert.equal(r.status,200,JSON.stringify(r.body));
   assert.equal((await db.query('SELECT count(*)::int n FROM fitment_claim')).rows[0].n,0);
+ });
+ await test('GRN parsed names create classified fitments atomically and reuse combinations',async()=>{
+  const applications=[{make:'Toyota',model:'Hilux',engine:'TEST1',year_start:2005,year_end:2015,drivetrain:'4WD',position:'Front'}, {engine:'TEST2',position:'Rear'}];
+  let r=await send('post','/parts',{brand_id:1,group_id:1,detail:'GRN prefilled part',applications});assert.equal(r.status,201,JSON.stringify(r.body));
+  const partId=r.body.part_id;
+  r=await send('get',`/parts/${partId}/applications`);assert.equal(r.body.length,2);assert.ok(r.body.some(a=>a.year_start===2005&&a.drivetrain==='4WD'&&a.position==='Front'));
+  r=await send('post',`/parts/${partId}/applications`,applications[0]);assert.ok([200,201].includes(r.status),JSON.stringify(r.body));
+  assert.equal((await send('get',`/parts/${partId}/applications`)).body.length,2);
+ });
+ await test('application ID sequence drift recovers without losing the new part or fitment',async()=>{
+  const seq=(await db.query("SELECT last_value FROM application_application_id_seq")).rows[0].last_value;
+  const occupied=(await db.query('SELECT min(application_id) id FROM application')).rows[0].id;
+  try {
+   await db.query("SELECT setval('application_application_id_seq',$1,false)",[occupied]);
+   const r=await send('post','/parts',{brand_id:1,group_id:1,detail:'GRN collision recovery',applications:[{engine_id:102,market:'Collision fixture'}]});
+   assert.equal(r.status,201,JSON.stringify(r.body));
+   assert.equal((await send('get',`/parts/${r.body.part_id}/applications`)).body.length,1);
+   assert.equal((await db.query("SELECT count(*)::int n FROM part WHERE detail='GRN collision recovery'")).rows[0].n,1);
+  } finally { await db.query("SELECT setval('application_application_id_seq',$1,true)",[Math.max(Number(seq), Number((await db.query('SELECT max(application_id) id FROM application')).rows[0].id))]); }
  });
  await test('lookup matches direct links without evidence and keeps explicit conflicts',async()=>{
   const {evaluateFitmentRules}=require('../helpers/fitmentMatcher');const {effectiveRuleColumns}=require('../helpers/fitmentDocumentSql');

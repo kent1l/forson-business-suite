@@ -61,6 +61,7 @@ async function saveFitmentLink(client, partId, body, actorId = null) {
   } else {
     const resolved = await applications.resolveAndFindOrCreateApplication(client, { ...input, derive_model_engine: false });
     app = resolved.row;
+    if (!app) throw fail('APPLICATION_NOT_FOUND', 'The resolved vehicle combination is no longer available. Please retry saving.', 409);
   }
   // Classification belongs to the reusable combination. Store only differences on
   // the link (for example a narrower year range or installation position).

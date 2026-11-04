@@ -495,23 +495,38 @@ async function resolveAndFindOrCreateApplication(client, payload = {}) {
     const isChassisOnly = resolvedChassisId != null && resolvedModelId == null;
     const initialStatus = (isMakeOnly || isChassisOnly) ? 'needs_review' : 'legacy_unverified';
 
-    await client.query('SAVEPOINT sp_create_application');
-    try {
-      const ins = await client.query(
-        `INSERT INTO application (make_id, model_id, engine_id, chassis_id, identity_status, ${COMBINATION_FIELDS.join(',')})
-         VALUES (${Array.from({length:5+COMBINATION_FIELDS.length}, (_,i)=>`$${i+1}`).join(',')})
-         RETURNING application_id`,
-        [resolvedMakeId, resolvedModelId, resolvedEngineId, resolvedChassisId, initialStatus, ...COMBINATION_FIELDS.map(k => combination[k])]
-      );
-      await client.query('RELEASE SAVEPOINT sp_create_application');
-      applicationId = ins.rows[0].application_id;
-      created = true;
-    } catch (err) {
-      await client.query('ROLLBACK TO SAVEPOINT sp_create_application');
-      if (err.code === '23505') {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      await client.query('SAVEPOINT sp_create_application');
+      try {
+        const ins = await client.query(
+          `INSERT INTO application (make_id, model_id, engine_id, chassis_id, identity_status, ${COMBINATION_FIELDS.join(',')})
+           VALUES (${Array.from({length:5+COMBINATION_FIELDS.length}, (_,i)=>`$${i+1}`).join(',')})
+           RETURNING application_id`,
+          [resolvedMakeId, resolvedModelId, resolvedEngineId, resolvedChassisId, initialStatus, ...COMBINATION_FIELDS.map(k => combination[k])]
+        );
+        await client.query('RELEASE SAVEPOINT sp_create_application');
+        applicationId = ins.rows[0].application_id;
+        created = true;
+        break;
+      } catch (err) {
+        await client.query('ROLLBACK TO SAVEPOINT sp_create_application');
+        if (err.code !== '23505') throw err;
+        if (err.constraint === 'application_pkey' && attempt === 0) {
+          // Imported/restored IDs can leave the sequence behind. Serialize writers
+          // before advancing it, and never move it backwards past allocated IDs.
+          await client.query('LOCK TABLE application IN SHARE ROW EXCLUSIVE MODE');
+          await client.query(`SELECT setval(pg_get_serial_sequence('application','application_id'),
+            GREATEST((SELECT COALESCE(max(application_id),1) FROM application),
+                     (SELECT last_value FROM application_application_id_seq)), true)`);
+          continue;
+        }
         applicationId = await findApplication(client, resolvedMakeId, resolvedModelId, resolvedEngineId, resolvedChassisId, combination);
-      } else {
-        throw err;
+        // A unique violation may be an ID collision rather than a concurrently
+        // created combination. Never return an undefined row to the link writer.
+        if (!applicationId) {
+          throw httpError(409, 'APPLICATION_CREATE_CONFLICT', 'The vehicle combination could not be created because of a conflicting record. Please retry saving.');
+        }
+        break;
       }
     }
   }

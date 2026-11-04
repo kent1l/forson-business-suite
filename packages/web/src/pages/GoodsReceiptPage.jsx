@@ -1118,14 +1118,20 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
         },
     });
 
-    const handleCreateImportPart = (rowId) => {
+    const handleCreateImportPart = async (rowId) => {
         if (!canCatalogParts || importReview.review?.status !== 'IN_REVIEW') return;
         const row = importReview.review.review_state.rows.find(item => item.row_id === rowId);
         if (!row?.included) return;
         const source = importReview.review.source_payload?.lines?.find(item => item.line_no === row.line_no) || {};
         const brandName = upperCatalogText(source.brand);
         const groupName = upperCatalogText(source.item_group_hint);
+        const prefillId = createUuid();
+        const fitmentTexts = [source.vehicle_applications,
+            source.enrichment?.status === 'verified_suggestion' ? source.enrichment.suggested_vehicle_applications : null]
+            .filter(text => text?.trim());
         setImportPartTarget({
+            loading: true,
+            prefillId,
             import_id: importReview.review.import_id,
             row_id: rowId,
             line_no: row.line_no,
@@ -1140,31 +1146,37 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                 last_cost: row.confirmed_row?.cost_price ?? source.unit_cost ?? 0,
                 last_sale_price: row.confirmed_row?.sale_price ?? 0,
             },
-            // Document fitments always apply; web-found ones only when the research was verified.
             position: source.position || '',
-            vehicleApplicationsText: [source.vehicle_applications,
-                source.enrichment?.status === 'verified_suggestion' ? source.enrichment.suggested_vehicle_applications : null]
-                .filter(Boolean).join('; '),
         });
+        if (!fitmentTexts.length || !hasPermission('applications:edit')) {
+            setImportPartTarget(target => target?.prefillId === prefillId ? { ...target, loading: false } : target);
+            return;
+        }
+        try {
+            const results = await Promise.all(fitmentTexts.map(text =>
+                api.post('/applications/parse-fitment-text', { text: text.trim().slice(0, 2000) })));
+            const candidates = results.flatMap(result => result.data.fitments || []);
+            const applications = [...new Map(candidates
+                .filter(c => c.confidence_label !== 'unresolved' && !c.alternative_group_id)
+                .map(c => {
+                    const app = fitmentSavePayload({ ...c, position: c.position || source.position || undefined });
+                    return [JSON.stringify(app), app];
+                })).values()];
+            setImportPartTarget(target => target?.prefillId === prefillId ? {
+                ...target, loading: false, initialValues: { ...target.initialValues, applications },
+            } : target);
+            if (applications.length < candidates.length) toast('Some vehicle suggestions need manual review. Check the vehicle applications before saving.');
+        } catch {
+            setImportPartTarget(target => target?.prefillId === prefillId ? { ...target, loading: false } : target);
+            toast.error('Could not prefill vehicle applications. Add them in the part form before saving.');
+        }
     };
 
     const handleSaveImportPart = async (partData) => {
         if (!canCatalogParts || !importPartTarget || savingImportPart) return;
         setSavingImportPart(true);
         try {
-            // Reuse the vehicle fitment AI parser on the AI-extracted applications text.
-            let applications = partData.applications;
-            const fitmentText = importPartTarget.vehicleApplicationsText?.trim();
-            if (fitmentText && !applications?.length && hasPermission('applications:edit')) {
-                try {
-                    const { data } = await api.post('/applications/parse-fitment-text', { text: fitmentText.slice(0, 2000) });
-                    applications = (data.fitments || [])
-                        .filter(c => c.confidence_label !== 'unresolved' && !c.alternative_group_id)
-                        .map(c => fitmentSavePayload({ ...c, position: c.position || importPartTarget.position || undefined }));
-                } catch {
-                    toast.error('Could not parse vehicle applications; part will be created without them.');
-                }
-            }
+            const applications = partData.applications;
             // Position lives on the vehicle link; with no fitment linked, keep it in the name so front/rear parts stay distinguishable.
             const position = upperCatalogText(importPartTarget.position);
             const detail = position && !applications?.length && !upperCatalogText(partData.detail).includes(position)
@@ -2323,7 +2335,8 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                 title={`Create part for imported line ${importPartTarget?.line_no}`}
                 maxWidth="max-w-2xl"
             >
-                {importPartTarget && (
+                {importPartTarget?.loading && <p role="status">Preparing vehicle applications…</p>}
+                {importPartTarget && !importPartTarget.loading && (
                     <fieldset disabled={savingImportPart} className="min-w-0">
                         <PartForm
                             key={`${importPartTarget.import_id}-${importPartTarget.row_id}`}

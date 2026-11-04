@@ -174,7 +174,12 @@ const PartForm = ({ part, initialValues = null, uppercaseText = false, brands, g
     // fetch existing linked applications for the part when editing
     const fetchSelectedApps = useCallback(async () => {
         if (isBulkEdit) { setSelectedApps([]); return; }
-        if (!part?.part_id) { setSelectedApps([]); return; }
+        if (!part?.part_id) {
+            setSelectedApps((initialValues?.applications || []).map(app => ({
+                ...app, _staged_key: JSON.stringify(fitmentSavePayload(app)),
+            })));
+            return;
+        }
         try {
             const res = await api.get(`/parts/${part.part_id}/applications`);
             setSelectedApps(Array.isArray(res.data) ? res.data : []);
@@ -182,7 +187,7 @@ const PartForm = ({ part, initialValues = null, uppercaseText = false, brands, g
             console.error(error);
             toast.error('Could not load part applications.');
         }
-    }, [part, isBulkEdit]);
+    }, [part, initialValues, isBulkEdit]);
 
     useEffect(() => { fetchSelectedApps(); }, [fetchSelectedApps]);
 
