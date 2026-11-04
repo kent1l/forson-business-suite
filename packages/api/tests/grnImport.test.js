@@ -51,6 +51,14 @@ describe('GRN External JSON Ingestion - Schema and Rules', () => {
     extraction_issues: [],
   };
 
+  test('accepts optional vehicle_applications and keeps legacy payloads unchanged', () => {
+    const base = validateAndNormalizeExternalPayload(conformingExample);
+    expect(base.lines[0]).not.toHaveProperty('vehicle_applications');
+    const line = { ...conformingExample.lines[0], vehicle_applications: 'Toyota Hilux 2KD' };
+    const withApps = validateAndNormalizeExternalPayload({ ...conformingExample, lines: [line] });
+    expect(withApps.lines[0].vehicle_applications).toBe('Toyota Hilux 2KD');
+  });
+
   test('validates conforming example cleanly', () => {
     const normalized = validateAndNormalizeExternalPayload(conformingExample);
     expect(normalized.schema_version).toBe(1);

@@ -46,6 +46,7 @@ const LINE_ALLOWED_KEYS = new Set([
   'part_number',
   'supplier_item_code',
   'item_group_hint',
+  'vehicle_applications',
   'quantity',
   'unit',
   'unit_cost',
@@ -95,6 +96,7 @@ const LINE_SCALAR_FIELDS = new Set([
   'part_number',
   'supplier_item_code',
   'item_group_hint',
+  'vehicle_applications',
   'quantity',
   'unit',
   'unit_cost',
@@ -500,6 +502,7 @@ function validateAndNormalizeExternalPayload(payload) {
     const part_number = validateText(line.part_number, { maxCodePoints: 255, path: `${path}.part_number` });
     const supplier_item_code = validateText(line.supplier_item_code, { maxCodePoints: 255, path: `${path}.supplier_item_code` });
     const item_group_hint = validateText(line.item_group_hint, { maxCodePoints: 255, path: `${path}.item_group_hint` });
+    const vehicle_applications = validateText(line.vehicle_applications, { maxCodePoints: 2000, path: `${path}.vehicle_applications` });
     const quantity = parseQuantity(line.quantity, `${path}.quantity`);
     const unit = validateText(line.unit, { maxCodePoints: 20, path: `${path}.unit` });
     const unit_cost = parseMoney(line.unit_cost, `${path}.unit_cost`);
@@ -518,6 +521,8 @@ function validateAndNormalizeExternalPayload(payload) {
       part_number: part_number ?? null,
       supplier_item_code: supplier_item_code ?? null,
       item_group_hint: item_group_hint ?? null,
+      // Optional extension: omitted when absent so legacy normalized payload hashes are unchanged.
+      ...(vehicle_applications != null ? { vehicle_applications } : {}),
       quantity,
       unit: normalizeUom(unit),
       unit_cost,

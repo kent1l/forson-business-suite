@@ -36,6 +36,7 @@ The first non-whitespace character MUST be { and the last MUST be }. Include the
       "part_number": null,
       "supplier_item_code": null,
       "item_group_hint": null,
+      "vehicle_applications": null,
       "quantity": null,
       "unit": null,
       "unit_cost": null,
@@ -93,7 +94,10 @@ INTERNET RESEARCH RULES
 - Explain the evidence or uncertainty briefly in reason. Do not invent URLs, quotes, visits, or numerical confidence scores. Do not claim fitment or interchangeability without separate explicit evidence.
 - If browsing is unavailable or no usable evidence can be inspected for an item, preserve its transcription, set enrichment.status to "unresolved", leave unsupported suggested fields null, and return sources: []. Explain the research limitation in reason. Never add placeholder or fabricated sources to fill the array. Do not fail the extraction merely because internet research failed.
 
-- VEHICLE APPLICATIONS: Search the internet (and use any applications printed on the document) for the vehicle fitments of each part, and write them as one plain-text string in enrichment.suggested_vehicle_applications, e.g. "Toyota Hilux 2KD-FTV 2005-2015; Mitsubishi L200 4D56 2006-2014". Separate combinations with semicolons; include make, model, engine code, chassis and year range when the evidence states them. List only fitments explicitly stated for this exact part number or product on an inspected page (cite the page in sources); never guess from the part category. Maximum 2000 characters. Use null when no fitment evidence was found. FBS parses this text into vehicle fitments only when it creates a new catalog part.
+- VEHICLE APPLICATIONS (two sources, never mixed):
+  - line.vehicle_applications = vehicle fitments read from the supplier document itself (description, notes, any vehicle column, handwriting), as one plain-text string such as "Toyota Hilux 2KD-FTV 2005-2015; Mitsubishi L200 4D56". Separate combinations with semicolons. You may expand obvious abbreviations when the context makes them unambiguous (e.g. "HLX" to Hilux), but never infer fitment from the part category or from web results. Use null when the document states no vehicle. This field does NOT depend on web research: fill it even when browsing is unavailable or fails. Maximum 2000 characters.
+  - enrichment.suggested_vehicle_applications = ADDITIONAL or confirming fitments found by web research, only when explicitly stated for this exact part number or product on an inspected page that you cite in sources. Use it to verify, extend or contradict line.vehicle_applications; use null when there is no such evidence. If the web evidence contradicts the document's fitment, report a CONFLICTING_VALUES issue with field "vehicle_applications" and keep the document's value unchanged.
+  - FBS parses both strings into vehicle fitments; document-derived fitments are trusted more than web-derived ones.
 
 EXTRACTION ISSUE RULES
 Report uncertainties and discrepancies as structured objects in extraction_issues:
@@ -122,7 +126,7 @@ Before returning the JSON, verify:
 2. document_type is null or one of "delivery_receipt", "invoice", "packing_list", "other".
 3. All internal double quotes within strings (such as 8\" or \"COMPACT\") are escaped with backslashes.
 4. Compare the lines array against the source images row by row: the first output item matches the first source item, the second matches the second, and so on through all pages. No rows were skipped, merged, sorted, or exchanged. Each row's quantities, prices, annotations, and research remain attached to its own item identity, and line_no increases sequentially across pages.
-5. All web research is strictly confined inside enrichment.
+5. All web research is strictly confined inside enrichment. line.vehicle_applications contains only fitments visible on the document and is filled even when web research failed.
 6. Every sources[].url is a plain absolute HTTPS URL without Markdown wrappers, citation markers, or embedded credentials, and refers to a page actually opened and inspected. Use sources: [] when no usable evidence was inspected.
 7. Every research suggestion is supported by its cited page content; cross-references and compatibility claims are not represented as exact product verification. Uncertainty and material conflicts are stated in reason.
 8. The complete output starts with { and ends with }, includes every required section and both enclosing braces, and contains exactly one JSON object. There is no surrounding prose, code fence, trailing comma, or double-encoded JSON string.

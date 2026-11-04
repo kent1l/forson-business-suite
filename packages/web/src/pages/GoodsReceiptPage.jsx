@@ -1140,7 +1140,10 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                 last_cost: row.confirmed_row?.cost_price ?? source.unit_cost ?? 0,
                 last_sale_price: row.confirmed_row?.sale_price ?? 0,
             },
-            vehicleApplicationsText: source.enrichment?.suggested_vehicle_applications || '',
+            // Document fitments always apply; web-found ones only when the research was verified.
+            vehicleApplicationsText: [source.vehicle_applications,
+                source.enrichment?.status === 'verified_suggestion' ? source.enrichment.suggested_vehicle_applications : null]
+                .filter(Boolean).join('; '),
         });
     };
 
