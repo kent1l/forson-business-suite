@@ -1,3 +1,4 @@
+const { fitmentRulesSql, fitmentLabelsSql } = require('../helpers/fitmentDocumentSql');
 const db = require('../db');
 const { activeAliasCondition } = require('../helpers/partNumberSoftDelete');
 
@@ -33,14 +34,11 @@ const CATALOG_SELECT = `
         (SELECT STRING_AGG(pn.part_number, '; ' ORDER BY pn.display_order)
            FROM part_number pn
           WHERE pn.part_id = pv.part_id AND ${activeAliasCondition('pn')}) AS part_numbers,
-        (SELECT STRING_AGG(
-            CONCAT(vmk.make_name, ' ', vmd.model_name, COALESCE(CONCAT(' ', veng.engine_code), '')), '; '
-         ) FROM part_application pa
-           JOIN application a ON pa.application_id = a.application_id
-           LEFT JOIN vehicle_make vmk ON a.make_id = vmk.make_id
-           LEFT JOIN vehicle_model vmd ON a.model_id = vmd.model_id
-           LEFT JOIN engine veng ON a.engine_id = veng.engine_id
-          WHERE pa.part_id = pv.part_id) AS applications
+        ${fitmentLabelsSql()} AS applications,
+        ${fitmentRulesSql()} AS fitment_rules,
+        3 AS fitment_schema_version,
+        'linked'::text AS applications_status,
+        FALSE AS fitment_confirmation
     FROM public.parts_view AS pv
     JOIN public.part p ON p.part_id = pv.part_id
 `;
@@ -49,7 +47,11 @@ const shapeRow = (row) => ({
     ...row,
     barcodes: row.barcodes || [],
     part_numbers: row.part_numbers || '',
-    applications: row.applications || ''
+    applications: row.applications || '',
+    fitment_rules: row.fitment_rules || [],
+    fitment_schema_version: 3,
+    applications_status: 'linked',
+    fitment_confirmation: false,
 });
 
 /** Full catalog rows for a set of part ids, in no particular order. */

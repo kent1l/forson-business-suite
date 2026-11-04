@@ -246,7 +246,9 @@ describe('PartMergeService Unit Tests', () => {
             mockChain(mockDb, [
                 { rowCount: 1 },                        //  0 retire overlapping part_numbers
                 { rows: [{ reassigned_count: 2 }] },    //  1 rank/retire/reassign part_numbers
-                { rowCount: 1 },                        //  2 delete overlapping part_applications
+                { rows: [] },                          // source fitment rules
+                { rowCount: 0 },                        // move source claims
+                { rowCount: 1 },                        // delete overlapping part_applications
                 { rows: [{ reassigned_count: 3 }] },    //  3 rank/retire/reassign part_applications
                 { rowCount: 0 },                        //  4 delete overlapping barcodes
                 { rowCount: 2 },                        //  5 move barcodes
@@ -279,13 +281,13 @@ describe('PartMergeService Unit Tests', () => {
             expect(queries[1]).toContain('r.rn > 1');
             expect(queries[1]).toContain('r.rn = 1');
             // part_application overlap delete
-            expect(queries[2]).toContain('keep_pa.part_id = $1');
+            expect(queries[4]).toContain('keep_pa.part_id = $1');
             // part_application rank/retire/reassign
-            expect(queries[3]).toContain('PARTITION BY pa.application_id');
-            expect(queries[3]).toContain('r.rn > 1');
-            expect(queries[3]).toContain('r.rn = 1');
+            expect(queries[5]).toContain('PARTITION BY pa.application_id');
+            expect(queries[5]).toContain('r.rn > 1');
+            expect(queries[5]).toContain('r.rn = 1');
             expect(mockDb.query.mock.calls[1][1]).toEqual([1, [2, 3, 4]]);
-            expect(mockDb.query.mock.calls[3][1]).toEqual([1, [2, 3, 4]]);
+            expect(mockDb.query.mock.calls[5][1]).toEqual([1, [2, 3, 4]]);
             expect(counts.part_numbers).toBe(2);
             expect(counts.part_applications).toBe(3);
             expect(counts.barcodes).toBe(2);

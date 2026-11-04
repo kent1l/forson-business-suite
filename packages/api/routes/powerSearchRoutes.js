@@ -1,3 +1,5 @@
+const { effectiveRuleColumns, fitmentRulesSql } = require('../helpers/fitmentDocumentSql');
+const { evaluateFitmentRules } = require('../helpers/fitmentMatcher');
 const express = require('express');
 const db = require('../db');
 const { meiliClient } = require('../meilisearch');
@@ -69,73 +71,76 @@ router.get('/power-search/interchangeable-parts', protect, hasPermission(['parts
 // Default behavior: only return active parts unless `status=all` or `status=inactive` is passed.
 // Vehicle filter params (all optional, integers): make_id, model_id, engine_id, year.
 // When any vehicle filter is set the route resolves matching part IDs from DB first
-// (including engine-only parts via vehicle_engine_fitment and is_universal parts),
+// (including engine-only claims and universal declarations),
 // then intersects with Meilisearch keyword results for relevance ranking.
 router.get('/power-search/parts', protect, hasPermission(['parts:view', 'pos:use']), async (req, res) => {
     const { keyword, status = 'active' } = req.query;
-    const makeId   = req.query.make_id   ? parseInt(req.query.make_id, 10)   : null;
-    const modelId  = req.query.model_id  ? parseInt(req.query.model_id, 10)  : null;
-    const engineId = req.query.engine_id ? parseInt(req.query.engine_id, 10) : null;
-    const year     = req.query.year      ? parseInt(req.query.year, 10)      : null;
+    const parsedIds = {};
+    for (const field of ['make_id','model_id','chassis_id','engine_id','year']) {
+        if (req.query[field] == null || req.query[field] === '') { parsedIds[field]=null; continue; }
+        if (!/^\d+$/.test(String(req.query[field])) || !Number.isSafeInteger(Number(req.query[field])) || Number(req.query[field]) <= 0) return res.status(400).json({code:'INVALID_FILTER',message:`Invalid ${field}`});
+        parsedIds[field]=Number(req.query[field]);
+    }
+    const {make_id:makeId,model_id:modelId,chassis_id:chassisId,engine_id:engineId}=parsedIds;
+    const vehicleQuery={...parsedIds};
+    for (const field of ['market','variant','position','drivetrain','transmission','generation','fuel_type']) {
+        if (req.query[field]) {
+            if (typeof req.query[field] !== 'string' || req.query[field].length>200) return res.status(400).json({code:'INVALID_FILTER',message:`Invalid ${field}`});
+            vehicleQuery[field]=req.query[field].trim();
+        }
+    }
+    if (req.query.displacement_liters != null) {
+        const displacement=Number(req.query.displacement_liters);
+        if (!Number.isFinite(displacement)||displacement<=0||displacement>=20) return res.status(400).json({code:'INVALID_FILTER',message:'Invalid displacement_liters'});
+        vehicleQuery.displacement_liters=displacement;
+    }
 
     // --- Phase 4b: structured vehicle filter → candidate part IDs from DB ---
     // Runs only when at least one vehicle dimension is specified.
     // null = no vehicle filter active; [] = filter active but nothing matched.
     let vehiclePartIds = null;
 
-    if (makeId || modelId || engineId) {
-        const params = [];
-        let p = 1;
-        const ph = (val) => { params.push(val); return `$${p++}`; };
-
-        // Build WHERE clause for the application table.
-        // engine_id also matches applications linked to any model that uses that engine
-        // (via vehicle_engine_fitment), so engine-only fitments surface correctly.
-        const whereClauses = [];
-        if (engineId) {
-            const ep = ph(engineId);
-            whereClauses.push(`(a.engine_id = ${ep} OR (a.model_id IS NOT NULL AND a.model_id IN (
-                SELECT vef.model_id FROM vehicle_engine_fitment vef WHERE vef.engine_id = ${ep}
-            )))`);
-        }
-        if (modelId) whereClauses.push(`a.model_id = ${ph(modelId)}`);
-        if (makeId)  whereClauses.push(`a.make_id  = ${ph(makeId)}`);
-
-        let yearWhereClause = '';
-        if (year) {
-            const yp = ph(year);
-            yearWhereClause = `WHERE (pa.year_start IS NULL OR pa.year_start <= ${yp})
-              AND (pa.year_end IS NULL OR pa.year_end >= ${yp})`;
-        }
-
-        const universalStatusClause =
-            status === 'active'   ? 'AND is_active = true'  :
-            status === 'inactive' ? 'AND is_active = false' : '';
-
-        const sql = `
-            WITH matched_apps AS (
-                SELECT DISTINCT a.application_id
-                FROM application a
-                WHERE ${whereClauses.join(' AND ')}
-            )
-            SELECT DISTINCT pa.part_id
-            FROM part_application pa
-            JOIN matched_apps ma ON pa.application_id = ma.application_id
-            ${yearWhereClause}
-            UNION
-            SELECT part_id FROM part WHERE is_universal = true ${universalStatusClause}
-        `;
-
-        const { rows: vRows } = await db.query(sql, params);
-        vehiclePartIds = vRows.map(r => r.part_id);
-    }
-
-    // Vehicle filter is active but produced no candidates — short-circuit before Meili
-    if (vehiclePartIds !== null && vehiclePartIds.length === 0) {
-        return res.json([]);
-    }
-
+    const vehicleAssessments = new Map();
     try {
+        if (Object.values(vehicleQuery).some(value=>value!=null && value!=='')) {
+            const params = [];
+            const checks = ["r.is_active=TRUE", "r.effect='include'"];
+            for (const [column,value] of [['make_id',makeId],['model_id',modelId],['chassis_id',chassisId],['engine_id',engineId]]) {
+                if (value) { params.push(value); checks.push(`(a.${column} IS NULL OR a.${column}=$${params.length})`); }
+            }
+            // SQL retrieves coherent candidates; the shared evaluator handles unknown
+            // classification details and exclusions before returning a fitment status.
+            const candidates = await db.query(`SELECT DISTINCT r.part_id FROM part_application_rule r JOIN application a USING(application_id) WHERE ${checks.join(' AND ')}`,params);
+            const ids = candidates.rows.map(r=>r.part_id);
+            const universals=(await db.query('SELECT part_id FROM part WHERE is_universal=TRUE')).rows;
+            const allIds=[...new Set([...ids,...universals.map(r=>r.part_id)])];
+            const rules = allIds.length ? (await db.query(`SELECT r.*,a.make_id,a.model_id,a.chassis_id,a.engine_id,${effectiveRuleColumns()} FROM part_application_rule r JOIN application a USING(application_id) WHERE r.part_id=ANY($1::int[]) AND r.is_active=TRUE`,[allIds])).rows : [];
+            const byPart = new Map();
+            for (const rule of rules) { if (!byPart.has(rule.part_id)) byPart.set(rule.part_id,[]); byPart.get(rule.part_id).push(rule); }
+            vehiclePartIds=[];
+            for (const [partId,rows] of byPart) {
+                const result=evaluateFitmentRules(rows,vehicleQuery);
+                if (['confirmed','needs_details'].includes(result.state)) {
+                    vehiclePartIds.push(partId);
+                    vehicleAssessments.set(partId,{status:result.status,reasons:result.reasons});
+                }
+            }
+            // Universal is a separate declaration; its explicit exclusions still apply.
+            for (const {part_id} of universals) {
+                const exclusions = (byPart.get(part_id) || []).filter(r=>r.effect==='exclude');
+                const result = evaluateFitmentRules(exclusions,vehicleQuery);
+                if (result.status !== 'excluded') {
+                    if (!vehiclePartIds.includes(part_id)) vehiclePartIds.push(part_id);
+                    vehicleAssessments.set(part_id,{status:'linked',reasons:['universal_part']});
+                }
+            }
+        }
+
+        // Vehicle filter is active but produced no candidates — short-circuit before Meili
+        if (vehiclePartIds !== null && vehiclePartIds.length === 0) {
+            return res.json([]);
+        }
+
         const index = meiliClient.index('parts');
         const searchOptions = {
             limit: 200,
@@ -189,6 +194,7 @@ router.get('/power-search/parts', protect, hasPermission(['parts:view', 'pos:use
         const query = `
             SELECT
                 p.part_id,
+                ${fitmentRulesSql('p')} AS fitment_rules,
                 p.internal_sku,
                 p.detail,
                 p.measurement_unit,
@@ -244,6 +250,7 @@ router.get('/power-search/parts', protect, hasPermission(['parts:view', 'pos:use
                 LIMIT 1
             ) lr ON TRUE
             WHERE p.part_id = ANY($1::int[])
+              ${status === 'active' ? 'AND p.is_active=TRUE' : status === 'inactive' ? 'AND p.is_active=FALSE' : ''}
             ORDER BY array_position($1::int[], p.part_id);
         `;
 
@@ -297,7 +304,8 @@ router.get('/power-search/parts', protect, hasPermission(['parts:view', 'pos:use
             return {
                 ...p,
                 display_name: p.display_name || '',
-                applications: formattedApps
+                applications: formattedApps,
+                fitment: vehicleAssessments.get(id) || { status: 'linked', reasons: [] }
             };
         }).filter(Boolean);
 

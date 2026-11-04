@@ -1,13 +1,16 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import api from '../../api';
+import { fitmentSavePayload } from '../../utils/engineCodeFormat';
 import toast from 'react-hot-toast';
 import Modal from '../ui/Modal';
 import Combobox from '../ui/Combobox';
 import { useSettings } from '../../contexts/SettingsContext';
+import { useAuth } from '../../contexts/AuthContext';
 import TagInput from '../ui/TagInput'; // <-- Import TagInput
 import MathExpressionInput from '../ui/MathExpressionInput';
 import ApplicationSearchCombobox from '../applications/ApplicationSearchCombobox';
-import PartApplicationManager from '../../pages/PartApplicationManager';
+import { formatSearchFitments } from '../../helpers/searchFitmentText';
+import PartApplicationManager, { DescribeFitmentPanel } from '../../pages/PartApplicationManager';
 import { postWithJevConfirmation } from '../../helpers/jevConfirmation';
 import { normalizeUom } from '../../utils/grnImportReview';
 
@@ -121,6 +124,7 @@ const extractBarcodes = (source) => {
 
 const PartForm = ({ part, initialValues = null, uppercaseText = false, brands, groups, onSave, onCancel, onBrandGroupAdded, isBulkEdit = false, selectedCount: _selectedCount = 0 }) => {
     const { settings } = useSettings();
+    const { hasPermission } = useAuth();
 
     const sessionKey = useMemo(() => {
         if (isBulkEdit) return 'bulk';
@@ -163,7 +167,7 @@ const PartForm = ({ part, initialValues = null, uppercaseText = false, brands, g
     }, [sessionKey, part, initialValues, isBulkEdit, settings]);
 
     // helper to display an application label
-    const labelForApp = (app) => [app?.make, app?.model, app?.engine].filter(Boolean).join(' ');
+    const labelForApp = (app) => formatSearchFitments({ fitment_rules: [app] });
 
     const [isAppManagerOpen, setIsAppManagerOpen] = useState(false);
 
@@ -182,15 +186,18 @@ const PartForm = ({ part, initialValues = null, uppercaseText = false, brands, g
 
     useEffect(() => { fetchSelectedApps(); }, [fetchSelectedApps]);
 
+    const getStagedAppKey = app => JSON.stringify(fitmentSavePayload(app));
+
     const addApplication = (app) => {
-        if (!app || !app.application_id) return;
+        if (!app || (!app.application_id && !(app.make_id || app.make) && !(app.model_id || app.model) && !(app.engine_id || app.engine) && !(app.chassis_id || app.chassis))) return;
+        const nextKey = getStagedAppKey(app);
         setSelectedApps(prev => {
-            if (prev.find(a => a.application_id === app.application_id)) return prev;
-            return [...prev, app];
+            if (prev.find(a => getStagedAppKey(a) === nextKey)) return prev;
+            return [...prev, { ...app, _staged_key: nextKey }];
         });
     };
 
-    const removeApplication = (id) => setSelectedApps(prev => prev.filter(a => a.application_id !== id));
+    const removeApplication = (idOrKey) => setSelectedApps(prev => prev.filter(a => (a._staged_key || a.application_id) !== idOrKey));
 
     const [taxRates, setTaxRates] = useState([]);
     const [isBrandModalOpen, setIsBrandModalOpen] = useState(false);
@@ -243,7 +250,7 @@ const PartForm = ({ part, initialValues = null, uppercaseText = false, brands, g
         const normalizedMeasurementUnit = isBulkEdit
             ? (formData.measurement_unit ? normalizeUom(formData.measurement_unit, '') : '')
             : normalizeUom(formData.measurement_unit);
-        onSave({ ...formData, measurement_unit: normalizedMeasurementUnit, tags, barcodes, applications: selectedApps }); // include linked applications
+        onSave({ ...formData, measurement_unit: normalizedMeasurementUnit, tags, barcodes, applications: selectedApps.filter(app => app._staged_key).map(app => ({ ...fitmentSavePayload(app) })) }); // include linked applications
     }, [formData, isBulkEdit, tags, barcodes, selectedApps, onSave]);
 
     const handleChange = (e) => {
@@ -470,12 +477,15 @@ const PartForm = ({ part, initialValues = null, uppercaseText = false, brands, g
                         </div>
                         <div className="mt-2">
                             <div className="flex flex-wrap items-center gap-2">
-                                {selectedApps.slice(0, 6).map(app => (
-                                    <div key={app.application_id} className="inline-flex items-center space-x-2 bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-full px-3 py-1 text-xs text-gray-800 dark:text-slate-200">
-                                        <span className="truncate max-w-[16rem]">{labelForApp(app)}</span>
-                                        <button type="button" onClick={() => removeApplication(app.application_id)} className="text-gray-400 dark:text-slate-500 hover:text-danger-600 dark:hover:text-danger-400 ml-1">{'\u00d7'}</button>
-                                    </div>
-                                ))}
+                                {selectedApps.slice(0, 6).map(app => {
+                                    const pillKey = app._staged_key || app.application_id;
+                                    return (
+                                        <div key={pillKey} className={`inline-flex items-center space-x-2 border rounded-full px-3 py-1 text-xs ${app.effect === 'exclude' ? 'bg-danger-50 dark:bg-danger-950/30 border-danger-200 dark:border-danger-800 text-danger-800 dark:text-danger-200' : 'bg-gray-50 dark:bg-slate-900 border-gray-200 dark:border-slate-700 text-gray-800 dark:text-slate-200'}`}>
+                                            <span className="truncate max-w-[16rem]">{labelForApp(app)}</span>
+                                            <button type="button" onClick={() => removeApplication(pillKey)} className="text-gray-400 dark:text-slate-500 hover:text-danger-600 dark:hover:text-danger-400 ml-1" aria-label={`Remove ${labelForApp(app)}`}>{'\u00d7'}</button>
+                                        </div>
+                                    );
+                                })}
                                 {selectedApps.length > 6 && (
                                     <div className="inline-flex items-center text-xs text-gray-500 dark:text-slate-400">+{selectedApps.length - 6} more</div>
                                 )}
@@ -483,12 +493,7 @@ const PartForm = ({ part, initialValues = null, uppercaseText = false, brands, g
                                     <div className="text-sm text-gray-500 dark:text-slate-400">No linked applications</div>
                                 )}
                             </div>
-                            {!part && (
-                                <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">
-                                    Links to existing vehicle fitments only (no year range or new taxonomy entries here) --
-                                    use Manage after saving for year ranges or to create a new make/model/engine.
-                                </p>
-                            )}
+                            {hasPermission('applications:edit') && <DescribeFitmentPanel onStage={addApplication} onCommitted={() => {}} />}
                         </div>
                     </div>
                 )}

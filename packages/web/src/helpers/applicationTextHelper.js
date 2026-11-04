@@ -4,23 +4,12 @@
  * @returns {string} Formatted application text
  */
 import { getApplication } from './applicationCache.js';
+import { formatFitmentPosition } from '../utils/fitmentPosition.js';
 import { getPreset } from './applicationDisplayPresets.js';
-import { compressEngineCodes } from '../utils/engineCodeFormat.js';
+import { formatEngineCodes } from '../utils/engineCodeDisplay.js';
+import { formatQualifierSummary } from '../utils/engineCodeFormat.js';
 import { formatYears } from '../utils/yearShorthand.js';
 import { shortMake, shortModel, shortEngine, modelNeedsMake } from './displayDictionary.js';
-
-// Engines are stored and linked atomically (a part fitting a 4D55 does not
-// necessarily fit a 4D56), so a vehicle with several engine variants produces
-// one fitment row per engine. Displaying them as staff write them by hand --
-// "4D55/6" rather than "4D55/4D56" -- is purely cosmetic and saves real space
-// in dense lists. compressEngineCodes refuses to combine anything unsafe (a
-// variant suffix like 4JA1 vs 4JA1-T, or codes with no meaningful shared
-// prefix), in which case we fall back to listing them.
-const joinEngines = (engines, separator = '/') => {
-    if (!engines || engines.length === 0) return '';
-    if (engines.length === 1) return engines[0];
-    return compressEngineCodes(engines) || engines.join(separator);
-};
 
 // Simple LRU cache for formatted results to avoid recomputation on identical inputs
 const FORMAT_CACHE_LIMIT = 100;
@@ -39,6 +28,12 @@ const setCache = (key, value) => {
 };
 
 const getCache = (key) => formatCache.get(key);
+
+const applicationContextKey = row => JSON.stringify([
+    row.make, row.make_id, row.model, row.model_id, row.chassis_id,
+    row.effect || 'include', formatQualifierSummary(row), row.year_start ?? null, row.year_end ?? null, Boolean(row.engine),
+    ...['make','model','chassis','engine','year','market','variant','position','drivetrain','transmission','fuel','displacement','generation'].map(key => row[`${key}_mode`] || ''),
+]);
 
 const formatSingleApplication = (application, granularOptions = {}) => {
     if (!application) return '';
@@ -77,7 +72,7 @@ const formatSingleApplication = (application, granularOptions = {}) => {
 
         const makeName = denseOpts ? denseOpts.make(application.make) : application.make;
         const modelName = denseOpts ? denseOpts.model(application.model) : application.model;
-        const engineCode = denseOpts ? denseOpts.engine(application.engine) : application.engine;
+        const engineCode = formatEngineCodes(denseOpts ? denseOpts.engine(application.engine) : application.engine);
 
         // Drop the make only when this model name belongs to exactly one make.
         const keepMake = !denseOpts
@@ -214,7 +209,7 @@ export const formatApplicationText = (applications, options = {}) => {
 
     const appsArray = Array.isArray(applications) ? applications : [applications];
 
-    const cacheKeyBase = cache ? JSON.stringify({ a: appsArray.map(a => (typeof a === 'object' ? a.application_id || a : a)), o: { separator, multiline, maxApplications, truncateMode, truncateChars, truncateWords, logicalStrategy, includeYears, includeEngine, collapseDuplicateEngines, dense, shortenYears, useShorthand, dropRedundantMake, adaptive, budget } }) : null;
+    const cacheKeyBase = cache ? JSON.stringify({ a: appsArray, o: { separator, multiline, maxApplications, truncateMode, truncateChars, truncateWords, logicalStrategy, includeYears, includeEngine, collapseDuplicateEngines, mergeModelsByMake, dense, shortenYears, useShorthand, dropRedundantMake, adaptive, budget, fallbackUnknown } }) : null;
     if (cache && cacheKeyBase) {
         const hit = getCache(cacheKeyBase);
         if (hit) return hit;
@@ -236,14 +231,15 @@ export const formatApplicationText = (applications, options = {}) => {
     let formattedList;
     if (mergeModelsByMake) {
         const byMake = new Map();
+        const ungrouped = [];
         appsArray.forEach(a => {
-            if (!a || typeof a !== 'object') return; // non-object fallback handled later
+            if (!a || typeof a !== 'object') { ungrouped.push(a); return; }
             const make = (a.make || '').trim();
             const model = (a.model || '').trim();
             const engine = (a.engine || '').trim();
             const yearStart = a.year_start || null;
             const yearEnd = a.year_end || null;
-            if (!make && !model) return; // insufficient data
+            if (!make && !model) { ungrouped.push(a); return; }
             if (!byMake.has(make)) byMake.set(make, []);
             byMake.get(make).push({ make, model, engine, yearStart, yearEnd, raw: a });
         });
@@ -253,25 +249,28 @@ export const formatApplicationText = (applications, options = {}) => {
             // Group by model first
             const byModel = new Map();
             entries.forEach(e => {
-                if (!byModel.has(e.model)) byModel.set(e.model, []);
-                byModel.get(e.model).push(e);
+                const key = applicationContextKey(e.raw);
+                if (!byModel.has(key)) byModel.set(key, []);
+                byModel.get(key).push(e);
             });
             // Alphabetical models (approved tweak #1)
-            const modelKeys = Array.from(byModel.keys()).sort((a,b) => a.localeCompare(b));
-            const modelParts = modelKeys.map(modelName => {
-                const modelEntries = byModel.get(modelName);
+            const modelKeys = Array.from(byModel.keys()).sort((a,b) => byModel.get(a)[0].model.localeCompare(byModel.get(b)[0].model));
+            const modelParts = modelKeys.map(modelKey => {
+                const modelEntries = byModel.get(modelKey);
+                const modelName = modelEntries[0].model;
                 // Collect engines (always show engines when includeEngine=true approval #2 option 1)
                 let enginePart = '';
                 if (includeEngine) {
                     const engines = Array.from(new Set(modelEntries.map(me => displayEngine(me.engine)).filter(Boolean))).sort();
-                    const joined = joinEngines(engines, '/');
+                    const joined = formatEngineCodes(engines, { separator: '/' });
                     if (joined) enginePart = ` (${joined})`;
                 }
                 // Years handling (#3a): if differing ranges per model, we append per model; shared range appended later at make-level
                 const ranges = Array.from(new Set(modelEntries.map(me => displayYears(me.yearStart, me.yearEnd)).filter(Boolean)));
                 let yearPart = '';
                 // We'll decide shared vs per-model after computing all models
-                return { modelName, enginePart, ranges, rawEntries: modelEntries, placeholder: null, yearPart };
+                return { modelName, enginePart, ranges, rawEntries: modelEntries, placeholder: null, yearPart,
+                    qualifier: formatQualifierSummary(modelEntries[0].raw), effect: modelEntries[0].raw.effect };
             });
 
             // Determine if all models share identical single year range
@@ -306,7 +305,7 @@ export const formatApplicationText = (applications, options = {}) => {
 
             const modelsMerged = visibleModels.map(mp => {
                 const base = displayModel(mp.modelName) || '';
-                return `${base}${mp.enginePart || ''}${mp.yearPart ? mp.yearPart : ''}`.trim();
+                return `${mp.effect === 'exclude' ? 'Excluded: ' : ''}${base}${mp.enginePart || ''}${mp.yearPart ? mp.yearPart : ''}${mp.qualifier ? ` [${mp.qualifier}]` : ''}`.trim();
             }).filter(Boolean).join('/');
 
             // The make is redundant when every model shown under it is unique
@@ -331,7 +330,7 @@ export const formatApplicationText = (applications, options = {}) => {
 
         // Fallback: if merging yields nothing (e.g., all primitives) just map normally
         if (makeSegments.length) {
-            formattedList = makeSegments;
+            formattedList = [...makeSegments, ...ungrouped.map(a => formatSingleApplication(a, granular)).filter(Boolean)];
         } else {
             formattedList = appsArray.map(a => formatSingleApplication(a, granular)).filter(Boolean);
         }
@@ -345,9 +344,8 @@ export const formatApplicationText = (applications, options = {}) => {
         const map = new Map();
         appsArray.forEach((a, idx) => {
             if (!a || typeof a !== 'object') return;
-            const key = `${a.make || ''}::${a.model || ''}`;
-            if (!key.trim()) return;
-            if (!map.has(key)) map.set(key, { engines: new Set(), base: { make: a.make, model: a.model }, idxs: [] });
+            const key = applicationContextKey(a);
+            if (!map.has(key)) map.set(key, { engines: new Set(), base: { ...a, engine: null, display: undefined }, idxs: [] });
             if (a.engine) map.get(key).engines.add(a.engine);
             map.get(key).idxs.push(idx);
         });
@@ -358,14 +356,16 @@ export const formatApplicationText = (applications, options = {}) => {
             appsArray.forEach((a, idx) => {
                 if (used.has(idx)) return;
                 if (a && typeof a === 'object') {
-                    const key = `${a.make || ''}::${a.model || ''}`;
+                    const key = applicationContextKey(a);
                     const group = map.get(key);
                     if (group && group.idxs.length > 1) {
                         group.idxs.forEach(i => used.add(i));
                         const engines = Array.from(group.engines.values());
-                        const joined = joinEngines(engines, ' / ');
+                        const joined = formatEngineCodes(engines, { separator: ' / ' });
                         const enginePart = joined ? ` (${joined})` : '';
-                        rebuilt.push(`${[a.make, a.model].filter(Boolean).join(' ')}${enginePart}`.trim());
+                        const base = formatSingleApplication(group.base, granular);
+                        const qualifier = formatQualifierSummary({ ...a, position: null });
+                        rebuilt.push(`${a.effect === 'exclude' ? 'Excluded: ' : ''}${a.position ? `${formatFitmentPosition(a.position)} · ` : ''}${base}${enginePart}${qualifier ? ` [${qualifier}]` : ''}`.trim());
                         return;
                     }
                 }

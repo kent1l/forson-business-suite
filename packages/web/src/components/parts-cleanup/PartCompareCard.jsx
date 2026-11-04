@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import Icon from '../ui/Icon';
 import { ICONS } from '../../constants';
+import PartFitmentText from '../parts/PartFitmentText';
 
 const PartCompareCard = ({ part, isSelected, onSelect }) => {
     const [showDetails, setShowDetails] = useState(false);
@@ -126,26 +127,10 @@ const PartCompareCard = ({ part, isSelected, onSelect }) => {
                     )}
 
                     {/* Applications */}
-                    {part.applications && part.applications.length > 0 && (
+                    {(part.fitment_rules?.length > 0 || part.applications?.length > 0) && (
                         <div>
                             <span className="text-gray-500">Applications:</span>
-                            <div className="mt-1 space-y-1">
-                                {part.applications.slice(0, 2).map((app, index) => (
-                                    <div key={index} className="text-xs">
-                                        {app.make} {app.model} {app.engine}
-                                        {app.year_start && app.year_end && (
-                                            <span className="text-gray-400 ml-1">
-                                                ({app.year_start}-{app.year_end})
-                                            </span>
-                                        )}
-                                    </div>
-                                ))}
-                                {part.applications.length > 2 && (
-                                    <div className="text-gray-400">
-                                        +{part.applications.length - 2} more
-                                    </div>
-                                )}
-                            </div>
+                            <PartFitmentText part={part} multiline className="mt-1" />
                         </div>
                     )}
 
