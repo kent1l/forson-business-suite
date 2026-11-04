@@ -4,6 +4,7 @@
  * @returns {string} Formatted application text
  */
 import { getApplication } from './applicationCache.js';
+import { formatFitmentPosition } from '../utils/fitmentPosition.js';
 import { getPreset } from './applicationDisplayPresets.js';
 import { formatEngineCodes } from '../utils/engineCodeDisplay.js';
 import { formatQualifierSummary } from '../utils/engineCodeFormat.js';
@@ -364,7 +365,7 @@ export const formatApplicationText = (applications, options = {}) => {
                         const enginePart = joined ? ` (${joined})` : '';
                         const base = formatSingleApplication(group.base, granular);
                         const qualifier = formatQualifierSummary({ ...a, position: null });
-                        rebuilt.push(`${a.effect === 'exclude' ? 'Excluded: ' : ''}${a.position ? `${a.position} · ` : ''}${base}${enginePart}${qualifier ? ` [${qualifier}]` : ''}`.trim());
+                        rebuilt.push(`${a.effect === 'exclude' ? 'Excluded: ' : ''}${a.position ? `${formatFitmentPosition(a.position)} · ` : ''}${base}${enginePart}${qualifier ? ` [${qualifier}]` : ''}`.trim());
                         return;
                     }
                 }

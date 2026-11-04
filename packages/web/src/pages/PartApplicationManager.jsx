@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { normalizeFitmentPosition } from '../utils/fitmentPosition.js';
 import api from '../api';
 import { createUuid } from '../utils/createUuid';
 import Icon from '../components/ui/Icon';
@@ -174,7 +175,7 @@ const EditYearForm = ({ link, onSave, onCancel }) => {
 
     const handleSubmit = useCallback((e) => {
         if (e) e.preventDefault();
-        onSave(link.part_app_id, years);
+        onSave(link.part_app_id, { ...years, position: normalizeFitmentPosition(years.position) || null });
     }, [link, years, onSave]);
 
     useEffect(() => {
@@ -208,7 +209,7 @@ const EditYearForm = ({ link, onSave, onCancel }) => {
                 <input type="number" name="year_end" value={years.year_end} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 font-mono rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" placeholder="e.g., 2015" />
             </div>
             <label className="block text-sm">Position (optional)
-                <input name="position" value={years.position} onChange={handleChange} placeholder="e.g. Front, rear, left, right" className="w-full border rounded-lg p-2 dark:bg-slate-900 dark:border-slate-600" />
+                <input name="position" value={years.position} onChange={handleChange} placeholder="e.g. FR RH, RR LH, FR LH LWR" onBlur={(e) => setYears(prev => ({ ...prev, position: normalizeFitmentPosition(e.target.value) }))} className="w-full border rounded-lg p-2 dark:bg-slate-900 dark:border-slate-600" />
             </label>
             <p className="text-xs text-gray-500">Blank years use the vehicle combination’s year range.</p>
             <div className="mt-6 flex justify-end space-x-3 pt-4 border-t border-gray-200 dark:border-slate-700">
@@ -283,7 +284,7 @@ const PartApplicationManager = ({ part, onCancel }) => {
                 application_id: selectedApp.application_id,
                 year_start: yearStart || null,
                 year_end: yearEnd || null,
-                position: position || null
+                position: normalizeFitmentPosition(position) || null
             });
 
             await refetchData();
@@ -438,7 +439,7 @@ const PartApplicationManager = ({ part, onCancel }) => {
                             </div>
                         </div>
                         <label className="text-sm text-gray-700 dark:text-slate-300">Position (optional)
-                            <input value={position} onChange={e => setPosition(e.target.value)} placeholder="e.g. Front or rear" className="w-full border rounded-lg p-2 dark:bg-slate-900 dark:border-slate-600" />
+                            <input value={position} onChange={e => setPosition(e.target.value)} placeholder="e.g. FR RH, RR LH, FR LH LWR" onBlur={(e) => setPosition(normalizeFitmentPosition(e.target.value))} className="w-full border rounded-lg p-2 dark:bg-slate-900 dark:border-slate-600" />
                         </label>
                         <button type="submit" className="w-full px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 mt-2 text-sm font-medium transition-colors shadow-xs">
                             Link Combination

@@ -1,6 +1,7 @@
 import { getApplication } from './applicationCache.js';
 import { formatQualifierSummary } from '../utils/engineCodeFormat.js';
 import { formatEngineCodes } from '../utils/engineCodeDisplay.js';
+import { formatFitmentPosition } from '../utils/fitmentPosition.js';
 import { formatYears } from '../utils/yearShorthand.js';
 import { compareFitmentRows, compareFitmentValues } from '../utils/fitmentDisplayOrder.js';
 
@@ -60,7 +61,7 @@ export function formatSearchFitments(part, { compact = true, multiline = false }
         }).filter(Boolean);
         const details = contexts.join('; ');
         const vehicle = model.label ? `${model.label}${details ? ` (${details})` : ''}` : details;
-        const text = [model.position, vehicle].filter(Boolean).join(' · ');
+        const text = [formatFitmentPosition(model.position), vehicle].filter(Boolean).join(' · ');
         return text ? `${model.effect === 'exclude' ? 'Excluded: ' : ''}${text}` : '';
     });
     return [...formattedModels, ...labels.sort(compareFitmentValues)].filter(Boolean).join(multiline ? '\n' : '; ');

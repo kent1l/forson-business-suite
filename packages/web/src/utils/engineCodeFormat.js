@@ -1,4 +1,5 @@
 import { formatEngineCodes, getEngineCodeDisplay } from './engineCodeDisplay.js';
+import { formatFitmentPosition } from './fitmentPosition.js';
 export { compressEngineCodes } from './engineCodeDisplay.js';
 
 /**
@@ -85,7 +86,7 @@ export function formatQualifierSummary(row = {}) {
   if (row.fuel_type_qualifier || row.fuel_type) parts.push(row.fuel_type_qualifier || row.fuel_type);
   if (row.displacement_liters_qualifier || row.displacement_liters) parts.push(`${row.displacement_liters_qualifier || row.displacement_liters}L`);
   if (row.market) parts.push(row.market);
-  if (row.position) parts.push(row.position);
+  if (row.position) parts.push(formatFitmentPosition(row.position));
   return parts.join(' · ');
 }
 
@@ -227,7 +228,7 @@ export function groupFitmentsForDisplay(fitments) {
                 make: fitment.make || null,
                 model: fitment.model || null,
                 chassis: fitment.chassis || null,
-                position: fitment.position || null,
+                position: formatFitmentPosition(fitment.position) || null,
                 effect: fitment.effect === 'exclude' ? 'exclude' : 'include',
                 qualifierSummary: formatQualifierSummary(fitment),
                 year_start: fitment.year_start ?? null,
