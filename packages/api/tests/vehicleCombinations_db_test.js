@@ -57,6 +57,13 @@ async function worker(){
  const results=[];
  async function test(name,fn){try{await fn();results.push({name,status:'pass'});}catch(e){results.push({name,status:'fail',error:e.message});e.message+=' Logs: '+JSON.stringify(logs.slice(-4));throw e;}}
  const link=body=>send('post','/parts/1/applications',body);
+ await test('fitment-link sequence repair leaves an empty deployment unchanged',async()=>{
+  assert.equal((await db.query('SELECT count(*)::int n FROM part_application')).rows[0].n,0);
+  const before=(await db.query('SELECT last_value,is_called FROM part_application_part_app_id_seq')).rows[0];
+  const migration=fs.readFileSync(path.join(root,'database/migrations/20261105_01_realign_part_application_sequence.sql'),'utf8');
+  await db.query(migration);await db.query(migration);
+  assert.deepEqual((await db.query('SELECT last_value,is_called FROM part_application_part_app_id_seq')).rows[0],before);
+ });
  await test('empty draft metadata is a successful null result and existing revisions stay intact',async()=>{
   let r=await send('get','/drafts/goods-receipt?meta=true');assert.equal(r.status,200);assert.equal(r.body.data,null);assert.equal(r.body.last_updated,null);
   assert.equal((await send('get','/drafts/goods-receipt')).status,404);
@@ -139,6 +146,26 @@ async function worker(){
    assert.equal((await db.query("SELECT count(*)::int n FROM part WHERE detail='GRN collision recovery'")).rows[0].n,1);
   } finally { await db.query("SELECT setval('application_application_id_seq',$1,true)",[Math.max(Number(seq), Number((await db.query('SELECT max(application_id) id FROM application')).rows[0].id))]); }
  });
+ await test('fitment-link sequence repair prevents GRN part creation collisions and never rewinds IDs',async()=>{
+  const migration=fs.readFileSync(path.join(root,'database/migrations/20261105_01_realign_part_application_sequence.sql'),'utf8');
+  const occupied=(await db.query('SELECT min(part_app_id) id FROM part_application')).rows[0].id;
+  await db.query("SELECT setval(pg_get_serial_sequence('part_application','part_app_id'),$1,false)",[occupied]);
+  let r=await send('post','/parts',{brand_id:1,group_id:1,detail:'GRN link sequence before repair',applications:[{engine_id:102,position:'Sequence test'}]});
+  assert.equal(r.status,500,JSON.stringify(r.body));
+  assert.equal((await db.query("SELECT count(*)::int n FROM part WHERE detail='GRN link sequence before repair'")).rows[0].n,0);
+  const beforeRepair=(await db.query('SELECT * FROM part_application ORDER BY part_app_id')).rows;
+  const beforeRules=(await db.query('SELECT * FROM part_application_rule ORDER BY rule_id')).rows;
+  await db.query(migration);await db.query(migration);
+  assert.deepEqual((await db.query('SELECT * FROM part_application ORDER BY part_app_id')).rows,beforeRepair);
+  assert.deepEqual((await db.query('SELECT * FROM part_application_rule ORDER BY rule_id')).rows,beforeRules);
+  r=await send('post','/parts',{brand_id:1,group_id:1,detail:'GRN link sequence repaired',applications:[{engine_id:102,position:'Sequence test'}]});
+  assert.equal(r.status,201,JSON.stringify(r.body));
+  assert.equal((await send('get',`/parts/${r.body.part_id}/applications`)).body.length,1);
+  const ahead=Number((await db.query('SELECT max(part_app_id) id FROM part_application')).rows[0].id)+20;
+  await db.query("SELECT setval(pg_get_serial_sequence('part_application','part_app_id'),$1,true)",[ahead]);
+  await db.query(migration);
+  assert.equal(Number((await db.query('SELECT last_value FROM part_application_part_app_id_seq')).rows[0].last_value),ahead);
+ });
  await test('lookup matches direct links without evidence and keeps explicit conflicts',async()=>{
   const {evaluateFitmentRules}=require('../helpers/fitmentMatcher');const {effectiveRuleColumns}=require('../helpers/fitmentDocumentSql');
   const rules=(await db.query(`SELECT r.*,a.make_id,a.model_id,a.engine_id,a.chassis_id,${effectiveRuleColumns()} FROM part_application_rule r JOIN application a USING(application_id) WHERE r.part_id=1`)).rows;
@@ -208,11 +235,23 @@ async function worker(){
    assert.ok(!part.fitment_rules.some(row=>row.position==='Rear'));
   }
  });
+ await test('normal migration runner records the repair once and verifies its checksum',async()=>{
+  const filename='20261105_01_realign_part_application_sequence.sql';
+  const run=command=>spawnSync(process.execPath,[path.join(root,'packages/api/scripts/migrate.js'),command,'--from',filename,'--to',filename],{cwd:root,env:process.env,encoding:'utf8',timeout:30000});
+  const first=run('up');assert.equal(first.status,0,first.stdout+first.stderr);
+  const record=(await db.query('SELECT checksum,applied_at FROM schema_migrations WHERE filename=$1',[filename])).rows;
+  assert.equal(record.length,1);
+  assert.equal(record[0].checksum,crypto.createHash('sha256').update(fs.readFileSync(path.join(root,'database/migrations',filename))).digest('hex'));
+  const second=run('up');assert.equal(second.status,0,second.stdout+second.stderr);assert.ok(second.stdout.includes('No pending migrations'));
+  assert.deepEqual((await db.query('SELECT checksum,applied_at FROM schema_migrations WHERE filename=$1',[filename])).rows,record);
+  const verification=run('verify');assert.equal(verification.status,0,verification.stdout+verification.stderr);
+ });
  let regression = null;
  if (process.argv.includes('--regression-jest')) {
    const run = spawnSync('npm', ['run','-w','packages/api','test','--','--runInBand',
      'tests/fitmentResolverPhase1To3.test.js','tests/fitmentTextParser.test.js','tests/poCataloging.test.js',
-     'tests/powerSearchInterchangeableParts.test.js','tests/partMergeConstraints.test.js','tests/partMergeService.test.js'],
+     'tests/powerSearchInterchangeableParts.test.js','tests/partMergeConstraints.test.js','tests/partMergeService.test.js',
+     'tests/grnImport.test.js','tests/grnWorkflow.test.js','tests/grnCosting.test.js','tests/grnCostingWebMirror.test.js'],
      {cwd:root,env:process.env,encoding:'utf8',timeout:120000,maxBuffer:8*1024*1024});
    fs.writeFileSync('/tmp/direct-link-regression-tests.txt',run.stdout+run.stderr);
    assert.equal(run.status,0,(run.stdout+run.stderr).slice(-2200));
