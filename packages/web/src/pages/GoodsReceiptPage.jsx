@@ -2304,6 +2304,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                 onQueueAction={importReview.queueAction}
                 onSaveReview={importReview.saveReview}
                 onFetchCandidates={importReview.fetchCandidates}
+                canEditApplications={hasPermission('applications:edit')}
                 onCreatePart={canCatalogParts && importReview.review?.status === 'IN_REVIEW' ? handleCreateImportPart : null}
                 onAbandonReview={importReview.abandonReview}
                 onCommitReview={importReview.commitReview}
