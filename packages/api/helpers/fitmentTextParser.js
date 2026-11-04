@@ -255,6 +255,17 @@ function parseClause(clause, index, effect = 'include') {
   const fuel = extractFuel(working);
   working = fuel.masked;
 
+  // An explicitly named make can introduce a model not yet in the catalog.
+  // Preserve a complete alphabetic model name (e.g. "FJ Cruiser") before the
+  // loose engine-token pass mistakes its short uppercase word for an engine.
+  // Known model/engine matches and extracted dimensions retain precedence.
+  const modelWords = working.trim().split(/\s+/);
+  if (makeHit.hits.length === 1 && !modelHit.hits.length && modelWords.length >= 2 &&
+      modelWords.every(word => /^[A-Za-z][A-Za-z-]*$/.test(word) && !STOPWORDS.has(word.toUpperCase()))) {
+    modelHit.hits.push({ text: modelWords.join(' '), matches: [], newModel: true });
+    working = ' '.repeat(working.length);
+  }
+
   const engineSpans = knownEngineHit.hits.map((hit) => ({
     text: hit.text,
     matches: hit.matches,

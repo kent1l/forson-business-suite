@@ -146,6 +146,23 @@ async function worker(){
    assert.equal((await db.query("SELECT count(*)::int n FROM part WHERE detail='GRN collision recovery'")).rows[0].n,1);
   } finally { await db.query("SELECT setval('application_application_id_seq',$1,true)",[Math.max(Number(seq), Number((await db.query('SELECT max(application_id) id FROM application')).rows[0].id))]); }
  });
+ await test('GRN FJ Cruiser prefill parses and saves as a model without inventing an engine',async()=>{
+  const parsed=await send('post','/applications/parse-fitment-text',{text:'Toyota FJ Cruiser 2007-2014',disable_ai:true});
+  assert.equal(parsed.status,200,JSON.stringify(parsed.body));
+  const candidate=parsed.body.fitments[0];assert.equal(candidate.model,'FJ Cruiser');assert.equal(candidate.engine,null);
+  const fields=['make_id','make','model_id','model','engine_id','engine','year_start','year_end'];
+  const fitment=Object.fromEntries(fields.map(key=>[key,candidate[key]]));
+  const created=await send('post','/parts',{brand_id:1,group_id:1,detail:'GRN FJ Cruiser regression',applications:[{...fitment,position:'Front'}]});
+  assert.equal(created.status,201,JSON.stringify(created.body));
+  const linked=await send('get',`/parts/${created.body.part_id}/applications`);
+  assert.equal(linked.body.length,1);assert.equal(linked.body[0].model,'FJ Cruiser');assert.equal(linked.body[0].engine,null);assert.equal(linked.body[0].position,'Front');
+ });
+ await test('invalid letter-only engine suggestions are marked for review before prefill',async()=>{
+  const parsed=await send('post','/applications/parse-fitment-text',{text:'Toyota FJ 2007-2014',disable_ai:true});
+  assert.equal(parsed.status,200,JSON.stringify(parsed.body));
+  assert.ok(parsed.body.fitments.length>0);
+  assert.ok(parsed.body.fitments.every(row=>row.confidence_label==='unresolved'&&row.ui_badge==='Choose vehicle'));
+ });
  await test('fitment-link sequence repair prevents GRN part creation collisions and never rewinds IDs',async()=>{
   const migration=fs.readFileSync(path.join(root,'database/migrations/20261105_01_realign_part_application_sequence.sql'),'utf8');
   const occupied=(await db.query('SELECT min(part_app_id) id FROM part_application')).rows[0].id;

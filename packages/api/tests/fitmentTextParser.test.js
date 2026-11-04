@@ -309,6 +309,24 @@ describe('engine-code shorthand round-trips with the web display formatter', () 
     });
 });
 
+describe('GRN model names with short uppercase words', () => {
+    test.each(['FJ Cruiser', 'FJ CRUISER', 'fj cruiser'])('new multiword model %s stays intact instead of becoming an invalid engine', model => {
+        const result = parse(`Toyota ${model} 2007-2014`);
+        expect(result.fitments).toHaveLength(1);
+        expect(result.fitments[0]).toMatchObject({ make_id: 1, model, model_id: null, engine: null, engine_id: null, year_start: 2007, year_end: 2014 });
+        expect(result.residue).toEqual([]);
+    });
+    test('known letter-only engines still resolve by their catalog identity', () => {
+        const result = parse('Toyota JT 2007-2014');
+        expect(result.fitments[0]).toMatchObject({ engine: 'JT', engine_id: 111, model: null });
+    });
+    test('unrecognized prose is not promoted to a new model', () => {
+        const result = parse('Toyota fits some unknown van');
+        expect(result.fitments.every(row => !row.model)).toBe(true);
+        expect(result.residue.length).toBeGreaterThan(0);
+    });
+});
+
 describe('parseFitmentText - ordinary words are not engine codes', () => {
     // Regression: the engine-token pattern is deliberately loose, so it also
     // nominates plain words. Before this guard, "Grand Vitara" (the fixture

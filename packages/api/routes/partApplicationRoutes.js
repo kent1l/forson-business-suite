@@ -9,7 +9,7 @@ const { syncPartWithMeili } = require('../meilisearch');
 const { enqueuePartUpsert } = require('../services/meiliOutboxService');
 const taxonomyIndex = require('../helpers/vehicleTaxonomyIndex');
 const { parseFitmentText, buildShortlist } = require('../helpers/fitmentTextParser');
-const { lookupKey } = require('../helpers/engineCodeGrammar');
+const { lookupKey, canonicalizeEngineCode } = require('../helpers/engineCodeGrammar');
 const vehicleFitmentParserAI = require('../services/ai/features/vehicleFitmentParserAI');
 const {
   validateNoClientVerificationFlags,
@@ -457,9 +457,17 @@ router.post('/applications/parse-fitment-text', protect, hasPermission('applicat
     }
 
     // Parsing is a transient entry aid. Only selected combinations/links are saved.
-    const candidates = fitments.map(f => ({ ...f,
-      ui_badge: f.confidence_label === 'unresolved' ? 'Choose vehicle' : 'Ready to link',
-    }));
+    const candidates = fitments.map(f => {
+      // Both local and AI output must obey the same engine-code rules as Save.
+      // Catalog engine IDs also support legacy short codes, so validate names
+      // only when an existing engine has not already been resolved.
+      const invalidEngine = f.engine && f.engine_id == null && !canonicalizeEngineCode(f.engine).valid;
+      const needsReview = invalidEngine || f.ambiguous_engine_collision || f.uncertain_pairing || f.confidence_label === 'unresolved';
+      return { ...f,
+        ...(needsReview ? { confidence_label: 'unresolved' } : {}),
+        ui_badge: needsReview ? 'Choose vehicle' : 'Ready to link',
+      };
+    });
     return res.json({ fitments: candidates, candidates, residue, source, ai_used: aiUsed });
 
   } catch (err) {

@@ -71,7 +71,7 @@ try {
           brand: 'TOYOTA',
           part_number: 'NEW-123',
           description: 'Air filter',
-          vehicle_applications: 'Toyota Hilux 2KD-FTV 2005-2015',
+          vehicle_applications: 'Toyota Hilux 2KD-FTV 2005-2015; Toyota FJ Cruiser 2007-2014',
           position: 'FRONT',
           item_group_hint: 'FILTERS',
           unit: 'PCS',
@@ -155,6 +155,7 @@ try {
 
     if (path === '/api/applications/parse-fitment-text') return respond({ fitments: [
       { make_id: 1, make: 'Toyota', model_id: 11, model: 'Hilux', engine_id: 101, engine: '2KD-FTV', year_start: 2005, year_end: 2015, confidence_label: 'high' },
+      { make_id: 1, make: 'Toyota', model_id: null, model: 'FJ Cruiser', engine_id: null, engine: null, year_start: 2007, year_end: 2014, confidence: 'low' },
     ] });
     if (/^\/api\/parts\/\d+\/applications$/.test(path)) return respond([]);
     if (path === '/api/suppliers') {
@@ -521,6 +522,7 @@ try {
   assert.equal(await page.$eval('input[name="detail"]', el => el.value), 'AIR FILTER');
   assert.equal(await page.$eval('textarea[name="part_numbers_string"]', el => el.value), 'NEW-123');
   assert.ok(await page.evaluate(() => document.body.innerText.includes('Hilux')), 'Prefilled fitment should be visible before saving');
+  assert.ok(await page.evaluate(() => document.body.innerText.includes('FJ Cruiser')), 'Full multiword model should be visible before saving');
   await clickButton('Cancel');
   await page.waitForFunction(() => document.body.innerText.includes('Review Extracted Document'));
   assert.equal(createdParts.length, 0, 'Cancelling must not create a part');
@@ -534,7 +536,9 @@ try {
   await page.waitForFunction(() => Array.from(document.querySelectorAll('button')).some(button => button.textContent.trim() === 'Catalog air filter'));
   assert.equal(createdParts.length, 1);
   assert.equal(createdParts[0].detail, 'AIR FILTER');
-  assert.equal(createdParts[0].applications.length, 1);
+  assert.equal(createdParts[0].applications.length, 2);
+  assert.equal(createdParts[0].applications[1].model, 'FJ Cruiser');
+  assert.equal(createdParts[0].applications[1].engine, null);
   assert.equal(createdParts[0].applications[0].model_id, 11);
   assert.equal(createdParts[0].applications[0].position, 'FRONT');
   assert.equal(createdParts[0].applications[0].year_start, 2005);
