@@ -4,6 +4,7 @@ import { ICONS } from '../../constants';
 import { summarizeApplicationModel } from '../../helpers/applicationModelSummary';
 import { formatQualifierSummary, formatYearRange } from '../../utils/engineCodeFormat';
 import { compareFitmentRows } from '../../utils/fitmentDisplayOrder';
+import EngineCodeText from './EngineCodeText';
 
 function SummaryList({ values, onExpand, label }) {
     return (
@@ -40,7 +41,7 @@ export default function ApplicationModelRow({ group, expanded, onToggle, canEdit
                 </th>
                 <td className="max-w-52 p-4">
                     <span title={summary.engines.join(', ')} className="break-words font-mono text-sm leading-6 text-gray-700 dark:text-slate-300">
-                        {summary.engines.length <= 4 ? summary.engineText : <SummaryList values={summary.engines} label={`engines for ${name}`} onExpand={expand} />}
+                        {summary.engines.length <= 4 ? <EngineCodeText codes={summary.engines} /> : <SummaryList values={summary.engines} label={`engines for ${name}`} onExpand={expand} />}
                     </span>
                 </td>
                 <td className="max-w-48 p-4 font-mono"><SummaryList values={summary.chassis} label={`chassis for ${name}`} onExpand={expand} /></td>
@@ -75,7 +76,7 @@ export default function ApplicationModelRow({ group, expanded, onToggle, canEdit
                                 </tr></thead>
                                 <tbody>{rows.map(app => (
                                     <tr key={app.application_id} className="border-t border-gray-100 text-gray-700 dark:border-slate-700 dark:text-slate-300">
-                                        <td className="px-4 py-3 font-mono">{app.engine}</td>
+                                        <td className="px-4 py-3 font-mono"><EngineCodeText codes={app.engine} /></td>
                                         <td className="px-4 py-3 font-mono">{app.chassis}</td>
                                         <td className="whitespace-nowrap px-4 py-3">{formatYearRange(app.year_start, app.year_end)}</td>
                                         <td className="px-4 py-3 text-xs leading-5">{formatQualifierSummary({ ...app, chassis: null })}</td>

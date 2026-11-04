@@ -7,12 +7,12 @@ import { ICONS } from '../constants';
 import Modal from '../components/ui/Modal';
 import ApplicationSearchCombobox from '../components/applications/ApplicationSearchCombobox';
 import ApplicationCascadeForm from '../components/applications/ApplicationCascadeForm';
+import EngineCodeText from '../components/applications/EngineCodeText';
+import { formatSearchFitments } from '../helpers/searchFitmentText';
 import { useAuth } from '../contexts/AuthContext';
 import {
     groupFitmentsForDisplay,
-    formatFitmentGroup,
     formatApplicationScopeBadge,
-    formatQualifierSummary,
     fitmentSavePayload,
 } from '../utils/engineCodeFormat';
 
@@ -34,16 +34,7 @@ const STATUS_BADGE = {
     'Excluded': 'bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300',
 };
 
-const describeCandidate = (c) => {
-    const prefix = c.effect === 'exclude' ? 'EXCLUDES: ' : '';
-    const parts = [c.make, c.model, c.engine, c.chassis ? `[${c.chassis}]` : null].filter(Boolean);
-    const base = parts.length ? parts.join(' ') : '(unspecified vehicle)';
-    const years = (c.year_start || c.year_end)
-        ? ` (${[c.year_start, c.year_end].filter(Boolean).join('-')})`
-        : '';
-    const quals = formatQualifierSummary({ ...c, chassis: null, position: null });
-    return `${prefix}${c.position ? `${c.position} · ` : ''}${base}${years}${quals ? ` [${quals}]` : ''}`;
-};
+const describeCandidate = c => formatSearchFitments({ fitment_rules: [c] });
 
 export const DescribeFitmentPanel = ({ partId, onCommitted, onStage }) => {
     const [text, setText] = useState('');
@@ -337,20 +328,6 @@ const PartApplicationManager = ({ part, onCancel }) => {
             alert('Failed to update year range: ' + (error.response?.data?.message || error.message));
         }
     };
-
-    const formatYearRange = (start, end) => {
-        const startYear = parseInt(start, 10);
-        const endYear = parseInt(end, 10);
-
-        if (startYear && endYear) {
-            if (startYear === endYear) return `[${startYear}]`;
-            return `[${startYear}-${endYear}]`;
-        }
-        if (startYear) return `[${startYear}]`;
-        if (endYear) return `[${endYear}]`;
-        return '';
-    };
-
     return (
         <div className="space-y-4">
             <h3 className="text-md font-medium text-gray-800 dark:text-slate-100 mb-2 flex items-center gap-1">
@@ -366,21 +343,12 @@ const PartApplicationManager = ({ part, onCancel }) => {
                         group.fitments.length === 1 ? (
                             <li key={group.fitments[0].rule_id} className="text-sm flex justify-between items-center py-2 text-gray-900 dark:text-slate-100">
                                 <div className="flex items-center gap-1.5 flex-wrap">
-                                    <span className="font-medium">
-                                        {group.fitments[0].position ? `${group.fitments[0].position} · ` : ''}
-                                        {group.fitments[0].make} {group.fitments[0].model}
-                                        {group.fitments[0].engine ? ` (${group.fitments[0].engine})` : ''}
-                                        {group.fitments[0].chassis ? ` [${group.fitments[0].chassis}]` : ''}
+                                    <span className="font-medium" title={formatSearchFitments({ fitment_rules: group.fitments }, { compact: false })}>
+                                        {formatSearchFitments({ fitment_rules: group.fitments })}
                                     </span>
-                                    <span className="text-xs text-gray-500 dark:text-slate-400 font-mono">{formatYearRange(group.fitments[0].year_start, group.fitments[0].year_end)}</span>
                                     {group.fitments[0].effect === 'exclude' && (
                                         <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-danger-100 text-danger-800 dark:bg-danger-900/50 dark:text-danger-300">
                                             Excluded
-                                        </span>
-                                    )}
-                                    {formatQualifierSummary({ ...group.fitments[0], chassis: null, position: null }) && (
-                                        <span className="text-xs text-gray-500 dark:text-slate-400">
-                                            [{formatQualifierSummary({ ...group.fitments[0], chassis: null, position: null })}]
                                         </span>
                                     )}
                                     <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${STATUS_BADGE[formatApplicationScopeBadge(group.fitments[0]).label] || CONFIDENCE_BADGE.low}`}>
@@ -397,7 +365,7 @@ const PartApplicationManager = ({ part, onCancel }) => {
                         ) : (
                             <li key={`group-${groupIdx}`} className="py-2 text-gray-900 dark:text-slate-100">
                                 <div className="text-sm font-medium flex items-center gap-1.5 flex-wrap" title={group.engineCodes.join(', ')}>
-                                    <span>{formatFitmentGroup(group)}</span>
+                                    <span>{formatSearchFitments({ fitment_rules: group.fitments })}</span>
                                     {group.effect === 'exclude' && (
                                         <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-danger-100 text-danger-800 dark:bg-danger-900/50 dark:text-danger-300">
                                             Excluded
@@ -408,7 +376,7 @@ const PartApplicationManager = ({ part, onCancel }) => {
                                     {group.fitments.map(app => (
                                         <li key={app.rule_id} className="flex justify-between items-center text-xs text-gray-600 dark:text-slate-300">
                                             <div className="flex items-center gap-1.5">
-                                                <span className="font-mono">{app.engine || '—'}</span>
+                                                <EngineCodeText codes={app.engine} className="font-mono" />
                                                 <span className={`text-[11px] px-1 py-0.5 rounded font-medium ${STATUS_BADGE[formatApplicationScopeBadge(app).label] || CONFIDENCE_BADGE.low}`}>
                                                     {formatApplicationScopeBadge(app).label}
                                                 </span>

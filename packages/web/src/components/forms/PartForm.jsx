@@ -9,6 +9,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import TagInput from '../ui/TagInput'; // <-- Import TagInput
 import MathExpressionInput from '../ui/MathExpressionInput';
 import ApplicationSearchCombobox from '../applications/ApplicationSearchCombobox';
+import { formatSearchFitments } from '../../helpers/searchFitmentText';
 import PartApplicationManager, { DescribeFitmentPanel } from '../../pages/PartApplicationManager';
 import { postWithJevConfirmation } from '../../helpers/jevConfirmation';
 import { normalizeUom } from '../../utils/grnImportReview';
@@ -166,12 +167,7 @@ const PartForm = ({ part, initialValues = null, uppercaseText = false, brands, g
     }, [sessionKey, part, initialValues, isBulkEdit, settings]);
 
     // helper to display an application label
-    const labelForApp = (app) => {
-        const prefix = app?.effect === 'exclude' ? 'EXCLUDES: ' : '';
-        const label = [app?.make, app?.model, app?.chassis ? `[${app.chassis}]` : null, app?.engine].filter(Boolean).join(' ');
-        const years = app?.year_start || app?.year_end ? ` (${app.year_start || ''}–${app.year_end || ''})` : '';
-        return prefix + label + years;
-    };
+    const labelForApp = (app) => formatSearchFitments({ fitment_rules: [app] });
 
     const [isAppManagerOpen, setIsAppManagerOpen] = useState(false);
 

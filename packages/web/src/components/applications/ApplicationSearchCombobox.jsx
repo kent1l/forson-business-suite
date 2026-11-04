@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import api from '../../api';
-import { formatQualifierSummary, formatYearRange } from '../../utils/engineCodeFormat';
+import { formatSearchFitments } from '../../helpers/searchFitmentText';
 
 /**
  * ApplicationSearchCombobox
@@ -16,7 +16,7 @@ const ApplicationSearchCombobox = ({ value, onChange, placeholder = 'Search make
   const [loading, setLoading] = useState(false);
   const debTimer = useRef(null);
 
-  const labelFor = (app) => [app.position, app.make, app.model, app.engine, app.chassis, formatYearRange(app.year_start,app.year_end), formatQualifierSummary({ ...app, chassis: null, position: null })].filter(Boolean).join(' · ');
+  const labelFor = (app) => formatSearchFitments({ fitment_rules: [app] });
 
   // Load initial data (recent/popular items) when empty
   const loadInitial = async () => {

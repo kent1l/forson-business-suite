@@ -1,4 +1,5 @@
-import { compressEngineCodes, formatYearRange } from '../utils/engineCodeFormat.js';
+import { formatYearRange } from '../utils/engineCodeFormat.js';
+import { getEngineCodeDisplay } from '../utils/engineCodeDisplay.js';
 import { compareFitmentValues } from '../utils/fitmentDisplayOrder.js';
 
 // Summaries include recorded values only; missing details add no placeholder.
@@ -14,8 +15,7 @@ function valuesFor(rows, getValue) {
 
 export function summarizeApplicationModel(rows = []) {
     const chassis = valuesFor(rows, row => row.chassis);
-    const engines = valuesFor(rows, row => row.engine);
-    const engineText = compressEngineCodes(engines) || engines.join(', ');
+    const { codes: engines, text: engineText } = getEngineCodeDisplay(rows.map(row => row.engine));
     const classifications = [
         ['Years', row => formatYearRange(row.year_start, row.year_end)],
         ['Generation', row => row.generation],

@@ -1,5 +1,6 @@
 import { getApplication } from './applicationCache.js';
-import { compressEngineCodes, formatQualifierSummary } from '../utils/engineCodeFormat.js';
+import { formatQualifierSummary } from '../utils/engineCodeFormat.js';
+import { formatEngineCodes } from '../utils/engineCodeDisplay.js';
 import { formatYears } from '../utils/yearShorthand.js';
 import { compareFitmentRows, compareFitmentValues } from '../utils/fitmentDisplayOrder.js';
 
@@ -54,7 +55,7 @@ export function formatSearchFitments(part, { compact = true, multiline = false }
     const formattedModels = [...models.values()].map(model => {
         const contexts = [...model.contexts.values()].map(({ engines, chassis, years, qualifier }) => {
             const codes = [...engines].sort(compareFitmentValues);
-            const engine = (compact && compressEngineCodes(codes)) || codes.join(', ');
+            const engine = formatEngineCodes(codes, { compact });
             return [engine, chassis, years, qualifier].filter(Boolean).join(' · ');
         }).filter(Boolean);
         const details = contexts.join('; ');

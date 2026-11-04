@@ -1,3 +1,4 @@
+import { formatEngineCodes } from '../../utils/engineCodeDisplay';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Combobox } from '@headlessui/react';
 import api from '../../api';
@@ -308,7 +309,7 @@ const ApplicationCascadeForm = ({ application, onSave, onCancel, submitLabel = '
                         {(showEngineOptions || engineQuery !== '') && true && (
                             <Combobox.Options className={optionsClass}>
                                 {engines.filter(en => en.engine_code.toLowerCase().includes(engineQuery.toLowerCase())).map(en => (
-                                    <Combobox.Option key={en.engine_id} value={en} className={optionClass}>{en.engine_code}</Combobox.Option>
+                                    <Combobox.Option key={en.engine_id} value={en} className={optionClass}>{formatEngineCodes(en.engine_code)}</Combobox.Option>
                                 ))}
                                 {engineQuery && !engines.some(en => en.engine_code.toLowerCase() === engineQuery.toLowerCase()) && (
                                     <Combobox.Option value={{ engine_code: engineQuery }} className={createOptionClass}>Create new "{engineQuery}"</Combobox.Option>
