@@ -25,16 +25,11 @@ const retryAsync = async (fn, { attempts = 4, baseDelay = 200 } = {}) => {
 
 const index = () => meiliClient.index('applications');
 
-// Shape helper for a row of application_view
-const toDoc = (row) => ({
-  application_id: row.application_id,
-  make_id: row.make_id,
-  model_id: row.model_id,
-  engine_id: row.engine_id,
-  make: row.make || '',
-  model: row.model || '',
-  engine: row.engine || '',
-  label: [row.make, row.model, row.engine].filter(Boolean).join(' ')
+// Include the full reusable classification in every application index writer.
+const toDoc = ({ approval_status: _approval, evidence_status: _evidence, ...row }) => ({
+  ...row,
+  variant: row.variant_descriptor,
+  label: [row.make,row.model,row.chassis,row.engine,row.year_start,row.year_end,row.market,row.variant_descriptor,row.drivetrain,row.transmission,row.generation].filter(Boolean).join(' '),
 });
 
 const syncApplications = async (docs) => {

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import api from '../../api';
+import { formatSearchFitments } from '../../helpers/searchFitmentText';
 
 /**
  * ApplicationSearchCombobox
@@ -15,7 +16,7 @@ const ApplicationSearchCombobox = ({ value, onChange, placeholder = 'Search make
   const [loading, setLoading] = useState(false);
   const debTimer = useRef(null);
 
-  const labelFor = (app) => [app.make, app.model, app.engine].filter(Boolean).join(' ');
+  const labelFor = (app) => formatSearchFitments({ fitment_rules: [app] });
 
   // Load initial data (recent/popular items) when empty
   const loadInitial = async () => {

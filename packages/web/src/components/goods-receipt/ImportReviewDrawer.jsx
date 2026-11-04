@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import Icon from '../ui/Icon';
+import ImportRowFitments from './ImportRowFitments';
 import { ICONS } from '../../constants';
 import { formatCurrency } from '../../utils/currency';
 import { REJECTION_REASONS } from '../../utils/grnCosting';
@@ -47,6 +48,7 @@ export default function ImportReviewDrawer({
   onSaveReview,
   onFetchCandidates,
   onCreatePart,
+  canEditApplications = false,
   onAbandonReview,
   onCommitReview,
 }) {
@@ -444,6 +446,10 @@ export default function ImportReviewDrawer({
                           onChange={e => updateRow(row.row_id, { sale_price: e.target.value })} className={fieldClass('sale_price')} />
                       </div>
                     </div>
+                    <ImportRowFitments position={sourceLine.position} documentText={sourceLine.vehicle_applications}
+                      webText={sourceLine.enrichment?.suggested_vehicle_applications}
+                      webVerified={sourceLine.enrichment?.status === 'verified_suggestion'} partId={cr.part_id}
+                      confirmed={isConfirmed} canEdit={canEditApplications} />
                     {rowBlockers.length > 0 && <div className="mt-3 text-xs text-red-700 dark:text-red-300 space-y-1" role="alert">
                       {rowBlockers.map((blocker, index) => <p key={index}>{blocker.message}</p>)}
                     </div>}

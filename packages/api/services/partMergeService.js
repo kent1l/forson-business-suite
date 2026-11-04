@@ -1,3 +1,4 @@
+const { RULE_FIELDS } = require('./fitmentLinkService');
 const DuplicateFinder = require('./duplicateFinder');
 const { enqueuePartUpsert, enqueuePartDelete } = require('./meiliOutboxService');
 
@@ -13,6 +14,10 @@ const OPEN_CYCLE_COUNT_STATUSES = Object.freeze([
 const REVERTABLE_TABLES = Object.freeze([
     { name: 'part', key: "part_id::text", where: 'part_id = ANY($1::bigint[])' },
     { name: 'part_number', key: "part_number_id::text", where: 'part_id = ANY($1::bigint[])' },
+    { name: 'fitment_claim', key: 'claim_id::text', where: 'part_id = ANY($1::bigint[])' },
+    { name: 'part_application_rule', key: 'rule_id::text', where: 'part_id = ANY($1::bigint[])' },
+    { name: 'fitment_rule_source', key: "concat(rule_id, ':', claim_id)", where: 'rule_id IN (SELECT rule_id FROM part_application_rule WHERE part_id = ANY($1::bigint[]))' },
+    { name: 'fitment_claim_evidence', key: "concat(claim_id, ':', evidence_id)", where: 'claim_id IN (SELECT claim_id FROM fitment_claim WHERE part_id = ANY($1::bigint[]))' },
     { name: 'part_application', key: "part_app_id::text", where: 'part_id = ANY($1::bigint[])' },
     { name: 'part_barcode', key: "barcode_id::text", where: 'part_id = ANY($1::bigint[])' },
     { name: 'part_tag', key: "concat(part_id, ':', tag_id)", where: 'part_id = ANY($1::bigint[])' },
@@ -598,9 +603,15 @@ class PartMergeService {
     }
 
     async restoreMergeSnapshots(client, operationId, partIds) {
+        const unsnapshotted = await client.query(`SELECT 1 FROM part_application_rule r
+            WHERE r.part_id=ANY($1::bigint[]) AND NOT EXISTS (
+                SELECT 1 FROM part_merge_snapshot s WHERE s.operation_id=$2
+                AND s.table_name='part_application_rule' AND s.record_id=r.rule_id::text
+            ) LIMIT 1`, [partIds,operationId]);
+        if (unsnapshotted.rows.length) throw new Error('Cannot revert: fitment rules changed or the original merge predates fitment snapshots');
         // Remove the merge-era representation first. Rows with the original
         // primary keys are then restored from immutable before-images.
-        for (const table of REVERTABLE_TABLES.filter(t => t.name !== 'part')) {
+        for (const table of [...REVERTABLE_TABLES].reverse().filter(t => t.name !== 'part')) {
             await client.query(`DELETE FROM ${table.name} WHERE ${table.where}`, [partIds]);
         }
 
@@ -628,6 +639,7 @@ class PartMergeService {
                 SELECT (jsonb_populate_record(NULL::${table.name}, before_image)).*
                 FROM part_merge_snapshot
                 WHERE operation_id = $1 AND table_name = $2
+                ${table.name === 'dedupe_scan_queue' ? 'ON CONFLICT (part_id) DO NOTHING' : ''}
             `, [operationId, table.name]);
         }
     }
@@ -769,8 +781,23 @@ class PartMergeService {
             counts.part_numbers = result.rows[0].reassigned_count;
         }
         
-        // Merge part_application
+        // Merge part_application and part_application_rule / fitment_claim (F16)
         if (rules.mergeApplications) {
+            // Move one source at a time so duplicates across multiple source
+            // parts cannot race a single UPDATE against the semantic unique index.
+            const sourceRules = (await client.query('SELECT * FROM part_application_rule WHERE part_id=ANY($1::int[]) ORDER BY rule_id FOR UPDATE',[mergePartIds])).rows;
+            for (const rule of sourceRules) {
+                const values=[keepPartId,rule.application_id,...RULE_FIELDS.map(k=>rule[k])];
+                const equal=RULE_FIELDS.map((k,i)=>`${k} IS NOT DISTINCT FROM $${i+3}`).join(' AND ');
+                const duplicate=rule.is_active ? (await client.query(`SELECT rule_id FROM part_application_rule WHERE part_id=$1 AND application_id=$2 AND is_active=TRUE AND ${equal}`,values)).rows[0] : null;
+                if (duplicate) {
+                    await client.query('INSERT INTO fitment_rule_source(rule_id,claim_id) SELECT $1,claim_id FROM fitment_rule_source WHERE rule_id=$2 ON CONFLICT DO NOTHING',[duplicate.rule_id,rule.rule_id]);
+                    await client.query('UPDATE part_application_rule SET is_active=FALSE WHERE rule_id=$1',[rule.rule_id]);
+                }
+                await client.query('UPDATE part_application_rule SET part_id=$1 WHERE rule_id=$2',[keepPartId,rule.rule_id]);
+            }
+            await client.query('UPDATE fitment_claim SET part_id=$1,updated_at=NOW() WHERE part_id=ANY($2)',[keepPartId,mergePartIds]);
+
             // Remove links already represented on the keep part before changing
             // their part_id, otherwise the immediate unique constraint fires.
             await client.query(`

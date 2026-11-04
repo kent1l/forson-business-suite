@@ -6,7 +6,7 @@ import InfoTip from '../components/ui/InfoTip';
 import { ICONS } from '../constants'; // Import the icon paths
 import SearchBar from '../components/SearchBar';
 import Modal from '../components/ui/Modal';
-import { formatApplicationText } from '../helpers/applicationTextHelper';
+import PartFitmentText from '../components/parts/PartFitmentText';
 import PartCostLadder from '../components/parts/PartCostLadder';
 import { formatCurrency } from '../utils/currency';
 import VehicleFilterBar from '../components/VehicleFilterBar';
@@ -182,11 +182,7 @@ const PowerSearchPage = () => {
                                         <td className="p-3 text-sm font-mono text-gray-900 dark:text-slate-100 align-top">{part.internal_sku}</td>
                                         <td className="p-3 text-sm font-medium text-gray-900 dark:text-slate-100 align-top">{part.display_name}</td>
                                         <td className="p-3 text-sm text-gray-600 dark:text-slate-400 align-top">
-                                            {part.applications ? (
-                                                <div className="whitespace-pre-line">
-                                                    {formatApplicationText(part.applications, { style: 'multilineFull' })}
-                                                </div>
-                                            ) : ''}
+                                            <PartFitmentText part={part} multiline />
                                         </td>
                                         <td className="p-3 text-sm text-gray-700 dark:text-slate-300 align-top font-mono text-right">
                                             {typeof part.stock_on_hand !== 'undefined' ? (

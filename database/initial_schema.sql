@@ -583,6 +583,255 @@ CREATE INDEX IF NOT EXISTS idx_vehicle_engine_model_id ON public.vehicle_engine 
 CREATE INDEX IF NOT EXISTS idx_part_application_part_id ON public.part_application (part_id);
 CREATE INDEX IF NOT EXISTS idx_part_application_application_id ON public.part_application (application_id);
 
+CREATE TABLE IF NOT EXISTS public.vehicle_chassis (
+    chassis_id serial PRIMARY KEY,
+    model_id integer REFERENCES public.vehicle_model(model_id) ON DELETE RESTRICT,
+    chassis_code character varying(100) NOT NULL,
+    identity_key text NOT NULL,
+    generation character varying(100),
+    year_start integer,
+    year_end integer,
+    market character varying(50),
+    identity_status text NOT NULL DEFAULT 'legacy_unverified',
+    row_version integer NOT NULL DEFAULT 1,
+    created_at timestamptz NOT NULL DEFAULT NOW(),
+    updated_at timestamptz NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.fitment_taxonomy_meta (
+    singleton_id boolean PRIMARY KEY DEFAULT TRUE CHECK (singleton_id = TRUE),
+    taxonomy_version bigint NOT NULL DEFAULT 1,
+    updated_at timestamptz NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.fitment_claim (
+    claim_id serial PRIMARY KEY,
+    part_id integer NOT NULL REFERENCES public.part(part_id) ON DELETE CASCADE,
+    application_id integer REFERENCES public.application(application_id) ON DELETE SET NULL,
+    source_type text NOT NULL DEFAULT 'legacy_migration',
+    raw_text text,
+    normalized_text text,
+    clause_text text,
+    clause_span jsonb,
+    parser_mode text NOT NULL DEFAULT 'legacy',
+    claim_effect text NOT NULL DEFAULT 'include',
+    approval_status text NOT NULL DEFAULT 'legacy_unverified',
+    evidence_status text NOT NULL DEFAULT 'legacy_unverified',
+    confidence_label text,
+    field_provenance jsonb NOT NULL DEFAULT '{}'::jsonb,
+    unresolved_dimensions jsonb NOT NULL DEFAULT '[]'::jsonb,
+    created_by integer REFERENCES public.employee(employee_id) ON DELETE SET NULL,
+    reviewed_by integer REFERENCES public.employee(employee_id) ON DELETE SET NULL,
+    reviewed_at timestamptz,
+    review_reason text,
+    row_version integer NOT NULL DEFAULT 1,
+    created_at timestamptz NOT NULL DEFAULT NOW(),
+    updated_at timestamptz NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.part_application_rule (
+    rule_id serial PRIMARY KEY,
+    part_id integer NOT NULL REFERENCES public.part(part_id) ON DELETE CASCADE,
+    application_id integer NOT NULL REFERENCES public.application(application_id) ON DELETE CASCADE,
+    claim_id integer REFERENCES public.fitment_claim(claim_id) ON DELETE SET NULL,
+    effect text NOT NULL DEFAULT 'include',
+    make_mode text NOT NULL DEFAULT 'specified',
+    model_mode text NOT NULL DEFAULT 'not_supplied',
+    chassis_mode text NOT NULL DEFAULT 'not_supplied',
+    engine_mode text NOT NULL DEFAULT 'not_supplied',
+    year_start smallint,
+    year_end smallint,
+    year_mode text NOT NULL DEFAULT 'not_supplied',
+    market text,
+    market_mode text NOT NULL DEFAULT 'not_supplied',
+    variant_descriptor text,
+    variant_mode text NOT NULL DEFAULT 'not_supplied',
+    position text,
+    position_mode text NOT NULL DEFAULT 'not_supplied',
+    drivetrain text,
+    drivetrain_mode text NOT NULL DEFAULT 'not_supplied',
+    transmission text,
+    transmission_mode text NOT NULL DEFAULT 'not_supplied',
+    fuel_type_qualifier text,
+    fuel_mode text NOT NULL DEFAULT 'not_supplied',
+    displacement_liters_qualifier numeric(3,1),
+    displacement_mode text NOT NULL DEFAULT 'not_supplied',
+    generation text,
+    generation_mode text NOT NULL DEFAULT 'not_supplied',
+    condition_json jsonb NOT NULL DEFAULT '{}'::jsonb,
+    notes text,
+    approval_status text NOT NULL DEFAULT 'legacy_unverified',
+    evidence_status text NOT NULL DEFAULT 'legacy_unverified',
+    is_active boolean NOT NULL DEFAULT TRUE,
+    row_version integer NOT NULL DEFAULT 1,
+    created_by integer REFERENCES public.employee(employee_id) ON DELETE SET NULL,
+    updated_by integer REFERENCES public.employee(employee_id) ON DELETE SET NULL,
+    created_at timestamptz NOT NULL DEFAULT NOW(),
+    updated_at timestamptz NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.fitment_audit (
+    audit_id bigserial PRIMARY KEY,
+    entity_type text NOT NULL,
+    entity_id bigint NOT NULL,
+    action text NOT NULL,
+    actor_id integer REFERENCES public.employee(employee_id) ON DELETE SET NULL,
+    reason text,
+    before_state jsonb,
+    after_state jsonb,
+    metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+    created_at timestamptz NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.fitment_research_job (
+    job_id serial PRIMARY KEY,
+    part_id integer REFERENCES public.part(part_id) ON DELETE SET NULL,
+    query_text text NOT NULL,
+    search_scope jsonb NOT NULL DEFAULT '{}'::jsonb,
+    status text NOT NULL DEFAULT 'queued',
+    provider text NOT NULL DEFAULT 'evidence_capture',
+    allowed_domains jsonb NOT NULL DEFAULT '[]'::jsonb,
+    result_summary jsonb NOT NULL DEFAULT '{}'::jsonb,
+    error_message text,
+    requested_by integer REFERENCES public.employee(employee_id) ON DELETE SET NULL,
+    started_at timestamptz,
+    completed_at timestamptz,
+    created_at timestamptz NOT NULL DEFAULT NOW(),
+    updated_at timestamptz NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.fitment_evidence (
+    evidence_id serial PRIMARY KEY,
+    research_job_id integer REFERENCES public.fitment_research_job(job_id) ON DELETE SET NULL,
+    part_id integer REFERENCES public.part(part_id) ON DELETE SET NULL,
+    source_type text NOT NULL DEFAULT 'web_catalog',
+    source_url text,
+    source_domain text,
+    source_title text,
+    quoted_span text NOT NULL,
+    retrieved_at timestamptz NOT NULL DEFAULT NOW(),
+    trust_tier text NOT NULL DEFAULT 'tier_3_unverified_web',
+    approval_status text NOT NULL DEFAULT 'needs_review',
+    evidence_status text NOT NULL DEFAULT 'sourced_suggestion',
+    extracted_claim jsonb NOT NULL DEFAULT '{}'::jsonb,
+    reviewer_id integer REFERENCES public.employee(employee_id) ON DELETE SET NULL,
+    reviewed_at timestamptz,
+    review_reason text,
+    row_version integer NOT NULL DEFAULT 1,
+    created_by integer REFERENCES public.employee(employee_id) ON DELETE SET NULL,
+    created_at timestamptz NOT NULL DEFAULT NOW(),
+    updated_at timestamptz NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.fitment_claim_evidence (
+    claim_id integer NOT NULL REFERENCES public.fitment_claim(claim_id) ON DELETE CASCADE,
+    evidence_id integer NOT NULL REFERENCES public.fitment_evidence(evidence_id) ON DELETE CASCADE,
+    relation_type text NOT NULL DEFAULT 'supports',
+    created_at timestamptz NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (claim_id, evidence_id)
+);
+
+CREATE TABLE IF NOT EXISTS public.fitment_review (
+    review_id serial PRIMARY KEY,
+    part_id integer REFERENCES public.part(part_id) ON DELETE CASCADE,
+    raw_text text NOT NULL,
+    normalized_text text NOT NULL,
+    text_hash text NOT NULL,
+    source_type text NOT NULL DEFAULT 'text_import',
+    status text NOT NULL DEFAULT 'open',
+    taxonomy_version bigint NOT NULL DEFAULT 1,
+    parser_metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+    row_version integer NOT NULL DEFAULT 1,
+    created_by integer REFERENCES public.employee(employee_id) ON DELETE SET NULL,
+    updated_by integer REFERENCES public.employee(employee_id) ON DELETE SET NULL,
+    created_at timestamptz NOT NULL DEFAULT NOW(),
+    updated_at timestamptz NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.fitment_review_candidate (
+    candidate_id serial PRIMARY KEY,
+    review_id integer NOT NULL REFERENCES public.fitment_review(review_id) ON DELETE CASCADE,
+    interpretation_key text NOT NULL,
+    alternative_group_id text,
+    clause_index integer NOT NULL DEFAULT 0,
+    clause_text text,
+    clause_span jsonb,
+    source_origin text NOT NULL DEFAULT 'local',
+    effect text NOT NULL DEFAULT 'include',
+    candidate_payload jsonb NOT NULL,
+    identity_modes jsonb NOT NULL DEFAULT '{}'::jsonb,
+    qualifiers jsonb NOT NULL DEFAULT '{}'::jsonb,
+    field_provenance jsonb NOT NULL DEFAULT '{}'::jsonb,
+    unresolved_dimensions jsonb NOT NULL DEFAULT '[]'::jsonb,
+    collision_candidates jsonb NOT NULL DEFAULT '[]'::jsonb,
+    confidence_label text NOT NULL DEFAULT 'low',
+    ui_badge text NOT NULL DEFAULT 'Needs review',
+    disposition text NOT NULL DEFAULT 'pending',
+    preselected boolean NOT NULL DEFAULT FALSE,
+    already_linked boolean NOT NULL DEFAULT FALSE,
+    existing_rule_id integer REFERENCES public.part_application_rule(rule_id) ON DELETE SET NULL,
+    existing_part_app_id integer REFERENCES public.part_application(part_app_id) ON DELETE SET NULL,
+    dismissed_reason text,
+    edited_payload jsonb,
+    row_version integer NOT NULL DEFAULT 1,
+    updated_by integer REFERENCES public.employee(employee_id) ON DELETE SET NULL,
+    created_at timestamptz NOT NULL DEFAULT NOW(),
+    updated_at timestamptz NOT NULL DEFAULT NOW(),
+    UNIQUE (review_id, interpretation_key)
+);
+
+CREATE TABLE IF NOT EXISTS public.fitment_idempotency (
+    idempotency_id bigserial PRIMARY KEY,
+    actor_scope text NOT NULL,
+    endpoint_scope text NOT NULL,
+    idempotency_key text NOT NULL,
+    request_hash text NOT NULL,
+    response_status integer NOT NULL,
+    response_body jsonb NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT NOW(),
+    expires_at timestamptz NOT NULL DEFAULT (NOW() + INTERVAL '24 hours'),
+    UNIQUE (actor_scope, endpoint_scope, idempotency_key)
+);
+
+CREATE TABLE IF NOT EXISTS public.fitment_correction (
+    correction_id serial PRIMARY KEY,
+    part_id integer REFERENCES public.part(part_id) ON DELETE SET NULL,
+    review_id integer REFERENCES public.fitment_review(review_id) ON DELETE SET NULL,
+    candidate_id integer REFERENCES public.fitment_review_candidate(candidate_id) ON DELETE SET NULL,
+    raw_clause_text text NOT NULL,
+    original_extraction jsonb NOT NULL DEFAULT '{}'::jsonb,
+    corrected_extraction jsonb NOT NULL DEFAULT '{}'::jsonb,
+    correction_type text NOT NULL DEFAULT 'parser_extraction_fix',
+    promote_to_alias boolean NOT NULL DEFAULT FALSE,
+    promoted_alias_type text,
+    promoted_alias_id integer,
+    status text NOT NULL DEFAULT 'recorded',
+    reason text,
+    created_by integer REFERENCES public.employee(employee_id) ON DELETE SET NULL,
+    reviewed_by integer REFERENCES public.employee(employee_id) ON DELETE SET NULL,
+    reviewed_at timestamptz,
+    created_at timestamptz NOT NULL DEFAULT NOW(),
+    updated_at timestamptz NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.fitment_identity_mapping (
+    mapping_id serial PRIMARY KEY,
+    dimension text NOT NULL,
+    scope_key text NOT NULL DEFAULT 'global',
+    identity_key text NOT NULL,
+    source_id integer NOT NULL,
+    source_label text NOT NULL,
+    canonical_id integer,
+    disposition text NOT NULL DEFAULT 'preserve',
+    reference_counts jsonb NOT NULL DEFAULT '{}'::jsonb,
+    notes text,
+    reviewed_by integer REFERENCES public.employee(employee_id) ON DELETE SET NULL,
+    reviewed_at timestamptz,
+    created_at timestamptz NOT NULL DEFAULT NOW(),
+    updated_at timestamptz NOT NULL DEFAULT NOW(),
+    UNIQUE (dimension, scope_key, source_id)
+);
+
 -- Goods receipts
 CREATE INDEX IF NOT EXISTS idx_grn_line_grn_id ON public.goods_receipt_line (grn_id);
 CREATE INDEX IF NOT EXISTS idx_grn_line_part_id ON public.goods_receipt_line (part_id);
@@ -1130,3 +1379,298 @@ INSERT INTO public.payment_methods (code, name, type, enabled, sort_order, confi
     "max_split_count": null
 }')
 ON CONFLICT (code) DO NOTHING;
+
+
+-- Additive fitment review integrity (matching 20261101_01 migration).
+-- Additive completion of evidence-aware review. Never certify or merge legacy data.
+BEGIN;
+
+ALTER TABLE vehicle_model ADD COLUMN IF NOT EXISTS display_shorthand BOOLEAN NOT NULL DEFAULT FALSE;
+
+CREATE TABLE IF NOT EXISTS fitment_rule_source (
+    rule_id INTEGER NOT NULL REFERENCES part_application_rule(rule_id) ON DELETE RESTRICT,
+    claim_id INTEGER NOT NULL REFERENCES fitment_claim(claim_id) ON DELETE RESTRICT,
+    PRIMARY KEY (rule_id, claim_id)
+);
+INSERT INTO fitment_rule_source(rule_id,claim_id)
+SELECT rule_id,claim_id FROM part_application_rule WHERE claim_id IS NOT NULL
+ON CONFLICT DO NOTHING;
+
+ALTER TABLE fitment_evidence
+    ADD COLUMN IF NOT EXISTS claim_type TEXT NOT NULL DEFAULT 'unclassified'
+        CHECK (claim_type IN ('unclassified','part_compatibility','vehicle_engine_association','identity')),
+    ADD COLUMN IF NOT EXISTS rights_policy TEXT NOT NULL DEFAULT 'metadata_only'
+        CHECK (rights_policy IN ('metadata_only','permitted_excerpt')),
+    ADD COLUMN IF NOT EXISTS assessment TEXT NOT NULL DEFAULT 'insufficient'
+        CHECK (assessment IN ('supported','contradicted','insufficient')),
+    ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ;
+
+-- Apply the evidence guard to every unrestricted qualifier, including the
+-- dimensions omitted from the original trigger. This does not approve anything.
+CREATE OR REPLACE FUNCTION trg_fn_fitment_unrestricted_guard()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+    IF 'unrestricted' IN (NEW.make_mode,NEW.model_mode,NEW.chassis_mode,NEW.engine_mode,
+        NEW.year_mode,NEW.market_mode,NEW.variant_mode,NEW.position_mode,NEW.drivetrain_mode,
+        NEW.transmission_mode,NEW.fuel_mode,NEW.displacement_mode,NEW.generation_mode)
+        AND (NEW.approval_status <> 'approved' OR NEW.evidence_status <> 'sourced_verified') THEN
+        RAISE EXCEPTION 'Unrestricted scope requires approved sourced evidence' USING ERRCODE='23514';
+    END IF;
+    RETURN NEW;
+END $$;
+DROP TRIGGER IF EXISTS trg_fitment_unrestricted_guard ON part_application_rule;
+CREATE TRIGGER trg_fitment_unrestricted_guard BEFORE INSERT OR UPDATE ON part_application_rule
+FOR EACH ROW EXECUTE FUNCTION trg_fn_fitment_unrestricted_guard();
+
+-- Repointing a shared identity would reinterpret every existing claim and its
+-- evidence. Preserve history; reviewed replacement claims use a new identity.
+CREATE OR REPLACE FUNCTION trg_fn_fitment_application_history_guard()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+    IF TG_OP='UPDATE' AND ROW(NEW.make_id,NEW.model_id,NEW.chassis_id,NEW.engine_id)
+        IS NOT DISTINCT FROM ROW(OLD.make_id,OLD.model_id,OLD.chassis_id,OLD.engine_id) THEN
+        RETURN NEW;
+    END IF;
+    IF EXISTS(SELECT 1 FROM fitment_claim WHERE application_id=OLD.application_id)
+        OR EXISTS(SELECT 1 FROM part_application_rule WHERE application_id=OLD.application_id) THEN
+        RAISE EXCEPTION 'Application has fitment history; create and review a replacement identity' USING ERRCODE='55000';
+    END IF;
+    IF TG_OP='DELETE' THEN RETURN OLD; END IF;
+    RETURN NEW;
+END $$;
+DROP TRIGGER IF EXISTS trg_fitment_application_history_guard ON application;
+CREATE TRIGGER trg_fitment_application_history_guard BEFORE UPDATE OR DELETE ON application
+FOR EACH ROW EXECUTE FUNCTION trg_fn_fitment_application_history_guard();
+
+COMMIT;
+
+-- Direct vehicle combination classification and linking.
+-- Bootstrap the canonical identity columns also supplied by the existing
+-- 20260909 engine and 20261029 identity migrations. Fresh databases run this
+-- baseline before the migration runner processes those files.
+CREATE TABLE IF NOT EXISTS public.engine (
+    engine_id serial PRIMARY KEY,
+    engine_code varchar(100) NOT NULL UNIQUE,
+    displacement_liters numeric(4,2),
+    fuel_type text,
+    notes text
+);
+ALTER TABLE public.application
+    ADD COLUMN IF NOT EXISTS chassis_id integer REFERENCES public.vehicle_chassis(chassis_id) ON DELETE RESTRICT,
+    ADD COLUMN IF NOT EXISTS identity_status text NOT NULL DEFAULT 'legacy_unverified',
+    ADD COLUMN IF NOT EXISTS row_version integer NOT NULL DEFAULT 1;
+ALTER TABLE public.application DROP CONSTRAINT IF EXISTS application_engine_id_fkey;
+ALTER TABLE public.application ADD CONSTRAINT application_engine_id_fkey
+    FOREIGN KEY(engine_id) REFERENCES public.engine(engine_id) ON DELETE SET NULL;
+-- The legacy bootstrap view has a different column order. It has no dependent
+-- views in this file; the current definition below replaces it for fresh installs.
+DROP VIEW IF EXISTS public.application_view;
+-- Vehicle combinations and direct part links. Existing evidence/history is archived in place.
+BEGIN;
+ALTER TABLE application
+    ADD COLUMN IF NOT EXISTS year_start INTEGER,
+    ADD COLUMN IF NOT EXISTS year_end INTEGER,
+    ADD COLUMN IF NOT EXISTS market TEXT,
+    ADD COLUMN IF NOT EXISTS variant_descriptor TEXT,
+    ADD COLUMN IF NOT EXISTS drivetrain TEXT,
+    ADD COLUMN IF NOT EXISTS transmission TEXT,
+    ADD COLUMN IF NOT EXISTS generation TEXT,
+    ADD COLUMN IF NOT EXISTS fuel_type_qualifier TEXT,
+    ADD COLUMN IF NOT EXISTS displacement_liters_qualifier NUMERIC(3,1);
+
+-- Replace the older four-dimension uniqueness indexes with the complete classification.
+-- Restrict this operation to the known indexes, preserving unrelated/custom indexes.
+DROP INDEX IF EXISTS uq_application_make_model_engine_nn;
+DROP INDEX IF EXISTS uq_application_make_model_no_engine;
+DROP INDEX IF EXISTS uq_application_make_only;
+DROP INDEX IF EXISTS uq_application_engine_only;
+DROP INDEX IF EXISTS uq_application_identity_tuple;
+DROP INDEX IF EXISTS application_engine_only_unique_idx;
+DROP INDEX IF EXISTS application_full_unique_idx;
+DROP INDEX IF EXISTS application_make_engine_unique_idx;
+DROP INDEX IF EXISTS application_make_model_unique_idx;
+DROP INDEX IF EXISTS application_make_only_unique_idx;
+DROP INDEX IF EXISTS application_model_engine_unique_idx;
+DROP INDEX IF EXISTS application_model_only_unique_idx;
+ALTER TABLE application DROP CONSTRAINT IF EXISTS unique_application_make_model_engine;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_application_combination ON application (
+    make_id,model_id,chassis_id,engine_id,year_start,year_end,
+    (lower(btrim(market))),(lower(btrim(variant_descriptor))),
+    (lower(btrim(drivetrain))),(lower(btrim(transmission))),(lower(btrim(generation))),
+    fuel_type_qualifier,displacement_liters_qualifier
+) NULLS NOT DISTINCT;
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='application_combination_years_chk') THEN
+        ALTER TABLE application ADD CONSTRAINT application_combination_years_chk CHECK (
+            (year_start IS NULL OR year_start BETWEEN 1900 AND 2100)
+            AND (year_end IS NULL OR year_end BETWEEN 1900 AND 2100)
+            AND (year_start IS NULL OR year_end IS NULL OR year_start<=year_end));
+        ALTER TABLE application ADD CONSTRAINT application_combination_fuel_chk CHECK (
+            fuel_type_qualifier IS NULL OR fuel_type_qualifier IN ('diesel','gasoline','hybrid','electric','lpg','other'));
+        ALTER TABLE application ADD CONSTRAINT application_combination_displacement_chk CHECK (
+            displacement_liters_qualifier IS NULL OR displacement_liters_qualifier>0 AND displacement_liters_qualifier<20);
+    END IF;
+END $$;
+
+-- Keep relational validation/versioning; remove approval gates and new approval state.
+DROP TRIGGER IF EXISTS trg_fitment_unrestricted_guard ON part_application_rule;
+DROP TRIGGER IF EXISTS trg_fitment_application_history_guard ON application;
+ALTER TABLE part_application_rule
+    ALTER COLUMN approval_status DROP NOT NULL,
+    ALTER COLUMN approval_status DROP DEFAULT,
+    ALTER COLUMN evidence_status DROP NOT NULL,
+    ALTER COLUMN evidence_status DROP DEFAULT;
+CREATE OR REPLACE FUNCTION trg_fn_part_application_rule_validate()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_app RECORD;
+BEGIN
+    SELECT make_id, model_id, chassis_id, engine_id
+    INTO v_app
+    FROM application
+    WHERE application_id = NEW.application_id;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Invalid application_id % on part_application_rule', NEW.application_id USING ERRCODE = '23503';
+    END IF;
+
+    -- Synchronize or validate identity modes against application foreign keys
+    IF v_app.make_id IS NOT NULL THEN
+        NEW.make_mode := 'specified';
+    ELSIF NEW.make_mode = 'specified' THEN
+        RAISE EXCEPTION 'make_mode cannot be specified when application.make_id IS NULL' USING ERRCODE = '23514';
+    END IF;
+
+    IF v_app.model_id IS NOT NULL THEN
+        NEW.model_mode := 'specified';
+    ELSIF NEW.model_mode = 'specified' THEN
+        RAISE EXCEPTION 'model_mode cannot be specified when application.model_id IS NULL' USING ERRCODE = '23514';
+    END IF;
+
+    IF v_app.chassis_id IS NOT NULL THEN
+        NEW.chassis_mode := 'specified';
+    ELSIF NEW.chassis_mode = 'specified' THEN
+        RAISE EXCEPTION 'chassis_mode cannot be specified when application.chassis_id IS NULL' USING ERRCODE = '23514';
+    END IF;
+
+    IF v_app.engine_id IS NOT NULL THEN
+        NEW.engine_mode := 'specified';
+    ELSIF NEW.engine_mode = 'specified' THEN
+        RAISE EXCEPTION 'engine_mode cannot be specified when application.engine_id IS NULL' USING ERRCODE = '23514';
+    END IF;
+
+    -- Auto-normalize qualifier modes when values are set or cleared
+    IF NEW.year_start IS NOT NULL OR NEW.year_end IS NOT NULL THEN
+        NEW.year_mode := 'specified';
+    ELSIF NEW.year_mode = 'specified' THEN
+        NEW.year_mode := 'not_supplied';
+    END IF;
+
+    IF NEW.market IS NOT NULL AND btrim(NEW.market) <> '' THEN
+        NEW.market := btrim(NEW.market);
+        NEW.market_mode := 'specified';
+    ELSE
+        NEW.market := NULL;
+        IF NEW.market_mode = 'specified' THEN NEW.market_mode := 'not_supplied'; END IF;
+    END IF;
+
+    IF NEW.variant_descriptor IS NOT NULL AND btrim(NEW.variant_descriptor) <> '' THEN
+        NEW.variant_descriptor := btrim(NEW.variant_descriptor);
+        NEW.variant_mode := 'specified';
+    ELSE
+        NEW.variant_descriptor := NULL;
+        IF NEW.variant_mode = 'specified' THEN NEW.variant_mode := 'not_supplied'; END IF;
+    END IF;
+
+    IF NEW.position IS NOT NULL AND btrim(NEW.position) <> '' THEN
+        NEW.position := btrim(NEW.position);
+        NEW.position_mode := 'specified';
+    ELSE
+        NEW.position := NULL;
+        IF NEW.position_mode = 'specified' THEN NEW.position_mode := 'not_supplied'; END IF;
+    END IF;
+
+    IF NEW.drivetrain IS NOT NULL AND btrim(NEW.drivetrain) <> '' THEN
+        NEW.drivetrain := btrim(NEW.drivetrain);
+        NEW.drivetrain_mode := 'specified';
+    ELSE
+        NEW.drivetrain := NULL;
+        IF NEW.drivetrain_mode = 'specified' THEN NEW.drivetrain_mode := 'not_supplied'; END IF;
+    END IF;
+
+    IF NEW.transmission IS NOT NULL AND btrim(NEW.transmission) <> '' THEN
+        NEW.transmission := btrim(NEW.transmission);
+        NEW.transmission_mode := 'specified';
+    ELSE
+        NEW.transmission := NULL;
+        IF NEW.transmission_mode = 'specified' THEN NEW.transmission_mode := 'not_supplied'; END IF;
+    END IF;
+
+    IF NEW.fuel_type_qualifier IS NOT NULL THEN
+        NEW.fuel_mode := 'specified';
+    ELSIF NEW.fuel_mode = 'specified' THEN
+        NEW.fuel_mode := 'not_supplied';
+    END IF;
+
+    IF NEW.displacement_liters_qualifier IS NOT NULL THEN
+        NEW.displacement_mode := 'specified';
+    ELSIF NEW.displacement_mode = 'specified' THEN
+        NEW.displacement_mode := 'not_supplied';
+    END IF;
+
+    IF NEW.generation IS NOT NULL AND btrim(NEW.generation) <> '' THEN
+        NEW.generation := btrim(NEW.generation);
+        NEW.generation_mode := 'specified';
+    ELSE
+        NEW.generation := NULL;
+        IF NEW.generation_mode = 'specified' THEN NEW.generation_mode := 'not_supplied'; END IF;
+    END IF;
+
+    NEW.updated_at := NOW();
+    IF TG_OP = 'UPDATE' THEN
+        NEW.row_version := COALESCE(OLD.row_version, 1) + 1;
+    END IF;
+
+    RETURN NEW;
+END;
+$$;
+
+
+CREATE OR REPLACE FUNCTION trg_fn_vehicle_combination_version() RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+    NEW.row_version := OLD.row_version+1;
+    RETURN NEW;
+END $$;
+DROP TRIGGER IF EXISTS trg_vehicle_combination_version ON application;
+CREATE TRIGGER trg_vehicle_combination_version BEFORE UPDATE ON application
+FOR EACH ROW EXECUTE FUNCTION trg_fn_vehicle_combination_version();
+
+CREATE OR REPLACE VIEW application_view AS
+SELECT a.application_id,a.make_id,a.model_id,a.engine_id,
+    mk.make_name AS make,mo.model_name AS model,e.engine_code AS engine,
+    COALESCE(a.displacement_liters_qualifier,e.displacement_liters)::numeric(4,2) AS displacement_liters,
+    COALESCE(a.fuel_type_qualifier,e.fuel_type) AS fuel_type,
+    a.chassis_id,ch.chassis_code AS chassis,a.identity_status,
+    CASE WHEN a.identity_status='verified' THEN 'approved' WHEN a.identity_status='rejected' THEN 'rejected' ELSE 'needs_review' END AS approval_status,
+    a.row_version,a.year_start,a.year_end,a.market,a.variant_descriptor,a.drivetrain,a.transmission,a.generation,
+    a.fuel_type_qualifier,a.displacement_liters_qualifier
+FROM application a
+LEFT JOIN vehicle_make mk USING(make_id)
+LEFT JOIN vehicle_model mo USING(model_id)
+LEFT JOIN engine e USING(engine_id)
+LEFT JOIN vehicle_chassis ch USING(chassis_id);
+
+CREATE OR REPLACE FUNCTION trg_fn_vehicle_combination_delete_guard() RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+    IF EXISTS(SELECT 1 FROM part_application WHERE application_id=OLD.application_id)
+       OR EXISTS(SELECT 1 FROM part_application_rule WHERE application_id=OLD.application_id AND is_active) THEN
+        RAISE EXCEPTION 'Unlink the vehicle combination from its parts before deleting it' USING ERRCODE='55000';
+    END IF;
+    RETURN OLD;
+END $$;
+DROP TRIGGER IF EXISTS trg_vehicle_combination_delete_guard ON application;
+CREATE TRIGGER trg_vehicle_combination_delete_guard BEFORE DELETE ON application
+FOR EACH ROW EXECUTE FUNCTION trg_fn_vehicle_combination_delete_guard();
+COMMIT;

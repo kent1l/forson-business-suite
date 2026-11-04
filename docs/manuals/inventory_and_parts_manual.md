@@ -117,31 +117,27 @@ The Inventory & Parts Catalog module covers everything about *what* you stock an
 *Precision:* Normal default — link, edit year ranges, or unlink as your knowledge of the fitment improves.
 
 1. On **Parts**, find the part and click the link icon (labeled "Manage Applications" on hover) — or open it directly from the **Applications** field inside the part's own edit form via the **Manage** button.
-2. Under **Link New Application**, search for an existing Make/Model/Engine combination using the search box, or click **New** to create one on the spot (opens **Add New Application** — see the next section for its fields).
-3. Optionally set **Year Start** and **Year End** to limit the fitment to specific model years (e.g., 2010–2015). Leave both blank if the fitment applies to all years of that vehicle.
-4. Click **Link Application**.
-5. To change a linked application's year range later, click the edit icon next to it in **Linked Applications** and update **Year Start** / **Year End** in the **Edit Year Range** dialog, then **Save Years**.
-6. To remove a fitment that no longer applies, click the trash icon next to it — this unlinks it from the part; it does not delete the vehicle application itself, so it remains available to link to other parts.
-7. Click **Close** when done.
+2. Under **Link Vehicle Combination**, search by make, model, chassis, engine or classification details. Click **New** to create a reusable combination.
+3. Optionally enter a narrower **Year Start** / **Year End** and installation **Position** (front/rear/left/right). Blank years use the selected combination’s range; a combination without years remains unspecified.
+4. Click **Link Combination**. The link is immediately available for lookup; no source document or approval is needed.
+5. Use the edit icon in **Linked Vehicle Combinations** to change the link’s years or position, then **Save Link Details**.
+6. Use the trash icon to unlink that entry from the part. The reusable combination remains available for other parts.
+7. Alternatively, enter a description under **Describe vehicle combinations**, click **Find Combinations**, edit/select the intended entries and click **Link Selected Combinations**. Parsing is temporary; only the selected combinations and links are saved.
+8. Click **Close** when done.
 
-**Example:** Linking application "Toyota Vios (1NZ-FE)" to a part with Year Start `2007` and Year End `2013` records that this part fits Vios models from those model years only.
+## How To — Add or Edit a Vehicle Combination
 
-## How To — Add or Edit a Vehicle Application
+Vehicle combinations are shared catalog records. A part can link to several combinations, and a combination can link to several parts.
 
-*Why this matters:* Before you can link a part to a vehicle, that Make/Model/Engine combination has to exist as an Application record. This task manages the master list of vehicle fitments (separately from any specific part).
+1. Open the vehicle applications menu to reach **Vehicle Combinations**.
+2. Click **Add Combination**.
+3. Enter the identity you know: make/model, chassis code, engine, or an engine-only combination. A typed model needs a make; other details are optional.
+4. Optionally enter displacement, fuel, generation, year range, variant/trim, market, drivetrain and transmission.
+5. Click **Save**. Identical classifications reuse one record; combinations with different transmission, drivetrain, years or other details remain distinct.
+6. Use the edit icon to correct a shared combination. Linked parts use its updated classification; any details recorded specifically on a part link remain separate.
+7. To delete a combination, unlink it from its parts first.
 
-*Precision:* Normal default. Deleting an application, however, can affect any parts currently linked to it — the system warns you at deletion time.
-
-1. Go to **Vehicle Applications**.
-2. Click **Add Application**.
-3. In **Make**, type or select an existing make; if it doesn't exist, choose the **Create new "..."** option that appears.
-4. In **Model**, same pattern — type/select or create new (enabled once a Make is chosen).
-5. In **Engine** (optional), same pattern again (enabled once a Model is chosen).
-6. Click **Save**.
-7. To edit an existing application, click its edit icon in the table and change any of Make/Model/Engine, then **Save**.
-8. To remove one, click its trash icon and confirm — you'll see the warning "This may affect linked parts."
-
-**Example:** Adding Make "Toyota," Model "Vios," Engine "1NZ-FE" creates a new vehicle application record that any part can now be linked to.
+No evidence capture, approval or compatibility verification is required. Missing details can be filled in later. Known conflicting engines, years and existing exclusions are still respected by vehicle lookup.
 
 ## How To — Clean Up Duplicate Parts
 

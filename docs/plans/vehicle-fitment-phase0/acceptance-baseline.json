@@ -1,0 +1,188 @@
+{
+  "results": [
+    {
+      "id": "B01",
+      "case": "TOYOTA HILUX, FORTUNER, HI-ACE",
+      "status": "pass"
+    },
+    {
+      "id": "B02",
+      "case": "Toyota Hilux 2005-2015 2.5L diesel, Fortuner",
+      "status": "fail",
+      "difference": "Expected values to be strictly equal:\n\n2005 !== null\n"
+    },
+    {
+      "id": "B03",
+      "case": "Toyota Hilux 2005-2015 2.5L diesel, Fortuner same years",
+      "status": "fail",
+      "difference": "Expected values to be strictly equal:\n\n101 !== null\n"
+    },
+    {
+      "id": "B04",
+      "case": "TEST1, TEST2",
+      "status": "pass"
+    },
+    {
+      "id": "B05",
+      "case": "Repeated local text",
+      "status": "pass"
+    },
+    {
+      "id": "B06",
+      "case": "Same interpretation, AI omitted make id",
+      "status": "fail",
+      "difference": "Expected values to be strictly equal:\n\n2 !== 1\n"
+    },
+    {
+      "id": "B07",
+      "case": "Same IDs/year, contradictory fuel/qualifier",
+      "status": "fail",
+      "difference": "Expected values to be strictly equal:\n\n1 !== 2\n"
+    },
+    {
+      "id": "B08",
+      "case": "Valid but wrong ID/name",
+      "status": "fail",
+      "difference": "The expression evaluated to a falsy value:\n\n  assert.ok(r.fitments[0].model_id!==11 || r.fitments[0].confidence!=='high')\n"
+    },
+    {
+      "id": "B09",
+      "case": "Shortlist residue excludes recognized clause",
+      "status": "fail",
+      "difference": "The expression evaluated to a falsy value:\n\n  assert.ok(r.models.some(m=>m.model_id===11))\n"
+    },
+    {
+      "id": "B10",
+      "case": "Paired models and engines in one clause",
+      "status": "fail",
+      "difference": "Expected values to be strictly equal:\n\n4 !== 2\n"
+    },
+    {
+      "id": "B11",
+      "case": "Toyota Hilux except 2010",
+      "status": "fail",
+      "difference": "The expression evaluated to a falsy value:\n\n  assert.ok(r.fitments.some(f=>f.effect==='exclude'&&f.year_start===2010))\n"
+    },
+    {
+      "id": "A12",
+      "case": "Existing/retried/concurrent link saves",
+      "status": "fail",
+      "difference": "A12.all_outcomes_saved_or_existing\n\nfalse !== true\n",
+      "unverified_subchecks": [
+        "distinct_active_rules"
+      ]
+    },
+    {
+      "id": "A13",
+      "case": "Chassis-only claim without invented engine",
+      "status": "fail",
+      "difference": "A13.chassis_id_retained\n\nfalse !== true\n",
+      "unverified_subchecks": [
+        "engine_id",
+        "model_fabricated",
+        "scope_preserved"
+      ]
+    },
+    {
+      "id": "A14",
+      "case": "Make-only and unknown vs unrestricted",
+      "status": "fail",
+      "difference": "A14.make_only_status\n+ actual - expected\n\n+ 'absent'\n- 'needs_review'\n",
+      "unverified_subchecks": [
+        "missing_engine_mode",
+        "unrestricted_requires_approved_evidence",
+        "confirmed_without_details"
+      ]
+    },
+    {
+      "id": "A15",
+      "case": "Valid wrong ID and conflicting parent at every writer",
+      "status": "fail",
+      "difference": "A15.parser_rejects\n\nfalse !== true\n",
+      "unverified_subchecks": [
+        "part_create_rejects",
+        "part_edit_rejects",
+        "receiving_create_rejects",
+        "partial_writes"
+      ]
+    },
+    {
+      "id": "A16",
+      "case": "Variants, exclusions, position, market and disjoint years",
+      "status": "fail",
+      "difference": "A16.restriction_loss\n\n2 !== 0\n",
+      "unverified_subchecks": [
+        "variant_rows_preserved",
+        "disjoint_year_rules",
+        "market_rules",
+        "position_rules",
+        "exclusion_overrides_include",
+        "unknown_exclusion_yields"
+      ]
+    },
+    {
+      "id": "A17",
+      "case": "Incorrect legacy association, stale review, changed taxonomy",
+      "status": "fail",
+      "difference": "A17.stale_http_status\n\n200 !== 409\n",
+      "unverified_subchecks": [
+        "legacy_confirmed",
+        "post_edit_cache_current",
+        "other_process_cache_current"
+      ]
+    },
+    {
+      "id": "A18",
+      "case": "Scoped aliases, separate correction and dismissal",
+      "status": "fail",
+      "difference": "A18.whole_phrase_alias_http_status\n\n201 !== 422\n",
+      "unverified_subchecks": [
+        "correction_does_not_create_alias",
+        "ambiguous_alias_not_auto_resolved",
+        "dismissed_count_after_unchanged_reparse",
+        "resurface_requires_reason"
+      ]
+    },
+    {
+      "id": "A19",
+      "case": "Research outage, no result, untrusted fetch and evidence approval",
+      "status": "fail",
+      "difference": "A19.research_endpoint_exists\n\nfalse !== true\n",
+      "unverified_subchecks": [
+        "outage_manual_usable",
+        "no_result",
+        "no_automatic_approval",
+        "ssrf_blocked",
+        "unlicensed_passage_persisted",
+        "engine_association_does_not_certify_part"
+      ]
+    },
+    {
+      "id": "A20",
+      "case": "Unauthorized direct/bulk/staged writes and races",
+      "status": "fail",
+      "difference": "A20.partial_writes\n\n1 !== 0\n",
+      "unverified_subchecks": [
+        "idempotency_changed_body_http_status"
+      ]
+    },
+    {
+      "id": "A21",
+      "case": "Search/display/mobile round trip and new taxonomy",
+      "status": "fail",
+      "difference": "A21.status_visible\n\nfalse !== true\n",
+      "unverified_subchecks": [
+        "qualifiers_preserved",
+        "text_only_offline_not_confirmed",
+        "new_taxonomy_visible",
+        "unknown_year_not_confirmed"
+      ]
+    }
+  ],
+  "summary": {
+    "pass": 3,
+    "fail": 18,
+    "not_verified": 0
+  },
+  "note": "Integration observations must come from a disposable real PostgreSQL API/browser run. This runner does not fabricate or execute those operations."
+}

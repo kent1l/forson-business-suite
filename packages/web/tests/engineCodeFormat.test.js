@@ -8,6 +8,9 @@ import {
   compressEngineCodes,
   groupFitmentsForDisplay,
   formatFitmentGroup,
+  groupApplicationsForDisplay,
+  formatApplicationScopeBadge,
+  fitmentSavePayload,
 } from '../src/utils/engineCodeFormat.js';
 
 // Half of the round-trip guard from PRD-FBS-FIT-002 §9.3. The other half runs in
@@ -101,4 +104,40 @@ test('formats single-year and open-ended ranges', () => {
     { make: 'Toyota', model: 'Hilux', engine: '4D56', year_start: 2015, year_end: null },
   ]);
   assert.equal(formatFitmentGroup(open), 'Toyota Hilux 4D56 (2015+)');
+});
+
+test('keeps exclusions and classification details separate while ignoring old evidence status', () => {
+  const base = { make: 'Toyota', model: 'Hilux', engine: '1KD-FTV', year_start: 2005, year_end: 2015 };
+  const rows = [
+    base,
+    { ...base, effect: 'exclude' },
+    { ...base, chassis: 'KUN26' },
+    { ...base, position: 'Front' },
+    { ...base, approval_status: 'approved' },
+    { ...base, evidence_status: 'sourced_suggestion' },
+    { ...base, engine: null, engine_mode: 'unrestricted' },
+  ];
+  const groups = groupFitmentsForDisplay(rows);
+  assert.equal(groups.length, rows.length - 2);
+  assert.equal(groups[1].effect, 'exclude');
+  assert.match(formatFitmentGroup(groups[2]), /\[KUN26\]/);
+  assert.equal(groups[0].fitments.length, 3);
+});
+
+test('display never unions disjoint years or qualifier scope modes', () => {
+  const base = { make: 'Toyota', model: 'Hilux', engine: '1KD-FTV', year_start: 2005, year_end: 2010 };
+  const rows = [base, { ...base, year_start: 2015, year_end: 2020 }, { ...base, market_mode: 'unrestricted' }, { ...base, generation: 'Gen 2' }];
+  assert.equal(groupApplicationsForDisplay(rows).length, 4);
+  assert.equal(groupFitmentsForDisplay(rows).length, 4);
+});
+
+test('linked badges do not depend on evidence or approval', () => {
+  for (const metadata of [{}, {approval_status:'needs_review'}, {evidence_status:'legacy_unverified'}, {approval_status:'approved',evidence_status:'sourced_verified'}]) {
+    assert.equal(formatApplicationScopeBadge({rule_id:1,...metadata}).label, 'Linked');
+  }
+});
+
+test('save payload preserves vehicle details without approval or review tokens', () => {
+  const payload = fitmentSavePayload({ application_id: 1, candidate_id: 5, effect: 'exclude', position: 'Front', transmission: 'Manual', generation: 'Gen 2', year_start: '', approval_status: 'approved', evidence_status: 'sourced_verified' }, 3, 7);
+  assert.deepEqual(payload, { application_id: 1, effect: 'exclude', position: 'Front', transmission: 'Manual', generation: 'Gen 2', year_start: null });
 });

@@ -46,6 +46,8 @@ const LINE_ALLOWED_KEYS = new Set([
   'part_number',
   'supplier_item_code',
   'item_group_hint',
+  'vehicle_applications',
+  'position',
   'quantity',
   'unit',
   'unit_cost',
@@ -61,6 +63,7 @@ const ENRICHMENT_ALLOWED_KEYS = new Set([
   'suggested_part_number',
   'suggested_description',
   'suggested_group',
+  'suggested_vehicle_applications',
   'reason',
   'sources',
 ]);
@@ -94,6 +97,8 @@ const LINE_SCALAR_FIELDS = new Set([
   'part_number',
   'supplier_item_code',
   'item_group_hint',
+  'vehicle_applications',
+  'position',
   'quantity',
   'unit',
   'unit_cost',
@@ -316,6 +321,7 @@ function validateEnrichment(enrichment, path) {
   const suggested_part_number = validateText(enrichment.suggested_part_number, { maxCodePoints: 255, path: `${path}.suggested_part_number` });
   const suggested_description = validateText(enrichment.suggested_description, { maxCodePoints: 2000, path: `${path}.suggested_description` });
   const suggested_group = validateText(enrichment.suggested_group, { maxCodePoints: 255, path: `${path}.suggested_group` });
+  const suggested_vehicle_applications = validateText(enrichment.suggested_vehicle_applications, { maxCodePoints: 2000, path: `${path}.suggested_vehicle_applications` });
   const reason = validateText(enrichment.reason, { maxCodePoints: 2000, path: `${path}.reason` });
 
   let sources = [];
@@ -375,6 +381,8 @@ function validateEnrichment(enrichment, path) {
     suggested_part_number: suggested_part_number ?? null,
     suggested_description: suggested_description ?? null,
     suggested_group: suggested_group ?? null,
+    // Optional extension: omitted when absent so legacy normalized payload hashes are unchanged.
+    ...(suggested_vehicle_applications != null ? { suggested_vehicle_applications } : {}),
     reason: reason ?? null,
     sources,
   };
@@ -496,6 +504,8 @@ function validateAndNormalizeExternalPayload(payload) {
     const part_number = validateText(line.part_number, { maxCodePoints: 255, path: `${path}.part_number` });
     const supplier_item_code = validateText(line.supplier_item_code, { maxCodePoints: 255, path: `${path}.supplier_item_code` });
     const item_group_hint = validateText(line.item_group_hint, { maxCodePoints: 255, path: `${path}.item_group_hint` });
+    const vehicle_applications = validateText(line.vehicle_applications, { maxCodePoints: 2000, path: `${path}.vehicle_applications` });
+    const position = validateText(line.position, { maxCodePoints: 100, path: `${path}.position`, allowNewlines: false });
     const quantity = parseQuantity(line.quantity, `${path}.quantity`);
     const unit = validateText(line.unit, { maxCodePoints: 20, path: `${path}.unit` });
     const unit_cost = parseMoney(line.unit_cost, `${path}.unit_cost`);
@@ -514,6 +524,9 @@ function validateAndNormalizeExternalPayload(payload) {
       part_number: part_number ?? null,
       supplier_item_code: supplier_item_code ?? null,
       item_group_hint: item_group_hint ?? null,
+      // Optional extension: omitted when absent so legacy normalized payload hashes are unchanged.
+      ...(vehicle_applications != null ? { vehicle_applications } : {}),
+      ...(position != null ? { position } : {}),
       quantity,
       unit: normalizeUom(unit),
       unit_cost,

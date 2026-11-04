@@ -8,7 +8,8 @@ const PaginationControls = ({
     total,
     onPageChange,
     onPageSizeChange,
-    className = ''
+    className = '',
+    itemLabel = 'items'
 }) => {
     const totalPages = Math.max(Math.ceil((total || 0) / pageSize), 1);
     const safePage = Math.min(Math.max(page || 1, 1), totalPages);
@@ -38,7 +39,7 @@ const PaginationControls = ({
     return (
         <div className={`mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between ${className}`}>
             <div className="text-sm text-gray-600 dark:text-slate-400">
-                Showing {start}-{end} of {total} items
+                Showing {start}-{end} of {total} {itemLabel}
             </div>
             <div className="flex flex-wrap items-center gap-2">
                 <label htmlFor="pageSize" className="text-sm text-gray-600 dark:text-slate-400">Rows per page</label>

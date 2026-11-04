@@ -1,0 +1,168 @@
+{
+  "date": "2026-11-01",
+  "starting_revision": "7a19433",
+  "checkpoint_revision": "edd8021",
+  "disposable_api": {
+    "environment": {
+      "database": "fitment_resolver_1793522923771_f2200d_test",
+      "schema": "development schema only",
+      "data": "synthetic",
+      "providers": "disabled"
+    },
+    "results": [
+      {
+        "name": "all writers reject valid wrong IDs atomically",
+        "status": "pass"
+      },
+      {
+        "name": "20 concurrent retries preserve one rule and no association facts",
+        "status": "pass"
+      },
+      {
+        "name": "distinct qualifiers, years and exclusions survive direct and staged writes",
+        "status": "pass"
+      },
+      {
+        "name": "unsafe unrestricted input and client verification flags reject without projection",
+        "status": "pass"
+      },
+      {
+        "name": "unauthorized staged/direct writes leave no partial mutations",
+        "status": "pass"
+      },
+      {
+        "name": "versioned edits clear qualifiers, revoke verification and retain other rules",
+        "status": "pass"
+      },
+      {
+        "name": "review dismissal is persistent and versioned",
+        "status": "pass"
+      },
+      {
+        "name": "review save rejects stale taxonomy and stores source provenance",
+        "status": "pass"
+      },
+      {
+        "name": "catalog exports structured atomic rules and no confirmation from text",
+        "status": "pass"
+      },
+      {
+        "name": "shared identity edits, deletion and merges cannot reinterpret historical claims",
+        "status": "pass"
+      },
+      {
+        "name": "chassis and make-only identities retain unknown scope without fake engines",
+        "status": "pass"
+      },
+      {
+        "name": "research is metadata/manual only; identity lookup cannot manufacture evidence",
+        "status": "pass"
+      },
+      {
+        "name": "evidence approval cannot silently approve compatibility or cross scope",
+        "status": "pass"
+      },
+      {
+        "name": "part merge and undo preserve disjoint qualifiers and claim sources",
+        "status": "pass"
+      },
+      {
+        "name": "all index projections retain atomic scope and status facts",
+        "status": "pass"
+      },
+      {
+        "name": "power search uses the shared evaluator and never model-engine inference as compatibility",
+        "status": "pass"
+      }
+    ],
+    "metrics": {
+      "lookup_samples": 1000,
+      "concurrency": 5,
+      "warmup": 100,
+      "lookup_p50_ms": 4.174961,
+      "lookup_p95_ms": 10.478742,
+      "scope": "synthetic fixture DB query + evaluator only; excludes HTTP, providers and production scale"
+    },
+    "cleanup": "owned disposable database dropped"
+  },
+  "migration": {
+    "file": "database/migrations/20261101_01_fitment_review_integrity.sql",
+    "sha256": "dc8046b5c0fb242760bad2b9e0a35e11f4ea49dfffcd34801a3dabb8c55bbdd6",
+    "rehearsal": "applied twice to schema-only disposable PostgreSQL databases; no business migration applied"
+  },
+  "focused_api_tests": {
+    "suites_passed": 2,
+    "tests_passed": 103,
+    "command": "npm run -w packages/api test -- --runInBand tests/fitmentTextParser.test.js tests/fitmentResolverPhase1To3.test.js"
+  },
+  "pure_baseline": {
+    "cases": 11,
+    "target_pass": 11,
+    "target_fail": 0
+  },
+  "browser": {
+    "status": "pass",
+    "viewports": [
+      390,
+      1280
+    ],
+    "checks": [
+      "versioned saves",
+      "stable retry key",
+      "qualifiers preserved",
+      "unresolved and already-linked disabled",
+      "exclusive alternatives",
+      "persistent dismissal",
+      "manager restriction display",
+      "manual evidence capture",
+      "separate evidence and compatibility approvals"
+    ],
+    "api": "intercepted contract fixtures; real SQL is covered separately"
+  },
+  "web_display_tests": {
+    "tests_passed": 15,
+    "command": "node packages/web/tests/engineCodeFormat.test.js"
+  },
+  "full_api_summary": {
+    "suites_passed": 108,
+    "suites_failed": 2,
+    "tests_passed": 1491,
+    "tests_failed": 2,
+    "tests_skipped": 1,
+    "snapshots_passed": 6
+  },
+  "starting_revision_failure_reproduction": {
+    "revision": "7a19433",
+    "result": {
+      "status": 1,
+      "tail": "or(message);\n        |               ^\n      7 |   err.status = 400;\n      8 |   if (code) err.code = code;\n      9 |   return err;\n\n      at badRequest (services/apPaymentService.js:6:15)\n      at Object.badRequest [as recordDirectPayment] (services/apPaymentService.js:89:11)\n      at withSavepoint (tests/chequeReplacementAndDeletion.test.js:58:19)\n      at Object.<anonymous> (tests/chequeReplacementAndDeletion.test.js:493:21)\n\nFAIL tests/transactionDateService.test.js\n  \u25cf transactionDateService \u2014 AR payment date changes \u203a customer_payment kind \u203a previews cleanly for a same-month, in-order date move\n\n    expect(received).toBe(expected) // Object.is equality\n\n    Expected: true\n    Received: false\n\n      182 |                 svc.preview(client, 'customer_payment', customerPaymentId, new Date().toISOString().slice(0, 10), false)\n      183 |             );\n    > 184 |             expect(preview.can_apply).toBe(true);\n          |                                       ^\n      185 |             expect(preview.blocking_conflicts).toEqual([]);\n      186 |             expect(preview.cascade_preview.map((s) => `${s.table}.${s.column}`)).toEqual(\n      187 |                 expect.arrayContaining(['ar_ledger.entry_date', 'customer_payment.payment_date'])\n\n      at Object.toBe (tests/transactionDateService.test.js:184:39)\n\nTest Suites: 2 failed, 2 total\nTests:       2 failed, 18 passed, 20 total\nSnapshots:   0 total\nTime:        2.051 s\nRan all test suites matching tests/chequeReplacementAndDeletion.test.js|tests/transactionDateService.test.js.\nForce exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?\n"
+    },
+    "environment": "same disposable schema and repository reference seeds; reference checkout in container temporary directory"
+  },
+  "limits": [
+    "Browser uses intercepted API contracts; real SQL exercised separately.",
+    "Synthetic fixtures only; no compatibility facts are certified by them.",
+    "Lookup timing excludes HTTP, providers and production scale.",
+    "Paid/live research disabled.",
+    "No business database migration, taxonomy cleanup, deployment or data reset performed."
+  ],
+  "full_api_run": {
+    "status": 1,
+    "tail": "(message, code) {\n    > 6 |   const err = new Error(message);\n        |               ^\n      7 |   err.status = 400;\n      8 |   if (code) err.code = code;\n      9 |   return err;\n\n      at badRequest (services/apPaymentService.js:6:15)\n      at Object.badRequest [as recordDirectPayment] (services/apPaymentService.js:89:11)\n      at withSavepoint (tests/chequeReplacementAndDeletion.test.js:58:19)\n      at Object.<anonymous> (tests/chequeReplacementAndDeletion.test.js:493:21)\n\nFAIL tests/transactionDateService.test.js\n  \u25cf transactionDateService \u2014 AR payment date changes \u203a customer_payment kind \u203a previews cleanly for a same-month, in-order date move\n\n    expect(received).toBe(expected) // Object.is equality\n\n    Expected: true\n    Received: false\n\n      182 |                 svc.preview(client, 'customer_payment', customerPaymentId, new Date().toISOString().slice(0, 10), false)\n      183 |             );\n    > 184 |             expect(preview.can_apply).toBe(true);\n          |                                       ^\n      185 |             expect(preview.blocking_conflicts).toEqual([]);\n      186 |             expect(preview.cascade_preview.map((s) => `${s.table}.${s.column}`)).toEqual(\n      187 |                 expect.arrayContaining(['ar_ledger.entry_date', 'customer_payment.payment_date'])\n\n      at Object.toBe (tests/transactionDateService.test.js:184:39)\n\n\nTest Suites: 2 failed, 108 passed, 110 total\nTests:       2 failed, 1 skipped, 1491 passed, 1494 total\nSnapshots:   6 passed, 6 total\nTime:        63.44 s\nRan all test suites.\nForce exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?\n"
+  },
+  "checks": {
+    "api_lint": {
+      "errors": 0,
+      "warnings": 25
+    },
+    "web_lint": {
+      "errors": 0,
+      "warnings": 998
+    },
+    "web_build": "passed; existing large-chunk warning",
+    "web_test_command": "passed (13 test files); display suite separately confirms 15 cases",
+    "diff_check": "passed",
+    "graphify": "updated; 30 extraction issues include a pre-existing missing source_file on doc:docker-execution-protocol; oversized graph HTML skipped",
+    "disposable_cleanup": "owned test databases dropped; independent catalog query found zero remaining"
+  }
+}

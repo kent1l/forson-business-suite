@@ -186,16 +186,20 @@
 | `part_tag` | `part_id` FK, `tag_id` FK (composite PK) | N:M parts to tags |
 | `part_exclusion` | `part_id_1`, `part_id_2` (ordered), `source`, `reason` | Deduplication exclusion list |
 
-### Vehicle Applications
+### Vehicle Combinations and Part Links
 
 | Table | Key Columns | Relationships |
 |---|---|---|
-| `vehicle_make` | `make_id`, `make_name` (unique) | |
-| `vehicle_model` | `model_id`, `make_id` FK, `model_name` | Unique per (make_id, model_name) |
-| `vehicle_engine` | `engine_id`, `model_id` FK, `engine_name` | Unique per (model_id, engine_name) |
-| `application` | `application_id`, `make_id` FK, `model_id` FK, `engine_id` FK | Unique constraint on (make_id, model_id, engine_id) |
-| `part_application` | `part_app_id`, `part_id` FK, `application_id` FK, `year_start`, `year_end` | N:M parts to applications |
-| `application_view` | (VIEW) | Joins application + vehicle_make/model/engine for display |
+| `vehicle_make` | `make_id`, `make_name` | One make has many models |
+| `vehicle_model` | `model_id`, `make_id`, `model_name` | Model belongs to a make |
+| `engine` | `engine_id`, `engine_code`, `displacement_liters`, `fuel_type` | Global engine identities; replaces legacy `vehicle_engine` |
+| `vehicle_chassis` | `chassis_id`, `model_id`, `chassis_code`, generation/years/market | Chassis may identify a model |
+| `application` | `application_id`, make/model/chassis/engine IDs, years, market, variant, drivetrain, transmission, generation, fuel/displacement qualifiers | Reusable partial classification; complete classification tuple is unique |
+| `part_application_rule` | `rule_id`, `part_id`, `application_id`, optional per-link details, existing include/exclude effect, version | Authoritative direct links; no evidence or approval needed |
+| `part_application` | `part_app_id`, `part_id`, `application_id`, year range | Legacy positive-link projection for existing consumers |
+| `application_view` | (VIEW) | Names and full classification for management, pickers and catalog |
+
+Vehicle classification and direct linking supersede the earlier evidence/review workflow. New links do not create source claims, evidence or review sessions. Existing history is retained in place. See `docs/plans/2026-11-01_vehicle-combinations-direct-links.md` for the migration and verification record.
 
 ### Inventory
 

@@ -1,3 +1,4 @@
+import { formatEngineCodes } from '../utils/engineCodeDisplay';
 import { useState, useEffect, useRef } from 'react';
 import api from '../api';
 
@@ -116,7 +117,7 @@ const VehicleFilterBar = ({ onChange, compact = false }) => {
                 >
                     <option value="">Any engine</option>
                     {engines.map(e => (
-                        <option key={e.engine_id} value={e.engine_id}>{e.engine_code}</option>
+                        <option key={e.engine_id} value={e.engine_id}>{formatEngineCodes(e.engine_code)}</option>
                     ))}
                 </select>
             </div>

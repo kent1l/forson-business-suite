@@ -67,6 +67,7 @@ try {
         {
           line_no: 2,
           raw_text: 'TOYOTA NEW-123 AIR FILTER',
+          supplier_item_text: 'TOYOTA NEW-123 AIR FILTER',
           brand: 'TOYOTA',
           part_number: 'NEW-123',
           description: 'Air filter',
@@ -525,6 +526,7 @@ try {
   await clickButton('Save');
   await page.waitForFunction(() => Array.from(document.querySelectorAll('button')).some(button => button.textContent.trim() === 'Catalog air filter'));
   assert.equal(createdParts.length, 1);
+  assert.equal(createdParts[0].detail, 'AIR FILTER');
   assert.equal(Number(createdParts[0].brand_id), 1);
   assert.equal(Number(createdParts[0].group_id), 1);
   assert.equal(createdParts[0].measurement_unit, 'pcs');

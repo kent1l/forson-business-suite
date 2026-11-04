@@ -1,5 +1,5 @@
 const db = require('./db');
-const { syncApplications, removeApplication } = require('./meili-applications');
+const { syncApplications, removeApplication, toDoc } = require('./meili-applications');
 
 const startMeiliApplicationsListener = async () => {
   const client = await db.getClient();
@@ -23,24 +23,8 @@ const startMeiliApplicationsListener = async () => {
     try {
       for (const id of deletes) await removeApplication(id);
       if (upserts.length) {
-        const { rows } = await db.query(`
-          SELECT a.application_id, a.make_id, a.model_id, a.engine_id,
-                 vmk.make_name AS make, vmd.model_name AS model, veng.engine_code AS engine
-          FROM application a
-          LEFT JOIN vehicle_make vmk ON a.make_id = vmk.make_id
-          LEFT JOIN vehicle_model vmd ON a.model_id = vmd.model_id
-          LEFT JOIN engine veng ON a.engine_id = veng.engine_id
-          WHERE a.application_id = ANY($1::int[])`, [upserts]);
-        const docs = rows.map(r => ({
-          application_id: r.application_id,
-          make_id: r.make_id,
-          model_id: r.model_id,
-          engine_id: r.engine_id,
-          make: r.make || '',
-          model: r.model || '',
-          engine: r.engine || '',
-          label: [r.make, r.model, r.engine].filter(Boolean).join(' ')
-        }));
+        const { rows } = await db.query('SELECT * FROM application_view WHERE application_id=ANY($1::int[])', [upserts]);
+        const docs = rows.map(toDoc);
         if (docs.length) await syncApplications(docs);
       }
     } catch (e) {

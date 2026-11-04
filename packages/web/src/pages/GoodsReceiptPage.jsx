@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import useTypeahead from '../hooks/useTypeahead';
 import api from '../api';
+import { fitmentSavePayload } from '../utils/engineCodeFormat';
 import toast from 'react-hot-toast';
 import SearchBar from '../components/SearchBar';
 import Icon from '../components/ui/Icon';
@@ -10,7 +11,7 @@ import Modal from '../components/ui/Modal';
 import { ICONS } from '../constants';
 import useDraft from '../hooks/useDraft';
 import useDeepLink from '../hooks/useDeepLink';
-import { formatApplicationText } from '../helpers/applicationTextHelper';
+import PartFitmentText from '../components/parts/PartFitmentText';
 import { enrichPartsArray } from '../helpers/applicationCache';
 import GoodsReceiptModals from '../components/ui/GoodsReceiptModals';
 import MathExpressionInput from '../components/ui/MathExpressionInput';
@@ -1129,7 +1130,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
             row_id: rowId,
             line_no: row.line_no,
             initialValues: {
-                detail: upperCatalogText(source.supplier_item_text || source.description),
+                detail: upperCatalogText(source.description || source.supplier_item_text),
                 part_numbers: upperCatalogText(source.part_number),
                 brand_id: brands.find(item => upperCatalogText(item.brand_name) === brandName)?.brand_id || '',
                 brand_name: brandName,
@@ -1139,6 +1140,11 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                 last_cost: row.confirmed_row?.cost_price ?? source.unit_cost ?? 0,
                 last_sale_price: row.confirmed_row?.sale_price ?? 0,
             },
+            // Document fitments always apply; web-found ones only when the research was verified.
+            position: source.position || '',
+            vehicleApplicationsText: [source.vehicle_applications,
+                source.enrichment?.status === 'verified_suggestion' ? source.enrichment.suggested_vehicle_applications : null]
+                .filter(Boolean).join('; '),
         });
     };
 
@@ -1146,9 +1152,26 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
         if (!canCatalogParts || !importPartTarget || savingImportPart) return;
         setSavingImportPart(true);
         try {
+            // Reuse the vehicle fitment AI parser on the AI-extracted applications text.
+            let applications = partData.applications;
+            const fitmentText = importPartTarget.vehicleApplicationsText?.trim();
+            if (fitmentText && !applications?.length && hasPermission('applications:edit')) {
+                try {
+                    const { data } = await api.post('/applications/parse-fitment-text', { text: fitmentText.slice(0, 2000) });
+                    applications = (data.fitments || [])
+                        .filter(c => c.confidence_label !== 'unresolved' && !c.alternative_group_id)
+                        .map(c => fitmentSavePayload({ ...c, position: c.position || importPartTarget.position || undefined }));
+                } catch {
+                    toast.error('Could not parse vehicle applications; part will be created without them.');
+                }
+            }
+            // Position lives on the vehicle link; with no fitment linked, keep it in the name so front/rear parts stay distinguishable.
+            const position = upperCatalogText(importPartTarget.position);
+            const detail = position && !applications?.length && !upperCatalogText(partData.detail).includes(position)
+                ? `${position} ${partData.detail || ''}`.trim() : partData.detail;
             const result = await executePartSave({
                 endpoint: '/parts',
-                payload: { ...partData, created_by: user.employee_id },
+                payload: { ...partData, detail, ...(applications?.length ? { applications } : {}), created_by: user.employee_id },
                 brands,
                 groups,
             });
@@ -1614,12 +1637,12 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                                                     {...itemProps}
                                                     className={`px-4 py-2 cursor-pointer ${itemProps['aria-selected'] ? 'bg-primary-100 dark:bg-primary-900/30' : 'hover:bg-primary-50 dark:hover:bg-slate-700/60'}`}
                                                 >
-                                                    <div className="flex items-baseline justify-between">
-                                                        <div className="flex items-baseline space-x-2 flex-1 min-w-0">
+                                                    <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
+                                                        <div className="min-w-0 flex-1">
                                                             <div className="text-sm font-medium text-gray-800 dark:text-slate-100 truncate">{part.display_name}</div>
-                                                            {part.applications && <div className="text-xs text-gray-500 dark:text-slate-400 truncate">{formatApplicationText(part.applications, { style: 'searchSuggestion' })}</div>}
+                                                            <PartFitmentText part={part} />
                                                         </div>
-                                                        <div className="flex items-baseline space-x-2 ml-2 shrink-0">
+                                                        <div className="flex shrink-0 items-baseline gap-2 sm:ml-2">
                                                             <span className={`text-xs font-medium ${Number(part.stock_on_hand) > 0 ? 'text-gray-500 dark:text-slate-400' : 'text-danger-600 dark:text-danger-400'}`}>
                                                                 {Number(part.stock_on_hand) || 0} {part.measurement_unit || 'PC'} in stock
                                                             </span>
@@ -2289,6 +2312,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                 onQueueAction={importReview.queueAction}
                 onSaveReview={importReview.saveReview}
                 onFetchCandidates={importReview.fetchCandidates}
+                canEditApplications={hasPermission('applications:edit')}
                 onCreatePart={canCatalogParts && importReview.review?.status === 'IN_REVIEW' ? handleCreateImportPart : null}
                 onAbandonReview={importReview.abandonReview}
                 onCommitReview={importReview.commitReview}

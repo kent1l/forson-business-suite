@@ -1,3 +1,4 @@
+const { fitmentRulesSql, fitmentLabelsSql, fitmentYearRangesSql } = require('../helpers/fitmentDocumentSql');
 const express = require('express');
 const db = require('../db');
 const { protect, hasPermission, userHasPermission } = require('../middleware/authMiddleware');
@@ -9,6 +10,7 @@ const { normalizeText, normalizePartNumber, normalizeUom } = require('../helpers
 const { parsePaginationQuery, paginatedResponse } = require('../helpers/pagination');
 const { withYearTokens } = require('../helpers/vehicleFitmentSearch');
 const { generatePartDecisionToken, verifyPartDecisionToken } = require('../helpers/partDecisionToken');
+const { saveFitmentLink } = require('../services/fitmentLinkService');
 const JevGateService = require('../services/jevGateService');
 const router = express.Router();
 const jevGates = new JevGateService({ db, meiliClient });
@@ -18,6 +20,7 @@ const getPartDataForMeili = async (client, partId) => {
     const query = `
         SELECT
             pv.*,
+            ${fitmentRulesSql()} AS fitment_rules,
             p.reorder_point,
             p.warning_quantity,
             p.measurement_unit,
@@ -29,15 +32,8 @@ const getPartDataForMeili = async (client, partId) => {
             p.low_stock_warning,
             (SELECT ARRAY_AGG(pb.barcode) FROM part_barcode pb WHERE pb.part_id = pv.part_id) as barcodes,
             (SELECT STRING_AGG(pn.part_number, '; ') FROM part_number pn WHERE pn.part_id = pv.part_id AND ${activeAliasCondition('pn')}) as part_numbers,
-                        (SELECT ARRAY_AGG(
-                                CONCAT(vmk.make_name, ' ', vmd.model_name, COALESCE(CONCAT(' ', veng.engine_code), ''))
-                        ) FROM part_application pa
-                            JOIN application a ON pa.application_id = a.application_id
-                            LEFT JOIN vehicle_make vmk ON a.make_id = vmk.make_id
-                            LEFT JOIN vehicle_model vmd ON a.model_id = vmd.model_id
-                            LEFT JOIN engine veng ON a.engine_id = veng.engine_id
-                        WHERE pa.part_id = pv.part_id) AS applications_array,
-            (SELECT ARRAY_AGG(ARRAY[pa.year_start, pa.year_end]) FROM part_application pa WHERE pa.part_id = pv.part_id) AS application_year_ranges,
+                        ${fitmentLabelsSql('pv',true)} AS applications_array,
+            ${fitmentYearRangesSql()} AS application_year_ranges,
             (SELECT ARRAY_AGG(t.tag_name) FROM tag t JOIN part_tag pt ON t.tag_id = pt.tag_id WHERE pt.part_id = pv.part_id) AS tags_array
         FROM public.parts_view AS pv
         JOIN public.part p ON pv.part_id = p.part_id
@@ -58,6 +54,9 @@ const getPartDataForMeili = async (client, partId) => {
         ...part,
         // display_name is already provided by parts_view
         applications: part.applications_array || [],
+        fitment_rules: part.fitment_rules || [],
+        fitment_schema_version: 3,
+        fitment_confirmation: false,
         // Flatten applications (+ fitment years, so a literal year text-matches) into
         // a single searchable string for Meilisearch.
         searchable_applications: withYearTokens(baseSearchableApplications, part.application_year_ranges || []),
@@ -144,45 +143,12 @@ const manageBarcodes = async (client, barcodes, partId) => {
     }
 };
 
-// Links a newly-created part to any applications picked via the quick-add
-// search combobox on the "New Part" form (no year range -- that combobox
-// doesn't collect one, same as the equivalent quick-add on the edit form;
-// staff use PartApplicationManager's "Manage" afterward for year ranges).
-// Create-only: a new part has no pre-existing links, so this is pure insert,
-// unlike edit-time reconciliation (add + remove) which isn't implemented.
-// Mirrors deriveVehicleEngineFitment() in partApplicationRoutes.js so a
-// full make+model+engine fitment picked at creation still feeds the
-// vehicle_engine_fitment cross-reference the same way a post-creation link does.
-const manageApplications = async (client, applications, partId) => {
-    if (!Array.isArray(applications) || applications.length === 0) return;
-
-    const applicationIds = [...new Set(
-        applications.map(a => a?.application_id).filter(Boolean)
-    )];
-
-    for (const applicationId of applicationIds) {
-        await client.query(
-            `INSERT INTO part_application (part_id, application_id)
-             VALUES ($1, $2)
-             ON CONFLICT (part_id, application_id) DO NOTHING`,
-            [partId, applicationId]
-        );
-
-        const { rows } = await client.query(
-            'SELECT model_id, engine_id FROM application WHERE application_id = $1',
-            [applicationId]
-        );
-        const app = rows[0];
-        if (!app || !app.model_id || !app.engine_id) continue;
-
-        await client.query(
-            `INSERT INTO vehicle_engine_fitment (model_id, engine_id, year_start, year_end)
-             VALUES ($1, $2, NULL, NULL)
-             ON CONFLICT (model_id, engine_id) DO UPDATE SET
-                 year_start = LEAST(vehicle_engine_fitment.year_start, EXCLUDED.year_start),
-                 year_end = GREATEST(vehicle_engine_fitment.year_end, EXCLUDED.year_end)`,
-            [app.model_id, app.engine_id]
-        );
+// Add staged fitments while preserving existing links and their year ranges, enforcing full identity/parent validation.
+const manageApplications = async (client, applications, partId, actorId) => {
+    if (!Array.isArray(applications)) return;
+    for (const application of applications) {
+        if (!application || typeof application !== 'object') throw Object.assign(new Error('Invalid application entry'), {statusCode:422});
+        await saveFitmentLink(client, partId, application, actorId);
     }
 };
 
@@ -292,7 +258,7 @@ const createPartWithClient = async (client, payload, createdBy, { uppercaseText 
         : tags;
     await manageTags(client, tagsToApply, newPartData.part_id);
     await manageBarcodes(client, barcodes, newPartData.part_id);
-    await manageApplications(client, applications, newPartData.part_id);
+    await manageApplications(client, applications, newPartData.part_id, createdBy);
 
     return newPartData;
 };
@@ -381,6 +347,7 @@ router.get('/parts', protect, hasPermission('parts:view'), async (req, res) => {
         const query = `
             SELECT
                 pv.*,
+                ${fitmentRulesSql('pv')} AS fitment_rules,
                 p.reorder_point,
                 p.warning_quantity,
                 p.measurement_unit,
@@ -572,6 +539,9 @@ router.get('/parts/:id/tags', protect, hasPermission('parts:view'), async (req, 
 });
 
 router.post('/parts', protect, hasPermission('parts:create'), async (req, res) => {
+    if (Array.isArray(req.body?.applications) && req.body.applications.length > 0 && !userHasPermission(req, 'applications:edit')) {
+        return res.status(403).json({ message: 'Linking vehicle applications requires applications:edit permission.' });
+    }
     const confirmation = req.body?.jev_confirmation;
     let duplicate = null;
 
@@ -656,8 +626,12 @@ router.post('/parts', protect, hasPermission('parts:create'), async (req, res) =
         if (err.code === '23505' && err.constraint === 'part_barcode_barcode_key') {
             return res.status(400).json({ error: 'This barcode is already assigned to another item.' });
         }
+        const status = err.status || err.statusCode;
+        if (status) {
+            return res.status(status).json({ code: err.code || 'VALIDATION_ERROR', message: err.message });
+        }
         console.error(`[${req.method} ${req.url}] Internal Error:`, err);
-        res.status(err.statusCode || 500).json({ message: err.statusCode ? err.message : 'Internal Server Error' });
+        res.status(500).json({ message: 'Internal Server Error' });
     } finally {
         client.release();
     }
@@ -666,6 +640,9 @@ router.post('/parts', protect, hasPermission('parts:create'), async (req, res) =
 router.post('/purchase-orders/:id/lines/:lineId/catalog', protect, hasPermission('goods_receipt:create'), async (req, res) => {
     if (!userHasPermission(req, 'parts:create')) {
         return res.status(403).json({ message: 'Creating a catalog part requires parts:create permission.' });
+    }
+    if (Array.isArray(req.body?.applications) && req.body.applications.length > 0 && !userHasPermission(req, 'applications:edit')) {
+        return res.status(403).json({ message: 'Linking vehicle applications requires applications:edit permission.' });
     }
 
     const poId = Number(req.params.id);
@@ -822,9 +799,16 @@ router.post('/purchase-orders/:id/lines/:lineId/catalog', protect, hasPermission
         });
     } catch (err) {
         await client.query('ROLLBACK');
+        const status = err.status || err.statusCode;
+        if (status) {
+            return res.status(status).json({
+                code: err.code || 'VALIDATION_ERROR',
+                message: err.message,
+            });
+        }
         console.error(`[${req.method} ${req.url}] Internal Error:`, err);
-        return res.status(err.statusCode || 500).json({
-            message: err.statusCode ? err.message : 'Could not catalog purchase-order line.',
+        return res.status(500).json({
+            message: 'Could not catalog purchase-order line.',
         });
     } finally {
         client.release();
@@ -839,6 +823,9 @@ router.put('/parts/bulk-update', protect, hasPermission('parts:edit'), async (re
 });
 
 router.put('/parts/:id', protect, hasPermission(['parts:edit', 'goods_receipt:create', 'goods_receipt:edit']), async (req, res) => {
+    if (Array.isArray(req.body?.applications) && req.body.applications.length > 0 && !userHasPermission(req, 'applications:edit')) {
+        return res.status(403).json({ message: 'Linking vehicle applications requires applications:edit permission.' });
+    }
     const { id } = req.params;
     const { tags, barcodes, modified_by, part_numbers_string, applications, ...partData } = req.body;
     partData.detail = normalizeText(partData.detail);
@@ -886,7 +873,7 @@ router.put('/parts/:id', protect, hasPermission(['parts:edit', 'goods_receipt:cr
         await manageTags(client, tagsToApply, id);
         await manageBarcodes(client, barcodes, id);
         await managePartNumbers(client, part_numbers_string, id, modified_by);
-        await manageApplications(client, applications, id);
+        await manageApplications(client, applications, id, req.user.employee_id);
         await client.query('COMMIT');
 
         const partForMeili = await getPartDataForMeili(db, id);
@@ -904,6 +891,10 @@ router.put('/parts/:id', protect, hasPermission(['parts:edit', 'goods_receipt:cr
         await client.query('ROLLBACK');
         if (err.code === '23505' && err.constraint === 'part_barcode_barcode_key') {
             return res.status(400).json({ error: 'This barcode is already assigned to another item.' });
+        }
+        const status = err.status || err.statusCode;
+        if (status) {
+            return res.status(status).json({ code: err.code || 'VALIDATION_ERROR', message: err.message });
         }
         console.error(`[${req.method} ${req.url}] Internal Error:`, err);
         res.status(500).json({ message: 'Internal Server Error' });
