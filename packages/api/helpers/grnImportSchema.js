@@ -47,6 +47,7 @@ const LINE_ALLOWED_KEYS = new Set([
   'supplier_item_code',
   'item_group_hint',
   'vehicle_applications',
+  'position',
   'quantity',
   'unit',
   'unit_cost',
@@ -97,6 +98,7 @@ const LINE_SCALAR_FIELDS = new Set([
   'supplier_item_code',
   'item_group_hint',
   'vehicle_applications',
+  'position',
   'quantity',
   'unit',
   'unit_cost',
@@ -503,6 +505,7 @@ function validateAndNormalizeExternalPayload(payload) {
     const supplier_item_code = validateText(line.supplier_item_code, { maxCodePoints: 255, path: `${path}.supplier_item_code` });
     const item_group_hint = validateText(line.item_group_hint, { maxCodePoints: 255, path: `${path}.item_group_hint` });
     const vehicle_applications = validateText(line.vehicle_applications, { maxCodePoints: 2000, path: `${path}.vehicle_applications` });
+    const position = validateText(line.position, { maxCodePoints: 100, path: `${path}.position`, allowNewlines: false });
     const quantity = parseQuantity(line.quantity, `${path}.quantity`);
     const unit = validateText(line.unit, { maxCodePoints: 20, path: `${path}.unit` });
     const unit_cost = parseMoney(line.unit_cost, `${path}.unit_cost`);
@@ -523,6 +526,7 @@ function validateAndNormalizeExternalPayload(payload) {
       item_group_hint: item_group_hint ?? null,
       // Optional extension: omitted when absent so legacy normalized payload hashes are unchanged.
       ...(vehicle_applications != null ? { vehicle_applications } : {}),
+      ...(position != null ? { position } : {}),
       quantity,
       unit: normalizeUom(unit),
       unit_cost,

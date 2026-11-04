@@ -446,7 +446,7 @@ export default function ImportReviewDrawer({
                           onChange={e => updateRow(row.row_id, { sale_price: e.target.value })} className={fieldClass('sale_price')} />
                       </div>
                     </div>
-                    <ImportRowFitments documentText={sourceLine.vehicle_applications}
+                    <ImportRowFitments position={sourceLine.position} documentText={sourceLine.vehicle_applications}
                       webText={sourceLine.enrichment?.suggested_vehicle_applications}
                       webVerified={sourceLine.enrichment?.status === 'verified_suggestion'} partId={cr.part_id}
                       confirmed={isConfirmed} canEdit={canEditApplications} />

@@ -4,14 +4,14 @@ import { fitmentSavePayload } from '../../utils/engineCodeFormat';
 import { formatSearchFitments } from '../../helpers/searchFitmentText';
 
 const describe = c => formatSearchFitments({ fitment_rules: [c] });
-const identity = c => JSON.stringify(['make_id', 'model_id', 'engine_id', 'chassis_id', 'year_start', 'year_end']
-  .map(k => c[k] ?? c[k === 'year_start' ? 'link_year_start' : k === 'year_end' ? 'link_year_end' : k] ?? null));
+const identity = c => JSON.stringify([String(c.position || '').trim().toLowerCase(), ...['make_id', 'model_id', 'engine_id', 'chassis_id', 'year_start', 'year_end']
+  .map(k => c[k] ?? c[k === 'year_start' ? 'link_year_start' : k === 'year_end' ? 'link_year_end' : k] ?? null)]);
 
 /**
  * Shows AI-extracted vehicle applications for an import line. Once the catalog part
  * is confirmed, applications the part lacks are linked automatically.
  */
-export default function ImportRowFitments({ documentText, webText, webVerified, partId, confirmed, canEdit }) {
+export default function ImportRowFitments({ documentText, webText, webVerified, position, partId, confirmed, canEdit }) {
   const [items, setItems] = useState(null);
   const [error, setError] = useState('');
 
@@ -22,7 +22,7 @@ export default function ImportRowFitments({ documentText, webText, webVerified, 
       try {
         const parse = async (text, source) => (text?.trim()
           ? (await api.post('/applications/parse-fitment-text', { text: text.trim().slice(0, 2000) })).data.fitments || []
-          : []).map(c => ({ ...c, source, state: c.confidence_label === 'unresolved' || c.alternative_group_id ? 'review' : 'new' }));
+          : []).map(c => ({ ...c, position: c.position || position || undefined, source, state: c.confidence_label === 'unresolved' || c.alternative_group_id ? 'review' : 'new' }));
         const fromDocument = await parse(documentText, 'document');
         const seen = new Set(fromDocument.map(identity));
         // Web results that repeat a document fitment add nothing.
@@ -51,7 +51,7 @@ export default function ImportRowFitments({ documentText, webText, webVerified, 
       }
     })();
     return () => { cancelled = true; };
-  }, [documentText, webText, webVerified, partId, confirmed, canEdit]);
+  }, [documentText, webText, webVerified, position, partId, confirmed, canEdit]);
 
   if (!documentText?.trim() && !webText?.trim()) return null;
   const label = (c) => ({ linked: 'Linked', review: 'Needs manual review', failed: 'Failed',

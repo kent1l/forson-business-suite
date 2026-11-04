@@ -1141,6 +1141,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                 last_sale_price: row.confirmed_row?.sale_price ?? 0,
             },
             // Document fitments always apply; web-found ones only when the research was verified.
+            position: source.position || '',
             vehicleApplicationsText: [source.vehicle_applications,
                 source.enrichment?.status === 'verified_suggestion' ? source.enrichment.suggested_vehicle_applications : null]
                 .filter(Boolean).join('; '),
@@ -1159,14 +1160,18 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
                     const { data } = await api.post('/applications/parse-fitment-text', { text: fitmentText.slice(0, 2000) });
                     applications = (data.fitments || [])
                         .filter(c => c.confidence_label !== 'unresolved' && !c.alternative_group_id)
-                        .map(fitmentSavePayload);
+                        .map(c => fitmentSavePayload({ ...c, position: c.position || importPartTarget.position || undefined }));
                 } catch {
                     toast.error('Could not parse vehicle applications; part will be created without them.');
                 }
             }
+            // Position lives on the vehicle link; with no fitment linked, keep it in the name so front/rear parts stay distinguishable.
+            const position = upperCatalogText(importPartTarget.position);
+            const detail = position && !applications?.length && !upperCatalogText(partData.detail).includes(position)
+                ? `${position} ${partData.detail || ''}`.trim() : partData.detail;
             const result = await executePartSave({
                 endpoint: '/parts',
-                payload: { ...partData, ...(applications?.length ? { applications } : {}), created_by: user.employee_id },
+                payload: { ...partData, detail, ...(applications?.length ? { applications } : {}), created_by: user.employee_id },
                 brands,
                 groups,
             });
