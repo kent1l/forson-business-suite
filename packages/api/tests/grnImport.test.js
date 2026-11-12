@@ -72,6 +72,44 @@ describe('GRN External JSON Ingestion - Schema and Rules', () => {
     expect(normalized.extraction_issues).toHaveLength(0);
   });
 
+  test('preserves legacy hashes and accepts multiple numbers without duplicating a receipt row', () => {
+    const legacy = validateAndNormalizeExternalPayload(conformingExample);
+    expect(legacy.lines[0]).not.toHaveProperty('part_numbers');
+    expect(legacy.lines[0].enrichment).not.toHaveProperty('suggested_part_numbers');
+    const payload = structuredClone(conformingExample);
+    payload.lines[0].part_numbers = [' 00123-A ', 'X/456', '00123-a'];
+    payload.lines[0].enrichment.suggested_part_numbers = ['WEB-01', 'web-01', 'OEM-02'];
+    const normalized = validateAndNormalizeExternalPayload(payload);
+    expect(normalized.lines).toHaveLength(1);
+    expect(normalized.lines[0].part_numbers).toEqual(['00123-A', 'X/456']);
+    expect(normalized.lines[0].quantity).toBe(legacy.lines[0].quantity);
+    expect(normalized.lines[0].enrichment.suggested_part_numbers).toEqual(['WEB-01', 'OEM-02']);
+    expect(computePayloadHash(normalized, {})).not.toBe(computePayloadHash(legacy, {}));
+    delete normalized.lines[0].part_numbers;
+    delete normalized.lines[0].enrichment.suggested_part_numbers;
+    expect(computePayloadHash(normalized, {})).toBe(computePayloadHash(legacy, {}));
+    payload.lines[0].part_numbers = null;
+    payload.lines[0].enrichment.suggested_part_numbers = null;
+    expect(computePayloadHash(validateAndNormalizeExternalPayload(payload), {})).toBe(computePayloadHash(legacy, {}));
+  });
+
+  test.each(['00123, X456', [123], [null], [' '], ['x'.repeat(256)], ['X\u202e456'], ['A\nB'], Array(21).fill('A')])(
+    'rejects invalid part number lists: %p', value => {
+      const payload = structuredClone(conformingExample);
+      payload.lines[0].part_numbers = value;
+      expect(() => validateAndNormalizeExternalPayload(payload)).toThrow(/part_numbers/);
+      delete payload.lines[0].part_numbers;
+      payload.lines[0].enrichment.suggested_part_numbers = value;
+      expect(() => validateAndNormalizeExternalPayload(payload)).toThrow(/suggested_part_numbers/);
+    }
+  );
+
+  test('allows an extraction issue scoped to the part number list', () => {
+    const payload = structuredClone(conformingExample);
+    payload.extraction_issues = [{ code: 'AMBIGUOUS_VALUE', line_no: 1, field: 'part_numbers', message: 'Unclear alias grouping' }];
+    expect(validateAndNormalizeExternalPayload(payload).extraction_issues[0].field).toBe('part_numbers');
+  });
+
   test.each([['180', '180.00'], ['0', '0.00'], [null, null]])(
     'initializes the review sale price from handwritten value %p', (value, expected) => {
       const payload = structuredClone(conformingExample);

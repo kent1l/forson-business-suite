@@ -70,6 +70,7 @@ try {
           supplier_item_text: 'TOYOTA NEW-123 AIR FILTER',
           brand: 'TOYOTA',
           part_number: 'NEW-123',
+          part_numbers: ['NEW-123', 'NEW-456', 'new-123'],
           description: 'Air filter',
           vehicle_applications: 'Toyota Hilux 2KD-FTV 2005-2015; Toyota FJ Cruiser 2007-2014',
           position: 'FRONT',
@@ -520,7 +521,7 @@ try {
   await clickButton('Create Part');
   await page.waitForSelector('input[name="detail"]');
   assert.equal(await page.$eval('input[name="detail"]', el => el.value), 'AIR FILTER');
-  assert.equal(await page.$eval('textarea[name="part_numbers_string"]', el => el.value), 'NEW-123');
+  assert.equal(await page.$eval('textarea[name="part_numbers_string"]', el => el.value), 'NEW-123, NEW-456');
   assert.ok(await page.evaluate(() => document.body.innerText.includes('Hilux')), 'Prefilled fitment should be visible before saving');
   assert.ok(await page.evaluate(() => document.body.innerText.includes('FJ Cruiser')), 'Full multiword model should be visible before saving');
   await clickButton('Cancel');
@@ -536,6 +537,7 @@ try {
   await page.waitForFunction(() => Array.from(document.querySelectorAll('button')).some(button => button.textContent.trim() === 'Catalog air filter'));
   assert.equal(createdParts.length, 1);
   assert.equal(createdParts[0].detail, 'AIR FILTER');
+  assert.equal(createdParts[0].part_numbers_string, 'NEW-123, NEW-456');
   assert.equal(createdParts[0].applications.length, 2);
   assert.equal(createdParts[0].applications[1].model, 'FJ Cruiser');
   assert.equal(createdParts[0].applications[1].engine, null);

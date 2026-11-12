@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const { normalizeUom } = require('./normalizeEntity');
+const { getGrnPartNumbers } = require('./grnPartNumbers');
 
 const MAX_PAYLOAD_BYTES = 1048576; // 1 MiB canonical UTF-8
 const MAX_LINES = 200;
@@ -44,6 +45,7 @@ const LINE_ALLOWED_KEYS = new Set([
   'description',
   'brand',
   'part_number',
+  'part_numbers',
   'supplier_item_code',
   'item_group_hint',
   'vehicle_applications',
@@ -61,6 +63,7 @@ const ENRICHMENT_ALLOWED_KEYS = new Set([
   'status',
   'suggested_brand',
   'suggested_part_number',
+  'suggested_part_numbers',
   'suggested_description',
   'suggested_group',
   'suggested_vehicle_applications',
@@ -95,6 +98,7 @@ const LINE_SCALAR_FIELDS = new Set([
   'description',
   'brand',
   'part_number',
+  'part_numbers',
   'supplier_item_code',
   'item_group_hint',
   'vehicle_applications',
@@ -291,6 +295,26 @@ function checkDisallowedKeys(obj, allowedKeys, path) {
   }
 }
 
+function validatePartNumbers(value, path) {
+  if (value == null) return null;
+  if (!Array.isArray(value) || value.length > 20) {
+    const err = new Error(`Field '${path}' must be an array of at most 20 part-number strings or null.`);
+    err.path = path;
+    throw err;
+  }
+  const numbers = value.map((number, index) => {
+    const itemPath = `${path}[${index}]`;
+    const text = validateText(number, { maxCodePoints: 255, path: itemPath, required: true, allowNewlines: false });
+    if (!text.trim()) {
+      const err = new Error(`Field '${itemPath}' must be a non-blank part-number string.`);
+      err.path = itemPath;
+      throw err;
+    }
+    return text;
+  });
+  return getGrnPartNumbers({ part_numbers: numbers });
+}
+
 function validateEnrichment(enrichment, path) {
   if (enrichment === null || enrichment === undefined) {
     return {
@@ -319,6 +343,7 @@ function validateEnrichment(enrichment, path) {
 
   const suggested_brand = validateText(enrichment.suggested_brand, { maxCodePoints: 255, path: `${path}.suggested_brand` });
   const suggested_part_number = validateText(enrichment.suggested_part_number, { maxCodePoints: 255, path: `${path}.suggested_part_number` });
+  const suggested_part_numbers = validatePartNumbers(enrichment.suggested_part_numbers, `${path}.suggested_part_numbers`);
   const suggested_description = validateText(enrichment.suggested_description, { maxCodePoints: 2000, path: `${path}.suggested_description` });
   const suggested_group = validateText(enrichment.suggested_group, { maxCodePoints: 255, path: `${path}.suggested_group` });
   const suggested_vehicle_applications = validateText(enrichment.suggested_vehicle_applications, { maxCodePoints: 2000, path: `${path}.suggested_vehicle_applications` });
@@ -379,6 +404,7 @@ function validateEnrichment(enrichment, path) {
     status,
     suggested_brand: suggested_brand ?? null,
     suggested_part_number: suggested_part_number ?? null,
+    ...(suggested_part_numbers != null ? { suggested_part_numbers } : {}),
     suggested_description: suggested_description ?? null,
     suggested_group: suggested_group ?? null,
     // Optional extension: omitted when absent so legacy normalized payload hashes are unchanged.
@@ -502,6 +528,7 @@ function validateAndNormalizeExternalPayload(payload) {
 
     const brand = validateText(line.brand, { maxCodePoints: 255, path: `${path}.brand` });
     const part_number = validateText(line.part_number, { maxCodePoints: 255, path: `${path}.part_number` });
+    const part_numbers = validatePartNumbers(line.part_numbers, `${path}.part_numbers`);
     const supplier_item_code = validateText(line.supplier_item_code, { maxCodePoints: 255, path: `${path}.supplier_item_code` });
     const item_group_hint = validateText(line.item_group_hint, { maxCodePoints: 255, path: `${path}.item_group_hint` });
     const vehicle_applications = validateText(line.vehicle_applications, { maxCodePoints: 2000, path: `${path}.vehicle_applications` });
@@ -522,6 +549,8 @@ function validateAndNormalizeExternalPayload(payload) {
       description: description ?? null,
       brand: brand ?? null,
       part_number: part_number ?? null,
+      // Omitted/null extensions stay absent to preserve legacy hashes.
+      ...(part_numbers != null ? { part_numbers } : {}),
       supplier_item_code: supplier_item_code ?? null,
       item_group_hint: item_group_hint ?? null,
       // Optional extension: omitted when absent so legacy normalized payload hashes are unchanged.

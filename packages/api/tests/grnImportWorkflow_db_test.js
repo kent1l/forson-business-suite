@@ -109,6 +109,7 @@ app.use('/api', require('../routes/goodsReceiptRoutes'));
       description: 'OIL FILTER',
       brand: `Import Brand ${runId}`,
       part_number: null,
+      part_numbers: [`UNKNOWN-${runId}`, `IMPORT-ALIAS-${runId}`],
       supplier_item_code: null,
       item_group_hint: `Import Group ${runId}`,
       quantity: '2.0000',
@@ -122,6 +123,8 @@ app.use('/api', require('../routes/goodsReceiptRoutes'));
     extraction_issues: [],
   };
 
+  await db.query('INSERT INTO part_number (part_id, part_number, number_type) VALUES ($1, $2, $3)',
+    [partA.part_id, `IMPORT-ALIAS-${runId}`, 'OEM']);
   const reqKey1 = crypto.randomUUID();
   const disabledPost = await call('post', '/goods-receipts/imports', { request_key: reqKey1, payload: dummyPayload }, 503);
   assert.equal(disabledPost.code, 'GRN_IMPORT_DISABLED');
@@ -180,6 +183,9 @@ app.use('/api', require('../routes/goodsReceiptRoutes'));
   assert.equal(fetched.review_state.rows[0].description, undefined);
   const candidates = await call('post', `/goods-receipts/imports/${importId}/candidates`, { version: 1, row_id: row1Id });
   assert(candidates.candidates.some(part => part.part_id === partA.part_id), 'Source identity must reach catalog matching');
+  assert.equal(candidates.candidates.find(part => part.part_id === partA.part_id).match_evidence.identifier, true,
+    'Additional part numbers must reach matching through the HTTP route');
+  assert.deepEqual(fetched.source_payload.lines[0].part_numbers, dummyPayload.lines[0].part_numbers);
   assert.equal(candidates.verification.status === 'match' && candidates.verification.part_id != null
     ? candidates.candidates.some(part => part.part_id === candidates.verification.part_id) : true, true);
   await call('post', `/goods-receipts/imports/${importId}/candidates`, { version: 1, row_id: row1Id, query: {} }, 400);

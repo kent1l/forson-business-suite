@@ -1,11 +1,14 @@
 ---
+trigger: always_on
 description: Constraints and parameters for Hindsight memory operations (retain, recall)
 globs: **/*
 ---
 
-# Hindsight Memory Protocol
+# Hindsight Memory Protocol (`agy-dev-server` Bank)
 
-When calling `hindsight` MCP tools (`retain`, `recall`, `get_document`, etc.):
+This project's Hindsight memory bank is **`agy-dev-server`**.
+When calling `hindsight` MCP tools (`get_bank`, `list_memories`, `retain`, `sync_retain`, `recall`, `reflect`, `get_document`, etc.):
+- **Bank ID**: Always pass `"bank_id": "agy-dev-server"` whenever the tool schema includes a `bank_id` parameter (such as in Antigravity). Omit `bank_id` if using a URL-pinned `/mcp/agy-dev-server/` endpoint.
 
 ## 1. Retaining Memories (`hindsight` → `retain`)
 - **Required Parameter**: `content` (string) — The detailed memory/knowledge payload. **Do NOT use `text`**.

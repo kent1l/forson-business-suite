@@ -13,6 +13,7 @@
 | E. Local verification | Complete | §6 |
 | F. Automatic population and saving | Complete | §4-F |
 | G. Confirmation and review usability | Complete | §4-G |
+| H. Multiple identifiers for one item | Complete; local validation below | §4-H |
 | Production rollout / receipt pilot | Not performed | §5 |
 
 ## 1. For a New Session or Implementer
@@ -96,6 +97,16 @@ Search text entered by the receiver affects retrieval only; it does not replace 
 - [x] Show a subtle blue highlight on AI-filled fields with one shared legend. Store cosmetic `ai_filled_fields` arrays in existing JSON review state, seeded from extraction and updated by automatic-match actions. Manual field edits remove their highlight, including after save/reopen; highlights do not confer confirmation. Legacy reviews infer original quantity/cost highlights from source values until first edit. No migration or external schema change is required.
 - [x] Verify actual confirmation clicks, disabled unmatched confirmation, retained confirmation after manual price edits, removal of edited-field highlights, desktop/phone layouts and zero-cost draft readback using browser and real PostgreSQL tests. Automatic matching race/conflict checks continue to pass.
 
+### H. Multiple identifiers for one item (2026-11-12)
+
+- [x] Accept optional schema-v1 `part_numbers` and enrichment `suggested_part_numbers` arrays (20 entries, 255 code points per string). Trim/deduplicate case-insensitively without splitting meaningful slashes/hyphens. Omitted/null extensions preserve legacy hashes. Source and research remain separate.
+- [x] Compile the legacy primary plus the source list for lookup. SQL matches any complete number independently; Jev receives all numbers and instructions to assess one specific product. Conservative fallback requires every supplied identifier to belong to the selected catalog item; conflicting or unknown aliases require Jev/manual review.
+- [x] Carry arrays through the authenticated candidate route and invalidate confirmation when identifying list corrections change. Include the list in frontend matching keys, show all source numbers under supporting facts, and prefill each number separately in Create Part. Existing-part selection does not silently append catalog aliases.
+- [x] Update the copyable application prompt and standalone extraction prompt. Compile primary/full-list identifiers in visible order; distinguish exact product references from different brands, variants, kit components and separate receipt rows; do not multiply quantities or amounts. Ambiguous grouping becomes a scoped extraction issue. Web-only identifiers remain in enrichment.
+- [x] Verify legacy hashes, list validation, source/research separation, quantities, lookup by additional numbers, conflicting products, and source-array HTTP persistence with unit and real PostgreSQL tests. Verify production frontend compilation and targeted lint (existing warnings only).
+
+These changes are local and uncommitted. See §6 for verification commands and browser status. For current structure use `graphify query "getGrnPartNumbers part_numbers GRN import"`; recall Hindsight tags `forson-business-suite`, `grn-import`, `part-numbers` for compatibility decisions. Before extending this work, compare this status with Git; afterwards update this section, retain new decisions and refresh graphify.
+
 ## 5. Explicitly Deferred / Operational Follow-up
 
 - Production deployment, production provider configuration and a representative supplier-receipt accuracy/latency pilot were not performed. The live provider smoke check used entirely invented text, not business records.
@@ -103,6 +114,8 @@ Search text entered by the receiver affects retrieval only; it does not replace 
 - No new indexes or durable Jev-decision cache were added. Measure retrieval on representative catalog size before deciding whether additional indexes or caching are necessary.
 
 ## 6. Verification
+
+2026-11-12 multi-number verification: `npm run -w packages/api test -- --runInBand grnImport.test.js` (76 tests), `node --test packages/web/tests/grnPartNumbers.test.js`, both disposable-database runners below, the GRN import browser workflow, targeted ESLint in each package, and `npm run -w packages/web build` passed. Browser execution used `LD_LIBRARY_PATH=/tmp/grn-browser-libs/usr/lib/x86_64-linux-gnu` after extracting `libasound2t64` into `/tmp` (no system package changes). Browser assertions cover deduplicated multi-number prefill and the create-part request. Existing lint/build warnings remain. No production deployment was performed.
 
 Passed locally:
 
@@ -124,6 +137,7 @@ The automatic-matching browser runner additionally verifies automatic persistenc
 ## 7. Files Touched
 
 - `packages/api/helpers/grnImportSchema.js`
+- `packages/api/helpers/grnPartNumbers.js` (2026-11-12)
 - `packages/api/services/grnImportService.js`
 - `packages/api/services/grnDraftService.js`
 - `packages/api/services/grnLineIdentityService.js`
@@ -140,6 +154,7 @@ The automatic-matching browser runner additionally verifies automatic persistenc
 - `packages/web/src/components/goods-receipt/ImportReviewDrawer.jsx`
 - `packages/web/src/pages/GoodsReceiptPage.jsx`
 - `packages/web/tests/grnImportBrowser.mjs`
+- `packages/web/tests/grnPartNumbers.test.js` (2026-11-12)
 - `packages/web/tests/grnImportAutoMatchBrowser.mjs`
 - `packages/web/tests/fixtures/grnImportBrowser.html`
 - `docs/plans/2026-10-20_grn-external-json-extraction-prompt.md`
@@ -153,3 +168,5 @@ The automatic-matching browser runner additionally verifies automatic persistenc
 - 2026-10-21 clarification: Per user direction, original raw text is hidden and excluded from retrieval and Jev. Cleaned supplier_item_text is primary; legacy cleaned description is the only text fallback. Cleaned-only JSON rows are accepted without raw_text or description.
 
 - 2026-10-21 automatic-population request: qualifying catalog parts now populate and save on review opening, with manual-override protection, conflict recovery, progress/retry and receiving values preserved. Supersedes the earlier manual-selection-only decision.
+
+- 2026-11-12: Added compatible source/research part-number arrays, individual-identifier matching, full-list Jev evidence, conservative fallback, review display, create-part prefill and extraction instructions. Unit, PostgreSQL, HTTP, browser, lint and build checks passed locally; changes remain uncommitted. `graphify update .` refreshed the code graph; it reports 30 existing extraction metadata issues and skips HTML visualization above 5,000 nodes.

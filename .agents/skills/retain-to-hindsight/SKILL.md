@@ -9,10 +9,13 @@ description: >-
   invalidate_memory, create_mental_model, create_directive.
 ---
 
-# Retain to Hindsight
+# Retain to Hindsight (`agy-dev-server` Bank)
 
 This skill governs how to use the **hindsight MCP** to persist important knowledge
-from sessions into long-term memory for future retrieval.
+from sessions into long-term memory (**`agy-dev-server`** bank) for future retrieval.
+
+> **IMPORTANT (`bank_id` requirement):**
+> Whenever calling any Hindsight MCP tool (`get_bank`, `list_memories`, `sync_retain`, `retain`, `recall`, `reflect`, etc.), if the tool schema includes `bank_id` (such as in Antigravity), you **MUST** pass `"bank_id": "agy-dev-server"`. If the harness is already URL-pinned to `/mcp/agy-dev-server/` and does not accept `bank_id`, omit `bank_id`.
 
 ---
 

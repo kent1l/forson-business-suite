@@ -55,6 +55,23 @@ const { createPartCandidateService } = require('../services/partCandidateService
     assert(calls[0].state.catalog_items.find(part => part.part_id === filter).part_numbers.includes(`04152-${suffix}`));
     assert(!result.candidates[0].delivered_quantity, 'Matching must not create receiving facts');
 
+    const alias = `ALIAS-${suffix}`;
+    await client.query('INSERT INTO part_number (part_id,part_number,number_type) VALUES ($1,$2,$3)', [filter, alias, 'OEM']);
+    const multiple = { ...receipt, partNumber: null, partNumbers: [`UNKNOWN-${suffix}`, alias] };
+    const multipleResult = await service.findPartCandidates(multiple);
+    assert.equal(multipleResult.candidates[0].part_id, filter, 'Any complete alias must find the same catalog item independently');
+    assert.equal(multipleResult.candidates[0].match_evidence.identifier, true);
+    assert.deepEqual(calls.at(-1).state.supplier_item.part_numbers, multiple.partNumbers, 'Jev must receive all identifiers separately');
+    decision = new Error('Provider unavailable');
+    assert.equal((await service.findPartCandidates({ ...receipt, partNumbers: [alias] })).automatic_match.part_id, filter, 'Known aliases for one specific item permit safe fallback');
+    assert.equal((await service.findPartCandidates(multiple)).automatic_match, null, 'An unverified additional identifier needs review');
+    const otherAlias = `OTHER-${suffix}`;
+    await client.query('INSERT INTO part_number (part_id,part_number,number_type) VALUES ($1,$2,$3)', [alternative, otherAlias, 'OEM']);
+    const conflictingNumbers = await service.findPartCandidates({ ...receipt, partNumbers: [otherAlias] });
+    assert.equal(conflictingNumbers.automatic_match, null, 'Identifiers belonging to different specific products must not be merged');
+    assert(conflictingNumbers.candidates.some(part => part.part_id === alternative));
+    decision = { choice: String(filter), confidence: 0.96, model: 'test-jev' };
+
     const reordered = await service.findPartCandidates({ ...receipt, partNumber: null, supplierItemText: '1L filter Diesel oil' });
     assert(reordered.candidates.some(part => part.part_id === filter), 'Reordered words must work without Meilisearch');
     const typo = await service.findPartCandidates({ description: 'Diesel oil filtter 04152 1L' });

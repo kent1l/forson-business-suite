@@ -4,7 +4,7 @@ import ImportRowFitments from './ImportRowFitments';
 import { ICONS } from '../../constants';
 import { formatCurrency } from '../../utils/currency';
 import { REJECTION_REASONS } from '../../utils/grnCosting';
-import { aiFilledRowFields, aiFilledHeaderFields, normalizeUom } from '../../utils/grnImportReview';
+import { aiFilledRowFields, aiFilledHeaderFields, normalizeUom, getGrnPartNumbers } from '../../utils/grnImportReview';
 
 const importFieldClass = ai => `w-full min-w-0 px-3 py-2 border rounded-lg text-gray-900 dark:text-slate-100 ${ai
   ? 'border-blue-300 bg-blue-50 dark:border-blue-800 dark:bg-blue-950/40'
@@ -477,7 +477,7 @@ export default function ImportReviewDrawer({
                           <input id={`factor-${row.row_id}`} readOnly value={cr.units_per_source_unit || '1.0000'} className={fieldClass('units_per_source_unit')} />
                         </div>
                       </div>
-                      <p className="mt-3">Brand: {sourceLine.brand || '—'} · Part number: {sourceLine.part_number || '—'} · Group: {sourceLine.item_group_hint || '—'}</p>
+                      <p className="mt-3">Brand: {sourceLine.brand || '—'} · Part numbers: {getGrnPartNumbers(sourceLine).join(' · ') || '—'} · Group: {sourceLine.item_group_hint || '—'}</p>
                       {sourceLine.handwritten_sale_price && <p className="mt-1">Handwritten sale price: {sourceLine.handwritten_sale_price}</p>}
                       <p className="mt-1">Prices can be completed in the GRN draft. A blank unit cost starts at 0.</p>
                     </details>

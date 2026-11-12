@@ -130,10 +130,23 @@ export function applyImportAction(review, action, selectedPart = null) {
   return { ...review, review_state: state };
 }
 
+export function getGrnPartNumbers({ part_number, part_numbers } = {}) {
+  const seen = new Set();
+  return [part_number, ...(Array.isArray(part_numbers) ? part_numbers : [])]
+    .filter(value => typeof value === 'string' && value.trim())
+    .map(value => value.trim())
+    .filter(value => {
+      const key = value.toUpperCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
 export function importRowMatchKey(review, row) {
   const source = review.source_payload?.lines?.find(line => line.line_no === row.line_no) || {};
   return JSON.stringify([row.row_id, source.supplier_item_text || source.description || '',
-    source.brand, source.part_number, source.item_group_hint, row.corrections]);
+    source.brand, getGrnPartNumbers(source), source.item_group_hint, row.corrections]);
 }
 
 export function canAutomaticallyMatch(review, row) {
@@ -169,6 +182,7 @@ Inside the \`\`\`json code block, the first non-whitespace character MUST be { a
       "description": null,
       "brand": null,
       "part_number": null,
+      "part_numbers": [],
       "supplier_item_code": null,
       "item_group_hint": null,
       "vehicle_applications": null,
@@ -183,6 +197,7 @@ Inside the \`\`\`json code block, the first non-whitespace character MUST be { a
         "status": "unresolved",
         "suggested_brand": null,
         "suggested_part_number": null,
+        "suggested_part_numbers": [],
         "suggested_description": null,
         "suggested_group": null,
         "suggested_vehicle_applications": null,
@@ -209,6 +224,8 @@ TRANSCRIPTION RULES
 - supplier_item_text is the compact identifying text for THIS item, derived only from its visible receipt wording. Retain printed brand, manufacturer part number, product/model, dimensions, grade, size, pack size, vehicle/application codes and orientation where they identify the product. Remove the row number, ordered/delivered/returned quantities, purchase units used only for counting, costs, totals, discounts, tax, selling-price handwriting, check marks and other receiving annotations. Do NOT remove identifying numbers such as 10W-40, 1L bottle size, 3/4 inch, RH/LH or model/part codes. Example: receipt wording "2 PCS TOYOTA 04152-YZZA6 OIL FILTER @125.00 TOTAL 250.00 ✓" becomes supplier_item_text "TOYOTA 04152-YZZA6 OIL FILTER". Use null if a faithful item identity cannot be isolated; report ambiguity rather than inventing an identity. FBS uses this cleaned text and extracted identity fields for catalog matching and Jev verification. Limit this field to 2,000 characters.
 - Populate brand, part_number, supplier_item_code, and item_group_hint outside enrichment ONLY when explicitly printed or visibly identifiable on the physical page.
 - Keep document_number, part_number, and supplier_item_code as strings. Preserve letters, leading zeros, hyphens, and other meaningful punctuation.
+- MULTIPLE PART NUMBERS FOR ONE ITEM: Compile all clearly visible identifiers for the SAME specific supplied item in part_numbers as a JSON array of strings, in printed order, with duplicates removed (case-insensitive). Put the primary/manufacturer number in part_number; if no primary is indicated, use the first visible number. Include that primary number in part_numbers too. For one number use e.g. "part_number": "00123-A", "part_numbers": ["00123-A"]; for several use "part_number": "00123-A", "part_numbers": ["00123-A", "X/456", "789-B"]. With no readable number use part_number: null and part_numbers: []. Preserve leading zeros and meaningful punctuation inside each complete number. Never concatenate multiple numbers into a comma/slash-delimited part_number string, and never split a slash/hyphen that belongs to one number. Maximum 20 strings, each non-blank and at most 255 characters.
+- Multiple numbers may share one line ONLY when the document clearly associates them with the same specific item (for example, printed aliases or an explicitly labeled OEM reference for that supplied product). A cross-reference does not turn a different branded replacement into the same product. Do not combine left/right, front/rear, sizes, grades, models, pack sizes, kit components, alternative products, or separate receipt rows. Keep one quantity, unit, cost and total for that source row; never duplicate or multiply amounts for its aliases. If number grouping or a shorthand suffix is ambiguous, preserve the visible wording in supplier_item_text, leave uncertain identifiers out of part_numbers, and report AMBIGUOUS_VALUE with field "part_numbers"; never invent expanded numbers or infer equivalence from similar appearance or fitment.
 - document_date is the date printed on the supplier document in YYYY-MM-DD format (only when unambiguous). Do not use the date goods physically arrived. Currency is a 3-letter uppercase code (e.g. "PHP") only when unambiguous; otherwise null.
 - Put printed supplier cost in unit_cost. Put clearly handwritten intended retail/selling prices in handwritten_sale_price (as a decimal string). Never confuse the two.
 - Describe warehouse annotations (ticks, checks, circles, stamps) literally in receiving_mark (e.g., "Check mark (✓) over quantity"). A check mark does not prove physical acceptance.
@@ -219,6 +236,7 @@ INTERNET RESEARCH RULES
 - Research product identity only: manufacturer/brand, part number, product description, and likely item group. Search using clues visible on the scan.
 - Actively research each distinct item using its visible brand, part number, and identifying specifications, via web search and, where a page-reading tool exists, by opening pages. Prefer official manufacturer catalogs and product pages; use reputable distributor listings as secondary evidence. Search results and their snippets are acceptable evidence when they come from your search tool and show the exact brand and/or full part number, a manufacturer catalog match, or an application table. A snippet is weaker than a fully read page: do not infer anything the snippet text does not state. Opening a page is optional unless you have a page-reading tool and the snippet is insufficient.
 - Put ALL web-derived findings in enrichment. Never change a transcribed field based on web research. Never use the internet to fill missing receipt numbers, dates, quantities, supplier costs, totals, or handwritten values.
+- Keep web-discovered identifiers exclusively in enrichment.suggested_part_numbers (same array format/limits as part_numbers), with suggested_part_number as the primary suggestion. Compile only numbers explicitly evidenced as identifiers/references of this exact supplied product; cite which number and relationship each source supports. Do not mix compatible replacements or numbers for other brands/variants into this list, or copy research numbers into line.part_numbers. If the relationship is unclear, leave the suggestion out and explain it in reason.
 - Check brand, the full part number including suffixes, dimensions, model/application, pack size, and orientation wherever available. Distinguish an exact product identity from an OEM cross-reference, compatible replacement, or merely similar item. An OEM reference alone does not verify the printed aftermarket brand. If sources materially disagree, explain the conflict in reason and leave unsupported suggested fields null.
 - Set enrichment.status to:
   - "verified_suggestion" only when the exact visible brand/manufacturer AND full part number match an official manufacturer catalog or product page (read in full, or shown in an official-domain search snippet that states the match), the proposed identity is supported there, and there is no material conflict. Distributor, marketplace, or aggregator results never qualify for "verified_suggestion" on their own, however many agree;

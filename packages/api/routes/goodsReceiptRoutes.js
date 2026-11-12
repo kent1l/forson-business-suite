@@ -383,6 +383,7 @@ router.post('/goods-receipts/imports/:importId/candidates', protect, hasPermissi
       brand: fact('brand'),
       group: fact('item_group_hint'),
       partNumber: fact('part_number'),
+      partNumbers: fact('part_numbers'),
       description: fact('description'),
       supplierItemText: fact('supplier_item_text'),
       query,

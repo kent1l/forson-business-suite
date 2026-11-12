@@ -21,12 +21,14 @@ function getImportCapabilities() {
   return {
     enabled: isFeatureEnabled(),
     schema_version: 1,
-    optional_line_fields: ['supplier_item_text'],
+    optional_line_fields: ['supplier_item_text', 'part_numbers'],
+    optional_enrichment_fields: ['suggested_part_numbers'],
     limits: {
       max_payload_bytes: MAX_PAYLOAD_BYTES,
       max_lines: MAX_LINES,
       max_issues: MAX_ISSUES,
       max_sources_per_line: 20,
+      max_part_numbers_per_line: 20,
     },
   };
 }
@@ -937,7 +939,7 @@ async function patchImport(client, employeeId, importId, { version, actions }) {
               err.statusCode = 400;
               throw err;
             }
-            if (['supplier_item_text', 'description', 'brand', 'part_number', 'supplier_item_code', 'item_group_hint'].includes(k)) requiresReconfirm = true;
+            if (['supplier_item_text', 'description', 'brand', 'part_number', 'part_numbers', 'supplier_item_code', 'item_group_hint'].includes(k)) requiresReconfirm = true;
             row.corrections[k] = {
               old_value: row[k],
               new_value: newVal,

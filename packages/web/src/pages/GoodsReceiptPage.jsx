@@ -30,7 +30,7 @@ import { supplierReference, flattenReferenceMatches } from '../utils/supplierRef
 import { getNavContext, returnToOrigin, clearNavContext } from '../utils/apNavigationContract';
 import { createUuid } from '../utils/createUuid';
 import { receiptDateForInput, receiptDateForPayload } from '../utils/grnReceiptDate';
-import { normalizeUom } from '../utils/grnImportReview';
+import { normalizeUom, getGrnPartNumbers } from '../utils/grnImportReview';
 
 const upperCatalogText = (value) => String(value || '').replace(/\s+/g, ' ').trim().toUpperCase();
 
@@ -1137,7 +1137,7 @@ const GoodsReceiptPage = ({ user, onNavigate, pageState }) => {
             line_no: row.line_no,
             initialValues: {
                 detail: upperCatalogText(source.description),
-                part_numbers: upperCatalogText(source.part_number),
+                part_numbers: getGrnPartNumbers(source).map(upperCatalogText).join('; '),
                 brand_id: brands.find(item => upperCatalogText(item.brand_name) === brandName)?.brand_id || '',
                 brand_name: brandName,
                 group_id: groups.find(item => upperCatalogText(item.group_name) === groupName)?.group_id || '',
