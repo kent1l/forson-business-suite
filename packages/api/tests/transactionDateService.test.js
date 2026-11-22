@@ -340,4 +340,125 @@ describe('transactionDateService — AR payment date changes', () => {
             expect(withPerm.blocking_conflicts.some((c) => /unrestricted/.test(c))).toBe(false);
         });
     });
+
+    describe('invoice kind — POS payment and ledger date cascade', () => {
+        const FIXTURE_CASCADE_INVOICE_NUMBER = 'INV-TXNDATE-CASCADE-FIXTURE';
+        let cascadeInvoiceId;
+        let cascadePaymentId;
+
+        beforeAll(async () => {
+            let invRes = await db.query(
+                `SELECT invoice_id FROM invoice WHERE invoice_number = $1`,
+                [FIXTURE_CASCADE_INVOICE_NUMBER]
+            );
+            if (invRes.rows.length === 0) {
+                invRes = await db.query(
+                    `INSERT INTO invoice (invoice_number, customer_id, employee_id, total_amount, subtotal_ex_tax, tax_total, amount_paid, status, invoice_date)
+                     VALUES ($1, $2, $3, 250.00, 250.00, 0, 250.00, 'Paid', now())
+                     RETURNING invoice_id`,
+                    [FIXTURE_CASCADE_INVOICE_NUMBER, testCustomerId, testEmployeeId]
+                );
+            }
+            cascadeInvoiceId = invRes.rows[0].invoice_id;
+
+            let ipRes = await db.query(
+                `SELECT payment_id FROM invoice_payments WHERE invoice_id = $1 AND amount_paid = 250.00 AND payment_status = 'settled'`,
+                [cascadeInvoiceId]
+            );
+            if (ipRes.rows.length === 0) {
+                ipRes = await db.query(
+                    `INSERT INTO invoice_payments (invoice_id, method_id, amount_paid, payment_status, created_by, settled_at, created_at)
+                     VALUES ($1, 1, 250.00, 'settled', $2, now(), now())
+                     RETURNING payment_id`,
+                    [cascadeInvoiceId, testEmployeeId]
+                );
+                cascadePaymentId = ipRes.rows[0].payment_id;
+                await db.query(
+                    `SELECT append_ar_ledger_entry($1, $2, $3, NULL, 'PAYMENT_SETTLED'::ar_ledger_entry_type, -250.00, 'cash', NULL, 'cascade fixture', $4, 'invoice_payments')`,
+                    [testCustomerId, cascadeInvoiceId, cascadePaymentId, testEmployeeId]
+                );
+            } else {
+                cascadePaymentId = ipRes.rows[0].payment_id;
+            }
+        });
+
+        afterAll(async () => {
+            if (cascadeInvoiceId) {
+                await db.query(
+                    `DELETE FROM transaction_date_change_log WHERE transaction_kind = 'invoice' AND transaction_id = $1`,
+                    [cascadeInvoiceId]
+                ).catch(() => {});
+            }
+        });
+
+        test('apply() cascades invoice date to settled POS invoice_payments and ar_ledger, and allows moving forward again', async () => {
+            const manilaDateStr = (d) => new Date(d).toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' });
+            const twoDaysAgoStr = manilaDateStr(new Date(Date.now() - 2 * 24 * 60 * 60 * 1000));
+            const yesterdayStr = manilaDateStr(new Date(Date.now() - 24 * 60 * 60 * 1000));
+
+            const { rows: beforePay } = await db.query(
+                'SELECT created_at, settled_at FROM invoice_payments WHERE payment_id = $1',
+                [cascadePaymentId]
+            );
+
+            // Sync invoice_date, settled_at, and entry_date to yesterday first so shifting to twoDaysAgo always moves all three
+            await withCommittedClient(async (client) => {
+                await svc.apply(client, {
+                    kind: 'invoice', id: cascadeInvoiceId, newDate: yesterdayStr,
+                    reason: 'Resetting fixture date to yesterday before backdate cascade check',
+                    employeeId: testEmployeeId, requesterHasUnrestricted: true,
+                });
+            });
+
+            // 1. Backdate invoice to two days ago
+            const backdateResult = await withCommittedClient((client) =>
+                svc.apply(client, {
+                    kind: 'invoice', id: cascadeInvoiceId, newDate: twoDaysAgoStr,
+                    reason: 'Sale was entered late and actually happened two days ago',
+                    employeeId: testEmployeeId, requesterHasUnrestricted: true,
+                })
+            );
+
+            expect(backdateResult.cascade_summary.find((s) => s.table === 'invoice_payments').row_count).toBe(1);
+            expect(backdateResult.cascade_summary.find((s) => s.table === 'ar_ledger').row_count).toBeGreaterThanOrEqual(1);
+
+            const { rows: afterBackdateInv } = await db.query('SELECT invoice_date FROM invoice WHERE invoice_id = $1', [cascadeInvoiceId]);
+            const { rows: afterBackdatePay } = await db.query('SELECT created_at, settled_at FROM invoice_payments WHERE payment_id = $1', [cascadePaymentId]);
+            const { rows: afterBackdateLedger } = await db.query(
+                `SELECT entry_date FROM ar_ledger WHERE payment_id = $1 AND payment_source = 'invoice_payments' AND entry_type = 'PAYMENT_SETTLED'`,
+                [cascadePaymentId]
+            );
+
+            expect(manilaDateStr(afterBackdateInv[0].invoice_date)).toBe(twoDaysAgoStr);
+            expect(manilaDateStr(afterBackdatePay[0].settled_at)).toBe(twoDaysAgoStr);
+            expect(afterBackdatePay[0].created_at.toISOString()).toBe(beforePay[0].created_at.toISOString());
+            expect(manilaDateStr(afterBackdateLedger[0].entry_date)).toBe(twoDaysAgoStr);
+
+            // 2. Move invoice forward to yesterday without a false payment-precedes-invoice conflict
+            const forwardPreview = await withClient((client) =>
+                svc.preview(client, 'invoice', cascadeInvoiceId, yesterdayStr, true)
+            );
+            expect(forwardPreview.can_apply).toBe(true);
+            expect(forwardPreview.blocking_conflicts).toEqual([]);
+
+            await withCommittedClient((client) =>
+                svc.apply(client, {
+                    kind: 'invoice', id: cascadeInvoiceId, newDate: yesterdayStr,
+                    reason: 'Correcting invoice date forward to yesterday after over-backdating',
+                    employeeId: testEmployeeId, requesterHasUnrestricted: true,
+                })
+            );
+
+            const { rows: afterForwardInv } = await db.query('SELECT invoice_date FROM invoice WHERE invoice_id = $1', [cascadeInvoiceId]);
+            const { rows: afterForwardPay } = await db.query('SELECT settled_at FROM invoice_payments WHERE payment_id = $1', [cascadePaymentId]);
+            const { rows: afterForwardLedger } = await db.query(
+                `SELECT entry_date FROM ar_ledger WHERE payment_id = $1 AND payment_source = 'invoice_payments' AND entry_type = 'PAYMENT_SETTLED'`,
+                [cascadePaymentId]
+            );
+
+            expect(manilaDateStr(afterForwardInv[0].invoice_date)).toBe(yesterdayStr);
+            expect(manilaDateStr(afterForwardPay[0].settled_at)).toBe(yesterdayStr);
+            expect(manilaDateStr(afterForwardLedger[0].entry_date)).toBe(yesterdayStr);
+        });
+    });
 });
