@@ -1,4 +1,5 @@
 const { MeiliSearch } = require('meilisearch');
+const { normalizePartData } = require('./helpers/normalizePart');
 
 const client = new MeiliSearch({
   host: process.env.MEILISEARCH_HOST || 'http://localhost:7700',
@@ -38,13 +39,23 @@ const retryAsync = async (fn, { attempts = 4, baseDelay = 200 } = {}) => {
  */
 const syncPartWithMeili = async (documents) => {
   try {
-  // Debug log to inspect the exact payload being sent to Meilisearch
-  console.log('Syncing part with MeiliSearch:', JSON.stringify(documents, null, 2));
     const index = client.index('parts');
-    // If 'documents' is not an array, wrap it in one. Otherwise, use it as is.
-    const documentsToAdd = Array.isArray(documents) ? documents : [documents];
+    const rawDocuments = Array.isArray(documents) ? documents : [documents];
+    const documentsToAdd = rawDocuments
+      .filter((doc) => doc && typeof doc === 'object')
+      .map((doc) => {
+        if (
+          !Array.isArray(doc.normalized_part_numbers)
+          || doc.normalized_part_numbers.length === 0
+          || !Array.isArray(doc.normalized_detail)
+        ) {
+          return { ...doc, ...normalizePartData(doc) };
+        }
+        return doc;
+      });
 
     if (documentsToAdd.length > 0) {
+      console.log(`Syncing ${documentsToAdd.length} part(s) with MeiliSearch`);
       await retryAsync(() => index.addDocuments(documentsToAdd, { primaryKey: 'part_id' }));
     }
   } catch (error) {

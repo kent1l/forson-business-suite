@@ -6,6 +6,7 @@ const { meiliClient } = require('../meilisearch');
 const { enqueuePartUpsert, enqueuePartDelete } = require('../services/meiliOutboxService');
 const { activeAliasCondition, softDeleteSupported } = require('../helpers/partNumberSoftDelete');
 const { normalizePartData } = require('../helpers/normalizePart');
+const { searchPartsWithVariants } = require('../helpers/normalizeSku');
 const { normalizeText, normalizePartNumber, normalizeUom } = require('../helpers/normalizeEntity');
 const { parsePaginationQuery, paginatedResponse } = require('../helpers/pagination');
 const { withYearTokens } = require('../helpers/vehicleFitmentSearch');
@@ -63,7 +64,8 @@ const getPartDataForMeili = async (client, partId) => {
         tags: part.tags_array || [],
         barcodes: part.barcodes || [],
         normalized_internal_sku: normalizedFields.normalized_internal_sku,
-        normalized_part_numbers: normalizedFields.normalized_part_numbers
+        normalized_part_numbers: normalizedFields.normalized_part_numbers,
+        normalized_detail: normalizedFields.normalized_detail
     };
 };
 
@@ -287,7 +289,8 @@ router.get('/parts', protect, hasPermission('parts:view'), async (req, res) => {
                 'group_name',
                 'searchable_applications',
                 'tags',
-                'detail'
+                'detail',
+                'normalized_detail'
             ]
         };
         const filter = [];
@@ -305,7 +308,7 @@ router.get('/parts', protect, hasPermission('parts:view'), async (req, res) => {
 
         console.log('[DEBUG] [GET /parts] Attempting Meilisearch query...');
         const metadataResults = paginated && isGlobalSort
-            ? await index.search(search, { ...searchOptions, limit: 0, offset: 0 })
+            ? await searchPartsWithVariants(index, search, { ...searchOptions, limit: 0, offset: 0 })
             : null;
         const totalHits = metadataResults?.estimatedTotalHits || metadataResults?.totalHits || 0;
         const fetchLimit = paginated && isGlobalSort
@@ -313,7 +316,7 @@ router.get('/parts', protect, hasPermission('parts:view'), async (req, res) => {
             : (paginated ? limit : 200);
         const fetchOffset = paginated && isGlobalSort ? 0 : (paginated ? offset : 0);
 
-        const searchResults = await index.search(search, { ...searchOptions, limit: fetchLimit, offset: fetchOffset });
+        const searchResults = await searchPartsWithVariants(index, search, { ...searchOptions, limit: fetchLimit, offset: fetchOffset });
         const partIds = searchResults.hits.map(hit => hit.part_id);
         if (partIds.length === 0) {
             if (paginated) return res.json(paginatedResponse({ data: [], page, pageSize, total: 0 }));

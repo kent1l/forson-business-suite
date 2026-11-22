@@ -3,6 +3,7 @@ const db = require('./db');
 const { syncPartWithMeili, removePartFromMeili } = require('./meilisearch');
 const { activeAliasCondition } = require('./helpers/partNumberSoftDelete');
 const { withYearTokens } = require('./helpers/vehicleFitmentSearch');
+const { normalizePartData } = require('./helpers/normalizePart');
 
 /**
  * Dedicated listener that uses a persistent Postgres client to LISTEN for
@@ -44,6 +45,8 @@ const startMeiliListener = async () => {
                 pv.part_id,
                 ${fitmentRulesSql()} AS fitment_rules,
                 pv.display_name,
+                pv.detail,
+                pv.barcodes,
                 pv.internal_sku,
                 pv.brand_name,
                 pv.group_name,
@@ -73,9 +76,15 @@ const startMeiliListener = async () => {
             const yearRanges = (row.application_year_ranges || [])
                 .filter(Boolean)
                 .map(r => Array.isArray(r) ? r : [r.year_start, r.year_end]);
+            const normalizedFields = normalizePartData({
+              ...row,
+              part_numbers: Array.isArray(row.part_numbers) ? row.part_numbers.join('; ') : row.part_numbers,
+            });
             return {
               part_id: row.part_id,
               display_name: row.display_name || '',
+              detail: row.detail,
+              barcodes: row.barcodes || [],
               internal_sku: row.internal_sku,
               brand_name: row.brand_name,
               group_name: row.group_name,
@@ -87,6 +96,7 @@ const startMeiliListener = async () => {
               fitment_schema_version: 3,
               fitment_confirmation: false,
               searchable_applications: withYearTokens(baseStr, yearRanges),
+              ...normalizedFields,
             };
           });
 

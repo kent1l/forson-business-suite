@@ -8,8 +8,23 @@ router.get('/application-search', async (req, res) => {
   const { q = '', limit = 10 } = req.query;
   try {
     const terms = String(q).trim().split(/\s+/).filter(Boolean).slice(0, 12);
-    const params = terms.map(term => `%${term}%`);
-    const predicates = terms.map((_, i) => `concat_ws(' ',make,model,chassis,engine,year_start,year_end,market,variant_descriptor,drivetrain,transmission,generation,fuel_type,displacement_liters) ILIKE $${i + 1}`);
+    const params = [];
+    const haystack = `concat_ws(' ',make,model,chassis,engine,year_start,year_end,market,variant_descriptor,drivetrain,transmission,generation,fuel_type,displacement_liters)`;
+    const normalizedHaystack = `REGEXP_REPLACE(${haystack}, '[^a-zA-Z0-9]', '', 'g')`;
+    const predicates = terms.map((term) => {
+      params.push(`%${term}%`);
+      const p1 = `$${params.length}`;
+      const cleaned = term.replace(/[^a-zA-Z0-9]/g, '');
+      if (cleaned && cleaned !== term) {
+        params.push(`%${cleaned}%`);
+        const p2 = `$${params.length}`;
+        return `(${haystack} ILIKE ${p1} OR ${normalizedHaystack} ILIKE ${p2})`;
+      }
+      if (cleaned) {
+        return `(${haystack} ILIKE ${p1} OR ${normalizedHaystack} ILIKE ${p1})`;
+      }
+      return `${haystack} ILIKE ${p1}`;
+    });
     params.push(Math.max(1, Math.min(parseInt(limit, 10) || 10, 50)));
     const { rows } = await db.query(`SELECT * FROM application_view ${predicates.length ? 'WHERE '+predicates.join(' AND ') : ''} ORDER BY make,model,engine,application_id LIMIT $${params.length}`, params);
     res.json(rows.map(toDoc));

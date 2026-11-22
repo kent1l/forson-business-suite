@@ -3,6 +3,7 @@ const db = require('../db');
 const router = express.Router();
 const { protect, hasPermission } = require('../middleware/authMiddleware');
 const { syncPartWithMeili } = require('../meilisearch');
+const { enqueuePartUpsert } = require('../services/meiliOutboxService');
 const { getPartDataForMeili } = require('./partRoutes');
 const { activeAliasCondition, softDeleteSupported } = require('../helpers/partNumberSoftDelete');
 const { normalizePartNumber } = require('../helpers/normalizeEntity');
@@ -60,7 +61,15 @@ router.post('/parts/:partId/numbers', protect, hasPermission('parts:edit'), asyn
     }
 
     await client.query('COMMIT');
-    
+
+    await enqueuePartUpsert(partId, { source: 'partNumberRoutes.add' }).catch(() => {});
+    try {
+      const partData = await getPartDataForMeili(db, partId);
+      if (partData) await syncPartWithMeili(partData);
+    } catch (e) {
+      console.error('Meili reindex after part number add failed', e);
+    }
+
   const updatedNumbers = await client.query(`SELECT * FROM part_number WHERE part_id = $1 AND ${activeAliasCondition('part_number')} ORDER BY display_order`, [partId]);
     res.status(201).json(updatedNumbers.rows);
 
@@ -75,6 +84,7 @@ router.post('/parts/:partId/numbers', protect, hasPermission('parts:edit'), asyn
 
 // PUT - Reorder part numbers
 router.put('/parts/:partId/numbers/reorder', protect, hasPermission('parts:edit'), async (req, res) => {
+    const { partId } = req.params;
     const { orderedIds } = req.body; // Expect an array of part_number_id in the new order
 
     if (!Array.isArray(orderedIds)) {
@@ -93,6 +103,13 @@ router.put('/parts/:partId/numbers/reorder', protect, hasPermission('parts:edit'
     }
 
         await client.query('COMMIT');
+        await enqueuePartUpsert(partId, { source: 'partNumberRoutes.reorder' }).catch(() => {});
+        try {
+            const partData = await getPartDataForMeili(db, partId);
+            if (partData) await syncPartWithMeili(partData);
+        } catch (e) {
+            console.error('Meili reindex after part number reorder failed', e);
+        }
         res.json({ message: 'Order updated successfully.' });
     } catch (err) {
         await client.query('ROLLBACK');
@@ -146,10 +163,11 @@ router.delete('/parts/:partId/numbers/:numberId', protect, hasPermission('parts:
 
     await client.query('COMMIT');
 
+    await enqueuePartUpsert(partId, { source: 'partNumberRoutes.delete' }).catch(() => {});
     // Reindex part in Meilisearch (best effort; non-blocking errors)
     try {
       const partData = await getPartDataForMeili(db, partId);
-      if (partData) syncPartWithMeili(partData);
+      if (partData) await syncPartWithMeili(partData);
     } catch (e) {
       console.error('Meili reindex after part number delete failed', e);
     }

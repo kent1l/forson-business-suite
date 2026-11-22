@@ -1,6 +1,7 @@
 const express = require('express');
 const db = require('../db');
 const { meiliClient } = require('../meilisearch'); // <-- 1. Import Meili client
+const { searchPartsWithVariants } = require('../helpers/normalizeSku');
 const { parsePaginationQuery, paginatedResponse } = require('../helpers/pagination');
 const { protect, hasPermission } = require('../middleware/authMiddleware');
 const { validateCapturedAt, offlineNote } = require('../services/offlineCaptureService');
@@ -31,14 +32,14 @@ router.get('/inventory', protect, hasPermission('inventory:view'), async (req, r
         if (normalizedSearch) {
             const index = meiliClient.index('parts');
             const metadataResults = paginated && isGlobalSort
-                ? await index.search(normalizedSearch, { limit: 0, offset: 0, attributesToRetrieve: ['part_id'] })
+                ? await searchPartsWithVariants(index, normalizedSearch, { limit: 0, offset: 0, attributesToRetrieve: ['part_id'] })
                 : null;
             const totalHits = metadataResults?.estimatedTotalHits || metadataResults?.totalHits || 0;
             const fetchLimit = paginated && isGlobalSort
                 ? Math.min(totalHits, 20000)
                 : (paginated ? limit : 200);
             const fetchOffset = paginated && isGlobalSort ? 0 : (paginated ? offset : 0);
-            const searchResults = await index.search(normalizedSearch, {
+            const searchResults = await searchPartsWithVariants(index, normalizedSearch, {
                 limit: fetchLimit,
                 offset: fetchOffset,
                 attributesToRetrieve: ['part_id'],
