@@ -23,8 +23,8 @@ const formatPhysicalReceiptNumber = (receiptNumber) => {
     let formatted = trimmed.toUpperCase();
 
     // Extract leading letters and trailing digits with proper formatting
-    // Accept inputs like 'SI 1234', 'si-1234', 'SI/1234', 'SI1234' -> normalize to 'SI-1234'
-    const match = formatted.match(/^([A-Z]{1,3})\W*0*([0-9]{1,})$/i);
+    // Accept inputs like 'SI 1234', 'si-1234', 'SI/1234', 'SI1234', 'ORPMT1234' -> normalize to 'SI-1234'
+    const match = formatted.match(/^([A-Z]{1,10})\W*0*([0-9]{1,})$/i);
     if (match) {
         const letters = match[1];
         const digits = match[2];

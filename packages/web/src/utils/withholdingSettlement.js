@@ -94,3 +94,36 @@ export function withheldFor(invoice, expected, cashApplied) {
 
     return round2(Math.min(prorated, unpaidByCash));
 }
+
+/**
+ * Distribute a payment amount across unpaid invoices for the Receive Payment
+ * Auto-fill action, respecting any manual tax-withholding entries and
+ * settlement discounts already entered on the form.
+ */
+export function allocateSettlementCash(
+    invoices,
+    amount,
+    { expectedByInvoice = {}, withheldByInvoice = {}, discountsByInvoice = {} } = {}
+) {
+    const effectiveInvoices = [];
+    const effectiveExpected = {};
+
+    for (const inv of invoices) {
+        const key = String(inv.invoice_id);
+        const discount = Number(discountsByInvoice[key] ?? discountsByInvoice[inv.invoice_id]) || 0;
+        const rawWithheld = withheldByInvoice[key] ?? withheldByInvoice[inv.invoice_id];
+        const hasManualWithheld = rawWithheld !== undefined && rawWithheld !== null && String(rawWithheld).trim() !== '';
+        const manualWithheld = hasManualWithheld ? (Number(rawWithheld) || 0) : 0;
+
+        effectiveInvoices.push({
+            ...inv,
+            balance_due: Math.max(0, round2((Number(inv.balance_due) || 0) - discount - manualWithheld)),
+        });
+
+        if (!hasManualWithheld && expectedByInvoice[key]) {
+            effectiveExpected[key] = expectedByInvoice[key];
+        }
+    }
+
+    return allocateCash(effectiveInvoices, amount, effectiveExpected);
+}

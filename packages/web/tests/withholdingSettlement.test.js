@@ -1,4 +1,4 @@
-import { allocateCash, withheldFor, cashCapFor } from '../src/utils/withholdingSettlement.js';
+import { allocateCash, allocateSettlementCash, withheldFor, cashCapFor } from '../src/utils/withholdingSettlement.js';
 import assert from 'node:assert';
 import test from 'node:test';
 
@@ -101,4 +101,41 @@ test('an ordinary customer is unaffected', () => {
     const alloc = allocateCash([invoice], 1000, {});
     assert.strictEqual(alloc[2], 1000);
     assert.strictEqual(withheldFor(invoice, undefined, 1000), 0);
+});
+
+test('allocateSettlementCash respects manual withholding and discounts', () => {
+    const invA = { invoice_id: 1, balance_due: 1950 };
+    const invB = { invoice_id: 2, balance_due: 1000 };
+    const alloc = allocateSettlementCash([invA, invB], 2880, {
+        expectedByInvoice: { '1': { remaining_expected: 17.41 } },
+        withheldByInvoice: { '1': '20.00' },
+        discountsByInvoice: { 2: '50.00' },
+    });
+
+    assert.strictEqual(alloc[1], 1930);
+    assert.strictEqual(alloc[2], 950);
+});
+
+test('allocateSettlementCash falls back to expected withholding when manual entry is blank', () => {
+    const invA = { invoice_id: 1, balance_due: 11200 };
+    const invB = { invoice_id: 2, balance_due: 5600 };
+    const alloc = allocateSettlementCash([invA, invB], 15900, {
+        expectedByInvoice: { '1': { remaining_expected: 600 }, '2': { remaining_expected: 300 } },
+        withheldByInvoice: { '1': '', '2': '' },
+    });
+
+    assert.strictEqual(alloc[1], 10600);
+    assert.strictEqual(alloc[2], 5300);
+});
+
+test('allocateSettlementCash treats explicit zero withholding as full balance cash cap', () => {
+    const invA = { invoice_id: 1, balance_due: 1950 };
+    const invB = { invoice_id: 2, balance_due: 1000 };
+    const alloc = allocateSettlementCash([invA, invB], 2000, {
+        expectedByInvoice: { '1': { remaining_expected: 17.41 } },
+        withheldByInvoice: { '1': '0' },
+    });
+
+    assert.strictEqual(alloc[1], 1950);
+    assert.strictEqual(alloc[2], 50);
 });

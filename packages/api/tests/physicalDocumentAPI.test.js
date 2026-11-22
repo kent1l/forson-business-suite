@@ -53,6 +53,7 @@ describe('Physical Document System - Phase 2 & 3 API & Cashier Posting Integrati
     let testTypeId;
     let testCustomerId;
     let testEmployeeId;
+    let testVatTaxRateId;
     const suffix = `${Date.now()}_${process.pid}`;
 
     beforeAll(async () => {
@@ -112,6 +113,7 @@ describe('Physical Document System - Phase 2 & 3 API & Cashier Posting Integrati
              VALUES ($1, 0, false), ($2, 0.12, false) RETURNING tax_rate_id`,
             [`Test zero ${suffix}`, `Test VAT ${suffix}`]
         );
+        testVatTaxRateId = rates[1].tax_rate_id;
         await db.query(
             `INSERT INTO public.physical_document_series_tax (series_id, tax_rate_id, role)
              VALUES ($1, $2, 'DEFAULT_FALLBACK'), ($1, $3, 'ALLOWED_RESOLVED')
@@ -387,6 +389,147 @@ describe('Physical Document System - Phase 2 & 3 API & Cashier Posting Integrati
         expect(payCheck.length).toBe(2);
         expect(payCheck[0].physical_receipt_no).toBe(testPrn);
         expect(payCheck[1].physical_receipt_no).toBe(testPrn);
+    });
+
+    test('POST /api/payments/collection-group distributes allocations per tender, posts PAYMENT_SETTLED on cash tender even when cheque is first, and supports withholding', async () => {
+        const colTypeRes = await db.query(`SELECT type_id FROM physical_document_type WHERE code = 'COLLECTION_RECEIPT'`);
+        const colTypeId = colTypeRes.rows[0].type_id;
+        await db.query(`UPDATE physical_document_type SET is_active = true WHERE type_id = $1`, [colTypeId]);
+
+        const grpSeriesRes = await db.query(
+            `INSERT INTO physical_document_series (type_id, code, name, prefix, method, initial_serial, is_active)
+             VALUES ($1, $2, 'Test Mixed Group Series', 'CRV', 'HIGHEST_PLUS_ONE', $3, true)
+             RETURNING series_id`,
+            [colTypeId, `TEST_MIXED_CRV_${suffix}`, Date.now()]
+        );
+        const grpSeriesId = grpSeriesRes.rows[0].series_id;
+
+        const { rows: [whCustomer] } = await db.query(
+            `INSERT INTO customer (company_name, first_name, last_name, is_withholding_agent, customer_type, is_active)
+             VALUES ('Mixed Group Corp', 'Test', 'Agent', true, 'PRIVATE', true)
+             RETURNING customer_id`
+        );
+        const codeTag = `PD${String(process.pid).slice(-3)}${String(Date.now()).slice(-5)}`;
+        const { rows: [brand] } = await db.query(
+            `INSERT INTO brand (brand_name, brand_code) VALUES ($1, $2) RETURNING brand_id`,
+            [`Mixed Group ${suffix}`, codeTag]
+        );
+        const { rows: [group] } = await db.query(
+            `INSERT INTO "group" (group_name, group_code) VALUES ($1, $2) RETURNING group_id`,
+            [`Mixed Group ${suffix}`, codeTag]
+        );
+        const { rows: [partRow] } = await db.query(
+            `INSERT INTO part (internal_sku, detail, brand_id, group_id, tax_rate_id)
+             VALUES ($1, 'Mixed group test part', $2, $3, $4) RETURNING part_id`,
+            [`PDMIX-${suffix}`, brand.brand_id, group.group_id, testVatTaxRateId]
+        );
+        const { rows: [whInvoice] } = await db.query(
+            `INSERT INTO public.invoice (invoice_number, customer_id, employee_id, total_amount, subtotal_ex_tax, tax_total, amount_paid, status, terms, payment_terms_days, due_date)
+             VALUES ($1, $2, $3, 1120, 1000, 120, 0, 'Unpaid', 'Net 30', 30, CURRENT_TIMESTAMP + INTERVAL '30 days')
+             RETURNING invoice_id`,
+            [`TEST-INV-MIX-${Date.now()}`, whCustomer.customer_id, testEmployeeId]
+        );
+        await db.query(
+            `INSERT INTO invoice_line (invoice_id, part_id, quantity, sale_price, cost_at_sale, tax_rate_id, tax_rate_snapshot, tax_base, tax_amount, is_tax_inclusive)
+             VALUES ($1, $2, 1, 1120, 500, $3, 0.12, 1000, 120, true)`,
+            [whInvoice.invoice_id, partRow.part_id, testVatTaxRateId]
+        );
+
+        const cashMethod = await db.query(`SELECT method_id FROM payment_methods WHERE code = 'cash' AND enabled = true LIMIT 1`);
+        const chequeMethod = await db.query(`SELECT method_id FROM payment_methods WHERE (code IN ('cheque', 'pdc') OR type = 'cheque') AND enabled = true LIMIT 1`);
+        const sug = await physicalDocumentService.getSuggestion(grpSeriesId, 'COLLECTION', null, testEmployeeId);
+
+        // Cheque is tender[0], Cash is tender[1] + 10 withholding -> total settled = 600 + 510 + 10 = 1120
+        const groupRes = await request(app)
+            .post('/api/payments/collection-group')
+            .send({
+                customer_id: whCustomer.customer_id,
+                request_id: `test-mixed-crg-${Date.now()}`,
+                physical_document: {
+                    recording_method: 'PAPER',
+                    series_id: grpSeriesId,
+                    physical_receipt_no: sug.canonical_reference,
+                    suggestion_token: sug.suggestion_token,
+                },
+                payments: [
+                    { method_id: chequeMethod.rows[0].method_id, amount: 600, reference: 'CHK-MIX-1', cheque_date: '2026-12-01' },
+                    { method_id: cashMethod.rows[0].method_id, amount: 510 },
+                ],
+                allocations: [{ invoice_id: whInvoice.invoice_id, amount_allocated: 1110 }],
+                withholding: [{ invoice_id: whInvoice.invoice_id, amount_withheld: 10 }],
+            })
+            .expect(201);
+
+        expect(groupRes.body.withheld_amount).toBe(10);
+        expect(groupRes.body.payments.length).toBe(2);
+        const chequePmt = groupRes.body.payments.find(p => p.is_cheque);
+        const cashPmt = groupRes.body.payments.find(p => !p.is_cheque);
+        expect(chequePmt).toBeDefined();
+        expect(cashPmt).toBeDefined();
+
+        const { rows: allocs } = await db.query(
+            `SELECT payment_id, amount_allocated::numeric FROM invoice_payment_allocation WHERE invoice_id = $1 ORDER BY payment_id`,
+            [whInvoice.invoice_id]
+        );
+        expect(allocs.find(a => a.payment_id === chequePmt.payment_id)?.amount_allocated).toBe('600.00');
+        expect(allocs.find(a => a.payment_id === cashPmt.payment_id)?.amount_allocated).toBe('520.00');
+
+        const { rows: ledgerEntries } = await db.query(
+            `SELECT entry_type, payment_id, amount::numeric FROM ar_ledger WHERE customer_id = $1 ORDER BY ledger_id`,
+            [whCustomer.customer_id]
+        );
+        const settledRow = ledgerEntries.find(e => e.entry_type === 'PAYMENT_SETTLED');
+        const whRow = ledgerEntries.find(e => e.entry_type === 'WITHHOLDING_TAX_CREDIT');
+        expect(settledRow.payment_id).toBe(cashPmt.payment_id);
+        expect(settledRow.amount).toBe('-510.00');
+        expect(whRow.payment_id).toBe(cashPmt.payment_id);
+        expect(whRow.amount).toBe('-10.00');
+
+        await db.query(`UPDATE physical_document_series SET is_active = false WHERE series_id = $1`, [grpSeriesId]);
+    });
+
+    test('GET /api/physical-documents/options disambiguates labels when multiple active series share a document type', async () => {
+        const colTypeRes = await db.query(`SELECT type_id FROM physical_document_type WHERE code = 'COLLECTION_RECEIPT'`);
+        const colTypeId = colTypeRes.rows[0].type_id;
+        const { rows: [s1] } = await db.query(
+            `INSERT INTO physical_document_series (type_id, code, name, prefix, method, initial_serial, is_active)
+             VALUES ($1, $2, 'Opt A', 'CRA', 'HIGHEST_PLUS_ONE', 1, true) RETURNING series_id`,
+            [colTypeId, `OPT_A_${suffix}`]
+        );
+        const { rows: [s2] } = await db.query(
+            `INSERT INTO physical_document_series (type_id, code, name, prefix, method, initial_serial, is_active)
+             VALUES ($1, $2, 'Opt B', 'CRB', 'HIGHEST_PLUS_ONE', 1, true) RETURNING series_id`,
+            [colTypeId, `OPT_B_${suffix}`]
+        );
+        await db.query(
+            `INSERT INTO physical_document_series_context (series_id, context, workstation_id, is_active)
+             VALUES ($1, 'COLLECTION', 'default', true), ($2, 'COLLECTION', 'default', true)`,
+            [s1.series_id, s2.series_id]
+        );
+
+        const res = await request(app)
+            .get('/api/physical-documents/options?context=COLLECTION&workstation_id=default')
+            .expect(200);
+
+        const c1 = res.body.choices.find(c => c.series_id === s1.series_id);
+        const c2 = res.body.choices.find(c => c.series_id === s2.series_id);
+        expect(c1.label).toBe('CR (CRA)');
+        expect(c2.label).toBe('CR (CRB)');
+
+        await db.query(`DELETE FROM physical_document_series_context WHERE series_id = ANY($1::int[])`, [[s1.series_id, s2.series_id]]);
+        await db.query(`UPDATE physical_document_series SET is_active = false WHERE series_id = ANY($1::int[])`, [[s1.series_id, s2.series_id]]);
+    });
+
+    afterAll(async () => {
+        const cleanupCodes = [`TEST_SI_API_${suffix}`, `TEST_CR_${suffix}`, `TEST_MIXED_CRV_${suffix}`, `OPT_A_${suffix}`, `OPT_B_${suffix}`];
+        await db.query(
+            `DELETE FROM physical_document_series_context WHERE series_id IN (SELECT series_id FROM physical_document_series WHERE code = ANY($1::text[]))`,
+            [cleanupCodes]
+        ).catch(() => {});
+        await db.query(
+            `UPDATE physical_document_series SET is_active = false WHERE code = ANY($1::text[])`,
+            [cleanupCodes]
+        ).catch(() => {});
     });
 
     test('Document Type Settings CRUD & Dynamic Choices in /options', async () => {
