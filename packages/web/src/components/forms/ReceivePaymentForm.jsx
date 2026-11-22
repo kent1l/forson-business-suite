@@ -299,12 +299,12 @@ const ReceivePaymentForm = ({ customer, onSave, onCancel }) => {
         const discountCarrier = payable.find(s => isChequeMethod(methodById(s.method_id))) || payable[0] || null;
         let discountSent = false;
 
-        if (payable.length > 1 && (!withholdingPayload || withholdingPayload.length === 0) && (!discountPayload || discountPayload.length === 0)) {
-            // Grouped multi-instrument collection under a single collection receipt
-            const allAllocations = Object.entries(allocations)
-                .filter(([_, amt]) => (parseFloat(amt) || 0) > 0)
-                .map(([invId, amt]) => ({ invoice_id: parseInt(invId, 10), amount_allocated: parseFloat(amt) }));
+        const allAllocations = Object.entries(allocations)
+            .filter(([_, amt]) => (parseFloat(amt) || 0) > 0)
+            .map(([invId, amt]) => ({ invoice_id: parseInt(invId, 10), amount_allocated: parseFloat(amt) }));
 
+        if (payable.length > 1 && allAllocations.length > 0) {
+            // Grouped multi-instrument collection under a single collection receipt
             await api.post('/payments/collection-group', {
                 customer_id: customer.customer_id,
                 physical_document: physicalDoc,
@@ -318,10 +318,19 @@ const ReceivePaymentForm = ({ customer, onSave, onCancel }) => {
                     notebook_covered_amount: s.notebook_covered_amount ? Number(s.notebook_covered_amount) : null,
                 })),
                 allocations: allAllocations,
+                withholding: withholdingPayload,
+                discounts: discountPayload,
+                discount: discountPayload.length === 0 ? undefined : {
+                    reason_code: discountReasonCode,
+                    notes: discountNotes.trim() || null,
+                    client_ref: discountClientRef,
+                    authorization_token: canGrantDiscount ? undefined : authToken,
+                },
             });
             return;
         }
 
+        let primaryPaperAttached = false;
         for (const s of splits) {
             const lineAmount = parseFloat(s.amount) || 0;
             if (lineAmount <= 0) continue;
@@ -339,6 +348,15 @@ const ReceivePaymentForm = ({ customer, onSave, onCancel }) => {
                 toDistribute -= portion;
             }
 
+            const usePaperOnThisLine = !primaryPaperAttached;
+            const linePhysicalDoc = usePaperOnThisLine
+                ? physicalDoc
+                : { recording_method: 'NOTEBOOK', series_id: null, physical_receipt_no: '', suggestion_token: null, exception: null };
+            const linePhysicalReceiptNo = usePaperOnThisLine && physicalDoc?.recording_method === 'PAPER'
+                ? (physicalDoc.physical_receipt_no || null)
+                : null;
+            primaryPaperAttached = true;
+
             await api.post('/payments', {
                 customer_id: customer.customer_id,
                 amount: lineAmount,
@@ -350,8 +368,8 @@ const ReceivePaymentForm = ({ customer, onSave, onCancel }) => {
                 reference: s.reference || null,
                 cheque_date: s.cheque_date || null,
                 notes: notes || null,
-                physical_receipt_no: physicalDoc?.recording_method === 'PAPER' ? (physicalDoc.physical_receipt_no || null) : null,
-                physical_document: physicalDoc,
+                physical_receipt_no: linePhysicalReceiptNo,
+                physical_document: linePhysicalDoc,
                 allocations: lineAllocations,
                 // Attached to the first instrument only. The deduction belongs to the
                 // collection as a whole, not to any one cheque, and repeating it on

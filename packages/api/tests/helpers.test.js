@@ -73,6 +73,8 @@ describe('Helper Utilities Unit Tests', () => {
             expect(formatPhysicalReceiptNumber('SI 1234')).toBe('SI-1234');
             expect(formatPhysicalReceiptNumber('si-001234')).toBe('SI-1234');
             expect(formatPhysicalReceiptNumber('  OR/5678 ')).toBe('OR-5678');
+            expect(formatPhysicalReceiptNumber('crv 0012')).toBe('CRV-12');
+            expect(formatPhysicalReceiptNumber('ORPMT 0045')).toBe('ORPMT-45');
             expect(formatPhysicalReceiptNumber('12345')).toBe('12345');
         });
 

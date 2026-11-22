@@ -3,6 +3,8 @@ const express = require('express');
 const db = require('../db');
 const arRoutes = require('../routes/arRoutes');
 const paymentRoutes = require('../routes/paymentRoutes');
+const physicalDocumentService = require('../services/physicalDocumentService');
+const receiptMonitorService = require('../services/receiptMonitorService');
 
 let mockUser = { user_id: 1, employee_id: 1, username: 'admin', permissions: ['ar:view', 'ar:manage', 'ar:receive_payment'] };
 
@@ -25,6 +27,7 @@ describe('AR Payment Physical Receipt # & SOA Reference Integration Suite', () =
     let testInvoiceId;
     let testEmployeeId;
     let testSeriesId;
+    let crvSeriesId;
     let testReceiptNo;
 
     beforeAll(async () => {
@@ -53,9 +56,18 @@ describe('AR Payment Physical Receipt # & SOA Reference Integration Suite', () =
             RETURNING series_id
         `, [`PAYMENT_REF_${uniqueSuffix}`, uniqueSuffix]);
         testSeriesId = series.series_id;
+
+        const { rows: [crvSeries] } = await db.query(`
+            INSERT INTO physical_document_series (type_id, code, name, prefix, method, initial_serial, min_serial, max_serial, is_active)
+            SELECT type_id, $1, 'CRV regression test', 'CRV', 'HIGHEST_PLUS_ONE', $2, $2, $3, true
+            FROM physical_document_type WHERE code = 'COLLECTION_RECEIPT'
+            RETURNING series_id
+        `, [`CRV_TEST_${uniqueSuffix}`, uniqueSuffix, uniqueSuffix + 10]);
+        crvSeriesId = crvSeries.series_id;
+
         await db.query(`UPDATE physical_document_type SET is_active = true WHERE code = 'COLLECTION_RECEIPT'`);
         await db.query(`INSERT INTO physical_document_series_context (series_id, context, workstation_id, is_active)
-            VALUES ($1, 'COLLECTION', 'default', true)`, [testSeriesId]);
+            VALUES ($1, 'COLLECTION', 'default', true), ($2, 'COLLECTION', 'default', true)`, [testSeriesId, crvSeriesId]);
 
         const custRes = await db.query(`
             INSERT INTO customer (company_name, first_name, last_name, email, phone, credit_limit)
@@ -92,6 +104,13 @@ describe('AR Payment Physical Receipt # & SOA Reference Integration Suite', () =
 
 
     afterAll(async () => {
+        const seriesIds = [testSeriesId, crvSeriesId].filter(Boolean);
+        if (seriesIds.length > 0) {
+            await db.query(`DELETE FROM physical_document_last_success WHERE last_series_id = ANY($1::int[])`, [seriesIds]).catch(() => {});
+            await db.query(`DELETE FROM physical_document_event WHERE series_id = ANY($1::int[])`, [seriesIds]).catch(() => {});
+            await db.query(`DELETE FROM physical_document_source_link WHERE registry_id IN (SELECT registry_id FROM physical_document_registry WHERE series_id = ANY($1::int[]))`, [seriesIds]).catch(() => {});
+            await db.query(`DELETE FROM physical_document_series_context WHERE series_id = ANY($1::int[])`, [seriesIds]).catch(() => {});
+        }
         if (testCustomerId) {
             try {
                 await db.query(`DELETE FROM ar_ledger WHERE customer_id = $1`, [testCustomerId]);
@@ -104,13 +123,17 @@ describe('AR Payment Physical Receipt # & SOA Reference Integration Suite', () =
             await db.query(`DELETE FROM customer_wallet WHERE customer_id = $1`, [testCustomerId]).catch(() => {});
             await db.query(`DELETE FROM customer WHERE customer_id = $1`, [testCustomerId]).catch(() => {});
         }
+        if (seriesIds.length > 0) {
+            await db.query(`DELETE FROM physical_document_registry WHERE series_id = ANY($1::int[])`, [seriesIds]).catch(() => {});
+            await db.query(`UPDATE physical_document_series SET is_active = false WHERE series_id = ANY($1::int[])`, [seriesIds]).catch(() => {});
+        }
         if (testEmployeeId) {
             await db.query(`DELETE FROM employee WHERE employee_id = $1`, [testEmployeeId]).catch(() => {});
         }
     });
 
 
-    test('POST /api/payments saves physical_receipt_no and internal reference to customer_payment', async () => {
+    test('POST /api/payments saves physical_receipt_no and internal reference to customer_payment when both physical_receipt_no and physical_document are sent', async () => {
         const res = await request(app)
             .post('/api/payments')
             .send({
@@ -119,6 +142,7 @@ describe('AR Payment Physical Receipt # & SOA Reference Integration Suite', () =
                 method_id: 1, // Cash / Bank / Default
                 payment_method: 'cash',
                 reference: 'GCASH-987654321', // Internal tracking ref
+                physical_receipt_no: testReceiptNo,
                 physical_document: {
                     recording_method: 'PAPER',
                     series_id: testSeriesId,
@@ -135,7 +159,7 @@ describe('AR Payment Physical Receipt # & SOA Reference Integration Suite', () =
 
         // Verify database contents
         const cpRes = await db.query(`
-            SELECT physical_receipt_no, reference_number
+            SELECT physical_receipt_no, reference_number, physical_document_series_id, physical_document_registry_id
             FROM customer_payment
             WHERE payment_id = $1
         `, [res.body.payment_id]);
@@ -143,6 +167,116 @@ describe('AR Payment Physical Receipt # & SOA Reference Integration Suite', () =
         expect(cpRes.rows.length).toBe(1);
         expect(cpRes.rows[0].physical_receipt_no).toBe(testReceiptNo);
         expect(cpRes.rows[0].reference_number).toBe('GCASH-987654321');
+        expect(cpRes.rows[0].physical_document_series_id).toBe(testSeriesId);
+        expect(cpRes.rows[0].physical_document_registry_id).toBeTruthy();
+    });
+
+    test('POST /api/payments accepts CRV series with suggestion_token, updates registry/monitor, and rejects true duplicates', async () => {
+        const sug = await physicalDocumentService.getSuggestion(crvSeriesId, 'COLLECTION', null, testEmployeeId);
+        expect(sug.canonical_reference).toMatch(/^CRV-\d+$/);
+
+        const res = await request(app)
+            .post('/api/payments')
+            .send({
+                customer_id: testCustomerId,
+                amount: 1000.00,
+                method_id: 1,
+                payment_method: 'cash',
+                physical_receipt_no: sug.canonical_reference,
+                physical_document: {
+                    recording_method: 'PAPER',
+                    series_id: crvSeriesId,
+                    physical_receipt_no: sug.canonical_reference,
+                    suggestion_token: sug.suggestion_token,
+                },
+                allocations: [{ invoice_id: testInvoiceId, amount_allocated: 1000.00 }],
+            });
+
+        expect(res.status).toBe(201);
+        expect(res.body.payment_id).toBeDefined();
+
+        const regRes = await db.query(
+            `SELECT state, canonical_full_reference, serial_number FROM physical_document_registry WHERE series_id = $1`,
+            [crvSeriesId]
+        );
+        expect(regRes.rows).toEqual([
+            expect.objectContaining({ state: 'ISSUED', canonical_full_reference: sug.canonical_reference })
+        ]);
+
+        const monRes = await receiptMonitorService.monitor({
+            series_id: crvSeriesId,
+            status: 'ALL',
+            search: sug.canonical_reference,
+        });
+        expect(monRes.items[0]).toMatchObject({
+            reference: sug.canonical_reference,
+            status: 'ISSUED',
+        });
+
+        // Reusing the exact same CRV number must still return 409 Conflict
+        const dupRes = await request(app)
+            .post('/api/payments')
+            .send({
+                customer_id: testCustomerId,
+                amount: 500.00,
+                method_id: 1,
+                payment_method: 'cash',
+                physical_receipt_no: sug.canonical_reference,
+                physical_document: {
+                    recording_method: 'PAPER',
+                    series_id: crvSeriesId,
+                    physical_receipt_no: sug.canonical_reference,
+                },
+                allocations: [{ invoice_id: testInvoiceId, amount_allocated: 500.00 }],
+            });
+        expect(dupRes.status).toBe(409);
+    });
+
+    test('POST /api/payments excludes BOUNCED cheque allocations when checking invoice remaining balance', async () => {
+        const { rows: [bouncedMethod] } = await db.query(
+            `SELECT method_id FROM payment_methods WHERE (code IN ('cheque', 'pdc') OR type = 'cheque') AND enabled = true LIMIT 1`
+        );
+        const sug1 = await physicalDocumentService.getSuggestion(crvSeriesId, 'COLLECTION', null, testEmployeeId);
+        const chequeRes = await request(app)
+            .post('/api/payments')
+            .send({
+                customer_id: testCustomerId,
+                amount: 2000.00,
+                method_id: bouncedMethod.method_id,
+                reference: 'CHK-BOUNCE-1',
+                cheque_date: '2026-12-01',
+                physical_receipt_no: sug1.canonical_reference,
+                physical_document: {
+                    recording_method: 'PAPER',
+                    series_id: crvSeriesId,
+                    physical_receipt_no: sug1.canonical_reference,
+                    suggestion_token: sug1.suggestion_token,
+                },
+                allocations: [{ invoice_id: testInvoiceId, amount_allocated: 2000.00 }],
+            });
+        expect(chequeRes.status).toBe(201);
+
+        await db.query(`UPDATE customer_payment SET pdc_status = 'BOUNCED' WHERE payment_id = $1`, [chequeRes.body.payment_id]);
+        await db.query(`SELECT recompute_invoice_settlement($1)`, [testInvoiceId]);
+
+        const sug2 = await physicalDocumentService.getSuggestion(crvSeriesId, 'COLLECTION', null, testEmployeeId);
+        const replacementRes = await request(app)
+            .post('/api/payments')
+            .send({
+                customer_id: testCustomerId,
+                amount: 2000.00,
+                method_id: 1,
+                payment_method: 'cash',
+                physical_receipt_no: sug2.canonical_reference,
+                physical_document: {
+                    recording_method: 'PAPER',
+                    series_id: crvSeriesId,
+                    physical_receipt_no: sug2.canonical_reference,
+                    suggestion_token: sug2.suggestion_token,
+                },
+                allocations: [{ invoice_id: testInvoiceId, amount_allocated: 2000.00 }],
+            });
+        expect(replacementRes.status).toBe(201);
     });
 
     test('GET /api/ar/customers/:customerId/ledger displays physical_receipt_no as primary_ref and reference_number as sub_ref for payment', async () => {

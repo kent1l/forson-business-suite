@@ -16,6 +16,190 @@ const router = express.Router();
 
 const { formatPhysicalReceiptNumber } = require('../helpers/receiptNumberFormatter');
 
+/**
+ * Normalize settlement discount allocations and verify concession prerequisites
+ * before opening a database transaction.
+ */
+function parseSettlementDiscounts(req) {
+    const { discounts, discount } = req.body;
+    const rawDiscounts = (Array.isArray(discounts) ? discounts : [])
+        .filter(d => d && d.invoice_id != null && d.amount !== null && d.amount !== undefined && d.amount !== '');
+    let discountEntries = [];
+    let totalDiscount = 0;
+    if (rawDiscounts.length > 0) {
+        try {
+            ({ allocations: discountEntries, total: totalDiscount } = arAdjustment.normalizeAllocations(rawDiscounts));
+        } catch (err) {
+            return { errorStatus: err.statusCode || 400, errorMessage: err.message };
+        }
+    }
+
+    if (totalDiscount > 0) {
+        if (!discount?.reason_code) {
+            return {
+                errorStatus: 400,
+                errorMessage: 'A concession granted during a collection needs a reason code.',
+            };
+        }
+        if (!userHasPermission(req, 'ar:discount_grant') && !discount?.authorization_token) {
+            return {
+                errorStatus: 403,
+                errorMessage: 'Granting a discount needs authorization from someone who holds the discount permission.',
+            };
+        }
+    }
+
+    return { discountEntries, totalDiscount, discount };
+}
+
+function isChequeMethodRow(methodRow) {
+    return methodRow.code === 'cheque' || methodRow.code === 'pdc' ||
+        methodRow.type === 'cheque' ||
+        methodRow.config?.settlement_type === 'deferred';
+}
+
+async function resolvePaymentMethod(client, methodId, paymentMethod) {
+    let methodRow = null;
+    if (methodId) {
+        const r = await client.query(
+            `SELECT method_id, code, name, type, config FROM payment_methods WHERE method_id = $1 AND enabled = true`,
+            [methodId]
+        );
+        methodRow = r.rows[0] || null;
+    } else if (paymentMethod) {
+        const r = await client.query(
+            `SELECT method_id, code, name, type, config FROM payment_methods
+             WHERE (code = $1 OR name ILIKE $1) AND enabled = true LIMIT 1`,
+            [paymentMethod]
+        );
+        methodRow = r.rows[0] || null;
+    }
+    return methodRow;
+}
+
+async function resolveWithholdingEntries(client, { customerId, withholding }) {
+    const withholdingEntries = Array.isArray(withholding) ? withholding : [];
+    const withholdingByInvoice = new Map();
+    let totalWithheld = 0;
+
+    for (const entry of withholdingEntries) {
+        const invoiceId = Number(entry.invoice_id);
+        const amountWithheld = round2(parseFloat(entry.amount_withheld) || 0);
+        if (!invoiceId || amountWithheld <= 0) continue;
+
+        const context = await withholdingTax.loadInvoiceWithholdingContext(client, invoiceId);
+        if (!context) throw new Error(`Invoice #${invoiceId} not found.`);
+        if (Number(context.invoice.customer_id) !== Number(customerId)) {
+            throw new Error(`Invoice #${invoiceId} does not belong to this customer.`);
+        }
+
+        const expected = await withholdingTax.computeWithholdingForInvoice({
+            lines: context.lines,
+            parts: context.parts,
+            customer: context.customer,
+        }, client);
+
+        if (!expected.applicable) {
+            throw new Error(
+                context.customer.is_withholding_agent
+                    ? `Invoice #${context.invoice.invoice_number} has no VATable base for tax to be withheld from.`
+                    : `Tax withheld at source can only be recorded for customers marked as withholding agents.`
+            );
+        }
+
+        // Guard against withholding twice against the same base -- e.g. a partial
+        // collection followed by a second one that repeats the full deduction.
+        const alreadyWithheld = await withholdingTax.sumWithheldForInvoice(client, invoiceId);
+        const ceiling = withholdingTax.computeWithholdingCeiling(expected, context.invoice.total_amount);
+        if (alreadyWithheld + amountWithheld > ceiling + 0.01) {
+            throw new Error(
+                `Tax withheld on invoice #${context.invoice.invoice_number} (₱${amountWithheld.toFixed(2)}` +
+                (alreadyWithheld > 0 ? `, on top of ₱${alreadyWithheld.toFixed(2)} already recorded` : '') +
+                `) exceeds the most that could plausibly be withheld (₱${ceiling.toFixed(2)}). ` +
+                `Expected ₱${expected.total_withheld.toFixed(2)} on a VAT-exclusive base of ₱${(expected.base_goods + expected.base_services).toFixed(2)}.`
+            );
+        }
+
+        withholdingByInvoice.set(invoiceId, {
+            amount: amountWithheld,
+            components: withholdingTax.allocateActualAcrossComponents(expected.components, amountWithheld),
+        });
+        totalWithheld = round2(totalWithheld + amountWithheld);
+    }
+
+    return { withholdingByInvoice, totalWithheld };
+}
+
+async function assertInvoiceAvailableBalance(client, invoiceId, allocAmt) {
+    const { rows: [invRow] } = await client.query(
+        `SELECT i.total_amount,
+                COALESCE(SUM(CASE WHEN cp.pdc_status IS DISTINCT FROM 'BOUNCED' THEN ipa.amount_allocated ELSE 0 END), 0) AS already_allocated
+         FROM invoice i
+         LEFT JOIN invoice_payment_allocation ipa ON ipa.invoice_id = i.invoice_id
+         LEFT JOIN customer_payment cp ON cp.payment_id = ipa.payment_id
+         WHERE i.invoice_id = $1
+         GROUP BY i.invoice_id, i.total_amount`,
+        [invoiceId]
+    );
+    if (!invRow) throw new Error(`Invoice #${invoiceId} not found.`);
+    const availableBalance = parseFloat(invRow.total_amount) - parseFloat(invRow.already_allocated);
+    if (allocAmt > availableBalance + 0.01) {
+        throw new Error(
+            `Allocation ₱${allocAmt.toFixed(2)} exceeds outstanding balance ₱${availableBalance.toFixed(2)} on invoice #${invoiceId}.`
+        );
+    }
+}
+
+async function applySettlementDiscount(client, req, {
+    customerId,
+    employeeId,
+    customerPaymentId,
+    isCheque,
+    discountEntries,
+    totalDiscount,
+    discount,
+}) {
+    if (totalDiscount <= 0) return null;
+
+    let authorizedBy = null;
+    if (!userHasPermission(req, 'ar:discount_grant')) {
+        authorizedBy = await arAdjustmentAuth.consumeAuthorization(client, {
+            token: discount.authorization_token,
+            requestedBy: employeeId,
+            customerId,
+            totalAmount: totalDiscount,
+            purpose: 'SETTLEMENT_DISCOUNT',
+        });
+    }
+
+    const adjustmentDoc = await arAdjustment.createAdjustment(client, {
+        customerId,
+        adjustmentType: 'SETTLEMENT_DISCOUNT',
+        reasonCode: discount.reason_code,
+        allocations: discountEntries,
+        notes: discount.notes || null,
+        grantedBy: employeeId,
+        authorizedBy,
+        clientRef: discount.client_ref || null,
+        customerPaymentId,
+        // A cheque cannot carry a concession that posts today. If it did,
+        // a bounce would leave the invoice closed by a discount that was
+        // never earned -- so the document is created at PENDING_CLEARANCE,
+        // with no ledger entry and no settlement weight, and pdcService
+        // posts or voids it when the cheque clears or bounces.
+        pendingClearance: isCheque,
+    });
+
+    if (authorizedBy) {
+        await arAdjustmentAuth.linkAuthorizationToAdjustment(client, {
+            token: discount.authorization_token,
+            adjustmentId: adjustmentDoc.adjustment_id,
+        });
+    }
+
+    return adjustmentDoc;
+}
+
 // --- MOVED to customerRoutes.js ---
 // The endpoint for getting unpaid invoices has been moved to keep all customer-related routes together.
 
@@ -38,12 +222,13 @@ router.post('/payments', protect, hasPermission('ar:receive_payment'), async (re
         notes,
         allocations,     // [{invoice_id, amount_allocated}] -- the cash being applied
         withholding,     // [{invoice_id, amount_withheld}] -- tax the customer deducted
-        discounts,       // [{invoice_id, amount}] -- balance forgiven to close the invoice
-        discount         // { reason_code, notes, client_ref, authorization_token }
     } = req.body;
 
     const referenceValue = reference || reference_number || null;
-    const physicalReceiptNoValue = physical_receipt_no ? formatPhysicalReceiptNumber(physical_receipt_no) : null;
+    const physicalDoc = req.body.physical_document;
+    const physicalReceiptNoValue = physicalDoc?.recording_method === 'NOTEBOOK'
+        ? null
+        : (physical_receipt_no ? formatPhysicalReceiptNumber(physical_receipt_no) : null);
 
     if (!customer_id || !amount || !allocations || !Array.isArray(allocations)) {
         return res.status(400).json({ message: 'Missing required fields: customer_id, amount, allocations.' });
@@ -54,42 +239,11 @@ router.post('/payments', protect, hasPermission('ar:receive_payment'), async (re
         return res.status(400).json({ message: 'Payment amount must be greater than zero.' });
     }
 
-    // ── Settlement discount, if one was granted alongside this collection ──────
-    // A concession is not money. It never becomes a tender, never lands in
-    // invoice_payment_allocation, and never counts towards the cash the customer
-    // handed over -- it relieves the receivable through its own document so a
-    // cash-basis report can still say what was collected.
-    // Normalized through the same function the service uses, so the amount the
-    // manager's authorization is checked against and the amount actually forgiven
-    // cannot come apart. It rejects a malformed line rather than dropping it.
-    // A row the clerk never typed into is dropped here; anything they DID type is
-    // handed to the normalizer, which refuses a zero or a negative rather than
-    // quietly discarding it. That distinction is the fix for the bypass: a
-    // negative is always something someone entered on purpose.
-    const rawDiscounts = (Array.isArray(discounts) ? discounts : [])
-        .filter(d => d && d.invoice_id != null && d.amount !== null && d.amount !== undefined && d.amount !== '');
-    let discountEntries = [];
-    let totalDiscount = 0;
-    if (rawDiscounts.length > 0) {
-        try {
-            ({ allocations: discountEntries, total: totalDiscount } = arAdjustment.normalizeAllocations(rawDiscounts));
-        } catch (err) {
-            return res.status(err.statusCode || 400).json({ message: err.message });
-        }
+    const parsedDiscount = parseSettlementDiscounts(req);
+    if (parsedDiscount.errorStatus) {
+        return res.status(parsedDiscount.errorStatus).json({ message: parsedDiscount.errorMessage });
     }
-
-    if (totalDiscount > 0) {
-        if (!discount?.reason_code) {
-            return res.status(400).json({
-                message: 'A concession granted during a collection needs a reason code.',
-            });
-        }
-        if (!userHasPermission(req, 'ar:discount_grant') && !discount?.authorization_token) {
-            return res.status(403).json({
-                message: 'Granting a discount needs authorization from someone who holds the discount permission.',
-            });
-        }
-    }
+    const { discountEntries, totalDiscount, discount } = parsedDiscount;
 
     const client = await db.getClient();
     try {
@@ -111,21 +265,7 @@ router.post('/payments', protect, hasPermission('ar:receive_payment'), async (re
         }
 
         // ── Resolve payment method ──────────────────────────────────────────────
-        let methodRow = null;
-        if (method_id) {
-            const r = await client.query(
-                `SELECT method_id, code, name, type, config FROM payment_methods WHERE method_id = $1 AND enabled = true`,
-                [method_id]
-            );
-            methodRow = r.rows[0] || null;
-        } else if (payment_method) {
-            const r = await client.query(
-                `SELECT method_id, code, name, type, config FROM payment_methods
-                 WHERE (code = $1 OR name ILIKE $1) AND enabled = true LIMIT 1`,
-                [payment_method]
-            );
-            methodRow = r.rows[0] || null;
-        }
+        const methodRow = await resolvePaymentMethod(client, method_id, payment_method);
 
         if (!methodRow) {
             await client.query('ROLLBACK');
@@ -137,9 +277,7 @@ router.post('/payments', protect, hasPermission('ar:receive_payment'), async (re
 
         // A cheque/PDC payment is deferred — funds are NOT cleared until PDC desk verification.
         // Detection: explicit 'cheque'/'pdc' codes OR settlement_type config field.
-        const isCheque = methodCode === 'cheque' || methodCode === 'pdc' ||
-            methodRow.type === 'cheque' ||
-            methodRow.config?.settlement_type === 'deferred';
+        const isCheque = isChequeMethodRow(methodRow);
 
         // ── Store Wallet drawdown ───────────────────────────────────────────────
         if (methodCode === 'store_wallet') {
@@ -165,6 +303,10 @@ router.post('/payments', protect, hasPermission('ar:receive_payment'), async (re
         //             CLEARED  = cash / bank transfer already settled
         const pdcStatusValue = isCheque ? 'RECEIVED' : 'CLEARED';
         const chequeDateValue = isCheque && cheque_date ? cheque_date : null;
+        const effectiveRecordingMethod = physicalDoc?.recording_method || (physicalReceiptNoValue ? 'PAPER' : 'NOTEBOOK');
+        // Defer setting physical_receipt_no until postPhysicalDocument assigns it so
+        // the atomic registry check does not collide with this uncommitted row.
+        const initialPhysicalReceiptNo = effectiveRecordingMethod === 'PAPER' ? null : physicalReceiptNoValue;
 
         const { rows: [{ payment_id: newPaymentId }] } = await client.query(
             `INSERT INTO customer_payment
@@ -173,12 +315,10 @@ router.post('/payments', protect, hasPermission('ar:receive_payment'), async (re
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
              RETURNING payment_id`,
             [customer_id, employee_id, numAmount, methodCode, resolvedMethodId,
-             referenceValue, physicalReceiptNoValue, notes || null, pdcStatusValue, chequeDateValue]
+             referenceValue, initialPhysicalReceiptNo, notes || null, pdcStatusValue, chequeDateValue]
         );
 
         // Physical document posting (if physical_document or physicalReceiptNoValue provided)
-        const physicalDoc = req.body.physical_document;
-        const effectiveRecordingMethod = physicalDoc?.recording_method || (physicalReceiptNoValue ? 'PAPER' : 'NOTEBOOK');
         let receiptResult = null;
         if (effectiveRecordingMethod === 'PAPER' && (physicalDoc?.physical_receipt_no || physicalReceiptNoValue)) {
             receiptResult = await physicalDocumentService.postPhysicalDocument(client, {
@@ -190,9 +330,10 @@ router.post('/payments', protect, hasPermission('ar:receive_payment'), async (re
                 source_type: 'CUSTOMER_PAYMENT',
                 source_id: newPaymentId,
                 employee_id,
+                token_employee_id: req.user?.employee_id ?? employee_id,
                 workstation_id: req.body.workstation_id || 'default',
                 context: 'COLLECTION',
-                request_id: req.body.request_id || null,
+                request_id: req.body.request_id || req.headers['x-request-id'] || null,
             });
 
             await client.query(
@@ -217,68 +358,19 @@ router.post('/payments', protect, hasPermission('ar:receive_payment'), async (re
             notebookReceiptId: req.body.notebook_receipt_id, coveredAmount: req.body.notebook_covered_amount, canPost: cashDrawer.userCanPost(req.user) });
 
         // ── Step 1b: Resolve tax withheld at source ────────────────────────────
-        // A withholding customer pays the invoice net of tax and hands over a BIR
-        // certificate for the rest. The deducted amount still settles the receivable,
-        // so it is merged into the allocation for the invoice it belongs to -- but it
-        // is tracked separately, because no cash was received for it and the ledger
-        // has to say so.
-        const withholdingEntries = Array.isArray(withholding) ? withholding : [];
-        const withholdingByInvoice = new Map();
-        let totalWithheld = 0;
-
-        for (const entry of withholdingEntries) {
-            const invoiceId = Number(entry.invoice_id);
-            const amountWithheld = round2(parseFloat(entry.amount_withheld) || 0);
-            if (!invoiceId || amountWithheld <= 0) continue;
-
-            const context = await withholdingTax.loadInvoiceWithholdingContext(client, invoiceId);
-            if (!context) throw new Error(`Invoice #${invoiceId} not found.`);
-            if (Number(context.invoice.customer_id) !== Number(customer_id)) {
-                throw new Error(`Invoice #${invoiceId} does not belong to this customer.`);
-            }
-
-            const expected = await withholdingTax.computeWithholdingForInvoice({
-                lines: context.lines,
-                parts: context.parts,
-                customer: context.customer,
-            }, client);
-
-            if (!expected.applicable) {
-                throw new Error(
-                    context.customer.is_withholding_agent
-                        ? `Invoice #${context.invoice.invoice_number} has no VATable base for tax to be withheld from.`
-                        : `Tax withheld at source can only be recorded for customers marked as withholding agents.`
-                );
-            }
-
-            // Guard against withholding twice against the same base -- e.g. a partial
-            // collection followed by a second one that repeats the full deduction.
-            const alreadyWithheld = await withholdingTax.sumWithheldForInvoice(client, invoiceId);
-            const ceiling = withholdingTax.computeWithholdingCeiling(expected, context.invoice.total_amount);
-            if (alreadyWithheld + amountWithheld > ceiling + 0.01) {
-                throw new Error(
-                    `Tax withheld on invoice #${context.invoice.invoice_number} (₱${amountWithheld.toFixed(2)}` +
-                    (alreadyWithheld > 0 ? `, on top of ₱${alreadyWithheld.toFixed(2)} already recorded` : '') +
-                    `) exceeds the most that could plausibly be withheld (₱${ceiling.toFixed(2)}). ` +
-                    `Expected ₱${expected.total_withheld.toFixed(2)} on a VAT-exclusive base of ₱${(expected.base_goods + expected.base_services).toFixed(2)}.`
-                );
-            }
-
-            withholdingByInvoice.set(invoiceId, {
-                amount: amountWithheld,
-                components: withholdingTax.allocateActualAcrossComponents(expected.components, amountWithheld),
-            });
-            totalWithheld = round2(totalWithheld + amountWithheld);
-        }
+        const { withholdingByInvoice, totalWithheld } = await resolveWithholdingEntries(client, {
+            customerId: customer_id,
+            withholding,
+        });
 
         // Fold the withheld amounts into the allocations so each invoice is settled by
         // the full amount it was actually cleared for, cash plus certificate.
         const allocationByInvoice = new Map();
         for (const alloc of allocations) {
             const invoiceId = Number(alloc.invoice_id);
-            const amount = parseFloat(alloc.amount_allocated) || 0;
-            if (!invoiceId || amount <= 0) continue;
-            allocationByInvoice.set(invoiceId, round2((allocationByInvoice.get(invoiceId) || 0) + amount));
+            const allocAmt = parseFloat(alloc.amount_allocated) || 0;
+            if (!invoiceId || allocAmt <= 0) continue;
+            allocationByInvoice.set(invoiceId, round2((allocationByInvoice.get(invoiceId) || 0) + allocAmt));
         }
         for (const [invoiceId, wh] of withholdingByInvoice) {
             allocationByInvoice.set(invoiceId, round2((allocationByInvoice.get(invoiceId) || 0) + wh.amount));
@@ -293,22 +385,7 @@ router.post('/payments', protect, hasPermission('ar:receive_payment'), async (re
             if (allocAmt <= 0) continue;
 
             // Validate: allocation must not exceed the invoice's outstanding balance
-            const { rows: [invRow] } = await client.query(
-                `SELECT i.total_amount,
-                        COALESCE(SUM(ipa.amount_allocated), 0) AS already_allocated
-                 FROM invoice i
-                 LEFT JOIN invoice_payment_allocation ipa ON ipa.invoice_id = i.invoice_id
-                 WHERE i.invoice_id = $1
-                 GROUP BY i.invoice_id, i.total_amount`,
-                [alloc.invoice_id]
-            );
-            if (!invRow) throw new Error(`Invoice #${alloc.invoice_id} not found.`);
-            const availableBalance = parseFloat(invRow.total_amount) - parseFloat(invRow.already_allocated);
-            if (allocAmt > availableBalance + 0.01) {
-                throw new Error(
-                    `Allocation ₱${allocAmt.toFixed(2)} exceeds outstanding balance ₱${availableBalance.toFixed(2)} on invoice #${alloc.invoice_id}.`
-                );
-            }
+            await assertInvoiceAvailableBalance(client, alloc.invoice_id, allocAmt);
 
             await client.query(
                 `INSERT INTO invoice_payment_allocation (invoice_id, payment_id, amount_allocated)
@@ -319,21 +396,10 @@ router.post('/payments', protect, hasPermission('ar:receive_payment'), async (re
             totalAllocated += allocAmt;
 
             // ── Step 3: Recompute invoice balance & status ──────────────────────
-            // recompute_invoice_settlement() is the only definition of amount_paid
-            // and status (20260906_01). It counts this allocation *and* any tender
-            // taken at the POS -- computing from allocations alone here used to
-            // erase a credit sale's down payment. Committed allocations count
-            // regardless of pdc_status, except a bounced one; the cash-basis AR
-            // ledger is what waits for a cheque to clear.
             await client.query('SELECT recompute_invoice_settlement($1)', [alloc.invoice_id]);
         }
 
         // ── Step 4: AR ledger — only for instant / already-cleared payments ────
-        // Cheques are credited to the AR ledger when the PDC desk marks them CLEARED,
-        // ensuring the customer's balance reflects cleared cash, not just committed amounts.
-        // The cash actually received is what settled minus what was withheld; the two
-        // are posted as separate entries so a cash-basis report never counts a tax
-        // certificate as collections.
         const cashSettled = round2(totalAllocated - totalWithheld);
         if (!isCheque && cashSettled > 0) {
             await arLedger.appendEntry(client, {
@@ -350,9 +416,6 @@ router.post('/payments', protect, hasPermission('ar:receive_payment'), async (re
         }
 
         if (totalWithheld > 0) {
-            // Posted even for a cheque collection: the withholding is not contingent on
-            // the cheque clearing. The customer has already remitted that tax to BIR
-            // under our TIN, and the certificate proving it is owed to us either way.
             await arLedger.appendEntry(client, {
                 customerId: customer_id,
                 paymentId: newPaymentId,
@@ -377,67 +440,17 @@ router.post('/payments', protect, hasPermission('ar:receive_payment'), async (re
         }
 
         // ── Step 4b: The concession ────────────────────────────────────────────
-        // Written last, and that ordering is doing two jobs.
-        //
-        // After the allocations, because createAdjustment measures each invoice's
-        // outstanding balance the same way recompute_invoice_settlement() does --
-        // so with the cash already applied, the rule "cash + withheld + discount
-        // <= balance" needs no separate check here; an over-reaching concession is
-        // refused by the service.
-        //
-        // After the PAYMENT_SETTLED entry, so the concession's ledger row sorts
-        // immediately AFTER the payment it was granted alongside. A collector
-        // reading the statement has to be able to point at the cash on one line
-        // and the forgiven balance on the next.
-        //
-        // Withholding was resolved before this point for the same reason it must
-        // be: the deduction is a function of the invoice's VAT-exclusive base,
-        // which a concession does not change, so the discount can only take what
-        // is left after the tax, never eat into it.
-        let adjustmentDoc = null;
-        if (totalDiscount > 0) {
-            let authorizedBy = null;
-            if (!userHasPermission(req, 'ar:discount_grant')) {
-                authorizedBy = await arAdjustmentAuth.consumeAuthorization(client, {
-                    token: discount.authorization_token,
-                    requestedBy: employee_id,
-                    customerId: customer_id,
-                    totalAmount: totalDiscount,
-                    purpose: 'SETTLEMENT_DISCOUNT',
-                });
-            }
-
-            adjustmentDoc = await arAdjustment.createAdjustment(client, {
-                customerId: customer_id,
-                adjustmentType: 'SETTLEMENT_DISCOUNT',
-                reasonCode: discount.reason_code,
-                allocations: discountEntries,
-                notes: discount.notes || null,
-                grantedBy: employee_id,
-                authorizedBy,
-                clientRef: discount.client_ref || null,
-                customerPaymentId: newPaymentId,
-                // A cheque cannot carry a concession that posts today. If it did,
-                // a bounce would leave the invoice closed by a discount that was
-                // never earned -- so the document is created at PENDING_CLEARANCE,
-                // with no ledger entry and no settlement weight, and pdcService
-                // posts or voids it when the cheque clears or bounces.
-                pendingClearance: isCheque,
-            });
-
-            if (authorizedBy) {
-                await arAdjustmentAuth.linkAuthorizationToAdjustment(client, {
-                    token: discount.authorization_token,
-                    adjustmentId: adjustmentDoc.adjustment_id,
-                });
-            }
-        }
+        const adjustmentDoc = await applySettlementDiscount(client, req, {
+            customerId: customer_id,
+            employeeId: employee_id,
+            customerPaymentId: newPaymentId,
+            isCheque,
+            discountEntries,
+            totalDiscount,
+            discount,
+        });
 
         // ── Step 5: Overpayment → store wallet ─────────────────────────────────
-        // The discount is absent from this arithmetic on purpose. Concessions are
-        // not folded into invoice_payment_allocation, so totalAllocated does not
-        // contain one, and a forgiven peso must never come back as store-wallet
-        // credit the customer can spend.
         const excessAmount = round2(numAmount - (totalAllocated - totalWithheld));
         let overpaymentCredited = 0;
         if (excessAmount > 0.005) {
@@ -472,10 +485,6 @@ router.post('/payments', protect, hasPermission('ar:receive_payment'), async (re
         await client.query('ROLLBACK');
         if (err.replay) return res.status(err.replay.status).json(err.replay.body);
         console.error('POST /payments error:', err.message);
-        // A concession refused for a business reason (over the balance, a capped
-        // reason, a spent authorization, a closed period) carries its own status.
-        // Reporting those as 500 would tell the clerk the system broke when in
-        // fact it declined, and the message explains exactly what to change.
         const status = err.status || (err.statusCode && err.statusCode < 500 ? err.statusCode : 500);
         res.status(status).json({ code: err.code, message: err.message || 'Server error during payment transaction.' });
     } finally {
@@ -493,6 +502,7 @@ router.post('/payments/collection-group', protect, hasPermission('ar:receive_pay
         physical_document,
         payments: paymentTenders = [],
         allocations = [],
+        withholding,
         notes = null,
         workstation_id = 'default',
     } = req.body;
@@ -501,9 +511,17 @@ router.post('/payments/collection-group', protect, hasPermission('ar:receive_pay
         return res.status(400).json({ message: 'Missing required fields: customer_id, payments, allocations.' });
     }
 
+    const parsedDiscount = parseSettlementDiscounts(req);
+    if (parsedDiscount.errorStatus) {
+        return res.status(parsedDiscount.errorStatus).json({ message: parsedDiscount.errorMessage });
+    }
+    const { discountEntries, totalDiscount, discount } = parsedDiscount;
+
     const client = await db.getClient();
     try {
         await client.query('BEGIN');
+        await cashDrawer.reserveSourceSession(client, req.body.cash_session_id);
+        const cashRequestId = await cashDrawer.beginSourceRequest(client, req);
 
         // Idempotency check on request_id
         if (request_id) {
@@ -528,16 +546,31 @@ router.post('/payments/collection-group', protect, hasPermission('ar:receive_pay
             }
         }
 
-        const totalPaymentAmount = paymentTenders.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
+        const totalPaymentAmount = round2(paymentTenders.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0));
         if (isNaN(totalPaymentAmount) || totalPaymentAmount <= 0) {
             await client.query('ROLLBACK');
             return res.status(400).json({ message: 'Total payment amount must be greater than zero.' });
         }
 
+        const effectiveRecordingMethod = physical_document?.recording_method || 'PAPER';
+        const candidatePrn = effectiveRecordingMethod === 'PAPER' && physical_document?.physical_receipt_no
+            ? formatPhysicalReceiptNumber(physical_document.physical_receipt_no)
+            : null;
+        if (candidatePrn) {
+            const checkRes = await client.query(
+                `SELECT public.is_physical_receipt_no_taken($1) AS is_taken`,
+                [candidatePrn]
+            );
+            if (checkRes.rows[0]?.is_taken) {
+                await client.query('ROLLBACK');
+                return res.status(409).json({
+                    message: `Physical Receipt No '${candidatePrn}' is already registered in the system.`
+                });
+            }
+        }
+
         // Create collection group
         const groupRef = `CRG-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-        const effectiveRecordingMethod = physical_document?.recording_method || 'PAPER';
-
         const { rows: [newGroup] } = await client.query(
             `INSERT INTO public.customer_payment_collection_group
              (group_reference, customer_id, created_by, request_id, recording_method, total_amount, notes)
@@ -547,32 +580,35 @@ router.post('/payments/collection-group', protect, hasPermission('ar:receive_pay
         );
         const groupId = newGroup.group_id;
 
-        // Atomic post physical document for the collection group
+        // Atomic post physical document for the collection group (or record NOTEBOOK preference)
         let receiptResult = null;
-        if (effectiveRecordingMethod === 'PAPER') {
+        if (effectiveRecordingMethod === 'PAPER' || effectiveRecordingMethod === 'NOTEBOOK') {
             receiptResult = await physicalDocumentService.postPhysicalDocument(client, {
-                recording_method: 'PAPER',
+                recording_method: effectiveRecordingMethod,
                 series_id: physical_document?.series_id ? parseInt(physical_document.series_id, 10) : null,
-                physical_receipt_no: physical_document?.physical_receipt_no,
+                physical_receipt_no: candidatePrn,
                 suggestion_token: physical_document?.suggestion_token || null,
                 exception: physical_document?.exception || null,
                 source_type: 'COLLECTION_GROUP',
                 source_id: groupId,
                 employee_id,
+                token_employee_id: req.user?.employee_id ?? employee_id,
                 workstation_id,
                 context: 'COLLECTION',
                 request_id: request_id || `crg:${groupId}`,
             });
 
-            await client.query(
-                `UPDATE public.customer_payment_collection_group
-                 SET physical_document_type_id = $1,
-                     physical_document_series_id = $2,
-                     physical_document_registry_id = $3,
-                     physical_receipt_no = $4
-                 WHERE group_id = $5`,
-                [receiptResult.type_id || null, receiptResult.series_id || null, receiptResult.registry_id || null, receiptResult.canonical_full_reference || null, groupId]
-            );
+            if (effectiveRecordingMethod === 'PAPER') {
+                await client.query(
+                    `UPDATE public.customer_payment_collection_group
+                     SET physical_document_type_id = $1,
+                         physical_document_series_id = $2,
+                         physical_document_registry_id = $3,
+                         physical_receipt_no = $4
+                     WHERE group_id = $5`,
+                    [receiptResult.type_id || null, receiptResult.series_id || null, receiptResult.registry_id || null, receiptResult.canonical_full_reference || null, groupId]
+                );
+            }
         }
 
         const groupPrn = receiptResult?.canonical_full_reference || null;
@@ -580,33 +616,37 @@ router.post('/payments/collection-group', protect, hasPermission('ar:receive_pay
         // Create individual customer_payment records for each tender
         const createdPayments = [];
         for (const tender of paymentTenders) {
-            const numAmount = parseFloat(tender.amount) || 0;
+            const numAmount = round2(parseFloat(tender.amount) || 0);
             if (numAmount <= 0) continue;
 
-            let methodRow = null;
-            if (tender.method_id) {
-                const r = await client.query(
-                    `SELECT method_id, code, name, type, config FROM payment_methods WHERE method_id = $1 AND enabled = true`,
-                    [tender.method_id]
-                );
-                methodRow = r.rows[0] || null;
-            } else if (tender.payment_method) {
-                const r = await client.query(
-                    `SELECT method_id, code, name, type, config FROM payment_methods
-                     WHERE (code = $1 OR name ILIKE $1) AND enabled = true LIMIT 1`,
-                    [tender.payment_method]
-                );
-                methodRow = r.rows[0] || null;
-            }
+            const methodRow = await resolvePaymentMethod(client, tender.method_id, tender.payment_method);
             if (!methodRow) {
                 await client.query('ROLLBACK');
                 return res.status(400).json({ message: `Invalid payment method: ${tender.payment_method || tender.method_id}` });
             }
 
-            const isCheque = methodRow.code === 'cheque' || methodRow.code === 'pdc' ||
-                methodRow.type === 'cheque' || methodRow.config?.settlement_type === 'deferred';
+            if (methodRow.code === 'store_wallet') {
+                const wallet = await walletService.getWallet(customer_id, client);
+                if (!wallet || wallet.balance < numAmount) {
+                    await client.query('ROLLBACK');
+                    return res.status(400).json({
+                        message: `Insufficient store wallet balance. Available: ₱${wallet ? wallet.balance.toFixed(2) : '0.00'}, Requested: ₱${numAmount.toFixed(2)}`
+                    });
+                }
+                await walletService.appendWalletTransaction(client, {
+                    customerId: customer_id,
+                    type: 'INVOICE_PAYMENT_DRAWDOWN',
+                    amount: -numAmount,
+                    referenceType: 'PAYMENT',
+                    notes: notes || tender.notes || 'Store wallet drawdown for payment',
+                    createdBy: employee_id,
+                });
+            }
+
+            const isCheque = isChequeMethodRow(methodRow);
             const pdcStatusValue = isCheque ? 'RECEIVED' : 'CLEARED';
             const chequeDateValue = isCheque && tender.cheque_date ? tender.cheque_date : null;
+            const tenderRef = tender.reference || tender.reference_number || null;
 
             const { rows: [{ payment_id: tenderPaymentId }] } = await client.query(
                 `INSERT INTO public.customer_payment
@@ -617,8 +657,8 @@ router.post('/payments/collection-group', protect, hasPermission('ar:receive_pay
                  RETURNING payment_id`,
                 [
                     customer_id, employee_id, numAmount, methodRow.code, methodRow.method_id,
-                    tender.reference || tender.reference_number || null, groupPrn,
-                    tender.notes || null, pdcStatusValue, chequeDateValue, groupId,
+                    tenderRef, groupPrn,
+                    tender.notes || notes || null, pdcStatusValue, chequeDateValue, groupId,
                     effectiveRecordingMethod, receiptResult?.type_id || null,
                     receiptResult?.series_id || null, receiptResult?.registry_id || null
                 ]
@@ -629,60 +669,201 @@ router.post('/payments/collection-group', protect, hasPermission('ar:receive_pay
                 sourceId: tenderPaymentId,
                 sessionId: req.body.cash_session_id,
                 actorId: employee_id,
+                notebookReceiptId: tender.notebook_receipt_id,
+                coveredAmount: tender.notebook_covered_amount,
                 canPost: cashDrawer.userCanPost(req.user)
             });
 
             createdPayments.push({
                 payment_id: tenderPaymentId,
                 amount: numAmount,
+                remaining: numAmount,
+                cash_allocated: 0,
                 method: methodRow.code,
+                reference_number: tenderRef,
                 is_cheque: isCheque,
             });
         }
 
-        // Allocate across invoices
-        for (const alloc of allocations) {
-            const allocAmt = parseFloat(alloc.amount_allocated) || 0;
-            if (allocAmt <= 0) continue;
+        if (createdPayments.length === 0) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ message: 'At least one positive payment tender is required.' });
+        }
 
-            const primaryPaymentId = createdPayments[0]?.payment_id;
+        const { withholdingByInvoice, totalWithheld } = await resolveWithholdingEntries(client, {
+            customerId: customer_id,
+            withholding,
+        });
+
+        // Merge cash allocations by invoice while preserving order
+        const cashAllocByInvoice = new Map();
+        for (const alloc of allocations) {
+            const invoiceId = Number(alloc.invoice_id);
+            const allocAmt = round2(parseFloat(alloc.amount_allocated) || 0);
+            if (!invoiceId || allocAmt <= 0) continue;
+            cashAllocByInvoice.set(invoiceId, round2((cashAllocByInvoice.get(invoiceId) || 0) + allocAmt));
+        }
+
+        const totalCashRequested = round2(Array.from(cashAllocByInvoice.values()).reduce((s, v) => s + v, 0));
+        if (totalCashRequested > totalPaymentAmount + 0.005) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ message: 'Total invoice allocations exceed total payment amount.' });
+        }
+
+        const touchedInvoiceIds = new Set([...cashAllocByInvoice.keys(), ...withholdingByInvoice.keys()]);
+        for (const invoiceId of touchedInvoiceIds) {
+            const combinedAmt = round2((cashAllocByInvoice.get(invoiceId) || 0) + (withholdingByInvoice.get(invoiceId)?.amount || 0));
+            if (combinedAmt > 0) {
+                await assertInvoiceAvailableBalance(client, invoiceId, combinedAmt);
+            }
+        }
+
+        // Distribute cash allocations across tenders sequentially so PDC clearance/bounce
+        // operates accurately on each instrument's own invoice_payment_allocation rows.
+        const invoiceQueue = Array.from(cashAllocByInvoice, ([invoice_id, remaining]) => ({ invoice_id, remaining }));
+        const tenderInvoiceAllocations = new Map(); // key `${payment_id}:${invoice_id}` -> { payment_id, invoice_id, amount }
+
+        for (const tender of createdPayments) {
+            let toDistribute = tender.amount;
+            for (const inv of invoiceQueue) {
+                if (toDistribute <= 0.005) break;
+                if (inv.remaining <= 0.005) continue;
+                const portion = round2(Math.min(toDistribute, inv.remaining));
+                if (portion <= 0) continue;
+                const key = `${tender.payment_id}:${inv.invoice_id}`;
+                tenderInvoiceAllocations.set(key, {
+                    payment_id: tender.payment_id,
+                    invoice_id: inv.invoice_id,
+                    amount: round2((tenderInvoiceAllocations.get(key)?.amount || 0) + portion),
+                });
+                inv.remaining = round2(inv.remaining - portion);
+                toDistribute = round2(toDistribute - portion);
+                tender.cash_allocated = round2(tender.cash_allocated + portion);
+            }
+        }
+
+        // Attach withholding onto a cleared tender when available so a cheque bounce
+        // never wipes out the BIR tax certificate credit on recompute_invoice_settlement().
+        const withholdingCarrier = createdPayments.find(p => !p.is_cheque) || createdPayments[0];
+        for (const [invoiceId, wh] of withholdingByInvoice) {
+            const key = `${withholdingCarrier.payment_id}:${invoiceId}`;
+            tenderInvoiceAllocations.set(key, {
+                payment_id: withholdingCarrier.payment_id,
+                invoice_id: invoiceId,
+                amount: round2((tenderInvoiceAllocations.get(key)?.amount || 0) + wh.amount),
+            });
+        }
+
+        for (const row of tenderInvoiceAllocations.values()) {
             await client.query(
                 `INSERT INTO invoice_payment_allocation (invoice_id, payment_id, amount_allocated)
                  VALUES ($1, $2, $3)
                  ON CONFLICT (invoice_id, payment_id) DO UPDATE SET amount_allocated = EXCLUDED.amount_allocated`,
-                [alloc.invoice_id, primaryPaymentId, allocAmt]
+                [row.invoice_id, row.payment_id, row.amount]
             );
-            await client.query('SELECT recompute_invoice_settlement($1)', [alloc.invoice_id]);
         }
 
-        // Post AR ledger entry for cleared cash
-        const clearedAmount = createdPayments.filter(p => !p.is_cheque).reduce((sum, p) => sum + p.amount, 0);
-        if (clearedAmount > 0 && createdPayments.length > 0) {
+        for (const invoiceId of touchedInvoiceIds) {
+            await client.query('SELECT recompute_invoice_settlement($1)', [invoiceId]);
+        }
+
+        // Post AR ledger entries per cleared cash/non-cheque tender so a pending cheque
+        // never receives an immediate PAYMENT_SETTLED row on its payment_id.
+        for (const p of createdPayments) {
+            if (!p.is_cheque && p.cash_allocated > 0) {
+                await arLedger.appendEntry(client, {
+                    customerId: customer_id,
+                    paymentId: p.payment_id,
+                    entryType: 'PAYMENT_SETTLED',
+                    amount: -p.cash_allocated,
+                    paymentChannel: p.method,
+                    referenceNo: groupPrn || p.reference_number,
+                    notes: notes || `Grouped collection receipt #${groupPrn || groupRef} (${p.method})`,
+                    createdBy: employee_id,
+                    paymentSource: 'customer_payment',
+                });
+            }
+        }
+
+        if (totalWithheld > 0) {
             await arLedger.appendEntry(client, {
                 customerId: customer_id,
-                paymentId: createdPayments[0].payment_id,
-                entryType: 'PAYMENT_SETTLED',
-                amount: -clearedAmount,
-                paymentChannel: 'grouped_collection',
-                referenceNo: groupPrn,
-                notes: `Grouped collection receipt #${groupPrn || groupRef}`,
+                paymentId: withholdingCarrier.payment_id,
+                entryType: 'WITHHOLDING_TAX_CREDIT',
+                amount: -totalWithheld,
+                paymentChannel: 'withholding_tax',
+                referenceNo: groupPrn || withholdingCarrier.reference_number,
+                notes: 'Tax withheld at source, pending BIR certificate',
                 createdBy: employee_id,
                 paymentSource: 'customer_payment',
             });
+
+            for (const [invoiceId, wh] of withholdingByInvoice) {
+                await withholdingTax.recordWithholdingLines(client, {
+                    invoiceId,
+                    customerId: customer_id,
+                    customerPaymentId: withholdingCarrier.payment_id,
+                    components: wh.components,
+                    employeeId: employee_id,
+                });
+            }
         }
 
-        await client.query('COMMIT');
-        res.status(201).json({
+        // Attach settlement concession to a cheque tender when present so it waits
+        // in PENDING_CLEARANCE until the cheque clears, otherwise to the first tender.
+        const discountCarrier = createdPayments.find(p => p.is_cheque) || createdPayments[0];
+        const adjustmentDoc = await applySettlementDiscount(client, req, {
+            customerId: customer_id,
+            employeeId: employee_id,
+            customerPaymentId: discountCarrier.payment_id,
+            isCheque: discountCarrier.is_cheque,
+            discountEntries,
+            totalDiscount,
+            discount,
+        });
+
+        const totalCashAllocated = round2(createdPayments.reduce((sum, p) => sum + p.cash_allocated, 0));
+        const excessAmount = round2(totalPaymentAmount - totalCashAllocated);
+        let overpaymentCredited = 0;
+        if (excessAmount > 0.005) {
+            await walletService.appendWalletTransaction(client, {
+                customerId: customer_id,
+                type: 'OVERPAYMENT_CREDIT',
+                amount: excessAmount,
+                referenceType: 'PAYMENT',
+                referenceId: createdPayments[0].payment_id,
+                notes: `Automated credit from overpayment on collection group #${groupPrn || groupRef}`,
+                createdBy: employee_id,
+            });
+            overpaymentCredited = excessAmount;
+        }
+
+        const responsePayload = {
             message: 'Collection group payment recorded successfully.',
             group_id: groupId,
             group_reference: groupRef,
             physical_receipt_no: groupPrn,
             physical_document: receiptResult,
             total_amount: totalPaymentAmount,
-            payments: createdPayments,
-        });
+            allocated_amount: round2(totalCashAllocated + totalWithheld),
+            withheld_amount: totalWithheld,
+            discount_amount: totalDiscount,
+            adjustment_no: adjustmentDoc?.adjustment_no || null,
+            adjustment_status: adjustmentDoc?.status || null,
+            overpayment_credited: overpaymentCredited,
+            payments: createdPayments.map(({ payment_id, amount, method, is_cheque }) => ({
+                payment_id,
+                amount,
+                method,
+                is_cheque,
+            })),
+        };
+        await cashDrawer.finishSourceRequest(client, cashRequestId, 201, responsePayload);
+        await client.query('COMMIT');
+        res.status(201).json(responsePayload);
     } catch (err) {
         await client.query('ROLLBACK');
+        if (err.replay) return res.status(err.replay.status).json(err.replay.body);
         console.error('POST /payments/collection-group error:', err);
         const status = err.statusCode || (err.status && err.status < 500 ? err.status : 500);
         res.status(status).json({ code: err.code || 'COLLECTION_GROUP_ERROR', message: err.message || 'Server error recording collection group.' });

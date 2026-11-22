@@ -69,7 +69,7 @@ function parseReferenceComponents(reference) {
 /**
  * Check if a reference is occupied in physical_document_registry or legacy tables
  */
-async function isReferenceOccupied(clientOrDb, seriesId, canonicalRef, excludeRegistryId = null, excludeInvoiceId = null, excludePaymentId = null) {
+async function isReferenceOccupied(clientOrDb, seriesId, canonicalRef, excludeRegistryId = null, excludeInvoiceId = null, excludePaymentId = null, excludeGroupId = null) {
     const runner = clientOrDb || db;
     // 1. Check registry occupied states (ISSUED, VOIDED, SPOILED)
     const { rows: regRows } = await runner.query(
@@ -106,8 +106,9 @@ async function isReferenceOccupied(clientOrDb, seriesId, canonicalRef, excludeRe
     const { rows: payRows } = await runner.query(
         `SELECT payment_id FROM public.customer_payment
          WHERE ${normalizedPhysicalReceiptSql()} = $1
-           AND ($2::int IS NULL OR payment_id != $2)`,
-        [canonicalRef, excludePaymentId]
+           AND ($2::int IS NULL OR payment_id != $2)
+           AND ($3::int IS NULL OR collection_group_id IS NULL OR collection_group_id != $3)`,
+        [canonicalRef, excludePaymentId, excludeGroupId]
     );
     if (payRows.length > 0) {
         return {
@@ -120,7 +121,10 @@ async function isReferenceOccupied(clientOrDb, seriesId, canonicalRef, excludeRe
 
     // Collection groups own one receipt across their tenders, including legacy groups.
     const { rows: groups } = await runner.query(
-        `SELECT group_id FROM customer_payment_collection_group WHERE ${normalizedPhysicalReceiptSql()} = $1`, [canonicalRef]
+        `SELECT group_id FROM customer_payment_collection_group
+         WHERE ${normalizedPhysicalReceiptSql()} = $1
+           AND ($2::int IS NULL OR group_id != $2)`,
+        [canonicalRef, excludeGroupId]
     );
     if (groups.length) return { occupied: true, state: 'ISSUED', source: 'collection_group', source_id: groups[0].group_id };
 
@@ -320,17 +324,27 @@ async function getOptions({ context, workstation_id = 'default', employee_id }) 
     }));
 
     // 5. Build dynamic choices array entirely from application settings
-    const choices = seriesList.map(s => ({
-        key: String(s.series_id),
-        series_id: s.series_id,
-        type_id: s.type_id,
-        type_code: s.type_code,
-        recording_method: 'PAPER',
-        label: s.short_label || s.prefix,
-        title: `${s.name} (${s.prefix})`,
-        prefix: s.prefix,
-        default_tax_rate_id: s.default_tax_rate_id,
-    }));
+    const typeCounts = new Map();
+    for (const s of seriesList) {
+        typeCounts.set(s.type_id, (typeCounts.get(s.type_id) || 0) + 1);
+    }
+    const choices = seriesList.map(s => {
+        const baseLabel = s.short_label || s.prefix;
+        const label = (typeCounts.get(s.type_id) > 1 && s.prefix && baseLabel.toUpperCase() !== s.prefix.toUpperCase())
+            ? `${baseLabel} (${s.prefix})`
+            : baseLabel;
+        return {
+            key: String(s.series_id),
+            series_id: s.series_id,
+            type_id: s.type_id,
+            type_code: s.type_code,
+            recording_method: 'PAPER',
+            label,
+            title: `${s.name} (${s.prefix})`,
+            prefix: s.prefix,
+            default_tax_rate_id: s.default_tax_rate_id,
+        };
+    });
 
     // Add Notebook choice if active in document types and permitted by selection policy
     const notebookType = allActiveTypes.find(t => t.code === 'NOTEBOOK' || t.controlled_category === 'NOTEBOOK');
@@ -692,8 +706,12 @@ async function postPhysicalDocument(client, {
         }
     }
 
-    // 5. Check occupancy of entered reference under lock
-    const occ = await isReferenceOccupied(client, series.series_id, parsed.canonical);
+    // 5. Check occupancy of entered reference under lock (excluding the current source row)
+    const excludeInvoiceId = source_type === 'INVOICE' && source_id != null ? parseInt(source_id, 10) : null;
+    const excludePaymentId = source_type === 'CUSTOMER_PAYMENT' && source_id != null ? parseInt(source_id, 10) : null;
+    const excludeGroupId = source_type === 'COLLECTION_GROUP' && source_id != null ? parseInt(source_id, 10) : null;
+
+    const occ = await isReferenceOccupied(client, series.series_id, parsed.canonical, null, excludeInvoiceId, excludePaymentId, excludeGroupId);
     if (occ.occupied) {
         const err = new Error(`Physical receipt number ${parsed.canonical} is already ${occ.state.toLowerCase()}. Choose an unused receipt number.`);
         err.statusCode = 409;
@@ -735,7 +753,7 @@ async function postPhysicalDocument(client, {
                 }
 
                 // Check if original suggestion was concurrently occupied
-                const spoiledOcc = await isReferenceOccupied(client, series.series_id, spoiledRef);
+                const spoiledOcc = await isReferenceOccupied(client, series.series_id, spoiledRef, null, excludeInvoiceId, excludePaymentId, excludeGroupId);
                 if (spoiledOcc.occupied) {
                     const err = new Error(`Original suggestion ${spoiledRef} was concurrently issued or spoiled. Please refresh.`);
                     err.statusCode = 409;

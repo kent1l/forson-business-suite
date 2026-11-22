@@ -7,6 +7,8 @@ console.log('🧪 Testing physical document utilities and normalization...');
 assert.strictEqual(formatPhysicalReceiptNumber('si 4521'), 'SI-4521');
 assert.strictEqual(formatPhysicalReceiptNumber('SI-4521'), 'SI-4521');
 assert.strictEqual(formatPhysicalReceiptNumber('  or 1002  '), 'OR-1002');
+assert.strictEqual(formatPhysicalReceiptNumber('crv 0012'), 'CRV-12');
+assert.strictEqual(formatPhysicalReceiptNumber('CRTEST 007'), 'CRTEST-7');
 assert.strictEqual(formatPhysicalReceiptNumber('12345'), '12345');
 assert.strictEqual(formatPhysicalReceiptNumber(''), null);
 assert.strictEqual(formatPhysicalReceiptNumber(null), null);
