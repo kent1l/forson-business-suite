@@ -875,7 +875,7 @@ router.post('/payments/collection-group', protect, hasPermission('ar:receive_pay
 
 module.exports = router;
 
-// GET /api/payments - list payments within date range (Phase 1 cash stats support)
+// GET /api/payments - list payments within business date range (Sales & A/R cash stats support)
 router.get('/payments', protect, hasPermission('ar:view'), async (req, res) => {
     const { startDate, endDate } = req.query;
     if (!startDate || !endDate) {
@@ -883,10 +883,62 @@ router.get('/payments', protect, hasPermission('ar:view'), async (req, res) => {
     }
     try {
         const query = `
-            SELECT payment_id, customer_id, employee_id, created_at as payment_date, amount_paid as amount, tendered_amount, COALESCE(legacy_method, method_name) as payment_method, reference, payment_status
-            FROM payments_unified
-            WHERE (created_at AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2
-            ORDER BY created_at ASC;`;
+            SELECT * FROM (
+                SELECT
+                    ip.payment_id,
+                    i.customer_id,
+                    ip.created_by AS employee_id,
+                    CASE
+                        WHEN (COALESCE(ip.settled_at, ip.created_at) AT TIME ZONE 'Asia/Manila')::date
+                             <> (ip.created_at AT TIME ZONE 'Asia/Manila')::date
+                        THEN ip.settled_at
+                        ELSE i.invoice_date
+                    END AS payment_date,
+                    ip.amount_paid AS amount,
+                    ip.tendered_amount,
+                    pm.name AS payment_method,
+                    pm.type AS method_type,
+                    ip.reference,
+                    COALESCE(ip.payment_status, 'settled') AS payment_status,
+                    'invoice_payments'::text AS source_table,
+                    'pos_sale'::text AS collection_type,
+                    i.invoice_id,
+                    i.invoice_number
+                FROM public.invoice_payments ip
+                JOIN public.invoice i ON ip.invoice_id = i.invoice_id
+                JOIN public.payment_methods pm ON ip.method_id = pm.method_id
+                WHERE i.status <> 'Cancelled'
+
+                UNION ALL
+
+                SELECT
+                    cp.payment_id,
+                    cp.customer_id,
+                    cp.employee_id,
+                    COALESCE(legacy_inv.invoice_date, cp.payment_date) AS payment_date,
+                    cp.amount AS amount,
+                    cp.tendered_amount,
+                    COALESCE(pm.name, cp.payment_method) AS payment_method,
+                    pm.type AS method_type,
+                    cp.reference_number AS reference,
+                    CASE
+                        WHEN COALESCE(cp.pdc_status, 'CLEARED') = 'CLEARED' THEN 'settled'
+                        WHEN cp.pdc_status = 'BOUNCED' THEN 'failed'
+                        ELSE 'pending'
+                    END AS payment_status,
+                    'customer_payment'::text AS source_table,
+                    CASE WHEN legacy_inv.invoice_id IS NOT NULL THEN 'pos_sale' ELSE 'ar_collection' END AS collection_type,
+                    legacy_inv.invoice_id,
+                    legacy_inv.invoice_number
+                FROM public.customer_payment cp
+                LEFT JOIN public.payment_methods pm ON cp.method_id = pm.method_id
+                LEFT JOIN public.invoice legacy_inv
+                    ON cp.reference_number ~* '^INV'
+                   AND legacy_inv.invoice_number = cp.reference_number
+                WHERE legacy_inv.invoice_id IS NULL OR legacy_inv.status <> 'Cancelled'
+            ) unified
+            WHERE (unified.payment_date AT TIME ZONE 'Asia/Manila')::date BETWEEN $1 AND $2
+            ORDER BY unified.payment_date ASC;`;
         const { rows } = await db.query(query, [startDate, endDate]);
         res.json(rows);
     } catch (err) {

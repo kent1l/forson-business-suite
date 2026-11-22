@@ -555,6 +555,7 @@ router.post('/sales/staging/:id/approve-post', protect, hasPermission('invoicing
                 referenceNo: invoice_number,
                 notes: `Staged sale approved on account (STG-${id})`,
                 createdBy: staged.employee_id,
+                entryDate: invoiceDate,
             });
         }
 
@@ -613,7 +614,7 @@ router.post('/sales/staging/:id/approve-post', protect, hasPermission('invoicing
             const stagedPaymentRes = await client.query(`
                 INSERT INTO invoice_payments
                 (invoice_id, method_id, amount_paid, tendered_amount, change_amount, reference, metadata, created_by, payment_status, settled_at, created_at)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::varchar, CASE WHEN $9::varchar = 'settled' THEN CURRENT_TIMESTAMP ELSE NULL END, CURRENT_TIMESTAMP)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::varchar, CASE WHEN $9::varchar = 'settled' THEN COALESCE($10::timestamptz, CURRENT_TIMESTAMP) ELSE NULL END, CURRENT_TIMESTAMP)
                 RETURNING payment_id
             `, [
                 invoiceId,
@@ -624,7 +625,8 @@ router.post('/sales/staging/:id/approve-post', protect, hasPermission('invoicing
                 null,
                 JSON.stringify({ source: 'pos_mobile_staged', staged_sale_id: id }),
                 staged.employee_id,
-                paymentStatus
+                paymentStatus,
+                invoiceDate || null
             ]);
             await cashDrawer.postSourcePayment(client, { kind: 'invoice', sourceId: stagedPaymentRes.rows[0].payment_id, sessionId: req.body.cash_session_id, actorId: reviewerId, canPost: cashDrawer.userCanPost(req.user) });
 
@@ -640,6 +642,7 @@ router.post('/sales/staging/:id/approve-post', protect, hasPermission('invoicing
                     notes: `Payment via ${method.name} (staged sale STG-${id})`,
                     createdBy: staged.employee_id,
                     paymentSource: 'invoice_payments',
+                    entryDate: invoiceDate,
                 });
             }
         }

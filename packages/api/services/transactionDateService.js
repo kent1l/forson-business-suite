@@ -220,10 +220,18 @@ const invoiceHandler = {
     guardState: () => null,
     async conflicts(client, row, newDate) {
         const out = [];
+        // Exclude same-sale POS counter tenders whose settled date still matches the
+        // invoice's current date or the payment's creation date, because those move
+        // together with the invoice in cascade(). Only separately-settled delayed
+        // payments constrain moving an invoice forward.
         const { rows: pay } = await client.query(
             `SELECT MIN(COALESCE(settled_at, created_at)) AS d
-               FROM invoice_payments WHERE invoice_id = $1 AND payment_status = 'settled'`,
-            [row.invoice_id]
+               FROM invoice_payments
+              WHERE invoice_id = $1
+                AND payment_status = 'settled'
+                AND (COALESCE(settled_at, created_at) AT TIME ZONE 'Asia/Manila')::date <> ($2::timestamptz AT TIME ZONE 'Asia/Manila')::date
+                AND (COALESCE(settled_at, created_at) AT TIME ZONE 'Asia/Manila')::date <> (created_at AT TIME ZONE 'Asia/Manila')::date`,
+            [row.invoice_id, row.invoice_date]
         );
         const { rows: cpay } = await client.query(
             `SELECT MIN(cp.payment_date) AS d
@@ -271,13 +279,46 @@ const invoiceHandler = {
         });
 
         steps.push({
-            table: 'ar_ledger', column: 'entry_date',
-            description: 'INVOICE_POSTED ledger entry',
+            table: 'invoice_payments', column: 'settled_at',
+            description: 'Settled POS payments for this invoice',
             async run(c) {
                 const { rowCount } = await c.query(
-                    `UPDATE ar_ledger SET entry_date = $1
-                      WHERE invoice_id = $2 AND entry_type = 'INVOICE_POSTED'`,
-                    [newDate, row.invoice_id]
+                    `UPDATE invoice_payments
+                        SET settled_at = $1
+                      WHERE invoice_id = $2
+                        AND payment_status = 'settled'
+                        AND (
+                            (COALESCE(settled_at, created_at) AT TIME ZONE 'Asia/Manila')::date = ($3::timestamptz AT TIME ZONE 'Asia/Manila')::date
+                            OR (COALESCE(settled_at, created_at) AT TIME ZONE 'Asia/Manila')::date = (created_at AT TIME ZONE 'Asia/Manila')::date
+                        )
+                        AND NOT EXISTS (SELECT 1 FROM cash_drawer_movement m WHERE m.invoice_payment_id = invoice_payments.payment_id)
+                        AND NOT EXISTS (SELECT 1 FROM cash_source_link l WHERE l.invoice_payment_id = invoice_payments.payment_id)`,
+                    [newDate, row.invoice_id, row.invoice_date]
+                );
+                return rowCount;
+            },
+        });
+
+        steps.push({
+            table: 'ar_ledger', column: 'entry_date',
+            description: 'INVOICE_POSTED and POS payment ledger entries',
+            async run(c) {
+                const { rowCount } = await c.query(
+                    `UPDATE ar_ledger
+                        SET entry_date = $1
+                      WHERE invoice_id = $2
+                        AND (
+                            entry_type = 'INVOICE_POSTED'
+                            OR (
+                                payment_source = 'invoice_payments'
+                                AND entry_type IN ('PAYMENT_SETTLED', 'WITHHOLDING_TAX_CREDIT')
+                                AND (
+                                    (entry_date AT TIME ZONE 'Asia/Manila')::date = ($3::timestamptz AT TIME ZONE 'Asia/Manila')::date
+                                    OR (entry_date AT TIME ZONE 'Asia/Manila')::date = (created_at AT TIME ZONE 'Asia/Manila')::date
+                                )
+                            )
+                        )`,
+                    [newDate, row.invoice_id, row.invoice_date]
                 );
                 return rowCount;
             },

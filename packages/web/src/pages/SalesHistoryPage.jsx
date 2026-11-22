@@ -144,60 +144,66 @@ const SalesHistoryPage = ({ pageState = null, onNavigate }) => {
         };
 
         const cashMethodNames = getCashMethodNames();
+        const hasActiveInvoiceSet = Array.isArray(financialSummary?.active_invoice_numbers);
         const currentInvoiceNumbers = new Set(financialSummary?.active_invoice_numbers || []);
 
-        let cashCollected = 0; let nonCashCollected = 0; let changeReturned = 0;
+        let salesCashTendered = 0; let salesChangeReturned = 0; let salesNonCashCollected = 0;
+        let arCashTendered = 0; let arChangeReturned = 0; let arNonCashCollected = 0;
+        const paymentMethodBreakdown = {};
+
         for (const p of payments) {
             if (p.payment_status && p.payment_status !== 'settled') {
                 continue;
             }
             const ref = (p.reference || '').toString().trim();
-            const looksLikeInvoiceNo = /^INV/i.test(ref);
-            if (looksLikeInvoiceNo && !currentInvoiceNumbers.has(ref)) {
+            const invNo = p.invoice_number || (/^INV/i.test(ref) ? ref : null);
+            const isArCollection = p.collection_type === 'ar_collection' || (p.source_table === 'customer_payment' && !invNo);
+            if (!isArCollection && invNo && hasActiveInvoiceSet && !currentInvoiceNumbers.has(invNo)) {
                 continue;
             }
             const amt = currencySafeNumber(p.amount);
             const tendered = currencySafeNumber(p.tendered_amount) || amt;
             const change = tendered > amt ? (tendered - amt) : 0;
-            const method = (p.payment_method || '').toString().trim().toLowerCase();
-            if (cashMethodNames.includes(method)) {
-                cashCollected += tendered;
-                changeReturned += change;
+            const methodName = (p.payment_method || '').toString().trim();
+            const method = methodName.toLowerCase();
+            const isCash = cashMethodNames.includes(method) || (p.method_type && p.method_type.toLowerCase() === 'cash');
+
+            if (isArCollection) {
+                if (isCash) {
+                    arCashTendered += tendered;
+                    arChangeReturned += change;
+                } else {
+                    arNonCashCollected += amt;
+                }
+            } else if (isCash) {
+                salesCashTendered += tendered;
+                salesChangeReturned += change;
             } else {
-                nonCashCollected += amt;
+                salesNonCashCollected += amt;
             }
+
+            if (!paymentMethodBreakdown[methodName]) {
+                paymentMethodBreakdown[methodName] = {
+                    amount: 0,
+                    count: 0,
+                    methodName
+                };
+            }
+            paymentMethodBreakdown[methodName].amount += amt;
+            paymentMethodBreakdown[methodName].count += 1;
         }
 
-        const cashCollectedNet = Math.max(cashCollected - changeReturned, 0);
+        const salesCashCollectedNet = Math.max(salesCashTendered - salesChangeReturned, 0);
+        const arCashCollectedNet = Math.max(arCashTendered - arChangeReturned, 0);
+        const cashCollected = salesCashTendered + arCashTendered;
+        const changeReturned = salesChangeReturned + arChangeReturned;
+        const cashCollectedNet = salesCashCollectedNet + arCashCollectedNet;
+        const nonCashCollected = salesNonCashCollected + arNonCashCollected;
         const totalCollectedNet = cashCollectedNet + nonCashCollected;
         const cashMix = totalCollectedNet > 0 ? cashCollectedNet / totalCollectedNet : 0;
 
         // A period can pay out refunds for sales collected on an earlier day.
         const expectedNetCashDrawer = refundsApprox === null ? null : cashCollectedNet - refundsApprox;
-
-        const paymentMethodBreakdown = {};
-        for (const p of payments) {
-            if (p.payment_status && p.payment_status !== 'settled') {
-                continue;
-            }
-            const ref = (p.reference || '').toString().trim();
-            const looksLikeInvoiceNo = /^INV/i.test(ref);
-            if (looksLikeInvoiceNo && !currentInvoiceNumbers.has(ref)) {
-                continue;
-            }
-            const method = (p.payment_method || '').toString().trim();
-            const amt = currencySafeNumber(p.amount);
-            
-            if (!paymentMethodBreakdown[method]) {
-                paymentMethodBreakdown[method] = {
-                    amount: 0,
-                    count: 0,
-                    methodName: method
-                };
-            }
-            paymentMethodBreakdown[method].amount += amt;
-            paymentMethodBreakdown[method].count += 1;
-        }
 
         return {
             grossSales: grossSalesExclTax,
@@ -212,6 +218,12 @@ const SalesHistoryPage = ({ pageState = null, onNavigate }) => {
             topCustomerNet,
             topCustomerShare,
             refundRate,
+            salesCashTendered,
+            salesChangeReturned,
+            salesCashCollectedNet,
+            arCashCollectedNet,
+            salesNonCashCollected,
+            arNonCashCollected,
             cashCollectedNet,
             nonCashCollected,
             expectedNetCashDrawer,
@@ -617,19 +629,19 @@ const SalesHistoryPage = ({ pageState = null, onNavigate }) => {
                                         <>
                                             <div className="text-sm text-gray-500 dark:text-slate-400 flex items-center justify-between">
                                                 <span className="font-medium text-primary-700 dark:text-primary-300 text-xs uppercase tracking-wider">Operational Cash Flow (Tax-Inclusive)</span>
-                                                <span className="text-[10px] uppercase tracking-wide text-gray-400 dark:text-slate-500">Sales Cash</span>
+                                                <span className="text-[10px] uppercase tracking-wide text-gray-400 dark:text-slate-500">Sales &amp; A/R Cash</span>
                                             </div>
                                             <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-3">
                                                 <div>
                                                     <div className="text-xs text-gray-500 dark:text-slate-400 flex items-center gap-1">
                                                         Expected Net Cash
                                                         <InfoTip label="Expected Net Cash">
-                                                            (Cash Tendered − Change Returned) − Cash Refunds and Exchange Payouts.
-                                                            Net sales cash for the selected dates, excluding opening cash and other
+                                                            (POS Sales Cash Tendered − Change Returned) + A/R Cash Collections − Cash Refunds and Exchange Payouts.
+                                                            Net cash expected for the selected dates, excluding opening cash and other
                                                             cash-box movements. It can be negative when paying refunds for earlier sales.
                                                         </InfoTip>
                                                     </div>
-                                                    <div className="font-semibold text-gray-800 dark:text-slate-100 text-base flex items-center gap-1.5">
+                                                    <div className="font-semibold text-gray-800 dark:text-slate-100 text-base tabular-nums flex items-center gap-1.5">
                                                         <span>{stats.expectedNetCashDrawer === null ? 'Unavailable' : `${settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}${stats.expectedNetCashDrawer.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</span>
                                                         {stats.expectedNetCashDrawer !== null && (
                                                             <CopyButton
@@ -642,28 +654,51 @@ const SalesHistoryPage = ({ pageState = null, onNavigate }) => {
                                                 </div>
                                                 <div>
                                                     <div className="text-xs text-gray-500 dark:text-slate-400">Non-Cash Collections</div>
-                                                    <div className="font-semibold text-gray-800 dark:text-slate-100 text-base">
+                                                    <div className="font-semibold text-gray-800 dark:text-slate-100 text-base tabular-nums">
                                                         {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.nonCashCollected.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                                     </div>
                                                 </div>
-                                                <div>
-                                                    <div className="text-[11px] text-gray-400 dark:text-slate-500">Tendered: {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.cashInflow.toLocaleString(undefined, { maximumFractionDigits: 2 })}</div>
-                                                    <div className="text-[11px] text-gray-400 dark:text-slate-500">Change: {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.changeReturned.toLocaleString(undefined, { maximumFractionDigits: 2 })}</div>
-                                                </div>
-                                                <div>
-                                                    <div className="text-[11px] text-gray-400 dark:text-slate-500">Refunds Out: {stats.refundsApprox === null ? 'Unavailable' : `${settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}${stats.refundsApprox.toLocaleString(undefined, { maximumFractionDigits: 2 })}`}</div>
-                                                    <div className="text-[11px] text-gray-400 dark:text-slate-500 flex items-center gap-1">
-                                                        <span>Cash Mix: {(stats.cashMix * 100).toFixed(1)}%</span>
-                                                        <InfoTip label="Cash Mix">
-                                                            Cash Collected (Net of Change) ÷ (Cash Collected (Net of Change) +
-                                                            Non-Cash Collections) — the share of collections that came in as cash,
-                                                            calculated before refunds are subtracted.
-                                                        </InfoTip>
-                                                    </div>
-                                                </div>
                                             </div>
-                                            <div className="text-[10px] text-gray-400 dark:text-slate-500 mt-2">
-                                                Reconcile Expected Net Cash with physical till count.
+                                            <div className="mt-3 pt-2.5 border-t border-gray-200/70 dark:border-slate-700/70">
+                                                <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-slate-400 mb-1.5">
+                                                    Expected Cash Breakdown
+                                                </div>
+                                                <dl className="space-y-1 text-xs">
+                                                    <div className="flex items-baseline justify-between gap-2">
+                                                        <dt className="text-gray-600 dark:text-slate-300">
+                                                            POS Sales Cash (Net)
+                                                            <span className="ml-1.5 text-[10px] text-gray-400 dark:text-slate-500">
+                                                                (Tendered {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.salesCashTendered.toLocaleString(undefined, { maximumFractionDigits: 2 })} · Change {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.salesChangeReturned.toLocaleString(undefined, { maximumFractionDigits: 2 })})
+                                                            </span>
+                                                        </dt>
+                                                        <dd className="font-medium tabular-nums text-gray-800 dark:text-slate-100">
+                                                            {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.salesCashCollectedNet.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                        </dd>
+                                                    </div>
+                                                    <div className="flex items-baseline justify-between gap-2">
+                                                        <dt className="text-gray-600 dark:text-slate-300">A/R Cash Collections</dt>
+                                                        <dd className="font-medium tabular-nums text-success-600 dark:text-success-400">
+                                                            +{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.arCashCollectedNet.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                        </dd>
+                                                    </div>
+                                                    <div className="flex items-baseline justify-between gap-2">
+                                                        <dt className="text-gray-600 dark:text-slate-300">Cash Refunds &amp; Payouts</dt>
+                                                        <dd className="font-medium tabular-nums text-danger-600 dark:text-danger-400">
+                                                            {stats.refundsApprox === null ? 'Unavailable' : `−${settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}${stats.refundsApprox.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                                                        </dd>
+                                                    </div>
+                                                </dl>
+                                            </div>
+                                            <div className="text-[11px] text-gray-400 dark:text-slate-500 mt-2 flex items-center justify-between gap-2">
+                                                <span>Reconcile Expected Net Cash with physical till count.</span>
+                                                <span className="flex items-center gap-1">
+                                                    <span>Cash Mix: {(stats.cashMix * 100).toFixed(1)}%</span>
+                                                    <InfoTip label="Cash Mix">
+                                                        Cash Collected (Net of Change) ÷ (Cash Collected (Net of Change) +
+                                                        Non-Cash Collections) — the share of collections that came in as cash,
+                                                        calculated before refunds are subtracted.
+                                                    </InfoTip>
+                                                </span>
                                             </div>
                                         </>
                                     )
@@ -745,13 +780,16 @@ const SalesHistoryPage = ({ pageState = null, onNavigate }) => {
 
                                                 <div className="text-center">
                                                     <div className="text-xs text-gray-500 dark:text-slate-400">Total Collections</div>
-                                                    <div className="mt-1 text-sm font-semibold text-success-600 dark:text-success-400">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.totalCollections.toLocaleString(undefined,{maximumFractionDigits:2})}</div>
+                                                    <div className="mt-1 text-sm font-semibold tabular-nums text-success-600 dark:text-success-400">{settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.totalCollections.toLocaleString(undefined,{maximumFractionDigits:2})}</div>
                                                     <div className="text-[10px] text-gray-500 dark:text-slate-400 mt-0.5 flex items-center justify-center gap-1">
                                                         <span>Rate: {(stats.collectionRate*100).toLocaleString(undefined,{maximumFractionDigits:1})}%</span>
                                                         <InfoTip label="Collection Rate">
                                                             Amount Collected (incl. VAT) ÷ Net Sales (incl. VAT) — how much of
                                                              what was billed has actually been collected.
                                                         </InfoTip>
+                                                    </div>
+                                                    <div className="text-[10px] text-gray-600 dark:text-slate-300 mt-0.5 tabular-nums">
+                                                        A/R Cash: {settings?.DEFAULT_CURRENCY_SYMBOL || '₱'}{stats.arCashCollectedNet.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                                     </div>
                                                 </div>
 
