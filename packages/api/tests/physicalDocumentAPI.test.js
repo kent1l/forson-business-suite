@@ -53,6 +53,7 @@ describe('Physical Document System - Phase 2 & 3 API & Cashier Posting Integrati
     let testTypeId;
     let testCustomerId;
     let testEmployeeId;
+    let testVatTaxRateId;
     const suffix = `${Date.now()}_${process.pid}`;
 
     beforeAll(async () => {
@@ -112,6 +113,7 @@ describe('Physical Document System - Phase 2 & 3 API & Cashier Posting Integrati
              VALUES ($1, 0, false), ($2, 0.12, false) RETURNING tax_rate_id`,
             [`Test zero ${suffix}`, `Test VAT ${suffix}`]
         );
+        testVatTaxRateId = rates[1].tax_rate_id;
         await db.query(
             `INSERT INTO public.physical_document_series_tax (series_id, tax_rate_id, role)
              VALUES ($1, $2, 'DEFAULT_FALLBACK'), ($1, $3, 'ALLOWED_RESOLVED')
@@ -407,10 +409,20 @@ describe('Physical Document System - Phase 2 & 3 API & Cashier Posting Integrati
              VALUES ('Mixed Group Corp', 'Test', 'Agent', true, 'PRIVATE', true)
              RETURNING customer_id`
         );
-        const { rows: [taxRate] } = await db.query(
-            `SELECT tax_rate_id FROM tax_rate WHERE rate_percentage > 0 ORDER BY tax_rate_id LIMIT 1`
+        const codeTag = `PD${String(process.pid).slice(-3)}${String(Date.now()).slice(-5)}`;
+        const { rows: [brand] } = await db.query(
+            `INSERT INTO brand (brand_name, brand_code) VALUES ($1, $2) RETURNING brand_id`,
+            [`Mixed Group ${suffix}`, codeTag]
         );
-        const { rows: [partRow] } = await db.query(`SELECT part_id FROM part LIMIT 1`);
+        const { rows: [group] } = await db.query(
+            `INSERT INTO "group" (group_name, group_code) VALUES ($1, $2) RETURNING group_id`,
+            [`Mixed Group ${suffix}`, codeTag]
+        );
+        const { rows: [partRow] } = await db.query(
+            `INSERT INTO part (internal_sku, detail, brand_id, group_id, tax_rate_id)
+             VALUES ($1, 'Mixed group test part', $2, $3, $4) RETURNING part_id`,
+            [`PDMIX-${suffix}`, brand.brand_id, group.group_id, testVatTaxRateId]
+        );
         const { rows: [whInvoice] } = await db.query(
             `INSERT INTO public.invoice (invoice_number, customer_id, employee_id, total_amount, subtotal_ex_tax, tax_total, amount_paid, status, terms, payment_terms_days, due_date)
              VALUES ($1, $2, $3, 1120, 1000, 120, 0, 'Unpaid', 'Net 30', 30, CURRENT_TIMESTAMP + INTERVAL '30 days')
@@ -420,7 +432,7 @@ describe('Physical Document System - Phase 2 & 3 API & Cashier Posting Integrati
         await db.query(
             `INSERT INTO invoice_line (invoice_id, part_id, quantity, sale_price, cost_at_sale, tax_rate_id, tax_rate_snapshot, tax_base, tax_amount, is_tax_inclusive)
              VALUES ($1, $2, 1, 1120, 500, $3, 0.12, 1000, 120, true)`,
-            [whInvoice.invoice_id, partRow.part_id, taxRate?.tax_rate_id || null]
+            [whInvoice.invoice_id, partRow.part_id, testVatTaxRateId]
         );
 
         const cashMethod = await db.query(`SELECT method_id FROM payment_methods WHERE code = 'cash' AND enabled = true LIMIT 1`);

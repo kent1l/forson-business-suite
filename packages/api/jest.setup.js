@@ -17,3 +17,4 @@ process.env.DB_NAME = process.env.DB_NAME || 'postgres';
 // Route tests opt into cash drawer behavior explicitly; local .env must not
 // change their mocked query paths when index.js loads dotenv.
 process.env.ENABLE_CASH_DRAWER = 'false';
+process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-jwt-secret';
