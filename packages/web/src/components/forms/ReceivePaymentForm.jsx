@@ -6,6 +6,7 @@ import Icon from '../ui/Icon';
 import InfoTip from '../ui/InfoTip';
 import MathExpressionInput from '../ui/MathExpressionInput';
 import { ICONS } from '../../constants';
+import { allocateSettlementCash } from '../../utils/withholdingSettlement';
 import { isChequeMethod } from '../../utils/chequeMethod';
 import { maxDiscountFor, validateDiscounts, discountsPayload } from '../../utils/settlementDiscount';
 import ManagerAuthorizationModal from '../ui/ManagerAuthorizationModal';
@@ -124,6 +125,21 @@ const ReceivePaymentForm = ({ customer, onSave, onCancel }) => {
         const key = String(inv.invoice_id);
         return parseFloat(withheldOverrides[key]) || 0;
     }, [withheldOverrides]);
+
+    const autoAllocate = useCallback((amount) => {
+        if (!(amount > 0)) {
+            toast.error('Enter a payment amount first.');
+            return;
+        }
+        const next = allocateSettlementCash(unpaidInvoices, amount, {
+            expectedByInvoice: withholdingByInvoice,
+            withheldByInvoice: withheldOverrides,
+            discountsByInvoice: discounts,
+        });
+        setAllocations(Object.fromEntries(
+            Object.entries(next).map(([id, val]) => [id, val.toFixed(2)])
+        ));
+    }, [unpaidInvoices, withholdingByInvoice, withheldOverrides, discounts]);
 
     const handleAllocationChange = (invoiceId, value) => {
         setAllocations(a => ({ ...a, [invoiceId]: value }));
@@ -697,6 +713,15 @@ const ReceivePaymentForm = ({ customer, onSave, onCancel }) => {
                                 <p className="text-[11px] text-slate-500">Apply payment across outstanding balance due</p>
                             </div>
                             <div className="flex gap-2">
+                                <button
+                                    type="button"
+                                    className="text-xs font-semibold px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg border border-slate-300 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                                    onClick={() => autoAllocate(totalSplitAmount)}
+                                    disabled={unpaidInvoices.length === 0}
+                                    title="Auto-fill invoice allocations from payment amount"
+                                >
+                                    Auto-fill
+                                </button>
                                 <button
                                     type="button"
                                     className="text-xs font-semibold px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg border border-slate-300 transition-all"
