@@ -3,6 +3,7 @@ const { evaluateFitmentRules } = require('../helpers/fitmentMatcher');
 const express = require('express');
 const db = require('../db');
 const { meiliClient } = require('../meilisearch');
+const { searchPartsWithVariants } = require('../helpers/normalizeSku');
 const { activeAliasCondition } = require('../helpers/partNumberSoftDelete');
 const { protect, hasPermission } = require('../middleware/authMiddleware');
 const router = express.Router();
@@ -156,7 +157,8 @@ router.get('/power-search/parts', protect, hasPermission(['parts:view', 'pos:use
                 'group_name',
                 'searchable_applications',
                 'tags',
-                'detail'
+                'detail',
+                'normalized_detail'
             ],
             attributesToRetrieve: [
                 'part_id',
@@ -173,7 +175,7 @@ router.get('/power-search/parts', protect, hasPermission(['parts:view', 'pos:use
         else if (status === 'inactive') filter.push('is_active = false');
         if (filter.length > 0) searchOptions.filter = filter.join(' AND ');
 
-        const searchResults = await index.search(keyword || '', searchOptions);
+        const searchResults = await searchPartsWithVariants(index, keyword || '', searchOptions);
         let partIds = searchResults.hits.map(h => h.part_id).filter(Boolean);
 
         // Intersect with vehicle-filtered candidates when the vehicle filter was active.

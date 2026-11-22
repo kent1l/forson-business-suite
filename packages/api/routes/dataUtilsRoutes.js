@@ -6,6 +6,8 @@ const db = require('../db');
 const { protect, isAdmin, hasPermission } = require('../middleware/authMiddleware');
 const { generateUniqueCode } = require('../helpers/codeGenerator');
 const { syncPartWithMeili } = require('../meilisearch');
+const { normalizePartData } = require('../helpers/normalizePart');
+const { activeAliasCondition } = require('../helpers/partNumberSoftDelete');
 const { normalizeText, normalizeName, normalizeEmail, normalizePhone, normalizePartNumber, normalizeUom } = require('../helpers/normalizeEntity');
 const { withYearTokens } = require('../helpers/vehicleFitmentSearch');
 const router = express.Router();
@@ -256,7 +258,10 @@ router.post('/import/:entity', protect, hasPermission('data-utils:import'), uplo
                     barcodes: row.barcodes ? row.barcodes.split(';').map(b => b.trim()).filter(Boolean) : [],
                     display_name: pvRes.rows[0]?.display_name || ''
                 };
-                partsToSync.push(partForMeili);
+                partsToSync.push({
+                    ...partForMeili,
+                    ...normalizePartData(partForMeili)
+                });
             }
         }
 
@@ -290,6 +295,7 @@ router.get('/sync-parts-to-meili', protect, isAdmin, async (req, res) => {
             SELECT
                 pv.*,
                 (SELECT ARRAY_AGG(pb.barcode) FROM part_barcode pb WHERE pb.part_id = pv.part_id) as barcodes,
+                (SELECT STRING_AGG(pn.part_number, '; ' ORDER BY pn.display_order) FROM part_number pn WHERE pn.part_id = pv.part_id AND ${activeAliasCondition('pn')}) AS part_numbers,
                 (SELECT ARRAY_AGG(
                         CONCAT(vmk.make_name, ' ', vmd.model_name, COALESCE(CONCAT(' ', veng.engine_code), ''))
                 ) FROM part_application pa
@@ -310,13 +316,16 @@ router.get('/sync-parts-to-meili', protect, isAdmin, async (req, res) => {
 
         const partsToSync = rows.map(part => {
             const baseSearchableApplications = (part.applications_array || []).join(', ');
+            const normalizedFields = normalizePartData(part);
             return {
                 ...part,
                 // display_name is natively provided by parts_view
                 applications: part.applications_array || [],
                 searchable_applications: withYearTokens(baseSearchableApplications, part.application_year_ranges || []),
                 tags: part.tags_array || [],
-                barcodes: part.barcodes || []
+                barcodes: part.barcodes || [],
+                part_numbers: part.part_numbers || '',
+                ...normalizedFields
             };
         });
 

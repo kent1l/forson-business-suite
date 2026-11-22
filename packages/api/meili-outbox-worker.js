@@ -3,6 +3,7 @@ const db = require('./db');
 const { syncPartWithMeili, removePartFromMeili } = require('./meilisearch');
 const { normalizePartData } = require('./helpers/normalizePart');
 const { withYearTokens } = require('./helpers/vehicleFitmentSearch');
+const { activeAliasCondition } = require('./helpers/partNumberSoftDelete');
 
 const STATUS = Object.freeze({
   PENDING: 'pending',
@@ -35,6 +36,8 @@ const loadPartDocs = async (partIds) => {
     SELECT
       pv.*,
       ${fitmentRulesSql()} AS fitment_rules,
+      (SELECT ARRAY_AGG(pb.barcode) FROM part_barcode pb WHERE pb.part_id = pv.part_id) AS barcodes,
+      (SELECT STRING_AGG(pn.part_number, '; ' ORDER BY pn.display_order) FROM part_number pn WHERE pn.part_id = pv.part_id AND ${activeAliasCondition('pn')}) AS part_numbers,
       ${fitmentLabelsSql('pv',true)} AS applications_array,
       ${fitmentYearRangesSql()} AS application_year_ranges,
       (SELECT ARRAY_AGG(t.tag_name) FROM tag t JOIN part_tag pt ON t.tag_id = pt.tag_id WHERE pt.part_id = pv.part_id) AS tags_array
@@ -58,8 +61,11 @@ const loadPartDocs = async (partIds) => {
       fitment_confirmation: false,
       searchable_applications: withYearTokens(baseSearchableApplications, part.application_year_ranges || []),
       tags: part.tags_array || [],
+      barcodes: part.barcodes || [],
+      part_numbers: part.part_numbers || '',
       normalized_internal_sku: normalizedFields.normalized_internal_sku,
-      normalized_part_numbers: normalizedFields.normalized_part_numbers
+      normalized_part_numbers: normalizedFields.normalized_part_numbers,
+      normalized_detail: normalizedFields.normalized_detail
     };
   });
 };
@@ -396,4 +402,4 @@ const startMeiliOutboxWorker = (options = {}) => {
   return { stop };
 };
 
-module.exports = { startMeiliOutboxWorker, processBatch };
+module.exports = { startMeiliOutboxWorker, processBatch, loadPartDocs };

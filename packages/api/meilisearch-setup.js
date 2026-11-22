@@ -166,7 +166,7 @@ const setupMeiliSearch = async () => {
     // Configure Parts Index
     try {
       const partsSettings = {
-        rankingRules: ['words', 'exactness', 'attribute', 'typo', 'proximity', 'display_name:asc'],
+        rankingRules: ['words', 'typo', 'exactness', 'attribute', 'proximity', 'sort', 'display_name:asc'],
         searchableAttributes: [
           'barcodes',
           'internal_sku',
@@ -178,16 +178,21 @@ const setupMeiliSearch = async () => {
           'group_name',
           'searchable_applications',
           'tags',
-          'detail'
+          'detail',
+          'normalized_detail'
         ],
         stopWords: [
-          'a', 'an', 'and', 'the'
+          'and', 'the'
         ],
         synonyms: symmetricSynonyms,
         filterableAttributes: ['is_active', 'tags', 'applications', 'is_universal'],
         sortableAttributes: ['display_name', 'internal_sku', 'brand_name', 'group_name'],
         typoTolerance: {
           enabled: true,
+          minWordSizeForTypos: {
+            oneTypo: config.typoMinWordSize,
+            twoTypos: config.typoMinWordSizeTwo
+          },
           disableOnAttributes: [
             'barcodes',
             'internal_sku', 
@@ -195,6 +200,9 @@ const setupMeiliSearch = async () => {
             'part_numbers', 
             'normalized_part_numbers'
           ]
+        },
+        pagination: {
+          maxTotalHits: 20000
         }
       };
 

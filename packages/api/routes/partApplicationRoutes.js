@@ -6,6 +6,7 @@ const db = require('../db');
 const router = express.Router();
 const { protect, hasPermission } = require('../middleware/authMiddleware');
 const { syncPartWithMeili } = require('../meilisearch');
+const { getPartDataForMeili } = require('./partRoutes');
 const { enqueuePartUpsert } = require('../services/meiliOutboxService');
 const taxonomyIndex = require('../helpers/vehicleTaxonomyIndex');
 const { parseFitmentText, buildShortlist } = require('../helpers/fitmentTextParser');
@@ -190,7 +191,8 @@ router.put('/part-applications/:partAppId', protect, hasPermission('applications
   taxonomyIndex.invalidate();
   if (!syncOutboxQueued && partIdForSync && process.env.DISABLE_MEILI_OUTBOX_WORKER !== 'true') {
     try {
-      await syncPartWithMeili(partIdForSync);
+      const partDoc = await getPartDataForMeili(db, partIdForSync);
+      if (partDoc) await syncPartWithMeili(partDoc);
     } catch (meiliErr) {
       console.warn('Meili sync fallback failed:', meiliErr.message);
     }
