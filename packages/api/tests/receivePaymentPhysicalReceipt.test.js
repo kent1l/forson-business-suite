@@ -4,6 +4,7 @@ const request = require('supertest');
 const express = require('express');
 const db = require('../db');
 const arRoutes = require('../routes/arRoutes');
+const customerRoutes = require('../routes/customerRoutes');
 const paymentRoutes = require('../routes/paymentRoutes');
 const physicalDocumentService = require('../services/physicalDocumentService');
 const receiptMonitorService = require('../services/receiptMonitorService');
@@ -22,11 +23,13 @@ jest.mock('../middleware/authMiddleware', () => ({
 const app = express();
 app.use(express.json());
 app.use('/api', arRoutes);
+app.use('/api', customerRoutes);
 app.use('/api', paymentRoutes);
 
 describe('AR Payment Physical Receipt # & SOA Reference Integration Suite', () => {
     let testCustomerId;
     let testInvoiceId;
+    let testInvoiceReceiptNo;
     let testEmployeeId;
     let testSeriesId;
     let crvSeriesId;
@@ -35,6 +38,7 @@ describe('AR Payment Physical Receipt # & SOA Reference Integration Suite', () =
     beforeAll(async () => {
         const uniqueSuffix = Date.now();
         testReceiptNo = `ORPMT-${uniqueSuffix}`;
+        testInvoiceReceiptNo = `OR-TEST-${uniqueSuffix}`;
         const uniqueEmail = `soareceipt_${uniqueSuffix}@test.com`;
 
         // Reuse an existing permission_level to avoid sequence/PK conflicts with seeded data
@@ -82,7 +86,7 @@ describe('AR Payment Physical Receipt # & SOA Reference Integration Suite', () =
             INSERT INTO invoice (invoice_number, customer_id, employee_id, total_amount, subtotal_ex_tax, tax_total, amount_paid, status, physical_receipt_no)
             VALUES ($1, $2, $3, 5000.00, 5000.00, 0, 0, 'Unpaid', $4)
             RETURNING invoice_id
-        `, [`INV-TEST-${uniqueSuffix}`, testCustomerId, testEmployeeId, `OR-TEST-${uniqueSuffix}`]);
+        `, [`INV-TEST-${uniqueSuffix}`, testCustomerId, testEmployeeId, testInvoiceReceiptNo]);
         testInvoiceId = invRes.rows[0].invoice_id;
 
         const client = await db.getClient();
@@ -94,7 +98,7 @@ describe('AR Payment Physical Receipt # & SOA Reference Integration Suite', () =
                     'INVOICE_POSTED'::ar_ledger_entry_type,
                     5000.00, NULL, $3, 'Invoice Charge', $4
                 )
-            `, [testCustomerId, testInvoiceId, `OR-TEST-${uniqueSuffix}`, testEmployeeId]);
+            `, [testCustomerId, testInvoiceId, testInvoiceReceiptNo, testEmployeeId]);
             await client.query('COMMIT');
         } catch (e) {
             await client.query('ROLLBACK');
@@ -134,6 +138,32 @@ describe('AR Payment Physical Receipt # & SOA Reference Integration Suite', () =
         }
     });
 
+
+    test('GET /api/customers/:id/unpaid-invoices returns physical_receipt_no for each open invoice', async () => {
+        const { rows: [noPaperInv] } = await db.query(`
+            INSERT INTO invoice (invoice_number, customer_id, employee_id, total_amount, subtotal_ex_tax, tax_total, amount_paid, status, physical_receipt_no)
+            VALUES ($1, $2, $3, 1200.00, 1200.00, 0, 0, 'Unpaid', NULL)
+            RETURNING invoice_id
+        `, [`INV-NOPAPER-${Date.now()}`, testCustomerId, testEmployeeId]);
+
+        try {
+            const res = await request(app)
+                .get(`/api/customers/${testCustomerId}/unpaid-invoices`);
+
+            expect(res.status).toBe(200);
+            expect(Array.isArray(res.body)).toBe(true);
+
+            const paperRow = res.body.find(inv => inv.invoice_id === testInvoiceId);
+            const noPaperRow = res.body.find(inv => inv.invoice_id === noPaperInv.invoice_id);
+
+            expect(paperRow).toBeDefined();
+            expect(paperRow.physical_receipt_no).toBe(testInvoiceReceiptNo);
+            expect(noPaperRow).toBeDefined();
+            expect(noPaperRow.physical_receipt_no).toBeNull();
+        } finally {
+            await db.query(`DELETE FROM invoice WHERE invoice_id = $1`, [noPaperInv.invoice_id]);
+        }
+    });
 
     test('POST /api/payments saves physical_receipt_no and internal reference to customer_payment when both physical_receipt_no and physical_document are sent', async () => {
         const res = await request(app)

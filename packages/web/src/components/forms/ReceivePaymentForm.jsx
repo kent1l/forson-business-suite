@@ -910,11 +910,17 @@ const ReceivePaymentForm = ({ customer, onSave, onCancel }) => {
                                     // cash counted and the tax withheld are applied.
                                     const settleRoom = maxDiscountFor(inv, allocVal, withheldValue);
                                     const overDiscount = discountVal > settleRoom + 0.005;
+                                    const physicalReceiptNo = typeof inv.physical_receipt_no === 'string' ? inv.physical_receipt_no.trim() : '';
 
                                     return (
                                         <div key={inv.invoice_id} className="grid grid-cols-12 gap-3 items-center px-5 py-3.5 hover:bg-slate-50/70 transition-all">
                                             <div className={`col-span-12 ${cols.mdInvoice}`}>
                                                 <div className="text-sm font-bold text-slate-900">{inv.invoice_number}</div>
+                                                {physicalReceiptNo && (
+                                                    <div className="text-xs text-slate-600 mt-0.5 break-words">
+                                                        Receipt: <span className="font-mono font-medium text-slate-700">{physicalReceiptNo}</span>
+                                                    </div>
+                                                )}
                                                 <div className="text-xs text-slate-500">
                                                     Date: {inv.invoice_date ? new Date(inv.invoice_date).toLocaleDateString() : 'N/A'}
                                                 </div>

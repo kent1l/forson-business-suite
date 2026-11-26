@@ -310,6 +310,7 @@ router.get('/customers/:id/unpaid-invoices', protect, hasPermission('ar:view'), 
             SELECT
                 i.invoice_id,
                 i.invoice_number,
+                i.physical_receipt_no,
                 i.invoice_date,
                 i.due_date,
                 i.total_amount,
