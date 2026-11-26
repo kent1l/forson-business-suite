@@ -98,7 +98,13 @@ router.get('/ar/customer-liabilities', protect, hasPermission('ar:view'), async 
   try {
     const { page, pageSize, offset, limit } = parsePaginationQuery(req.query);
 
-    const countRes = await db.query('SELECT COUNT(*) FROM customer');
+    const countRes = await db.query(`
+      SELECT COUNT(*)::int AS count
+      FROM customer c
+      LEFT JOIN vw_customer_ar_balance ab ON ab.customer_id = c.customer_id
+      LEFT JOIN customer_wallet w ON w.customer_id = c.customer_id
+      WHERE c.is_merged = FALSE AND (ab.ledger_balance > 0 OR w.balance > 0)
+    `);
     const totalItems = parseInt(countRes.rows[0].count, 10);
 
     const query = `
@@ -113,7 +119,7 @@ router.get('/ar/customer-liabilities', protect, hasPermission('ar:view'), async 
       FROM customer c
       LEFT JOIN vw_customer_ar_balance ab ON ab.customer_id = c.customer_id
       LEFT JOIN customer_wallet w ON w.customer_id = c.customer_id
-      WHERE (ab.ledger_balance > 0 OR w.balance > 0)
+      WHERE c.is_merged = FALSE AND (ab.ledger_balance > 0 OR w.balance > 0)
       ORDER BY net_exposure DESC
       LIMIT $1 OFFSET $2;
     `;

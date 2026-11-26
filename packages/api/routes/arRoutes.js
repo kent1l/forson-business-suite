@@ -148,7 +148,12 @@ router.get('/ar/customer-summary', protect, hasPermission('ar:view'), async (req
             searchWhere = `AND (
                 LOWER(COALESCE(c.company_name, '')) LIKE $${paramIdx} OR
                 LOWER(COALESCE(c.first_name, '') || ' ' || COALESCE(c.last_name, '')) LIKE $${paramIdx} OR
-                LOWER(COALESCE(c.phone, '')) LIKE $${paramIdx}
+                LOWER(COALESCE(c.phone, '')) LIKE $${paramIdx} OR
+                EXISTS (
+                    SELECT 1 FROM customer_alias ca
+                    WHERE ca.customer_id = c.customer_id
+                      AND (LOWER(ca.alias_name) LIKE $${paramIdx} OR LOWER(COALESCE(ca.alias_code, '')) LIKE $${paramIdx})
+                )
             )`;
             params.push(`%${search.trim().toLowerCase()}%`);
             paramIdx++;
@@ -220,7 +225,7 @@ router.get('/ar/customer-summary', protect, hasPermission('ar:view'), async (req
             LEFT JOIN vw_customer_ar_balance b ON b.customer_id = c.customer_id
             LEFT JOIN customer_wallet w ON c.customer_id = w.customer_id
             LEFT JOIN invoice i ON c.customer_id = i.customer_id AND i.status IN ('Unpaid', 'Partially Paid')
-            WHERE TRUE
+            WHERE c.is_merged = FALSE
             ${balanceWhere}
             ${searchWhere}
             GROUP BY c.customer_id, c.company_name, c.first_name, c.last_name, c.credit_hold, c.phone, b.ledger_balance, w.balance
@@ -241,7 +246,7 @@ router.get('/ar/customer-summary', protect, hasPermission('ar:view'), async (req
                 FROM customer c
                 LEFT JOIN vw_customer_ar_balance b ON b.customer_id = c.customer_id
                 LEFT JOIN invoice i ON c.customer_id = i.customer_id AND i.status IN ('Unpaid', 'Partially Paid')
-                WHERE TRUE
+                WHERE c.is_merged = FALSE
                 ${balanceWhere}
                 ${searchWhere}
                 GROUP BY c.customer_id, b.ledger_balance
@@ -287,7 +292,7 @@ router.get('/ar/customer-invoices/:customerId', protect, hasPermission('ar:view'
                 END as status
             FROM invoice i
             JOIN customer c ON i.customer_id = c.customer_id
-            WHERE i.customer_id = $1
+            WHERE i.customer_id = COALESCE((SELECT m.merged_into_customer_id FROM customer m WHERE m.customer_id = $1 AND m.is_merged), $1)
             AND i.status IN ('Unpaid', 'Partially Paid')
             AND GREATEST(i.total_amount - i.amount_paid, 0) > 0
             ORDER BY i.due_date ASC, (i.total_amount - i.amount_paid) DESC
@@ -299,7 +304,7 @@ router.get('/ar/customer-invoices/:customerId', protect, hasPermission('ar:view'
         const countRes = await db.query(`
             SELECT COUNT(*)::int AS total
             FROM invoice i
-            WHERE i.customer_id = $1
+            WHERE i.customer_id = COALESCE((SELECT m.merged_into_customer_id FROM customer m WHERE m.customer_id = $1 AND m.is_merged), $1)
             AND i.status IN ('Unpaid', 'Partially Paid')
             AND GREATEST(i.total_amount - i.amount_paid, 0) > 0
         `, [customerId]);
@@ -575,12 +580,12 @@ router.get('/ar/ledger/:customerId', protect, hasPermission('ar:view'), async (r
             LEFT JOIN invoice i      ON i.invoice_id  = l.invoice_id
             LEFT JOIN credit_note cn ON cn.cn_id       = l.cn_id
             LEFT JOIN employee e     ON e.employee_id  = l.created_by
-            WHERE l.customer_id = $1
+            WHERE l.customer_id = COALESCE((SELECT m.merged_into_customer_id FROM customer m WHERE m.customer_id = $1 AND m.is_merged), $1)
             ORDER BY l.ledger_id ASC
             LIMIT $2 OFFSET $3
         `, [customerId, parseInt(limit), parseInt(offset)]);
         const { rows: [{ total }] } = await db.query(
-            'SELECT COUNT(*)::int AS total FROM ar_ledger WHERE customer_id = $1', [customerId]);
+            'SELECT COUNT(*)::int AS total FROM ar_ledger WHERE customer_id = COALESCE((SELECT m.merged_into_customer_id FROM customer m WHERE m.customer_id = $1 AND m.is_merged), $1)', [customerId]);
         res.json({ rows, total });
     } catch (err) {
         console.error('AR Ledger fetch error:', err.message);
@@ -801,6 +806,35 @@ async function fetchGlobalCompanySettings(dbClient) {
  */
 const CONCESSION_ENTRY_TYPES = new Set(['SETTLEMENT_DISCOUNT', 'BALANCE_WRITE_DOWN']);
 
+async function resolveCustomerAccount(dbClient, customerId) {
+    const { rows } = await dbClient.query(`
+        SELECT target.*,
+               COALESCE(w.balance, 0) AS wallet_balance,
+               CASE WHEN req.is_merged THEN req.customer_id ELSE NULL END AS resolved_from_customer_id
+        FROM customer req
+        JOIN customer target
+          ON target.customer_id = CASE
+               WHEN req.is_merged AND req.merged_into_customer_id IS NOT NULL
+               THEN req.merged_into_customer_id
+               ELSE req.customer_id
+             END
+        LEFT JOIN customer_wallet w ON target.customer_id = w.customer_id
+        WHERE req.customer_id = $1
+    `, [customerId]);
+    if (!rows.length) return { status: 404, body: { message: 'Customer not found' } };
+    const customer = rows[0];
+    if (customer.is_merged) {
+        return {
+            status: 409,
+            body: retiredConflict('customer', {
+                id: customer.customer_id,
+                canonical_id: customer.merged_into_customer_id,
+            }),
+        };
+    }
+    return { customer, effectiveCustomerId: customer.customer_id };
+}
+
 // GET /ar/customers/:customerId/ledger - Interactive ledger history for SOA
 router.get('/ar/customers/:customerId/ledger', protect, hasPermission('ar:view'), async (req, res) => {
     try {
@@ -809,15 +843,9 @@ router.get('/ar/customers/:customerId/ledger', protect, hasPermission('ar:view')
 
         const companyInfo = await fetchGlobalCompanySettings(db);
 
-        const custRes = await db.query(`
-            SELECT c.*,
-                   COALESCE(w.balance, 0) AS wallet_balance
-            FROM customer c
-            LEFT JOIN customer_wallet w ON c.customer_id = w.customer_id
-            WHERE c.customer_id = $1
-        `, [customerId]);
-        if (custRes.rows.length === 0) return res.status(404).json({ message: 'Customer not found' });
-        const customer = custRes.rows[0];
+        const resolved = await resolveCustomerAccount(db, customerId);
+        if (resolved.status) return res.status(resolved.status).json(resolved.body);
+        const { customer, effectiveCustomerId } = resolved;
 
         const startFilter = startDate ? new Date(startDate) : null;
         const endFilter   = endDate   ? new Date(endDate)   : null;
@@ -857,7 +885,7 @@ router.get('/ar/customers/:customerId/ledger', protect, hasPermission('ar:view')
             LEFT JOIN invoice exch_inv ON exch_inv.invoice_id = cn.exchange_replacement_invoice_id
             WHERE l.customer_id = $1
             ORDER BY l.entry_date ASC, l.ledger_id ASC
-        `, [customerId]);
+        `, [effectiveCustomerId]);
 
         // Pending cheques: customer_payment rows that are RECEIVED/DEPOSITED (not yet cleared)
         // These affect committed invoice balances but NOT the ar_ledger cash balance.
@@ -870,7 +898,7 @@ router.get('/ar/customers/:customerId/ledger', protect, hasPermission('ar:view')
               AND cp.pdc_status IN ('RECEIVED', 'HELD_IN_SAFE', 'DEPOSITED')
               AND (pm.type = 'cheque' OR pm.code IN ('cheque', 'pdc') OR
                    cp.pdc_status IN ('RECEIVED', 'HELD_IN_SAFE', 'DEPOSITED'))
-        `, [customerId]);
+        `, [effectiveCustomerId]);
         const pendingCheques = pendingChequeRes.rows[0];
 
         const pendingItemsRes = await db.query(`
@@ -880,7 +908,7 @@ router.get('/ar/customers/:customerId/ledger', protect, hasPermission('ar:view')
             WHERE cp.customer_id = $1
               AND cp.pdc_status IN ('RECEIVED', 'HELD_IN_SAFE', 'DEPOSITED')
             ORDER BY cp.cheque_date ASC, cp.payment_id ASC
-        `, [customerId]);
+        `, [effectiveCustomerId]);
 
         const TYPE_LABELS = {
             INVOICE_POSTED:        'Invoice Charged',
@@ -1020,10 +1048,15 @@ router.get('/ar/customers/:customerId/ledger', protect, hasPermission('ar:view')
         }
 
         const dateSuffix = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-        const statementNumber = `SOA-${customerId}-${dateSuffix}`;
+        const statementNumber = `SOA-${effectiveCustomerId}-${dateSuffix}`;
+
+        if (customer.resolved_from_customer_id) {
+            res.setHeader('X-Canonical-Customer-Id', String(effectiveCustomerId));
+        }
 
         res.json({
             statement_number:       statementNumber,
+            resolved_from_customer_id: customer.resolved_from_customer_id || null,
             company:                companyInfo,
             customer: {
                 customer_id:        customer.customer_id,
@@ -1070,15 +1103,12 @@ router.get('/ar/customers/:customerId/soa/pdf', protect, hasPermission('ar:view'
 
         const companyInfo = await fetchGlobalCompanySettings(db);
 
-        const custRes = await db.query(`
-            SELECT c.*,
-                   COALESCE(w.balance, 0) AS wallet_balance
-            FROM customer c
-            LEFT JOIN customer_wallet w ON c.customer_id = w.customer_id
-            WHERE c.customer_id = $1
-        `, [customerId]);
-        if (custRes.rows.length === 0) return res.status(404).json({ message: 'Customer not found' });
-        const customer = custRes.rows[0];
+        const resolved = await resolveCustomerAccount(db, customerId);
+        if (resolved.status) return res.status(resolved.status).json(resolved.body);
+        const { customer, effectiveCustomerId } = resolved;
+        if (customer.resolved_from_customer_id) {
+            res.setHeader('X-Canonical-Customer-Id', String(effectiveCustomerId));
+        }
 
         // Aging — key names match what soaPdf.js expects (days_1_30, days_31_60, etc.)
         const agingRes = await db.query(`
@@ -1097,7 +1127,7 @@ router.get('/ar/customers/:customerId/soa/pdf', protect, hasPermission('ar:view'
             WHERE i.customer_id = $1
               AND (i.total_amount - i.amount_paid) > 0
               AND i.status NOT IN ('Paid', 'Voided')
-        `, [customerId]);
+        `, [effectiveCustomerId]);
         const aging = agingRes.rows[0] || {};
 
         const startFilter = startDate ? new Date(startDate) : null;
@@ -1154,7 +1184,7 @@ router.get('/ar/customers/:customerId/soa/pdf', protect, hasPermission('ar:view'
             LEFT JOIN invoice exch_inv ON exch_inv.invoice_id = cn.exchange_replacement_invoice_id
             WHERE l.customer_id = $1
             ORDER BY l.entry_date ASC, l.ledger_id ASC
-        `, [customerId]);
+        `, [effectiveCustomerId]);
 
         // Pending cheques (committed but not yet cleared — shown as a breakdown)
         const pendingRes = await db.query(`
@@ -1165,7 +1195,7 @@ router.get('/ar/customers/:customerId/soa/pdf', protect, hasPermission('ar:view'
               AND cp.pdc_status IN ('RECEIVED', 'HELD_IN_SAFE', 'DEPOSITED')
               AND (pm.type = 'cheque' OR pm.code IN ('cheque', 'pdc') OR
                    cp.pdc_status IN ('RECEIVED', 'HELD_IN_SAFE', 'DEPOSITED'))
-        `, [customerId]);
+        `, [effectiveCustomerId]);
         const pending = pendingRes.rows[0];
 
         const pendingItemsRes = await db.query(`
@@ -1175,7 +1205,7 @@ router.get('/ar/customers/:customerId/soa/pdf', protect, hasPermission('ar:view'
             WHERE cp.customer_id = $1
               AND cp.pdc_status IN ('RECEIVED', 'HELD_IN_SAFE', 'DEPOSITED')
             ORDER BY cp.cheque_date ASC, cp.payment_id ASC
-        `, [customerId]);
+        `, [effectiveCustomerId]);
 
         let openingBalance = 0;
         let totalInvoiced = 0;

@@ -82,6 +82,21 @@ describe('Accounts Receivable (A/R) Routes', () => {
             expect(res.body).toHaveLength(1);
             expect(res.body[0].first_name).toBe('Jane');
             expect(res.body[0].total_balance_due).toBe('600.00');
+            expect(db.query.mock.calls[0][0]).toContain('c.is_merged = FALSE');
+        });
+
+        test('should exclude merged customers and search aliases in paginated summary', async () => {
+            db.query
+                .mockResolvedValueOnce({ rows: [] })
+                .mockResolvedValueOnce({ rows: [{ total: 0 }] });
+
+            const res = await request(app).get('/api/ar/customer-summary?paginated=1&balanceScope=all&search=Flanas');
+
+            expect(res.status).toBe(200);
+            expect(db.query.mock.calls[0][0]).toContain('c.is_merged = FALSE');
+            expect(db.query.mock.calls[0][0]).toContain('customer_alias');
+            expect(db.query.mock.calls[1][0]).toContain('c.is_merged = FALSE');
+            expect(db.query.mock.calls[1][0]).toContain('customer_alias');
         });
     });
 

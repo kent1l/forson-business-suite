@@ -235,6 +235,8 @@ describe('Customer Wallet System & Endpoints', () => {
             expect(res.body.data.length).toBe(1);
             expect(res.body.data[0].company_name).toBe('Acme Logistics');
             expect(res.body.data[0].net_exposure).toBe('1200.00');
+            expect(db.query.mock.calls[0][0]).toContain('c.is_merged = FALSE');
+            expect(db.query.mock.calls[1][0]).toContain('c.is_merged = FALSE');
         });
     });
 });

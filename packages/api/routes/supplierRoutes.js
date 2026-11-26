@@ -31,7 +31,12 @@ router.get('/suppliers', protect, hasPermission('suppliers:view'), async (req, r
     whereConditions.push(`(
       LOWER(COALESCE(supplier_name, '')) LIKE $${paramIdx} OR
       LOWER(COALESCE(contact_person, '')) LIKE $${paramIdx} OR
-      LOWER(COALESCE(phone, '')) LIKE $${paramIdx}
+      LOWER(COALESCE(phone, '')) LIKE $${paramIdx} OR
+      EXISTS (
+        SELECT 1 FROM supplier_alias sa
+        WHERE sa.supplier_id = supplier.supplier_id
+          AND (LOWER(sa.alias_name) LIKE $${paramIdx} OR LOWER(COALESCE(sa.alias_code, '')) LIKE $${paramIdx})
+      )
     )`);
     queryParams.push(`%${search.trim().toLowerCase()}%`);
     paramIdx++;

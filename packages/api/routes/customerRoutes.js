@@ -71,17 +71,22 @@ router.get('/customers', protect, hasPermission(['customers:view', 'pos:use']), 
     let paramIdx = 1;
 
     if (status === 'active') {
-        whereConditions.push('is_active = TRUE');
+        whereConditions.push('c.is_active = TRUE');
     } else if (status === 'inactive') {
-        whereConditions.push('is_active = FALSE');
+        whereConditions.push('c.is_active = FALSE');
     }
 
     if (search && search.trim()) {
         whereConditions.push(`(
-            LOWER(COALESCE(first_name, '')) LIKE $${paramIdx} OR
-            LOWER(COALESCE(last_name, '')) LIKE $${paramIdx} OR
-            LOWER(COALESCE(company_name, '')) LIKE $${paramIdx} OR
-            LOWER(COALESCE(phone, '')) LIKE $${paramIdx}
+            LOWER(COALESCE(c.first_name, '')) LIKE $${paramIdx} OR
+            LOWER(COALESCE(c.last_name, '')) LIKE $${paramIdx} OR
+            LOWER(COALESCE(c.company_name, '')) LIKE $${paramIdx} OR
+            LOWER(COALESCE(c.phone, '')) LIKE $${paramIdx} OR
+            EXISTS (
+                SELECT 1 FROM customer_alias ca
+                WHERE ca.customer_id = c.customer_id
+                  AND (LOWER(ca.alias_name) LIKE $${paramIdx} OR LOWER(COALESCE(ca.alias_code, '')) LIKE $${paramIdx})
+            )
         )`);
         queryParams.push(`%${search.trim().toLowerCase()}%`);
         paramIdx++;
@@ -147,7 +152,7 @@ router.get('/customers/:id/purchase-history', protect, hasPermission('customers:
 
     try {
         const countResult = await db.query(
-            'SELECT COUNT(*)::int AS total FROM invoice WHERE customer_id = $1',
+            'SELECT COUNT(*)::int AS total FROM invoice WHERE customer_id = COALESCE((SELECT m.merged_into_customer_id FROM customer m WHERE m.customer_id = $1 AND m.is_merged), $1)',
             [customerId]
         );
         const { rows } = await db.query(`
@@ -163,7 +168,7 @@ router.get('/customers/:id/purchase-history', protect, hasPermission('customers:
                 FROM credit_note cn
                 WHERE cn.invoice_id = i.invoice_id
             ) refunds ON TRUE
-            WHERE i.customer_id = $1
+            WHERE i.customer_id = COALESCE((SELECT m.merged_into_customer_id FROM customer m WHERE m.customer_id = $1 AND m.is_merged), $1)
             ORDER BY i.invoice_date DESC, i.invoice_id DESC
             LIMIT $2 OFFSET $3
         `, [customerId, limit, offset]);
@@ -196,7 +201,7 @@ router.get('/customers/:id/purchase-history/:invoiceId', protect, hasPermission(
             JOIN part p ON p.part_id = il.part_id
             LEFT JOIN brand b ON b.brand_id = p.brand_id
             LEFT JOIN "group" g ON g.group_id = p.group_id
-            WHERE i.customer_id = $1 AND i.invoice_id = $2
+            WHERE i.customer_id = COALESCE((SELECT m.merged_into_customer_id FROM customer m WHERE m.customer_id = $1 AND m.is_merged), $1) AND i.invoice_id = $2
             ORDER BY p.detail
         `, [customerId, invoiceId]);
         res.json(rows);
@@ -244,13 +249,18 @@ router.get('/customers/with-balances', protect, hasPermission('ar:view'), async 
         // Callers that genuinely want a collections worklist pass balanceScope=open.
         const params = [];
         let paramIdx = 1;
-        const conditions = [];
+        const conditions = ['c.is_merged = FALSE'];
 
         if (search && search.trim()) {
             conditions.push(`(
                 LOWER(COALESCE(c.company_name, '')) LIKE $${paramIdx} OR
                 LOWER(COALESCE(c.first_name, '') || ' ' || COALESCE(c.last_name, '')) LIKE $${paramIdx} OR
-                LOWER(COALESCE(c.phone, '')) LIKE $${paramIdx}
+                LOWER(COALESCE(c.phone, '')) LIKE $${paramIdx} OR
+                EXISTS (
+                    SELECT 1 FROM customer_alias ca
+                    WHERE ca.customer_id = c.customer_id
+                      AND (LOWER(ca.alias_name) LIKE $${paramIdx} OR LOWER(COALESCE(ca.alias_code, '')) LIKE $${paramIdx})
+                )
             )`);
             params.push(`%${search.trim().toLowerCase()}%`);
             paramIdx++;
@@ -322,7 +332,7 @@ router.get('/customers/:id/unpaid-invoices', protect, hasPermission('ar:view'), 
                 SELECT COALESCE(SUM(cn2.total_amount), 0) AS total_refunded
                 FROM credit_note cn2 WHERE cn2.invoice_id = i.invoice_id
             ) cn ON TRUE
-            WHERE i.customer_id = $1
+            WHERE i.customer_id = COALESCE((SELECT m.merged_into_customer_id FROM customer m WHERE m.customer_id = $1 AND m.is_merged), $1)
               AND i.status IN ('Unpaid', 'Partially Paid')
               AND GREATEST(i.total_amount - COALESCE(cn.total_refunded, 0) - i.amount_paid, 0) > 0
             ORDER BY i.due_date ASC NULLS LAST, i.invoice_date ASC;

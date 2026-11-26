@@ -92,6 +92,9 @@ export default function useARLedgerSoa({ dateRange, customers, setCustomers, act
                 }
             });
             setSoaLedger(res.data);
+            if (res.data?.resolved_from_customer_id && res.data?.customer?.name) {
+                setSoaSearchQuery(res.data.customer.name);
+            }
         } catch (err) {
             console.error('Failed to load customer ledger:', err);
             toast.error('Failed to load customer ledger history.');
@@ -101,13 +104,14 @@ export default function useARLedgerSoa({ dateRange, customers, setCustomers, act
     }, [dateRange]);
 
     const handleExportSoaPdf = useCallback(async () => {
-        if (!soaCustomerId) {
+        const targetCustomerId = soaLedger?.customer?.customer_id || soaCustomerId;
+        if (!targetCustomerId) {
             toast.error('Please select a customer first');
             return;
         }
         try {
             setSoaDownloading(true);
-            const response = await api.get(`/ar/customers/${soaCustomerId}/soa/pdf`, {
+            const response = await api.get(`/ar/customers/${targetCustomerId}/soa/pdf`, {
                 params: {
                     startDate: dateRange.startDate.toISOString(),
                     endDate: dateRange.endDate.toISOString(),

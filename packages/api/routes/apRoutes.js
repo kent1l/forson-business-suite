@@ -80,7 +80,7 @@ router.get('/ap/summary-stats', protect, hasPermission('ap:view'), async (req, r
                 FROM supplier_bill
                 WHERE status IN ('Unpaid', 'Partially Paid')
             `),
-            db.query(`SELECT COUNT(*)::int AS suppliers_on_hold FROM supplier WHERE payment_hold = TRUE`),
+            db.query(`SELECT COUNT(*)::int AS suppliers_on_hold FROM supplier WHERE payment_hold = TRUE AND is_merged = FALSE`),
         ]);
 
         res.json({
@@ -112,7 +112,12 @@ router.get('/ap/supplier-summary', protect, hasPermission('ap:view'), async (req
             searchWhere = `AND (
                 LOWER(COALESCE(s.supplier_name, '')) LIKE $${paramIdx} OR
                 LOWER(COALESCE(s.contact_person, '')) LIKE $${paramIdx} OR
-                LOWER(COALESCE(s.phone, '')) LIKE $${paramIdx}
+                LOWER(COALESCE(s.phone, '')) LIKE $${paramIdx} OR
+                EXISTS (
+                    SELECT 1 FROM supplier_alias sa
+                    WHERE sa.supplier_id = s.supplier_id
+                      AND (LOWER(sa.alias_name) LIKE $${paramIdx} OR LOWER(COALESCE(sa.alias_code, '')) LIKE $${paramIdx})
+                )
             )`;
             params.push(`%${search.trim().toLowerCase()}%`);
             paramIdx++;
@@ -165,7 +170,7 @@ router.get('/ap/supplier-summary', protect, hasPermission('ap:view'), async (req
             FROM supplier s
             JOIN vw_supplier_ap_balance b ON b.supplier_id = s.supplier_id
             LEFT JOIN supplier_bill sb ON s.supplier_id = sb.supplier_id AND sb.status IN ('Unpaid', 'Partially Paid')
-            WHERE b.ledger_balance > 0
+            WHERE s.is_merged = FALSE AND b.ledger_balance > 0
             ${searchWhere}
             GROUP BY s.supplier_id, s.supplier_name, s.contact_person, s.phone, s.payment_hold, s.payment_hold_reason, s.payment_terms_days, b.ledger_balance
             ${havingClause}
@@ -185,7 +190,7 @@ router.get('/ap/supplier-summary', protect, hasPermission('ap:view'), async (req
                 FROM supplier s
                 JOIN vw_supplier_ap_balance b ON b.supplier_id = s.supplier_id
                 LEFT JOIN supplier_bill sb ON s.supplier_id = sb.supplier_id AND sb.status IN ('Unpaid', 'Partially Paid')
-                WHERE b.ledger_balance > 0
+                WHERE s.is_merged = FALSE AND b.ledger_balance > 0
                 ${searchWhere}
                 GROUP BY s.supplier_id, b.ledger_balance
                 ${havingClause}

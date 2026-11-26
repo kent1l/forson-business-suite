@@ -11,6 +11,7 @@ const previewHistoryMigration = fs.readFileSync(path.resolve(__dirname, '../../.
 const revertMigration = fs.readFileSync(path.resolve(__dirname, '../../../database/migrations/20261005_05_master_data_merge_revert.sql'), 'utf8');
 const immutableOwnersMigration = fs.readFileSync(path.resolve(__dirname, '../../../database/migrations/20261005_06_master_data_merge_immutable_owners.sql'), 'utf8');
 const tombstoneTargetsMigration = fs.readFileSync(path.resolve(__dirname, '../../../database/migrations/20261006_01_master_data_merge_tombstone_targets.sql'), 'utf8');
+const ledgerBalancesMigration = fs.readFileSync(path.resolve(__dirname, '../../../database/migrations/20261126_01_master_data_merge_ledger_balances.sql'), 'utf8');
 
 describe('MasterDataMergeService against PostgreSQL', () => {
     let client;
@@ -25,6 +26,7 @@ describe('MasterDataMergeService against PostgreSQL', () => {
         await client.query(revertMigration);
         await client.query(immutableOwnersMigration);
         await client.query(tombstoneTargetsMigration);
+        await client.query(ledgerBalancesMigration);
         const { rows } = await client.query('SELECT employee_id FROM employee ORDER BY employee_id LIMIT 1');
         actorId = rows[0]?.employee_id;
         if (!actorId) {
@@ -249,6 +251,9 @@ describe('MasterDataMergeService against PostgreSQL', () => {
         expect(['pending', 'applied']).toContain(report.migrations['20261005_05_master_data_merge_revert.sql']);
         expect(['pending', 'applied']).toContain(report.migrations['20261005_06_master_data_merge_immutable_owners.sql']);
         expect(['pending', 'applied']).toContain(report.migrations['20261006_01_master_data_merge_tombstone_targets.sql']);
+        expect(['pending', 'applied']).toContain(report.migrations['20261126_01_master_data_merge_ledger_balances.sql']);
+        expect(report.findings['customer.arLedgerBalanceMismatches']).toEqual([]);
+        expect(report.findings['supplier.apLedgerBalanceMismatches']).toEqual([]);
     });
 
     test('rollout audit reports document collisions in pending duplicate suggestions', async () => {
@@ -748,5 +753,134 @@ describe('MasterDataMergeService against PostgreSQL', () => {
             'SELECT is_active, is_merged FROM brand WHERE brand_id = $1', [source.brand_id]);
         expect(unchangedPart.brand_id).toBe(source.brand_id);
         expect(unchangedSource).toEqual({ is_active: true, is_merged: false });
+    });
+
+    test('customer merge recomputes interleaved ar_ledger balance_after, preserves append continuity, and reverts cleanly', async () => {
+        process.env.JWT_SECRET = process.env.JWT_SECRET || 'merge-integration-test-secret';
+        await client.query('SAVEPOINT ar_ledger_merge_balance');
+        try {
+            const suffix = `${Date.now()}-${Math.floor(Math.random() * 100000)}`;
+            const { rows: [keep] } = await client.query(
+                'INSERT INTO customer (first_name) VALUES ($1) RETURNING customer_id', [`AR keep ${suffix}`]);
+            const { rows: [source] } = await client.query(
+                'INSERT INTO customer (first_name) VALUES ($1) RETURNING customer_id', [`AR source ${suffix}`]);
+
+            await client.query(
+                "SELECT append_ar_ledger_entry($1, NULL, NULL, NULL, 'INVOICE_POSTED'::ar_ledger_entry_type, 1000.00, NULL, $2, 'Keep charge 1', $3)",
+                [keep.customer_id, `AR-K1-${suffix}`, actorId]);
+            await client.query(
+                "SELECT append_ar_ledger_entry($1, NULL, NULL, NULL, 'INVOICE_POSTED'::ar_ledger_entry_type, 500.00, NULL, $2, 'Source charge 1', $3)",
+                [source.customer_id, `AR-S1-${suffix}`, actorId]);
+            await client.query(
+                "SELECT append_ar_ledger_entry($1, NULL, NULL, NULL, 'CREDIT_ADJUSTMENT'::ar_ledger_entry_type, -200.00, NULL, $2, 'Keep credit 1', $3)",
+                [keep.customer_id, `AR-K2-${suffix}`, actorId]);
+            await client.query(
+                "SELECT append_ar_ledger_entry($1, NULL, NULL, NULL, 'INVOICE_POSTED'::ar_ledger_entry_type, 300.00, NULL, $2, 'Source charge 2', $3)",
+                [source.customer_id, `AR-S2-${suffix}`, actorId]);
+
+            const service = new MasterDataMergeService(db, 'customer');
+            const request = { keepId: keep.customer_id, mergeIds: [source.customer_id] };
+            const preview = await service.preview(request, actorId, client);
+            expect(preview.postconditionScope).toContain('ar_ledger.balance_after');
+
+            const review = await service.review(client, request);
+            const result = await service.executeWithClient(client,
+                { ...request, previewFingerprint: review.fingerprint }, actorId);
+
+            await expectNoSourceOwnership('customer', source.customer_id);
+            const { rows: mergedRows } = await client.query(
+                'SELECT customer_id, balance_after FROM ar_ledger WHERE customer_id = $1 ORDER BY ledger_id ASC',
+                [keep.customer_id]);
+            expect(mergedRows.map(r => Number(r.balance_after))).toEqual([1000, 1500, 1300, 1600]);
+
+            await service.revertWithClient(client, result.operationId, actorId, 'Restore separate AR ledgers');
+            const { rows: restoredKeep } = await client.query(
+                'SELECT balance_after FROM ar_ledger WHERE customer_id = $1 ORDER BY ledger_id ASC',
+                [keep.customer_id]);
+            const { rows: restoredSource } = await client.query(
+                'SELECT balance_after FROM ar_ledger WHERE customer_id = $1 ORDER BY ledger_id ASC',
+                [source.customer_id]);
+            expect(restoredKeep.map(r => Number(r.balance_after))).toEqual([1000, 800]);
+            expect(restoredSource.map(r => Number(r.balance_after))).toEqual([500, 800]);
+
+            const secondReview = await service.review(client, request);
+            const secondResult = await service.executeWithClient(client,
+                { ...request, previewFingerprint: secondReview.fingerprint }, actorId);
+            await client.query(
+                "SELECT append_ar_ledger_entry($1, NULL, NULL, NULL, 'INVOICE_POSTED'::ar_ledger_entry_type, 400.00, NULL, $2, 'Post-merge charge', $3)",
+                [keep.customer_id, `AR-K3-${suffix}`, actorId]);
+            const { rows: afterAppend } = await client.query(
+                'SELECT balance_after FROM ar_ledger WHERE customer_id = $1 ORDER BY ledger_id DESC LIMIT 1',
+                [keep.customer_id]);
+            expect(Number(afterAppend[0].balance_after)).toBe(2000);
+
+            await expect(service.revertWithClient(client, secondResult.operationId, actorId, 'Post-merge ledger exists'))
+                .rejects.toMatchObject({ statusCode: 409 });
+        } finally {
+            await client.query('ROLLBACK TO SAVEPOINT ar_ledger_merge_balance');
+        }
+    });
+
+    test('supplier merge recomputes interleaved ap_ledger balance_after, preserves append continuity, and reverts cleanly', async () => {
+        process.env.JWT_SECRET = process.env.JWT_SECRET || 'merge-integration-test-secret';
+        await client.query('SAVEPOINT ap_ledger_merge_balance');
+        try {
+            const suffix = `${Date.now()}-${Math.floor(Math.random() * 100000)}`;
+            const { rows: [keep] } = await client.query(
+                'INSERT INTO supplier (supplier_name) VALUES ($1) RETURNING supplier_id', [`AP keep ${suffix}`]);
+            const { rows: [source] } = await client.query(
+                'INSERT INTO supplier (supplier_name) VALUES ($1) RETURNING supplier_id', [`AP source ${suffix}`]);
+
+            await client.query(
+                "SELECT append_ap_ledger_entry($1, NULL, NULL, 'BILL_POSTED'::ap_ledger_entry_type, 2000.00, NULL, $2, 'Keep bill 1', $3)",
+                [keep.supplier_id, `AP-K1-${suffix}`, actorId]);
+            await client.query(
+                "SELECT append_ap_ledger_entry($1, NULL, NULL, 'BILL_POSTED'::ap_ledger_entry_type, 750.00, NULL, $2, 'Source bill 1', $3)",
+                [source.supplier_id, `AP-S1-${suffix}`, actorId]);
+            await client.query(
+                "SELECT append_ap_ledger_entry($1, NULL, NULL, 'CREDIT_ADJUSTMENT'::ap_ledger_entry_type, -500.00, NULL, $2, 'Keep credit 1', $3)",
+                [keep.supplier_id, `AP-K2-${suffix}`, actorId]);
+
+            const service = new MasterDataMergeService(db, 'supplier');
+            const request = { keepId: keep.supplier_id, mergeIds: [source.supplier_id] };
+            const preview = await service.preview(request, actorId, client);
+            expect(preview.postconditionScope).toContain('ap_ledger.balance_after');
+
+            const review = await service.review(client, request);
+            const result = await service.executeWithClient(client,
+                { ...request, previewFingerprint: review.fingerprint }, actorId);
+
+            await expectNoSourceOwnership('supplier', source.supplier_id);
+            const { rows: mergedRows } = await client.query(
+                'SELECT supplier_id, balance_after FROM ap_ledger WHERE supplier_id = $1 ORDER BY ledger_id ASC',
+                [keep.supplier_id]);
+            expect(mergedRows.map(r => Number(r.balance_after))).toEqual([2000, 2750, 2250]);
+
+            await service.revertWithClient(client, result.operationId, actorId, 'Restore separate AP ledgers');
+            const { rows: restoredKeep } = await client.query(
+                'SELECT balance_after FROM ap_ledger WHERE supplier_id = $1 ORDER BY ledger_id ASC',
+                [keep.supplier_id]);
+            const { rows: restoredSource } = await client.query(
+                'SELECT balance_after FROM ap_ledger WHERE supplier_id = $1 ORDER BY ledger_id ASC',
+                [source.supplier_id]);
+            expect(restoredKeep.map(r => Number(r.balance_after))).toEqual([2000, 1500]);
+            expect(restoredSource.map(r => Number(r.balance_after))).toEqual([750]);
+
+            const secondReview = await service.review(client, request);
+            const secondResult = await service.executeWithClient(client,
+                { ...request, previewFingerprint: secondReview.fingerprint }, actorId);
+            await client.query(
+                "SELECT append_ap_ledger_entry($1, NULL, NULL, 'BILL_POSTED'::ap_ledger_entry_type, 250.00, NULL, $2, 'Post-merge bill', $3)",
+                [keep.supplier_id, `AP-K3-${suffix}`, actorId]);
+            const { rows: afterAppend } = await client.query(
+                'SELECT balance_after FROM ap_ledger WHERE supplier_id = $1 ORDER BY ledger_id DESC LIMIT 1',
+                [keep.supplier_id]);
+            expect(Number(afterAppend[0].balance_after)).toBe(2500);
+
+            await expect(service.revertWithClient(client, secondResult.operationId, actorId, 'Post-merge AP ledger exists'))
+                .rejects.toMatchObject({ statusCode: 409 });
+        } finally {
+            await client.query('ROLLBACK TO SAVEPOINT ap_ledger_merge_balance');
+        }
     });
 });

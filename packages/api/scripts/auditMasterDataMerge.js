@@ -121,6 +121,26 @@ async function audit(client) {
             OR w.balance IS DISTINCT FROM COALESCE((array_agg(t.balance_after ORDER BY t.created_at DESC,
                 t.transaction_id DESC))[1], 0)`);
     add('customer.walletMismatches', wallets);
+    const { rows: arLedgerMismatches } = await client.query(`
+        SELECT customer_id, ledger_id, amount, balance_after, expected_balance
+        FROM (
+            SELECT customer_id, ledger_id, amount, balance_after,
+                   SUM(amount) OVER (PARTITION BY customer_id ORDER BY ledger_id ASC)::numeric(12,2) AS expected_balance
+            FROM public.ar_ledger
+        ) c
+        WHERE c.balance_after IS DISTINCT FROM c.expected_balance
+        ORDER BY customer_id, ledger_id`);
+    add('customer.arLedgerBalanceMismatches', arLedgerMismatches);
+    const { rows: apLedgerMismatches } = await client.query(`
+        SELECT supplier_id, ledger_id, amount, balance_after, expected_balance
+        FROM (
+            SELECT supplier_id, ledger_id, amount, balance_after,
+                   SUM(amount) OVER (PARTITION BY supplier_id ORDER BY ledger_id ASC)::numeric(12,2) AS expected_balance
+            FROM public.ap_ledger
+        ) c
+        WHERE c.balance_after IS DISTINCT FROM c.expected_balance
+        ORDER BY supplier_id, ledger_id`);
+    add('supplier.apLedgerBalanceMismatches', apLedgerMismatches);
     const { rows: drafts } = await client.query(`SELECT draft_id, draft_name, draft_data FROM public.draft_transaction
         WHERE expires_at > CURRENT_TIMESTAMP ORDER BY draft_id`);
     const staleDrafts = [];

@@ -10,6 +10,10 @@ const CONFIG = {
     brand: { table: 'brand', id: 'brand_id', code: 'brand_code', alias: 'brand_alias', name: 'brand_name' },
     group: { table: '"group"', id: 'group_id', code: 'group_code', alias: 'group_alias', name: 'group_name' },
 };
+const FINANCIAL_LEDGER = {
+    customer: { table: 'ar_ledger', owner: 'customer_id' },
+    supplier: { table: 'ap_ledger', owner: 'supplier_id' },
+};
 const DRAFT_KEYS = {
     supplier: new Set(['supplier_id', 'supplierId', 'selectedSupplier', 'freight_supplier_id', 'freightSupplierId']),
     customer: new Set(['customer_id', 'customerId', 'selectedCustomer']),
@@ -330,6 +334,8 @@ class MasterDataMergeService {
             postconditionScope: [...Object.keys(review.impact),
                 ...(review.drafts.affected.length ? ['draft_transaction.draft_data'] : []),
                 ...(this.entity === 'customer' ? ['customer_wallet.balance', 'customer_wallet_transaction.balance_after'] : []),
+                ...(FINANCIAL_LEDGER[this.entity] && impact[FINANCIAL_LEDGER[this.entity].table + '.' + FINANCIAL_LEDGER[this.entity].owner] > 0
+                    ? [FINANCIAL_LEDGER[this.entity].table + '.balance_after'] : []),
                 ...((this.entity === 'brand' || this.entity === 'group') ? ['meili_sync_outbox.part'] : [])],
         };
     }
@@ -504,7 +510,11 @@ class MasterDataMergeService {
             if (action === 'workflow') {
                 await capture(table, column, review.allIds);
             } else {
-                await capture(table, column, action === 'union' ? review.allIds : review.mergeIds);
+                const ledger = FINANCIAL_LEDGER[this.entity];
+                const ids = ledger && table === ledger.table && (review.impact[table + '.' + column] || 0) > 0
+                    ? review.allIds
+                    : (action === 'union' ? review.allIds : review.mergeIds);
+                await capture(table, column, ids);
             }
         }
         if (this.entity === 'customer') {
@@ -599,9 +609,29 @@ class MasterDataMergeService {
             [cents / 100, canonical.wallet_id]);
     }
 
+    async consolidateFinancialLedger(client, review) {
+        const ledger = FINANCIAL_LEDGER[this.entity];
+        if (!ledger || !(review.impact[ledger.table + '.' + ledger.owner] > 0)) return;
+        await client.query(
+            `WITH ordered AS (
+                SELECT ledger_id,
+                       SUM(amount) OVER (ORDER BY ledger_id ASC)::numeric(12,2) AS new_balance_after
+                FROM public.${ledger.table}
+                WHERE ${ledger.owner} = ANY($2::int[])
+            )
+            UPDATE public.${ledger.table} l
+            SET ${ledger.owner} = $1,
+                balance_after = o.new_balance_after
+            FROM ordered o
+            WHERE l.ledger_id = o.ledger_id
+              AND (l.${ledger.owner} IS DISTINCT FROM $1 OR l.balance_after IS DISTINCT FROM o.new_balance_after)`,
+            [review.keepId, review.allIds]);
+    }
+
     async moveReferences(client, review) {
+        const ledger = FINANCIAL_LEDGER[this.entity];
         for (const [table, column, action] of this.policy.references) {
-            if (action !== 'move') continue;
+            if (action !== 'move' || table === ledger?.table) continue;
             await client.query(
                 'UPDATE public.' + table + ' SET ' + column + ' = $1 WHERE ' + column + ' = ANY($2::int[])',
                 [review.keepId, review.mergeIds]);
@@ -678,6 +708,19 @@ class MasterDataMergeService {
                 }
             }
         }
+        const ledger = FINANCIAL_LEDGER[this.entity];
+        if (ledger && (review.impact[ledger.table + '.' + ledger.owner] || 0) > 0) {
+            const { rows: ledgerRows } = await client.query(
+                'SELECT ledger_id, amount, balance_after FROM public.' + ledger.table +
+                ' WHERE ' + ledger.owner + ' = $1 ORDER BY ledger_id ASC', [review.keepId]);
+            let cents = 0;
+            for (const row of ledgerRows) {
+                cents += Math.round(Number(row.amount) * 100);
+                if (Math.round(Number(row.balance_after) * 100) !== cents) {
+                    throw new Error('Financial ledger running-balance postcondition failed.');
+                }
+            }
+        }
         if (affectedParts.length) {
             const { rows } = await client.query(
                 "SELECT COUNT(DISTINCT entity_id)::int AS count FROM public.meili_sync_outbox " +
@@ -737,6 +780,8 @@ class MasterDataMergeService {
         }
         const scoped = [this.config.alias];
         if (this.entity === 'customer') scoped.push('customer_tag', 'customer_wallet', 'customer_wallet_transaction');
+        const ledger = FINANCIAL_LEDGER[this.entity];
+        if (ledger && snapshots.some(row => row.table_name === ledger.table)) scoped.push(ledger.table);
         for (const table of scoped) {
             const columns = await this.primaryKey(client, table);
             const key = 'jsonb_build_array(' + columns.map(name => 't."' + name + '"').join(', ') + ')::text';
@@ -923,6 +968,7 @@ class MasterDataMergeService {
         await this.unionTags(client, review);
         await this.unionAliases(client, review);
         await this.consolidateWallets(client, review);
+        await this.consolidateFinancialLedger(client, review);
         await this.moveReferences(client, review);
         await this.rewriteDrafts(client, review);
         const suggestions = await this.archiveSuggestions(client, review, selected, actorEmployeeId);
